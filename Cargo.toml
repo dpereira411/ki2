@@ -1,0 +1,11 @@
+[package]
+name = "ki2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.22"
+kiutils_rs = { package = "kiutils-rs", path = "../kiutils-rs/crates/kiutils" }
+kiutils_sexpr = { path = "../kiutils-rs/crates/kiutils_sexpr" }
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
