@@ -1735,7 +1735,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?;
             match head.as_str() {
                 "pts" => {
                     self.need_left()?;
@@ -2268,7 +2268,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?;
             match head.as_str() {
                 "pts" => {
                     points = self.parse_pts()?;
@@ -2338,7 +2338,10 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("start, mid, end, stroke, fill or uuid")?
+                .as_str()
+            {
                 "start" => {
                     points.push(self.parse_xy2("shape start")?);
                     self.need_right()?;
@@ -2398,7 +2401,10 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("center, radius, stroke, fill or uuid")?
+                .as_str()
+            {
                 "center" => {
                     center = Some(self.parse_xy2("center")?);
                     self.need_right()?;
@@ -2451,7 +2457,10 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("start, end, stroke, fill or uuid")?
+                .as_str()
+            {
                 "start" => {
                     start = self.parse_xy2("start")?;
                     self.need_right()?;
@@ -2506,7 +2515,10 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?
+                .as_str()
+            {
                 "pts" => {
                     let mut ii = 0;
                     while !self.at_right() {
@@ -2575,7 +2587,10 @@ impl KiCadSchematicParser {
         };
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("exclude_from_sim, on_board, in_bom, dnp, or polyline")?
+                .as_str()
+            {
                 "polyline" => {
                     let polyline = self.parse_polyline_shape()?;
                     shape.points = polyline.points;

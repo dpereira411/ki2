@@ -2445,6 +2445,70 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
 }
 
 #[test]
+fn rejects_quoted_schematic_shape_keyword_heads() {
+    let quoted_polyline_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-polyline-head")
+  (polyline ("pts" (xy 0 0) (xy 1 1)))
+)"#;
+    let quoted_polyline_head_path = temp_schematic("quoted_polyline_head", quoted_polyline_head);
+    let err = parse_schematic_file(Path::new(&quoted_polyline_head_path))
+        .expect_err("must reject quoted polyline head");
+    assert!(
+        err.to_string()
+            .contains("expecting pts, uuid, stroke, or fill")
+    );
+
+    let quoted_arc_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-arc-head")
+  (arc ("start" 0 0) (mid 1 1) (end 2 0))
+)"#;
+    let quoted_arc_head_path = temp_schematic("quoted_arc_head", quoted_arc_head);
+    let err = parse_schematic_file(Path::new(&quoted_arc_head_path))
+        .expect_err("must reject quoted arc head");
+    assert!(
+        err.to_string()
+            .contains("expecting start, mid, end, stroke, fill or uuid")
+    );
+
+    let quoted_circle_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-circle-head")
+  (circle ("center" 0 0) (radius 5))
+)"#;
+    let quoted_circle_head_path = temp_schematic("quoted_circle_head", quoted_circle_head);
+    let err = parse_schematic_file(Path::new(&quoted_circle_head_path))
+        .expect_err("must reject quoted circle head");
+    assert!(
+        err.to_string()
+            .contains("expecting center, radius, stroke, fill or uuid")
+    );
+
+    let quoted_rule_area_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-rule-area-head")
+  (rule_area ("polyline" (pts (xy 0 0) (xy 1 0) (xy 1 1))))
+)"#;
+    let quoted_rule_area_head_path = temp_schematic("quoted_rule_area_head", quoted_rule_area_head);
+    let err = parse_schematic_file(Path::new(&quoted_rule_area_head_path))
+        .expect_err("must reject quoted rule_area head");
+    assert!(
+        err.to_string()
+            .contains("expecting exclude_from_sim, on_board, in_bom, dnp, or polyline")
+    );
+
+    let _ = fs::remove_file(quoted_polyline_head_path);
+    let _ = fs::remove_file(quoted_arc_head_path);
+    let _ = fs::remove_file(quoted_circle_head_path);
+    let _ = fs::remove_file(quoted_rule_area_head_path);
+}
+
+#[test]
 fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
     let quoted_power_scope = r#"(kicad_sch
   (version 20260306)
