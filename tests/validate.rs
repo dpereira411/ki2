@@ -3293,7 +3293,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
         .expect_err("must reject quoted top-level symbol_instances child head");
     assert!(
         err.to_string()
-            .contains("expecting reference, unit, value or footprint")
+            .contains("expecting path, unit, value or footprint")
     );
 
     let _ = fs::remove_file(quoted_symbol_head_path);
@@ -5279,7 +5279,7 @@ fn rejects_unknown_top_level_symbol_instance_child() {
         .expect_err("must reject bad top-level symbol instance child");
     assert!(
         err.to_string()
-            .contains("expecting reference, unit, value or footprint")
+            .contains("expecting path, unit, value or footprint")
     );
     let _ = fs::remove_file(path);
 }

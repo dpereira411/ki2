@@ -3983,20 +3983,34 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let raw_path = self.need_symbol_atom("sheet instance path")?;
-            let path = self.normalize_sch_instance_path(
-                raw_path,
-                self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH,
-            );
+            let mut path = raw_path;
+
+            if self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH {
+                if let Some(root_uuid) = self.root_uuid.as_ref() {
+                    if !path.is_empty() {
+                        let prefix = format!("/{root_uuid}");
+
+                        path = if path == prefix || path.starts_with(&(prefix.clone() + "/")) {
+                            path
+                        } else if path.starts_with('/') {
+                            format!("{prefix}{path}")
+                        } else {
+                            format!("{prefix}/{path}")
+                        };
+                    }
+                }
+            }
+
             let mut page = None;
             while !self.at_right() {
                 self.need_left()?;
-                let child = self.need_unquoted_symbol_atom("page")?;
+                let child = self.need_unquoted_symbol_atom("path or page")?;
                 match child.as_str() {
                     "page" => {
                         let raw_page = self.need_symbol_atom("page")?;
                         page = Some(self.normalize_instance_page(raw_page));
                     }
-                    _ => return Err(self.expecting("page")),
+                    _ => return Err(self.expecting("path or page")),
                 }
                 self.need_right()?;
             }
@@ -4020,15 +4034,30 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let raw_path = self.need_symbol_atom("symbol instance path")?;
-            let path = self.normalize_sch_instance_path(raw_path, true);
+            let path = if let Some(root_uuid) = self.root_uuid.as_ref() {
+                if raw_path.is_empty() {
+                    String::new()
+                } else {
+                    let prefix = format!("/{root_uuid}");
+
+                    if raw_path == prefix || raw_path.starts_with(&(prefix.clone() + "/")) {
+                        raw_path
+                    } else if raw_path.starts_with('/') {
+                        format!("{prefix}{raw_path}")
+                    } else {
+                        format!("{prefix}/{raw_path}")
+                    }
+                }
+            } else {
+                raw_path
+            };
             let mut reference = None;
             let mut unit = None;
             let mut value = None;
             let mut footprint = None;
             while !self.at_right() {
                 self.need_left()?;
-                let child =
-                    self.need_unquoted_symbol_atom("reference, unit, value or footprint")?;
+                let child = self.need_unquoted_symbol_atom("path, unit, value or footprint")?;
                 match child.as_str() {
                     "reference" => reference = Some(self.need_symbol_atom("reference")?),
                     "unit" => unit = Some(self.parse_i32_atom("unit")?),
@@ -4062,7 +4091,7 @@ impl KiCadSchematicParser {
                             }
                         })
                     }
-                    _ => return Err(self.expecting("reference, unit, value or footprint")),
+                    _ => return Err(self.expecting("path, unit, value or footprint")),
                 }
                 self.need_right()?;
             }
@@ -4974,26 +5003,6 @@ impl KiCadSchematicParser {
             height: Some(height),
             portrait: portrait_state,
         })
-    }
-
-    fn normalize_sch_instance_path(&self, path: String, prepend_root_uuid: bool) -> String {
-        if !prepend_root_uuid {
-            return path;
-        }
-        let Some(root_uuid) = self.root_uuid.as_ref() else {
-            return path;
-        };
-        if path.is_empty() {
-            return String::new();
-        }
-        let prefix = format!("/{root_uuid}");
-        if path == prefix || path.starts_with(&(prefix.clone() + "/")) {
-            path
-        } else if path.starts_with('/') {
-            format!("{prefix}{path}")
-        } else {
-            format!("{prefix}/{path}")
-        }
     }
 
     fn convert_old_overbar_notation(&self, old: String) -> String {
