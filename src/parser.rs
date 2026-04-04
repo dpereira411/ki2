@@ -798,7 +798,7 @@ impl KiCadSchematicParser {
                                     }
                                     "text" => self.parse_symbol_text(unit_number, body_style),
                                     "text_box" => {
-                                        self.parse_lib_text_box_draw_item(unit_number, body_style)
+                                        self.parse_symbol_text_box(unit_number, body_style)
                                     }
                                     "pin" => self.parse_lib_pin_draw_item(unit_number, body_style),
                                     _ => Err(self.expecting(
@@ -836,7 +836,7 @@ impl KiCadSchematicParser {
                         "polyline" => self.parse_symbol_polyline(1, 1),
                         "rectangle" => self.parse_symbol_rectangle(1, 1),
                         "text" => self.parse_symbol_text(1, 1),
-                        "text_box" => self.parse_lib_text_box_draw_item(1, 1),
+                        "text_box" => self.parse_symbol_text_box(1, 1),
                         "pin" => self.parse_lib_pin_draw_item(1, 1),
                         _ => Err(self.expecting(
                             "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
@@ -1389,7 +1389,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_lib_text_box_draw_item(
+    fn parse_symbol_text_box(
         &mut self,
         unit_number: i32,
         body_style: i32,
