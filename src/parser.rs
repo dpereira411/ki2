@@ -244,7 +244,8 @@ impl KiCadSchematicParser {
             if self.need_unquoted_symbol_atom("version")? != "version" {
                 return Err(self.expecting("version"));
             }
-            self.parse_version()?;
+            self.reject_duplicate(self.version.is_some(), "version")?;
+            self.version = Some(self.parse_i32_atom("version")?);
             self.need_right()?;
         } else {
             self.version = Some(SEXPR_SCHEMATIC_FILE_VERSION);
@@ -273,10 +274,22 @@ impl KiCadSchematicParser {
             let mut section_consumed_right = false;
 
             match effective_head {
-                "generator" => self.parse_generator()?,
-                "host" => self.parse_legacy_host()?,
-                "generator_version" => self.parse_generator_version()?,
-                "uuid" => self.parse_uuid()?,
+                "generator" => self.generator = Some(self.need_symbol_atom("generator")?),
+                "host" => {
+                    self.generator = Some(self.need_symbol_atom("host")?);
+                    if self.require_known_version()? < 20200827 {
+                        let _ = self.need_symbol_atom("host version")?;
+                    }
+                }
+                "generator_version" => {
+                    self.require_version(VERSION_GENERATOR_VERSION, "generator_version")?;
+                    self.generator_version = Some(self.parse_string_atom("generator_version")?);
+                }
+                "uuid" => {
+                    let uuid = self.need_symbol_atom("uuid")?;
+                    self.screen.uuid = Some(uuid.clone());
+                    self.root_uuid = Some(uuid);
+                }
                 "paper" => {
                     self.screen.paper = Some(self.parse_page_info()?);
                     section_consumed_right = true;
@@ -293,7 +306,9 @@ impl KiCadSchematicParser {
                     section_consumed_right = true;
                 }
                 "title_block" => self.parse_title_block()?,
-                "embedded_fonts" => self.parse_embedded_fonts()?,
+                "embedded_fonts" => {
+                    self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
+                }
                 "embedded_files" => self.parse_embedded_files()?,
                 "lib_symbols" => self.parse_lib_symbols()?,
                 "bus_alias" => self.parse_bus_alias()?,
@@ -351,38 +366,6 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_version(&mut self) -> Result<(), Error> {
-        self.reject_duplicate(self.version.is_some(), "version")?;
-        self.version = Some(self.parse_i32_atom("version")?);
-        Ok(())
-    }
-
-    fn parse_generator(&mut self) -> Result<(), Error> {
-        self.generator = Some(self.need_symbol_atom("generator")?);
-        Ok(())
-    }
-
-    fn parse_legacy_host(&mut self) -> Result<(), Error> {
-        self.generator = Some(self.need_symbol_atom("host")?);
-        if self.require_known_version()? < 20200827 {
-            let _ = self.need_symbol_atom("host version")?;
-        }
-        Ok(())
-    }
-
-    fn parse_generator_version(&mut self) -> Result<(), Error> {
-        self.require_version(VERSION_GENERATOR_VERSION, "generator_version")?;
-        self.generator_version = Some(self.parse_string_atom("generator_version")?);
-        Ok(())
-    }
-
-    fn parse_uuid(&mut self) -> Result<(), Error> {
-        let uuid = self.need_symbol_atom("uuid")?;
-        self.screen.uuid = Some(uuid.clone());
-        self.root_uuid = Some(uuid);
-        Ok(())
-    }
-
     fn parse_title_block(&mut self) -> Result<(), Error> {
         let mut title_block = TitleBlock::default();
         while !self.at_right() {
@@ -425,11 +408,6 @@ impl KiCadSchematicParser {
             self.need_right()?;
         }
         self.screen.title_block = Some(title_block);
-        Ok(())
-    }
-
-    fn parse_embedded_fonts(&mut self) -> Result<(), Error> {
-        self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
         Ok(())
     }
 
