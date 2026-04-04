@@ -348,16 +348,12 @@ impl SchematicLoader {
                     existing.project.clear();
                     existing.reference = instance.reference.clone();
                     existing.unit = instance.unit;
-                    existing.value = instance.value.clone();
-                    existing.footprint = instance.footprint.clone();
                 } else {
                     symbol.instances.push(crate::model::SymbolLocalInstance {
                         project: String::new(),
                         path: sheet_path.instance_path.clone(),
                         reference: instance.reference.clone(),
                         unit: instance.unit,
-                        value: instance.value.clone(),
-                        footprint: instance.footprint.clone(),
                         variants: Vec::new(),
                     });
                 }
@@ -650,14 +646,6 @@ impl SchematicLoader {
 
                 if let Some(unit) = instance.unit {
                     symbol.unit = Some(unit);
-                }
-
-                if let Some(value) = instance.value {
-                    symbol.set_field_text(PropertyKind::SymbolValue, value);
-                }
-
-                if let Some(footprint) = instance.footprint {
-                    symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
                 }
             }
 

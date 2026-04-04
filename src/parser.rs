@@ -3192,8 +3192,6 @@ impl KiCadSchematicParser {
                                 path,
                                 reference: None,
                                 unit: None,
-                                value: None,
-                                footprint: None,
                                 variants: Vec::new(),
                             };
                             while !self.at_right() {
@@ -3231,7 +3229,6 @@ impl KiCadSchematicParser {
                                             PropertyKind::SymbolValue,
                                             parsed.clone(),
                                         );
-                                        instance.value = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "footprint" => {
@@ -3252,7 +3249,6 @@ impl KiCadSchematicParser {
                                             PropertyKind::SymbolFootprint,
                                             parsed.clone(),
                                         );
-                                        instance.footprint = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "variant" => {
@@ -5016,18 +5012,9 @@ impl KiCadSchematicParser {
 
     fn set_legacy_symbol_instance_data(&mut self) {
         // Upstream: SCH_SCREEN::SetLegacySymbolInstanceData()
-        // For files < 20200828, per-symbol instance data may carry stale value/footprint
-        // fields. The C++ code re-adds each instance with only path/reference/unit, which
-        // effectively clears value and footprint so that the later post-load
-        // UpdateSymbolInstanceData can fill them from the screen-level symbol_instances list.
-        for item in &mut self.screen.items {
-            if let SchItem::Symbol(symbol) = item {
-                for instance in &mut symbol.instances {
-                    instance.value = None;
-                    instance.footprint = None;
-                }
-            }
-        }
+        // For files < 20200828, KiCad rebuilds per-symbol instance data with only
+        // path/reference/unit. The local model no longer stores value/footprint on
+        // SymbolLocalInstance, so there is nothing left to clear here.
     }
 
     fn resolve_groups(&mut self) {

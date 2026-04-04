@@ -407,11 +407,6 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     assert_eq!(symbol.instances[0].path, "/root-u/sheet-a");
     assert_eq!(symbol.instances[0].reference.as_deref(), Some("R7"));
     assert_eq!(symbol.instances[0].unit, Some(2));
-    assert_eq!(symbol.instances[0].value.as_deref(), Some("47k"));
-    assert_eq!(
-        symbol.instances[0].footprint.as_deref(),
-        Some("Resistor_SMD:R_0603")
-    );
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
@@ -5093,11 +5088,8 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
         })
         .expect("symbol");
 
-    assert_eq!(symbol.instances[0].value.as_deref(), Some("instance-value"));
-    assert_eq!(
-        symbol.instances[0].footprint.as_deref(),
-        Some("instance-footprint")
-    );
+    assert_eq!(symbol.instances[0].reference, None);
+    assert_eq!(symbol.instances[0].unit, None);
     assert_eq!(
         symbol
             .properties
