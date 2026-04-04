@@ -646,7 +646,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "property" => {
-                    let property = self.parse_lib_property()?;
+                    let mut property = self.parse_lib_property()?;
                     match property.key.as_str() {
                         "ki_keywords" => keywords = Some(property.value),
                         "ki_description" => description = Some(property.value),
@@ -658,7 +658,40 @@ impl KiCadSchematicParser {
                                 .collect();
                         }
                         "ki_locked" => locked_units = true,
-                        _ => Self::upsert_lib_symbol_property(&mut properties, property),
+                        _ => {
+                            if matches!(
+                                property.kind,
+                                PropertyKind::SymbolReference
+                                    | PropertyKind::SymbolValue
+                                    | PropertyKind::SymbolFootprint
+                                    | PropertyKind::SymbolDatasheet
+                            ) {
+                                if let Some(existing) =
+                                    properties.iter_mut().find(|p| p.kind == property.kind)
+                                {
+                                    *existing = property;
+                                } else {
+                                    properties.push(property);
+                                }
+                            } else if properties
+                                .iter()
+                                .any(|existing| existing.key == property.key)
+                            {
+                                let base = property.key.clone();
+
+                                for suffix in 1..10 {
+                                    let candidate = format!("{base}_{suffix}");
+
+                                    if !properties.iter().any(|existing| existing.key == candidate) {
+                                        property.key = candidate;
+                                        properties.push(property);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                properties.push(property);
+                            }
+                        }
                     }
                     self.need_right()?;
                 }
@@ -4652,16 +4685,6 @@ impl KiCadSchematicParser {
         out
     }
 
-    fn canonical_symbol_property_name(key: &str) -> String {
-        match key.to_ascii_lowercase().as_str() {
-            "reference" => "Reference".to_string(),
-            "value" => "Value".to_string(),
-            "footprint" => "Footprint".to_string(),
-            "datasheet" => "Datasheet".to_string(),
-            _ => key.to_string(),
-        }
-    }
-
     fn upsert_symbol_field_text(properties: &mut Vec<Property>, kind: PropertyKind, value: String) {
         let key = match kind {
             PropertyKind::SymbolReference => "Reference",
@@ -4690,45 +4713,6 @@ impl KiCadSchematicParser {
         } else {
             properties.push(property);
         }
-    }
-
-    fn upsert_lib_symbol_property(properties: &mut Vec<Property>, mut property: Property) {
-        let canonical = Self::canonical_symbol_property_name(&property.key);
-        property.key = canonical.clone();
-
-        if matches!(
-            canonical.as_str(),
-            "Reference" | "Value" | "Footprint" | "Datasheet"
-        ) {
-            if let Some(existing) = properties.iter_mut().find(|p| p.key == canonical) {
-                *existing = property;
-                return;
-            }
-
-            properties.push(property);
-            return;
-        }
-
-        if properties
-            .iter()
-            .any(|existing| existing.key == property.key)
-        {
-            let base = property.key.clone();
-
-            for suffix in 1..10 {
-                let candidate = format!("{base}_{suffix}");
-
-                if !properties.iter().any(|existing| existing.key == candidate) {
-                    property.key = candidate;
-                    properties.push(property);
-                    return;
-                }
-            }
-
-            return;
-        }
-
-        properties.push(property);
     }
 
     fn upsert_global_label_property(properties: &mut Vec<Property>, property: Property) {
