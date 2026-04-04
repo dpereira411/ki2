@@ -488,7 +488,6 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::Bus(bus));
                 }
                 "polyline" => {
-                    let _ = self.need_unquoted_symbol_atom("polyline")?;
                     let shape = self.parse_sch_polyline()?;
                     if shape.points.len() < 2 {
                         return Err(self.error_here("Schematic polyline has too few points"));
@@ -511,12 +510,10 @@ impl KiCadSchematicParser {
                     self.screen.items.push(item)
                 }
                 "text_box" => {
-                    let _ = self.need_unquoted_symbol_atom("text_box")?;
                     let text_box = self.parse_sch_text_box()?;
                     self.screen.items.push(SchItem::TextBox(text_box));
                 }
                 "table" => {
-                    let _ = self.need_unquoted_symbol_atom("table")?;
                     let table = self.parse_sch_table()?;
                     self.screen.items.push(SchItem::Table(table));
                 }
@@ -525,27 +522,22 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::Image(image));
                 }
                 "arc" => {
-                    let _ = self.need_unquoted_symbol_atom("arc")?;
                     let shape = self.parse_sch_arc()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "circle" => {
-                    let _ = self.need_unquoted_symbol_atom("circle")?;
                     let shape = self.parse_sch_circle()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "rectangle" => {
-                    let _ = self.need_unquoted_symbol_atom("rectangle")?;
                     let shape = self.parse_sch_rectangle()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "bezier" => {
-                    let _ = self.need_unquoted_symbol_atom("bezier")?;
                     let shape = self.parse_sch_bezier()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "rule_area" => {
-                    let _ = self.need_unquoted_symbol_atom("rule_area")?;
                     let shape = self.parse_sch_rule_area()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
@@ -2548,6 +2540,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_text_box(&mut self) -> Result<TextBox, Error> {
+        let _ = self.need_unquoted_symbol_atom("text_box")?;
         self.parse_sch_text_box_content(false)
     }
 
@@ -2691,6 +2684,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_table(&mut self) -> Result<Table, Error> {
+        let _ = self.need_unquoted_symbol_atom("table")?;
         let version = self.require_known_version()?;
         if version < VERSION_TABLES {
             return Err(self.error_here(format!(
@@ -2872,6 +2866,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_polyline(&mut self) -> Result<Shape, Error> {
+        let _ = self.need_unquoted_symbol_atom("polyline")?;
         let mut shape = Shape {
             kind: ShapeKind::Polyline,
             points: Vec::new(),
@@ -2933,6 +2928,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
+        let _ = self.need_unquoted_symbol_atom("arc")?;
         let mut shape = Shape {
             kind: ShapeKind::Arc,
             points: vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
@@ -2986,6 +2982,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_circle(&mut self) -> Result<Shape, Error> {
+        let _ = self.need_unquoted_symbol_atom("circle")?;
         let mut shape = Shape {
             kind: ShapeKind::Circle,
             points: vec![[0.0, 0.0]],
@@ -3035,6 +3032,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_rectangle(&mut self) -> Result<Shape, Error> {
+        let _ = self.need_unquoted_symbol_atom("rectangle")?;
         let mut shape = Shape {
             kind: ShapeKind::Rectangle,
             points: vec![[0.0, 0.0], [0.0, 0.0]],
@@ -3088,6 +3086,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
+        let _ = self.need_unquoted_symbol_atom("bezier")?;
         let mut shape = Shape {
             kind: ShapeKind::Bezier,
             points: vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
@@ -3145,6 +3144,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_rule_area(&mut self) -> Result<Shape, Error> {
+        let _ = self.need_unquoted_symbol_atom("rule_area")?;
         let version = self.require_known_version()?;
         if version < VERSION_RULE_AREAS {
             return Err(self.error_here(format!(
@@ -3168,10 +3168,19 @@ impl KiCadSchematicParser {
         };
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("exclude_from_sim, on_board, in_bom, dnp, or polyline")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => {
+                    return Err(
+                        self.expecting("exclude_from_sim, on_board, in_bom, dnp, or polyline")
+                    );
+                }
+            };
+            match head.as_str() {
                 "polyline" => {
                     let polyline = self.parse_sch_polyline()?;
                     shape.points = polyline.points;
@@ -3183,18 +3192,22 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
+                    let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
                     shape.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "in_bom" => {
+                    let _ = self.need_unquoted_symbol_atom("in_bom")?;
                     shape.in_bom = self.parse_bool_atom("in_bom")?;
                     self.need_right()?;
                 }
                 "on_board" => {
+                    let _ = self.need_unquoted_symbol_atom("on_board")?;
                     shape.on_board = self.parse_bool_atom("on_board")?;
                     self.need_right()?;
                 }
                 "dnp" => {
+                    let _ = self.need_unquoted_symbol_atom("dnp")?;
                     shape.dnp = self.parse_bool_atom("dnp")?;
                     self.need_right()?;
                 }
