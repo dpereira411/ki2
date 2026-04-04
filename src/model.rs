@@ -913,10 +913,6 @@ impl Symbol {
         }
     }
 
-    pub fn add_instance(&mut self, instance: SymbolLocalInstance) {
-        self.instances.push(instance);
-    }
-
     pub fn add_pin(&mut self, pin: SymbolPin) {
         self.pins.push(pin);
     }
@@ -988,10 +984,6 @@ impl Sheet {
 
     pub fn add_pin(&mut self, pin: SheetPin) {
         self.pins.push(pin);
-    }
-
-    pub fn set_instances(&mut self, instances: Vec<SheetLocalInstance>) {
-        self.instances = instances;
     }
 }
 

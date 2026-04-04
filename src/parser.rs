@@ -3622,7 +3622,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.add_instance(instance);
+                            symbol.instances.push(instance);
                         }
                         self.need_right()?;
                     }
@@ -4055,7 +4055,7 @@ impl KiCadSchematicParser {
                         }
                         self.need_right()?;
                     }
-                    sheet.set_instances(instances);
+                    sheet.instances = instances;
                     self.need_right()?;
                 }
                 _ => {
