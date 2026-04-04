@@ -4957,6 +4957,31 @@ fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
 }
 
 #[test]
+fn rejects_quoted_lib_symbol_top_level_child_head_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-quoted-child")
+  (lib_symbols
+    (symbol "Device:R"
+      ("power" local)))
+)"#;
+    let path = temp_schematic("quoted_lib_symbol_child", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains(
+                "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
+            ))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_lib_symbol_unit_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)

@@ -544,7 +544,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let branch = self.need_atom()?;
+            let branch = self.need_unquoted_symbol_atom(
+                "pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text",
+            )?;
             match branch.as_str() {
                 "power" => {
                     power = true;
