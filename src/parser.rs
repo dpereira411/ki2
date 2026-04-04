@@ -1335,44 +1335,6 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut text_box = self.parse_lib_text_box_content()?;
-        let visible = !text_box
-            .effects
-            .as_ref()
-            .map(|effects| effects.hidden)
-            .unwrap_or(false);
-
-        Ok(LibDrawItem {
-            kind: "text_box".to_string(),
-            is_private,
-            unit_number,
-            body_style,
-            visible,
-            at: Some(text_box.at),
-            angle: Some(text_box.angle),
-            points: Vec::new(),
-            end: Some(text_box.end),
-            radius: None,
-            arc_center: None,
-            arc_start_angle: None,
-            arc_end_angle: None,
-            length: None,
-            text: Some(std::mem::take(&mut text_box.text)),
-            name: None,
-            number: None,
-            name_effects: None,
-            number_effects: None,
-            electrical_type: None,
-            graphic_shape: None,
-            alternates: Vec::new(),
-            stroke: text_box.stroke.take(),
-            fill: text_box.fill.take(),
-            effects: text_box.effects.take(),
-            converted_to_field: false,
-        })
-    }
-
-    fn parse_lib_text_box_content(&mut self) -> Result<TextBox, Error> {
         let text = self
             .need_symbol_atom("text box text")
             .map_err(|_| self.error_here("Invalid text string"))?;
@@ -1453,20 +1415,40 @@ impl KiCadSchematicParser {
             );
             Some([margin, margin, margin, margin])
         });
+        let visible = !effects
+            .as_ref()
+            .map(|effects| effects.hidden)
+            .unwrap_or(false);
+        let _ = has_effects;
+        let _ = margins;
 
-        Ok(TextBox {
-            text,
-            at,
-            angle,
-            end,
-            excluded_from_sim: false,
-            has_effects,
-            effects,
+        Ok(LibDrawItem {
+            kind: "text_box".to_string(),
+            is_private,
+            unit_number,
+            body_style,
+            visible,
+            at: Some(at),
+            angle: Some(angle),
+            points: Vec::new(),
+            end: Some(end),
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: Some(text),
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
             stroke,
             fill,
-            margins,
-            span: None,
-            uuid: None,
+            effects,
+            converted_to_field: false,
         })
     }
 

@@ -192,6 +192,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same library draw-item family, point-list `xy` entries must stay on the real unquoted keyword-token path too. Quoted `"xy"` inside lib-symbol `bezier`/`polyline` point lists is not an upstream branch head and must be rejected.
 - In library `parseSymbolText()` / `parse_lib_text_draw_item()`, keep the text payload on its own `Invalid text string` symbol-token path before entering the body parser.
 - In library `parseSymbolTextBox()` / `parse_lib_text_box_content()`, keep the text payload on that same `Invalid text string` symbol-token path before entering the body parser.
+- In library `text_box` parsing, keep the body walk and `LibDrawItem` construction in `parseSymbolTextBox()` / `parse_lib_text_box_draw_item()` itself. Do not hide that routine behind a separate `parse_lib_text_box_content()` helper.
 - For the `paper` / `page` area, the remaining exactness after the local helper chain is ported is parser-wide token-category adoption. If a future discrepancy in this area requires broader `NeedSYMBOL` / `NeedNUMBER` parity outside the dedicated page helpers, treat that as a wider lexer/parser task rather than another local `parsePAGE_INFO()` branch.
 
 ## Expected Workflow
