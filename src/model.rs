@@ -301,6 +301,22 @@ pub struct TextBox {
     pub uuid: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableCell {
+    pub text: String,
+    pub at: [f64; 2],
+    pub angle: f64,
+    pub end: [f64; 2],
+    pub excluded_from_sim: bool,
+    pub has_effects: bool,
+    pub effects: Option<TextEffects>,
+    pub stroke: Option<Stroke>,
+    pub fill: Option<Fill>,
+    pub span: Option<[i32; 2]>,
+    pub margins: Option<[f64; 4]>,
+    pub uuid: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StrokeStyle {
     Default,
@@ -371,7 +387,7 @@ pub struct Table {
     pub column_count: Option<i32>,
     pub column_widths: Vec<f64>,
     pub row_heights: Vec<f64>,
-    pub cells: Vec<TextBox>,
+    pub cells: Vec<TableCell>,
     pub border_external: Option<bool>,
     pub border_header: Option<bool>,
     pub border_stroke: Option<Stroke>,

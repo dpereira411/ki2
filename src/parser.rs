@@ -13,8 +13,8 @@ use crate::model::{
     LibPinAlternate, LibSymbol, LibSymbolUnit, Line, LineKind, MirrorAxis, NoConnect, Page, Paper,
     Property, PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet,
     SheetInstance, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle,
-    Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, Text, TextBox, TextEffects,
-    TextHJustify, TextKind, TextVJustify, TitleBlock,
+    Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox,
+    TextEffects, TextHJustify, TextKind, TextVJustify, TitleBlock,
 };
 use crate::token::{AtomClass, TokKind, Token, lex};
 
@@ -132,6 +132,11 @@ enum SchTextTarget {
 enum ParsedSchText {
     Text(Text),
     Label(Label),
+}
+
+enum ParsedTextBoxOwner<'a> {
+    TextBox(&'a mut TextBox),
+    TableCell(&'a mut TableCell),
 }
 
 pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
@@ -2889,13 +2894,13 @@ impl KiCadSchematicParser {
             margins: None,
             uuid: None,
         };
-        self.parse_sch_text_box_content(&mut text_box, false)?;
+        self.parse_sch_text_box_content(ParsedTextBoxOwner::TextBox(&mut text_box), false)?;
         Ok(text_box)
     }
 
-    fn parse_sch_table_cell(&mut self) -> Result<TextBox, Error> {
+    fn parse_sch_table_cell(&mut self) -> Result<TableCell, Error> {
         let _ = self.need_unquoted_symbol_atom("table_cell")?;
-        let mut text_box = TextBox {
+        let mut text_box = TableCell {
             text: String::new(),
             at: [0.0, 0.0],
             angle: 0.0,
@@ -2909,18 +2914,27 @@ impl KiCadSchematicParser {
             margins: None,
             uuid: None,
         };
-        self.parse_sch_text_box_content(&mut text_box, true)?;
+        self.parse_sch_text_box_content(ParsedTextBoxOwner::TableCell(&mut text_box), true)?;
         Ok(text_box)
     }
 
     fn parse_sch_text_box_content(
         &mut self,
-        text_box: &mut TextBox,
+        mut owner: ParsedTextBoxOwner<'_>,
         table_cell: bool,
     ) -> Result<(), Error> {
-        text_box.text = self
-            .need_symbol_atom("text box text")
-            .map_err(|_| self.error_here("Invalid text string"))?;
+        match &mut owner {
+            ParsedTextBoxOwner::TextBox(text_box) => {
+                text_box.text = self
+                    .need_symbol_atom("text box text")
+                    .map_err(|_| self.error_here("Invalid text string"))?;
+            }
+            ParsedTextBoxOwner::TableCell(text_box) => {
+                text_box.text = self
+                    .need_symbol_atom("text box text")
+                    .map_err(|_| self.error_here("Invalid text string"))?;
+            }
+        }
         let mut pos = None;
         let mut end = None;
         let mut size = None;
@@ -2949,7 +2963,15 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "exclude_from_sim" => {
                     let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
-                    text_box.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    let excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => {
+                            text_box.excluded_from_sim = excluded_from_sim;
+                        }
+                        ParsedTextBoxOwner::TableCell(text_box) => {
+                            text_box.excluded_from_sim = excluded_from_sim;
+                        }
+                    }
                     self.need_right()?;
                 }
                 "start" => {
@@ -2967,7 +2989,10 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("text_box at")?;
                     pos = Some([parsed[0], parsed[1]]);
-                    text_box.angle = parsed[2];
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => text_box.angle = parsed[2],
+                        ParsedTextBoxOwner::TableCell(text_box) => text_box.angle = parsed[2],
+                    }
                     self.need_right()?;
                 }
                 "size" => {
@@ -2978,51 +3003,97 @@ impl KiCadSchematicParser {
                 }
                 "span" if table_cell => {
                     let _ = self.need_unquoted_symbol_atom("span")?;
-                    text_box.span = Some([
+                    let span = Some([
                         self.parse_i32_atom("column span")?,
                         self.parse_i32_atom("row span")?,
                     ]);
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => text_box.span = span,
+                        ParsedTextBoxOwner::TableCell(text_box) => text_box.span = span,
+                    }
                     self.need_right()?;
                 }
                 "stroke" => {
                     let _ = self.need_unquoted_symbol_atom("stroke")?;
                     let parsed_stroke = self.parse_stroke()?;
                     stroke_width = parsed_stroke.width;
-                    text_box.stroke = Some(parsed_stroke);
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => {
+                            text_box.stroke = Some(parsed_stroke)
+                        }
+                        ParsedTextBoxOwner::TableCell(text_box) => {
+                            text_box.stroke = Some(parsed_stroke)
+                        }
+                    }
                 }
                 "fill" => {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
-                    text_box.fill = Some(self.parse_fill()?);
-                    Self::fixup_sch_fill_mode(&mut text_box.fill, &text_box.stroke);
+                    let parsed_fill = Some(self.parse_fill()?);
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => {
+                            text_box.fill = parsed_fill;
+                            Self::fixup_sch_fill_mode(&mut text_box.fill, &text_box.stroke);
+                        }
+                        ParsedTextBoxOwner::TableCell(text_box) => {
+                            text_box.fill = parsed_fill;
+                            Self::fixup_sch_fill_mode(&mut text_box.fill, &text_box.stroke);
+                        }
+                    }
                 }
                 "effects" => {
                     let mut parsed_effects = TextEffects::default();
                     let mut visible = true;
-                    self.parse_eda_text(
-                        Some(&mut text_box.text),
-                        &mut parsed_effects,
-                        &mut visible,
-                        false,
-                        true,
-                    )?;
-                    text_box.has_effects = true;
-                    text_size_y = parsed_effects.font_size.map(|size| size[1]);
-                    text_box.effects = Some(parsed_effects);
+                    let parsed_font_size;
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => {
+                            self.parse_eda_text(
+                                Some(&mut text_box.text),
+                                &mut parsed_effects,
+                                &mut visible,
+                                false,
+                                true,
+                            )?;
+                            text_box.has_effects = true;
+                            parsed_font_size = parsed_effects.font_size;
+                            text_box.effects = Some(parsed_effects);
+                        }
+                        ParsedTextBoxOwner::TableCell(text_box) => {
+                            self.parse_eda_text(
+                                Some(&mut text_box.text),
+                                &mut parsed_effects,
+                                &mut visible,
+                                false,
+                                true,
+                            )?;
+                            text_box.has_effects = true;
+                            parsed_font_size = parsed_effects.font_size;
+                            text_box.effects = Some(parsed_effects);
+                        }
+                    }
+                    text_size_y = parsed_font_size.map(|size| size[1]);
                 }
                 "margins" => {
                     let _ = self.need_unquoted_symbol_atom("margins")?;
-                    text_box.margins = Some([
+                    let margins = Some([
                         self.parse_f64_atom("margin left")?,
                         self.parse_f64_atom("margin top")?,
                         self.parse_f64_atom("margin right")?,
                         self.parse_f64_atom("margin bottom")?,
                     ]);
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => text_box.margins = margins,
+                        ParsedTextBoxOwner::TableCell(text_box) => text_box.margins = margins,
+                    }
                     found_margins = true;
                     self.need_right()?;
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    text_box.uuid = Some(self.need_symbol_atom("uuid")?);
+                    let uuid = Some(self.need_symbol_atom("uuid")?);
+                    match &mut owner {
+                        ParsedTextBoxOwner::TextBox(text_box) => text_box.uuid = uuid,
+                        ParsedTextBoxOwner::TableCell(text_box) => text_box.uuid = uuid,
+                    }
                     self.need_right()?;
                 }
                 _ => {
@@ -3035,23 +3106,37 @@ impl KiCadSchematicParser {
             }
         }
 
-        text_box.at = pos.unwrap_or([0.0, 0.0]);
-        text_box.end = if found_end {
+        let at = pos.unwrap_or([0.0, 0.0]);
+        let end = if found_end {
             end.unwrap_or([0.0, 0.0])
         } else if found_size {
             let size = size.unwrap_or([0.0, 0.0]);
-            [text_box.at[0] + size[0], text_box.at[1] + size[1]]
+            [at[0] + size[0], at[1] + size[1]]
         } else {
             return Err(self.expecting("size"));
         };
+        match &mut owner {
+            ParsedTextBoxOwner::TextBox(text_box) => {
+                text_box.at = at;
+                text_box.end = end;
+            }
+            ParsedTextBoxOwner::TableCell(text_box) => {
+                text_box.at = at;
+                text_box.end = end;
+            }
+        }
         if !found_margins {
-            text_box.margins = Some({
+            let margins = Some({
                 let margin = Self::get_legacy_text_margin(
                     stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
                     text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
                 );
                 [margin, margin, margin, margin]
             });
+            match &mut owner {
+                ParsedTextBoxOwner::TextBox(text_box) => text_box.margins = margins,
+                ParsedTextBoxOwner::TableCell(text_box) => text_box.margins = margins,
+            }
         }
 
         Ok(())
