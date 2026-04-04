@@ -2426,7 +2426,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "columns, col_widths, row_heights, border, separators, uuid, header or cells",
+                "column_count, column_widths, row_heights, cells, border, separators, or uuid",
             )?;
             match head.as_str() {
                 "column_count" => {
@@ -2513,7 +2513,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "columns, col_widths, row_heights, border, separators, uuid, header or cells",
+                        "column_count, column_widths, row_heights, cells, border, separators, or uuid",
                     ));
                 }
             }
