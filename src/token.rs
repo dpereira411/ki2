@@ -25,21 +25,50 @@ pub struct Token {
 /// Pre-scan the raw file to extract the `(version NNNNN)` number before full tokenization.
 /// Returns the version number if found, or `None`.
 pub fn prescan_version(input: &str) -> Option<i32> {
-    // Quick scan for the pattern "(version DIGITS)" within the first few hundred bytes.
-    // The version token always appears very early in the file.
-    let haystack = if input.len() > 512 {
-        &input[..512]
-    } else {
-        input
-    };
-    let marker = "(version ";
-    if let Some(pos) = haystack.find(marker) {
-        let rest = &haystack[pos + marker.len()..];
-        let end = rest.find(')').unwrap_or(rest.len());
-        rest[..end].trim().parse::<i32>().ok()
-    } else {
-        None
+    let bytes = input.as_bytes();
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            b'(' => {
+                i += 1;
+
+                while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+                    i += 1;
+                }
+
+                let symbol_start = i;
+                while i < bytes.len()
+                    && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')')
+                {
+                    i += 1;
+                }
+
+                if symbol_start == i || &input[symbol_start..i] != "version" {
+                    continue;
+                }
+
+                while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+                    i += 1;
+                }
+
+                let number_start = i;
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+
+                if number_start == i {
+                    continue;
+                }
+
+                return input[number_start..i].parse::<i32>().ok();
+            }
+            _ => i += 1,
+        }
     }
+
+    None
 }
 
 /// The version at which `|` became an s-expression separator in KiCad.

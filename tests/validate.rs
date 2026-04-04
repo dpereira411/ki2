@@ -5121,6 +5121,23 @@ fn parses_embedded_file_checksum_type_and_bar_data() {
 }
 
 #[test]
+fn parses_bar_delimited_embedded_files_when_version_is_not_early() {
+    let spacer = " ".repeat(700);
+    let src = format!(
+        "(kicad_sch{spacer}\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"late-version-root\")\n  (embedded_files (file (name \"late.bin\") (data |abc123|)))\n)"
+    );
+    let path = temp_schematic("late_version_embedded_files", &src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse delayed version");
+
+    assert_eq!(schematic.screen.embedded_files.len(), 1);
+    let file = &schematic.screen.embedded_files[0];
+    assert_eq!(file.name.as_deref(), Some("late.bin"));
+    assert_eq!(file.data.as_deref(), Some("abc123"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
     let src = r#"(kicad_sch
   (version 20250114)
