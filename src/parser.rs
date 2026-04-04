@@ -3847,7 +3847,7 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let raw_path = self.need_symbol_atom("sheet instance path")?;
-            let path = self.normalize_instance_path(
+            let path = self.normalize_sch_instance_path(
                 raw_path,
                 self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH,
             );
@@ -3884,7 +3884,7 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let raw_path = self.need_symbol_atom("symbol instance path")?;
-            let path = self.normalize_instance_path(raw_path, true);
+            let path = self.normalize_sch_instance_path(raw_path, true);
             let mut reference = None;
             let mut unit = None;
             let mut value = None;
@@ -4855,7 +4855,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn normalize_instance_path(&self, path: String, prepend_root_uuid: bool) -> String {
+    fn normalize_sch_instance_path(&self, path: String, prepend_root_uuid: bool) -> String {
         if !prepend_root_uuid {
             return path;
         }
