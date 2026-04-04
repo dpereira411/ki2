@@ -1472,9 +1472,47 @@ impl KiCadSchematicParser {
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
         let electrical_type_token = self.need_unquoted_symbol_atom("pin type")?;
-        let electrical_type = self.parse_lib_pin_electrical_type(&electrical_type_token)?;
+        let electrical_type = if matches!(
+            electrical_type_token.as_str(),
+            "input"
+                | "output"
+                | "bidirectional"
+                | "tri_state"
+                | "passive"
+                | "unspecified"
+                | "power_in"
+                | "power_out"
+                | "open_collector"
+                | "open_emitter"
+                | "free"
+                | "no_connect"
+                | "unconnected"
+        ) {
+            electrical_type_token
+        } else {
+            return Err(self.expecting(
+                "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
+            ));
+        };
         let graphic_shape_token = self.need_unquoted_symbol_atom("pin shape")?;
-        let graphic_shape = self.parse_lib_pin_graphic_shape(&graphic_shape_token)?;
+        let graphic_shape = if matches!(
+            graphic_shape_token.as_str(),
+            "line"
+                | "inverted"
+                | "clock"
+                | "inverted_clock"
+                | "input_low"
+                | "clock_low"
+                | "output_low"
+                | "edge_clock_high"
+                | "non_logic"
+        ) {
+            graphic_shape_token
+        } else {
+            return Err(self.expecting(
+                "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
+            ));
+        };
         let mut at = None;
         let mut angle = None;
         let mut length = None;
@@ -1587,9 +1625,47 @@ impl KiCadSchematicParser {
                     }
 
                     let alt_type_token = self.need_unquoted_symbol_atom("alternate pin type")?;
-                    let alt_type = self.parse_lib_pin_electrical_type(&alt_type_token)?;
+                    let alt_type = if matches!(
+                        alt_type_token.as_str(),
+                        "input"
+                            | "output"
+                            | "bidirectional"
+                            | "tri_state"
+                            | "passive"
+                            | "unspecified"
+                            | "power_in"
+                            | "power_out"
+                            | "open_collector"
+                            | "open_emitter"
+                            | "free"
+                            | "no_connect"
+                            | "unconnected"
+                    ) {
+                        alt_type_token
+                    } else {
+                        return Err(self.expecting(
+                            "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
+                        ));
+                    };
                     let alt_shape_token = self.need_unquoted_symbol_atom("alternate pin shape")?;
-                    let alt_shape = self.parse_lib_pin_graphic_shape(&alt_shape_token)?;
+                    let alt_shape = if matches!(
+                        alt_shape_token.as_str(),
+                        "line"
+                            | "inverted"
+                            | "clock"
+                            | "inverted_clock"
+                            | "input_low"
+                            | "clock_low"
+                            | "output_low"
+                            | "edge_clock_high"
+                            | "non_logic"
+                    ) {
+                        alt_shape_token
+                    } else {
+                        return Err(self.expecting(
+                            "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
+                        ));
+                    };
                     alternates.push(LibPinAlternate {
                         name: alt_name,
                         electrical_type: alt_type,
@@ -4176,52 +4252,6 @@ impl KiCadSchematicParser {
         }
 
         None
-    }
-
-    fn parse_lib_pin_electrical_type(&self, value: &str) -> Result<String, Error> {
-        if matches!(
-            value,
-            "input"
-                | "output"
-                | "bidirectional"
-                | "tri_state"
-                | "passive"
-                | "unspecified"
-                | "power_in"
-                | "power_out"
-                | "open_collector"
-                | "open_emitter"
-                | "free"
-                | "no_connect"
-                | "unconnected"
-        ) {
-            Ok(value.to_string())
-        } else {
-            Err(self.expecting(
-                "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
-            ))
-        }
-    }
-
-    fn parse_lib_pin_graphic_shape(&self, value: &str) -> Result<String, Error> {
-        if matches!(
-            value,
-            "line"
-                | "inverted"
-                | "clock"
-                | "inverted_clock"
-                | "input_low"
-                | "clock_low"
-                | "output_low"
-                | "edge_clock_high"
-                | "non_logic"
-        ) {
-            Ok(value.to_string())
-        } else {
-            Err(self.expecting(
-                "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
-            ))
-        }
     }
 
     fn parse_effects_summary(&mut self) -> Result<EffectsSummary, Error> {
