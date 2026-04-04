@@ -358,8 +358,8 @@ impl KiCadSchematicParser {
                 "junction" => parsed_item = Some(SchItem::Junction(self.parse_junction()?)),
                 "no_connect" => parsed_item = Some(SchItem::NoConnect(self.parse_no_connect()?)),
                 "bus_entry" => parsed_item = Some(SchItem::BusEntry(self.parse_bus_entry()?)),
-                "wire" => parsed_item = Some(SchItem::Wire(self.parse_line(LineKind::Wire)?)),
-                "bus" => parsed_item = Some(SchItem::Bus(self.parse_line(LineKind::Bus)?)),
+                "wire" => parsed_item = Some(SchItem::Wire(self.parse_sch_line(LineKind::Wire)?)),
+                "bus" => parsed_item = Some(SchItem::Bus(self.parse_sch_line(LineKind::Bus)?)),
                 "polyline" => {
                     let shape = self.parse_polyline_shape()?;
                     if shape.points.len() < 2 {
@@ -1996,7 +1996,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_line(&mut self, kind: LineKind) -> Result<Line, Error> {
+    fn parse_sch_line(&mut self, kind: LineKind) -> Result<Line, Error> {
         let mut points = Vec::new();
         let mut has_stroke = false;
         let mut stroke = None;
