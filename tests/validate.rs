@@ -409,6 +409,74 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
 }
 
 #[test]
+fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "child-root")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-u")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 1 2 0))
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "sheet-a")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "2"))
+    (path "/sheet-a" (page "1")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+
+    for schematic in &loaded.schematics {
+        let global = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+                _ => None,
+            })
+            .expect("global label");
+
+        assert_eq!(
+            global
+                .properties
+                .iter()
+                .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                .map(|property| property.value.as_str()),
+            Some("[1,2]")
+        );
+    }
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_direct_ancestor_sheet_cycles() {
     let dir = env::temp_dir().join(format!(
         "ki2_cycle_{}",

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
@@ -52,6 +52,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.update_symbol_instance_data(&root_path, &sheet_paths);
     loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
     loader.set_sheet_number_and_count(&mut sheet_paths);
+    loader.recompute_intersheet_refs(&sheet_paths);
     Ok(LoadResult {
         root_path,
         schematics: loader.schematics,
@@ -379,6 +380,93 @@ impl SchematicLoader {
         for (index, sheet_path) in sheet_paths.iter_mut().enumerate() {
             sheet_path.sheet_number = index + 1;
             sheet_path.sheet_count = sheet_count;
+        }
+    }
+
+    fn recompute_intersheet_refs(&mut self, sheet_paths: &[LoadedSheetPath]) {
+        let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
+        let mut virtual_page_to_sheet_page = HashMap::new();
+
+        for sheet_path in sheet_paths {
+            virtual_page_to_sheet_page.insert(
+                sheet_path.sheet_number,
+                sheet_path
+                    .page
+                    .clone()
+                    .unwrap_or_else(|| sheet_path.sheet_number.to_string()),
+            );
+
+            let Some(schematic_index) = self
+                .loaded_by_canonical
+                .get(&sheet_path.schematic_path)
+                .copied()
+            else {
+                continue;
+            };
+
+            for item in &self.schematics[schematic_index].screen.items {
+                if let SchItem::Label(label) = item {
+                    if label.kind == crate::model::LabelKind::Global {
+                        page_refs_map
+                            .entry(label.text.clone())
+                            .or_default()
+                            .insert(sheet_path.sheet_number);
+                    }
+                }
+            }
+        }
+
+        for sheet_path in sheet_paths {
+            let Some(schematic_index) = self
+                .loaded_by_canonical
+                .get(&sheet_path.schematic_path)
+                .copied()
+            else {
+                continue;
+            };
+
+            for item in &mut self.schematics[schematic_index].screen.items {
+                let SchItem::Label(label) = item else {
+                    continue;
+                };
+                if label.kind != crate::model::LabelKind::Global {
+                    continue;
+                }
+
+                let value = if let Some(page_numbers) = page_refs_map.get(&label.text) {
+                    let refs = page_numbers
+                        .iter()
+                        .filter_map(|page_number| virtual_page_to_sheet_page.get(page_number))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("[{refs}]")
+                } else {
+                    "[?]".to_string()
+                };
+
+                if let Some(property) = label
+                    .properties
+                    .iter_mut()
+                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                {
+                    property.value = value;
+                } else {
+                    label.properties.push(Property {
+                        key: "Intersheet References".to_string(),
+                        value,
+                        kind: PropertyKind::GlobalLabelIntersheetRefs,
+                        is_private: false,
+                        at: label.iref_at,
+                        angle: None,
+                        visible: false,
+                        show_name: true,
+                        can_autoplace: true,
+                        has_effects: false,
+                        effects: None,
+                    });
+                }
+            }
         }
     }
 }
