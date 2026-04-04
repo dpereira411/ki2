@@ -307,7 +307,22 @@ impl SchematicLoader {
                 };
 
                 if let Some(reference) = instance.reference.as_ref() {
-                    symbol.set_field_text(PropertyKind::SymbolReference, reference.clone());
+                    if let Some(existing) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.kind == PropertyKind::SymbolReference)
+                    {
+                        existing.id = PropertyKind::SymbolReference
+                            .default_field_id()
+                            .or(existing.id);
+                        existing.key = PropertyKind::SymbolReference.canonical_key().to_string();
+                        existing.value = reference.clone();
+                    } else {
+                        symbol.properties.push(crate::model::Property::new(
+                            PropertyKind::SymbolReference,
+                            reference.clone(),
+                        ));
+                    }
                 }
 
                 if let Some(unit) = instance.unit {
@@ -316,13 +331,43 @@ impl SchematicLoader {
 
                 if let Some(value) = instance.value.as_ref() {
                     if !value.is_empty() {
-                        symbol.set_field_text(PropertyKind::SymbolValue, value.clone());
+                        if let Some(existing) = symbol
+                            .properties
+                            .iter_mut()
+                            .find(|property| property.kind == PropertyKind::SymbolValue)
+                        {
+                            existing.id =
+                                PropertyKind::SymbolValue.default_field_id().or(existing.id);
+                            existing.key = PropertyKind::SymbolValue.canonical_key().to_string();
+                            existing.value = value.clone();
+                        } else {
+                            symbol.properties.push(crate::model::Property::new(
+                                PropertyKind::SymbolValue,
+                                value.clone(),
+                            ));
+                        }
                     }
                 }
 
                 if let Some(footprint) = instance.footprint.as_ref() {
                     if !footprint.is_empty() {
-                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint.clone());
+                        if let Some(existing) = symbol
+                            .properties
+                            .iter_mut()
+                            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+                        {
+                            existing.id = PropertyKind::SymbolFootprint
+                                .default_field_id()
+                                .or(existing.id);
+                            existing.key =
+                                PropertyKind::SymbolFootprint.canonical_key().to_string();
+                            existing.value = footprint.clone();
+                        } else {
+                            symbol.properties.push(crate::model::Property::new(
+                                PropertyKind::SymbolFootprint,
+                                footprint.clone(),
+                            ));
+                        }
                     }
                 }
 
@@ -409,7 +454,20 @@ impl SchematicLoader {
                     continue;
                 };
 
-                symbol.set_field_text(PropertyKind::SymbolValue, pin_name);
+                if let Some(existing) = symbol
+                    .properties
+                    .iter_mut()
+                    .find(|property| property.kind == PropertyKind::SymbolValue)
+                {
+                    existing.id = PropertyKind::SymbolValue.default_field_id().or(existing.id);
+                    existing.key = PropertyKind::SymbolValue.canonical_key().to_string();
+                    existing.value = pin_name;
+                } else {
+                    symbol.properties.push(crate::model::Property::new(
+                        PropertyKind::SymbolValue,
+                        pin_name,
+                    ));
+                }
             }
         }
     }
@@ -485,7 +543,22 @@ impl SchematicLoader {
                 continue;
             };
 
-            symbol.set_field_text(PropertyKind::SymbolReference, normalized);
+            if let Some(existing) = symbol
+                .properties
+                .iter_mut()
+                .find(|property| property.kind == PropertyKind::SymbolReference)
+            {
+                existing.id = PropertyKind::SymbolReference
+                    .default_field_id()
+                    .or(existing.id);
+                existing.key = PropertyKind::SymbolReference.canonical_key().to_string();
+                existing.value = normalized;
+            } else {
+                symbol.properties.push(crate::model::Property::new(
+                    PropertyKind::SymbolReference,
+                    normalized,
+                ));
+            }
         }
     }
 
@@ -620,7 +693,22 @@ impl SchematicLoader {
                 };
 
                 if let Some(reference) = instance.reference {
-                    symbol.set_field_text(PropertyKind::SymbolReference, reference);
+                    if let Some(existing) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.kind == PropertyKind::SymbolReference)
+                    {
+                        existing.id = PropertyKind::SymbolReference
+                            .default_field_id()
+                            .or(existing.id);
+                        existing.key = PropertyKind::SymbolReference.canonical_key().to_string();
+                        existing.value = reference;
+                    } else {
+                        symbol.properties.push(crate::model::Property::new(
+                            PropertyKind::SymbolReference,
+                            reference,
+                        ));
+                    }
                 }
 
                 if let Some(unit) = instance.unit {
