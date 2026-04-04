@@ -648,7 +648,14 @@ impl KiCadSchematicParser {
         let _ = self.need_unquoted_symbol_atom("lib_symbols")?;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("symbol")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("symbol")),
+            };
             if head != "symbol" {
                 return Err(self.expecting("symbol"));
             }
@@ -757,6 +764,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_lib_symbol(&mut self) -> Result<LibSymbol, Error> {
+        let _ = self.need_unquoted_symbol_atom("symbol")?;
         let raw_name = self
             .need_symbol_atom("lib symbol name")
             .map_err(|_| self.error_here("Invalid symbol name"))?;
@@ -2532,6 +2540,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_table_cell(&mut self) -> Result<TextBox, Error> {
+        let _ = self.need_unquoted_symbol_atom("table_cell")?;
         self.parse_sch_text_box_content(true)
     }
 
@@ -2720,9 +2729,6 @@ impl KiCadSchematicParser {
                 "cells" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_unquoted_symbol_atom("table_cell")? != "table_cell" {
-                            return Err(self.expecting("table_cell"));
-                        }
                         let cell = self.parse_sch_table_cell()?;
                         self.need_right()?;
                         table.cells.push(cell);
