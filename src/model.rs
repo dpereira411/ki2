@@ -960,7 +960,10 @@ impl Sheet {
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldAutoplacement, LibSymbol, PropertyKind, Sheet, Symbol, TableCell, TextBox};
+    use super::{
+        FieldAutoplacement, LibSymbol, PropertyKind, Sheet, SheetPin, SheetPinShape, SheetSide,
+        Symbol, TableCell, TextBox,
+    };
 
     #[test]
     fn placed_symbols_start_with_mandatory_fields() {
@@ -1026,6 +1029,15 @@ mod tests {
     fn text_boxes_start_visible() {
         assert!(TextBox::new().visible);
         assert!(TableCell::new().visible);
+    }
+
+    #[test]
+    fn sheet_pins_start_with_default_geometry() {
+        let pin = SheetPin::new("IN".to_string(), SheetPinShape::Input);
+
+        assert_eq!(pin.at, [0.0, 0.0]);
+        assert_eq!(pin.side, SheetSide::Left);
+        assert!(pin.visible);
     }
 
     #[test]
@@ -1178,8 +1190,8 @@ impl PropertyKind {
 pub struct SheetPin {
     pub name: String,
     pub shape: SheetPinShape,
-    pub at: Option<[f64; 2]>,
-    pub side: Option<SheetSide>,
+    pub at: [f64; 2],
+    pub side: SheetSide,
     pub visible: bool,
     pub has_effects: bool,
     pub effects: Option<TextEffects>,
@@ -1191,8 +1203,8 @@ impl SheetPin {
         Self {
             name,
             shape,
-            at: None,
-            side: None,
+            at: [0.0, 0.0],
+            side: SheetSide::Left,
             visible: true,
             has_effects: false,
             effects: None,

@@ -2660,10 +2660,10 @@ fn parses_symbol_mirror_body_style_and_sheet_pins() {
         .expect("sheet");
     assert_eq!(sheet.pins.len(), 5);
     assert_eq!(sheet.pins[0].shape, SheetPinShape::Input);
-    assert_eq!(sheet.pins[0].side, Some(SheetSide::Left));
-    assert_eq!(sheet.pins[1].side, Some(SheetSide::Right));
-    assert_eq!(sheet.pins[2].side, Some(SheetSide::Top));
-    assert_eq!(sheet.pins[3].side, Some(SheetSide::Bottom));
+    assert_eq!(sheet.pins[0].side, SheetSide::Left);
+    assert_eq!(sheet.pins[1].side, SheetSide::Right);
+    assert_eq!(sheet.pins[2].side, SheetSide::Top);
+    assert_eq!(sheet.pins[3].side, SheetSide::Bottom);
     assert_eq!(sheet.pins[4].shape, SheetPinShape::Passive);
     assert!(sheet.pins[4].has_effects);
     assert!(!sheet.pins[4].visible);
@@ -2674,6 +2674,37 @@ fn parses_symbol_mirror_body_style_and_sheet_pins() {
             .and_then(|effects| effects.font_size),
         Some([1.0, 2.0])
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn sheet_pin_without_at_keeps_default_geometry() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input))
+)"#;
+    let path = temp_schematic("sheet_pin_without_at", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.pins.len(), 1);
+    assert_eq!(sheet.pins[0].at, [0.0, 0.0]);
+    assert_eq!(sheet.pins[0].side, SheetSide::Left);
 
     let _ = fs::remove_file(path);
 }

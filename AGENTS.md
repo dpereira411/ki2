@@ -329,6 +329,7 @@ of opportunistic branch chasing.
 - In `parseSchSheetPin()`, keep `Invalid sheet pin name` and `Empty sheet pin name` as distinct header branches, like upstream, instead of collapsing them into a generic atom parse failure.
 - In `parseSchSheetPin()`, the leading shape token should also be a real unquoted symbol/keyword token. Quoted strings like `"input"` are not upstream shape tokens and must be rejected.
 - In `parseSchSheetPin()`, keep `uuid` on the shared `NeedSYMBOL()` path too. Do not accept nested non-symbol tokens there through the generic string parser.
+- In `parseSchSheetPin()`, construct the owning sheet-pin object with real default geometry before parsing optional children. Do not model missing `at`/side as `None`; upstream `SCH_SHEET_PIN` already has a default position and side before the optional `at` branch runs.
 - Keep the sheet-pin routine boundary named after upstream too: `parseSchSheetPin()` should not stay on a repo-local helper name once it is the real owning branch.
 - In `parseSchematicSymbol()`, mandatory symbol field overwrite behavior should stay inline in the `property` branch and key off parsed field kind/ID, not a repo-local `upsert_symbol_property()` helper or key-string-only matching.
 - In `parseSchematicSymbol()`, nonmandatory symbol fields still overwrite by field name, like upstream `GetField( field->GetName() )`; do not blindly append duplicate user fields with the same name.

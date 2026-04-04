@@ -4264,8 +4264,8 @@ impl KiCadSchematicParser {
                         270 => SheetSide::Bottom,
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     };
-                    sheet_pin.at = Some([parsed[0], parsed[1]]);
-                    sheet_pin.side = Some(parsed_side);
+                    sheet_pin.at = [parsed[0], parsed[1]];
+                    sheet_pin.side = parsed_side;
                     self.need_right()?;
                 }
                 "uuid" => {
