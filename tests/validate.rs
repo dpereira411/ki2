@@ -753,6 +753,55 @@ fn fixes_legacy_global_power_symbol_value_after_load() {
 }
 
 #[test]
+fn fixes_legacy_global_label_intersheet_ref_position_after_load() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_global_label_iref_fixup_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-u")
+  (global_label "VCC" (at 10 20 0))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let label = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let intersheet_refs = label
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("intersheet refs field");
+
+    assert_eq!(intersheet_refs.at, Some([10.0, 20.0]));
+    assert!(!intersheet_refs.visible);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn annotates_power_symbol_references_after_load() {
     let dir = env::temp_dir().join(format!(
         "ki2_power_annotation_{}",

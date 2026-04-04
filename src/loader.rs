@@ -709,6 +709,30 @@ impl SchematicLoader {
                     );
                 }
             }
+
+            for item in &mut self.schematics[schematic_index].screen.items {
+                let SchItem::Label(label) = item else {
+                    continue;
+                };
+
+                if label.kind != crate::model::LabelKind::Global {
+                    continue;
+                }
+
+                let Some(intersheet_refs) = label
+                    .properties
+                    .iter_mut()
+                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                else {
+                    continue;
+                };
+
+                if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
+                    && !intersheet_refs.visible
+                {
+                    intersheet_refs.at = label.iref_at.or(Some(label.at));
+                }
+            }
         }
     }
 }
