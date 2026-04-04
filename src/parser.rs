@@ -21,7 +21,7 @@ const VERSION_GENERATOR_VERSION: i32 = 20231120;
 const VERSION_TABLES: i32 = 20240101;
 const VERSION_RULE_AREAS: i32 = 20240417;
 const VERSION_EMBEDDED_FILES: i32 = 20240620;
-const VERSION_ROOT_UUID: i32 = 20210406;
+
 const VERSION_PAGE_RENAMED_TO_PAPER: i32 = 20200506;
 const VERSION_EMPTY_TILDE_IS_EMPTY: i32 = 20250318;
 const VERSION_SHEET_INSTANCE_ROOT_PATH: i32 = 20221002;
@@ -33,6 +33,7 @@ const VERSION_VARIANT_IN_BOM_FIX: i32 = 20260306;
 const VERSION_SYMBOL_PIN_UUID: i32 = 20210126;
 const VERSION_SET_LEGACY_SYMBOL_INSTANCE_DATA: i32 = 20200828;
 const VERSION_CUSTOM_BODY_STYLES: i32 = 20250827;
+const VERSION_WRONG_SHEET_FIELD_IDS: i32 = 20200310;
 const DEFAULT_LINE_WIDTH_MM: f64 = 0.1524;
 const DEFAULT_TEXT_SIZE_MM: f64 = 1.27;
 const MIN_PAGE_SIZE_MM: f64 = 25.4;
@@ -126,6 +127,12 @@ struct EffectsSummary {
     effects: TextEffects,
 }
 
+#[derive(Clone, Copy)]
+enum SchTextTarget {
+    Text,
+    Label(LabelKind),
+}
+
 pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
     let raw = std::fs::read_to_string(path).map_err(|source| Error::Io {
         path: path.to_path_buf(),
@@ -207,11 +214,10 @@ impl KiCadSchematicParser {
             .clone()
             .ok_or_else(|| self.error_here("missing generator"))?;
 
-        if version >= VERSION_ROOT_UUID && self.root_uuid.is_none() {
-            return Err(self.error_here("missing uuid"));
-        }
-
-        if version < VERSION_ROOT_UUID && self.root_uuid.is_none() {
+        // Upstream: if file has no uuid, auto-generate one regardless of version.
+        // (The C++ code at the end of ParseSchematic always fills in root UUID from
+        // the screen's auto-generated UUID when fileHasUuid is false.)
+        if self.root_uuid.is_none() {
             let generated = Uuid::new_v4().to_string();
             self.screen.uuid = Some(generated.clone());
             self.root_uuid = Some(generated);
@@ -287,23 +293,10 @@ impl KiCadSchematicParser {
                 "wire" => parsed_item = Some(SchItem::Wire(self.parse_line(LineKind::Wire)?)),
                 "bus" => parsed_item = Some(SchItem::Bus(self.parse_line(LineKind::Bus)?)),
                 "polyline" => parsed_item = Some(self.parse_polyline_item()?),
-                "label" => parsed_item = Some(SchItem::Label(self.parse_label(LabelKind::Local)?)),
-                "global_label" => {
-                    parsed_item = Some(SchItem::Label(self.parse_label(LabelKind::Global)?))
+                "label" | "global_label" | "hierarchical_label" | "directive_label"
+                | "class_label" | "netclass_flag" | "text" => {
+                    parsed_item = Some(self.parse_sch_text_item(effective_head)?)
                 }
-                "hierarchical_label" => {
-                    parsed_item = Some(SchItem::Label(self.parse_label(LabelKind::Hierarchical)?))
-                }
-                "directive_label" => {
-                    parsed_item = Some(SchItem::Label(self.parse_label(LabelKind::Directive)?))
-                }
-                "class_label" => {
-                    parsed_item = Some(SchItem::Label(self.parse_label(LabelKind::NetclassFlag)?))
-                }
-                "netclass_flag" => {
-                    parsed_item = Some(SchItem::Label(self.parse_label(LabelKind::NetclassFlag)?))
-                }
-                "text" => parsed_item = Some(SchItem::Text(self.parse_text(TextKind::Text)?)),
                 "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_text_box()?)),
                 "table" => parsed_item = Some(SchItem::Table(self.parse_table()?)),
                 "image" => parsed_item = Some(SchItem::Image(self.parse_image()?)),
@@ -337,14 +330,14 @@ impl KiCadSchematicParser {
     }
 
     fn parse_generator(&mut self) -> Result<(), Error> {
-        self.generator = Some(self.parse_string_atom("generator")?);
+        self.generator = Some(self.need_symbol_atom("generator")?);
         Ok(())
     }
 
     fn parse_legacy_host(&mut self) -> Result<(), Error> {
-        self.generator = Some(self.parse_string_atom("host")?);
-        if self.require_known_version()? < 20200827 && self.at_atom() {
-            let _ = self.need_atom()?;
+        self.generator = Some(self.need_symbol_atom("host")?);
+        if self.require_known_version()? < 20200827 {
+            let _ = self.need_symbol_atom("host version")?;
         }
         Ok(())
     }
@@ -356,7 +349,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_uuid(&mut self) -> Result<(), Error> {
-        let uuid = self.parse_string_atom("uuid")?;
+        let uuid = self.need_symbol_atom("uuid")?;
         self.screen.uuid = Some(uuid.clone());
         self.root_uuid = Some(uuid);
         Ok(())
@@ -391,18 +384,29 @@ impl KiCadSchematicParser {
                 "company" => title_block.company = Some(self.parse_string_atom("company")?),
                 "comment" => {
                     let idx = self.parse_i32_atom("comment index")?;
-                    if !(1..=9).contains(&idx) {
-                        return Err(self.error_here("Invalid title block comment number"));
-                    }
                     let value = self.parse_string_atom("comment value")?;
+
+                    let comment_number = match idx {
+                        1 => 1,
+                        2 => 2,
+                        3 => 3,
+                        4 => 4,
+                        5 => 5,
+                        6 => 6,
+                        7 => 7,
+                        8 => 8,
+                        9 => 9,
+                        _ => return Err(self.error_here("Invalid title block comment number")),
+                    };
+
                     if let Some(existing) = title_block
                         .comments
                         .iter_mut()
-                        .find(|(existing_idx, _)| *existing_idx == idx)
+                        .find(|(existing_idx, _)| *existing_idx == comment_number)
                     {
                         existing.1 = value;
                     } else {
-                        title_block.comments.push((idx, value));
+                        title_block.comments.push((comment_number, value));
                     }
                 }
                 _ => return Err(self.expecting("title, date, rev, company, or comment")),
@@ -500,8 +504,18 @@ impl KiCadSchematicParser {
     }
 
     fn parse_lib_symbol(&mut self) -> Result<LibSymbol, Error> {
-        let name =
-            self.parse_library_id_atom("lib symbol name", "Invalid library identifier", true)?;
+        let raw_name = self
+            .need_symbol_atom("lib symbol name")
+            .map_err(|_| self.error_here("Invalid symbol name"))?;
+        let name = raw_name.replace("{slash}", "/");
+
+        if let Some(ch) = Self::find_invalid_library_identifier_char(&name) {
+            return Err(self.error_here(format!("Symbol {name} contains invalid character '{ch}'")));
+        }
+
+        if name.is_empty() {
+            return Err(self.error_here("Invalid library identifier"));
+        }
 
         let mut extends = None;
         let mut power = false;
@@ -521,7 +535,7 @@ impl KiCadSchematicParser {
         let mut description = None;
         let mut fp_filters = Vec::new();
         let mut locked_units = false;
-        let mut properties = Vec::new();
+        let mut properties: Vec<Property> = Vec::new();
         let mut units = Vec::new();
         let mut embedded_fonts = None;
         let mut embedded_files = Vec::new();
@@ -533,7 +547,7 @@ impl KiCadSchematicParser {
                 "power" => {
                     power = true;
                     if self.at_atom() {
-                        match self.need_atom()?.as_str() {
+                        match self.need_unquoted_symbol_atom("global or local")?.as_str() {
                             "local" => local_power = true,
                             "global" => local_power = false,
                             _ => return Err(self.expecting("global or local")),
@@ -543,18 +557,18 @@ impl KiCadSchematicParser {
                 }
                 "body_styles" => {
                     while !self.at_right() {
-                        let token = self.need_atom()?;
-                        if token == "demorgan" {
+                        if self.at_unquoted_symbol_with("demorgan") {
+                            let _ = self.need_atom()?;
                             has_demorgan = true;
                         } else {
-                            body_style_names.push(token);
+                            body_style_names.push(self.need_symbol_atom("property value")?);
                         }
                     }
                     self.need_right()?;
                 }
                 "pin_names" => {
                     while !self.at_right() {
-                        if self.at_atom_with("hide") {
+                        if self.at_unquoted_symbol_with("hide") {
                             self.need_atom()?;
                             show_pin_names = false;
                             continue;
@@ -577,7 +591,7 @@ impl KiCadSchematicParser {
                 }
                 "pin_numbers" => {
                     while !self.at_right() {
-                        if self.at_atom_with("hide") {
+                        if self.at_unquoted_symbol_with("hide") {
                             self.need_atom()?;
                             show_pin_numbers = false;
                             continue;
@@ -620,7 +634,7 @@ impl KiCadSchematicParser {
                         self.need_left()?;
                         let mut group = Vec::new();
                         while !self.at_right() {
-                            group.push(self.parse_string_atom("pin name")?);
+                            group.push(self.need_symbol_atom("list of pin names")?);
                         }
                         self.need_right()?;
                         jumper_pin_groups.push(group);
@@ -645,11 +659,11 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "extends" => {
-                    extends = Some(self.parse_library_id_atom(
-                        "parent symbol name",
-                        "Invalid parent symbol name",
-                        false,
-                    )?);
+                    extends = Some(
+                        self.need_symbol_atom("parent symbol name")
+                            .map_err(|_| self.error_here("Invalid parent symbol name"))?
+                            .replace("{slash}", "/"),
+                    );
                     self.need_right()?;
                 }
                 "symbol" => {
@@ -678,7 +692,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "power, body_styles, pin_names, pin_numbers, exclude_from_sim, in_bom, on_board, in_pos_files, duplicate_pin_numbers_are_jumpers, jumper_pin_groups, property, extends, symbol, arc, bezier, circle, pin, polyline, rectangle, text, text_box, embedded_fonts or embedded_files",
+                        "pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text",
                     ))
                 }
             }
@@ -716,7 +730,8 @@ impl KiCadSchematicParser {
         parent_name: &str,
     ) -> Result<crate::model::LibSymbolUnit, Error> {
         let name = self
-            .parse_string_atom("symbol unit name")?
+            .need_symbol_atom("symbol unit name")
+            .map_err(|_| self.error_here("Invalid symbol unit name"))?
             .replace("{slash}", "/");
 
         if !name.starts_with(parent_name) {
@@ -752,8 +767,11 @@ impl KiCadSchematicParser {
             let head = self.need_atom()?;
             match head.as_str() {
                 "unit_name" => {
-                    if self.at_atom() {
-                        unit_name = Some(self.need_atom()?);
+                    if matches!(
+                        self.current().atom_class,
+                        Some(AtomClass::Symbol | AtomClass::Quoted)
+                    ) {
+                        unit_name = Some(self.need_symbol_atom("unit_name")?);
                     }
                     self.need_right()?;
                 }
@@ -763,9 +781,11 @@ impl KiCadSchematicParser {
                     draw_item_kinds.push(head.to_string());
                     draw_items.push(item);
                 }
-                _ => return Err(self.expecting(
-                    "arc, bezier, circle, pin, polyline, rectangle, text, text_box, or unit_name",
-                )),
+                _ => {
+                    return Err(
+                        self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")
+                    );
+                }
             }
         }
 
@@ -887,8 +907,6 @@ impl KiCadSchematicParser {
         item.arc_center = Some([0.0, 0.0]);
         item.arc_start_angle = Some(0.0);
         item.arc_end_angle = Some(90.0);
-        let mut has_mid_point = false;
-        let mut has_angles = false;
         let mut saw_start = false;
         let mut saw_mid = false;
         let mut saw_end = false;
@@ -903,7 +921,6 @@ impl KiCadSchematicParser {
                 }
                 "mid" => {
                     item.points[1] = self.parse_xy2("arc mid")?;
-                    has_mid_point = true;
                     saw_mid = true;
                     self.need_right()?;
                 }
@@ -928,7 +945,6 @@ impl KiCadSchematicParser {
                                 item.arc_start_angle =
                                     Some(self.parse_f64_atom("start radius angle")?);
                                 item.arc_end_angle = Some(self.parse_f64_atom("end radius angle")?);
-                                has_angles = true;
                                 self.need_right()?;
                             }
                             _ => return Err(self.expecting("at, length, or angles")),
@@ -940,10 +956,6 @@ impl KiCadSchematicParser {
                 "fill" => item.fill = Some(self.parse_fill()?),
                 _ => return Err(self.expecting("start, mid, end, radius, stroke, or fill")),
             }
-        }
-
-        if !has_mid_point && !has_angles {
-            return Err(self.error_here("arc without midpoint or angles is not supported"));
         }
 
         if !saw_mid {
@@ -1088,7 +1100,9 @@ impl KiCadSchematicParser {
             is_private = true;
         }
 
-        let mut text = self.parse_string_atom("text string")?;
+        let mut text = self
+            .need_symbol_atom("text string")
+            .map_err(|_| self.error_here("Invalid text string"))?;
         if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
             text = self.convert_to_new_overbar_notation(text);
         }
@@ -1194,7 +1208,9 @@ impl KiCadSchematicParser {
     }
 
     fn parse_lib_text_box_content(&mut self) -> Result<TextBox, Error> {
-        let text = self.parse_string_atom("text box text")?;
+        let text = self
+            .need_symbol_atom("text box text")
+            .map_err(|_| self.error_here("Invalid text string"))?;
         let mut at = None;
         let mut angle = 0.0;
         let mut end = None;
@@ -1257,7 +1273,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        let at = at.ok_or_else(|| self.error_here("text_box missing at"))?;
+        let at = at.unwrap_or([0.0, 0.0]);
         let end = match (end, size) {
             (Some(end), _) => end,
             (None, Some(size)) => [at[0] + size[0], at[1] + size[1]],
@@ -1292,9 +1308,9 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        let electrical_type_token = self.parse_string_atom("pin type")?;
+        let electrical_type_token = self.need_unquoted_symbol_atom("pin type")?;
         let electrical_type = self.parse_lib_pin_electrical_type(&electrical_type_token)?;
-        let graphic_shape_token = self.parse_string_atom("pin shape")?;
+        let graphic_shape_token = self.need_unquoted_symbol_atom("pin shape")?;
         let graphic_shape = self.parse_lib_pin_graphic_shape(&graphic_shape_token)?;
         let mut at = None;
         let mut angle = None;
@@ -1334,7 +1350,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "name" => {
-                    let mut parsed = self.parse_string_atom("pin name")?;
+                    let mut parsed = self
+                        .need_symbol_atom("pin name")
+                        .map_err(|_| self.error_here("Invalid pin name"))?;
                     if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         < VERSION_EMPTY_TILDE_IS_EMPTY
                         && parsed == "~"
@@ -1360,7 +1378,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "number" => {
-                    let mut parsed = self.parse_string_atom("pin number")?;
+                    let mut parsed = self
+                        .need_symbol_atom("pin number")
+                        .map_err(|_| self.error_here("Invalid pin number"))?;
                     if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         < VERSION_EMPTY_TILDE_IS_EMPTY
                         && parsed == "~"
@@ -1386,7 +1406,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "alternate" => {
-                    let mut alt_name = self.parse_string_atom("alternate pin name")?;
+                    let mut alt_name = self
+                        .need_symbol_atom("alternate pin name")
+                        .map_err(|_| self.error_here("Invalid alternate pin name"))?;
                     if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         < VERSION_EMPTY_TILDE_IS_EMPTY
                         && alt_name == "~"
@@ -1398,9 +1420,9 @@ impl KiCadSchematicParser {
                         alt_name = self.convert_to_new_overbar_notation(alt_name);
                     }
 
-                    let alt_type_token = self.parse_string_atom("alternate pin type")?;
+                    let alt_type_token = self.need_unquoted_symbol_atom("alternate pin type")?;
                     let alt_type = self.parse_lib_pin_electrical_type(&alt_type_token)?;
-                    let alt_shape_token = self.parse_string_atom("alternate pin shape")?;
+                    let alt_shape_token = self.need_unquoted_symbol_atom("alternate pin shape")?;
                     let alt_shape = self.parse_lib_pin_graphic_shape(&alt_shape_token)?;
                     alternates.push(LibPinAlternate {
                         name: alt_name,
@@ -1449,14 +1471,42 @@ impl KiCadSchematicParser {
             self.need_atom()?;
             is_private = true;
         }
-        let key = self.parse_string_atom("property name")?;
+        let key = self
+            .need_symbol_atom("property name")
+            .map_err(|_| self.error_here("Invalid property name"))?;
         if key.is_empty() {
-            return Err(self.error_here("empty property name"));
+            return Err(self.error_here("Empty property name"));
         }
-        let value = self.parse_symbol_text_atom("property value")?;
-        let kind = self.classify_property_kind(FieldParent::Symbol, &key);
+        let value = self
+            .need_symbol_atom("property value")
+            .map_err(|_| self.error_here("Invalid property value"))
+            .map(|raw| {
+                if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                    < VERSION_EMPTY_TILDE_IS_EMPTY
+                    && raw == "~"
+                {
+                    String::new()
+                } else {
+                    raw
+                }
+            })?;
+        let key_lower = key.to_ascii_lowercase();
+        let kind = match key_lower.as_str() {
+            "reference" => PropertyKind::SymbolReference,
+            "value" => PropertyKind::SymbolValue,
+            "footprint" => PropertyKind::SymbolFootprint,
+            "datasheet" => PropertyKind::SymbolDatasheet,
+            _ => PropertyKind::User,
+        };
+        let key = match kind {
+            PropertyKind::SymbolReference => "Reference".to_string(),
+            PropertyKind::SymbolValue => "Value".to_string(),
+            PropertyKind::SymbolFootprint => "Footprint".to_string(),
+            PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
+            _ => key,
+        };
         let mut property = Property {
-            key: Self::canonical_symbol_property_name(&key),
+            key,
             value,
             kind,
             is_private: matches!(kind, PropertyKind::User) && is_private,
@@ -1486,13 +1536,28 @@ impl KiCadSchematicParser {
                     property.visible = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
+                "show_name" => {
+                    property.show_name = self.parse_maybe_absent_bool(true)?;
+                    self.need_right()?;
+                }
+                "do_not_autoplace" => {
+                    property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
+                    self.need_right()?;
+                }
                 "effects" => {
                     let effects = self.parse_effects_summary()?;
                     property.has_effects = true;
+                    if effects.effects.hidden {
+                        property.visible = false;
+                    }
                     property.effects = Some(effects.effects);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("id, at, hide or effects")),
+                _ => {
+                    return Err(
+                        self.expecting("id, at, hide, show_name, do_not_autoplace, or effects")
+                    );
+                }
             }
         }
 
@@ -1500,7 +1565,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
-        let mut name = self.parse_string_atom("bus alias name")?;
+        let mut name = self.need_symbol_atom("bus alias name")?;
         let version = self.require_known_version()?;
         if version < VERSION_NEW_OVERBAR_NOTATION {
             name = self.convert_to_new_overbar_notation(name);
@@ -1513,16 +1578,15 @@ impl KiCadSchematicParser {
 
         let mut members = Vec::new();
         while !self.at_right() {
-            let mut member = self.parse_string_atom("quoted string")?;
+            let mut member = self
+                .need_symbol_atom("quoted string")
+                .map_err(|_| self.expecting("quoted string"))?;
             if version < VERSION_NEW_OVERBAR_NOTATION {
                 member = self.convert_to_new_overbar_notation(member);
             }
             members.push(member);
         }
         self.need_right()?;
-        if members.is_empty() {
-            return Err(self.error_here("bus alias requires at least one member"));
-        }
         self.screen.bus_aliases.push(BusAlias { name, members });
         Ok(())
     }
@@ -1554,14 +1618,14 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, diameter, color or uuid")),
             }
         }
         Ok(Junction {
-            at: at.ok_or_else(|| self.error_here("junction missing at"))?,
+            at: at.unwrap_or([0.0, 0.0]),
             diameter,
             color,
             uuid,
@@ -1580,14 +1644,14 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at or uuid")),
             }
         }
         Ok(NoConnect {
-            at: at.ok_or_else(|| self.error_here("no_connect missing at"))?,
+            at: at.unwrap_or([0.0, 0.0]),
             uuid,
         })
     }
@@ -1612,18 +1676,24 @@ impl KiCadSchematicParser {
                 }
                 "stroke" => {
                     has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    let mut parsed_stroke = self.parse_stroke()?;
+                    if self.require_known_version()? <= 20211123
+                        && parsed_stroke.style == StrokeStyle::Default
+                    {
+                        parsed_stroke.style = StrokeStyle::Dash;
+                    }
+                    stroke = Some(parsed_stroke);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, size, uuid or stroke")),
             }
         }
         Ok(BusEntry {
-            at: at.ok_or_else(|| self.error_here("bus_entry missing at"))?,
-            size: size.ok_or_else(|| self.error_here("bus_entry missing size"))?,
+            at: at.unwrap_or([0.0, 0.0]),
+            size: size.unwrap_or([0.0, 0.0]),
             has_stroke,
             stroke,
             uuid,
@@ -1640,28 +1710,45 @@ impl KiCadSchematicParser {
             let head = self.need_atom()?;
             match head.as_str() {
                 "pts" => {
-                    points = self.parse_pts()?;
+                    self.need_left()?;
+                    if self.need_atom()? != "xy" {
+                        return Err(self.expecting("xy"));
+                    }
+                    let start = self.parse_xy2("xy")?;
                     self.need_right()?;
+                    self.need_left()?;
+                    if self.need_atom()? != "xy" {
+                        return Err(self.expecting("xy"));
+                    }
+                    let end = self.parse_xy2("xy")?;
+                    self.need_right()?;
+                    self.need_right()?;
+                    points = vec![start, end];
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "stroke" => {
                     has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    let mut parsed_stroke = self.parse_stroke()?;
+                    if self.require_known_version()? <= 20211123
+                        && parsed_stroke.style == StrokeStyle::Default
+                    {
+                        parsed_stroke.style = StrokeStyle::Dash;
+                    }
+                    stroke = Some(parsed_stroke);
                 }
-                _ => return Err(self.expecting("pts, uuid or stroke")),
+                _ => return Err(self.expecting("at, uuid or stroke")),
             }
-        }
-        if points.len() != 2 {
-            return Err(
-                self.error_here(format!("{:?} requires exactly two points", kind).to_lowercase())
-            );
         }
         Ok(Line {
             kind,
-            points,
+            points: if points.is_empty() {
+                vec![[0.0, 0.0], [0.0, 0.0]]
+            } else {
+                points
+            },
             has_stroke,
             stroke,
             uuid,
@@ -1671,7 +1758,7 @@ impl KiCadSchematicParser {
     fn parse_polyline_item(&mut self) -> Result<SchItem, Error> {
         let shape = self.parse_polyline_shape()?;
         if shape.points.len() < 2 {
-            return Err(self.error_here("schematic polyline has too few points"));
+            return Err(self.error_here("Schematic polyline has too few points"));
         }
         if shape.points.len() == 2 {
             return Ok(SchItem::Polyline(Line {
@@ -1685,11 +1772,24 @@ impl KiCadSchematicParser {
         Ok(SchItem::Shape(shape))
     }
 
-    fn parse_label(&mut self, kind: LabelKind) -> Result<Label, Error> {
-        let mut text = self.parse_string_atom("label text")?;
+    fn parse_sch_text_item(&mut self, kind: &str) -> Result<SchItem, Error> {
+        let target = match kind {
+            "text" => SchTextTarget::Text,
+            "label" => SchTextTarget::Label(LabelKind::Local),
+            "global_label" => SchTextTarget::Label(LabelKind::Global),
+            "hierarchical_label" => SchTextTarget::Label(LabelKind::Hierarchical),
+            "directive_label" => SchTextTarget::Label(LabelKind::Directive),
+            "class_label" | "netclass_flag" => SchTextTarget::Label(LabelKind::NetclassFlag),
+            _ => return Err(self.error_here(format!("invalid schematic text kind `{kind}`"))),
+        };
+
+        let mut text = self
+            .need_symbol_atom("text value")
+            .map_err(|_| self.error_here("Invalid text string"))?;
         if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
             text = self.convert_to_new_overbar_notation(text);
         }
+
         let mut at = None;
         let mut shape = None;
         let mut pin_length = None;
@@ -1700,7 +1800,8 @@ impl KiCadSchematicParser {
         let mut has_effects = false;
         let mut effects = None;
         let mut uuid = None;
-        let mut properties = Vec::new();
+        let mut properties: Vec<Property> = Vec::new();
+
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_atom()?;
@@ -1710,19 +1811,26 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "at" => {
-                    at = Some(self.parse_xy3("text at")?);
+                    let parsed = self.parse_xy3("text at")?;
+                    at = Some([parsed[0], parsed[1], Self::keep_upright_angle(parsed[2])]);
                     self.need_right()?;
                 }
                 "shape" => {
-                    if matches!(kind, LabelKind::Local) {
-                        return Err(self.expecting("at, shape, iref, uuid or effects"));
+                    let SchTextTarget::Label(label_kind) = target else {
+                        return Err(self.unexpected("shape"));
+                    };
+                    if matches!(label_kind, LabelKind::Local) {
+                        return Err(self.unexpected("shape"));
                     }
                     shape = Some(self.parse_label_shape()?);
                     self.need_right()?;
                 }
                 "length" => {
-                    if !matches!(kind, LabelKind::Directive | LabelKind::NetclassFlag) {
-                        return Err(self.expecting("at, shape, iref, uuid or effects"));
+                    let SchTextTarget::Label(label_kind) = target else {
+                        return Err(self.unexpected("length"));
+                    };
+                    if !matches!(label_kind, LabelKind::Directive | LabelKind::NetclassFlag) {
+                        return Err(self.unexpected("length"));
                     }
                     pin_length = Some(self.parse_f64_atom("pin length")?);
                     self.need_right()?;
@@ -1739,7 +1847,7 @@ impl KiCadSchematicParser {
                     visible = true;
                 }
                 "iref" => {
-                    if matches!(kind, LabelKind::Global) {
+                    if matches!(target, SchTextTarget::Label(LabelKind::Global)) {
                         iref_at = Some(self.parse_xy2("iref")?);
                         self.need_right()?;
                         Self::upsert_global_label_property(
@@ -1758,16 +1866,17 @@ impl KiCadSchematicParser {
                                 effects: None,
                             },
                         );
-                    } else {
-                        return Err(self.expecting("at, shape, iref, uuid or effects"));
                     }
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "property" => {
-                    if matches!(kind, LabelKind::Global) {
+                    let SchTextTarget::Label(label_kind) = target else {
+                        return Err(self.unexpected("property"));
+                    };
+                    if matches!(label_kind, LabelKind::Global) {
                         let property = self.parse_property_body(FieldParent::GlobalLabel)?;
                         Self::upsert_global_label_property(&mut properties, property);
                     } else {
@@ -1779,88 +1888,44 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
             }
         }
-        let [x, y, raw_angle] = at.ok_or_else(|| self.error_here("label missing at"))?;
-        let angle = Self::keep_upright_angle(raw_angle);
-        if !matches!(kind, LabelKind::Local) && shape.is_none() {
-            return Err(self.error_here("non-local labels require a shape"));
-        }
-        Ok(Label {
-            kind,
-            text,
-            at: [x, y],
-            angle,
-            spin: Self::label_spin_from_angle(angle),
-            shape,
-            pin_length,
-            iref_at,
-            excluded_from_sim,
-            fields_autoplaced: if properties.is_empty() {
-                true
-            } else {
-                fields_autoplaced
-            },
-            visible,
-            has_effects,
-            effects,
-            uuid,
-            properties,
-        })
-    }
 
-    fn parse_text(&mut self, kind: TextKind) -> Result<Text, Error> {
-        let mut text = self.parse_string_atom("text value")?;
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
-            text = self.convert_to_new_overbar_notation(text);
-        }
-        let mut at = None;
-        let mut excluded_from_sim = false;
-        let mut fields_autoplaced = false;
-        let mut visible = true;
-        let mut has_effects = false;
-        let mut effects = None;
-        let mut uuid = None;
-        while !self.at_right() {
-            self.need_left()?;
-            let head = self.need_atom()?;
-            match head.as_str() {
-                "exclude_from_sim" => {
-                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
-                    self.need_right()?;
-                }
-                "at" => {
-                    let parsed = self.parse_xy3("text at")?;
-                    at = Some([parsed[0], parsed[1], Self::keep_upright_angle(parsed[2])]);
-                    self.need_right()?;
-                }
-                "fields_autoplaced" => {
-                    fields_autoplaced = self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
-                }
-                "effects" => {
-                    let parsed_effects = self.parse_effects_summary()?;
-                    has_effects = true;
-                    self.need_right()?;
-                    effects = Some(parsed_effects.effects);
-                    visible = true;
-                }
-                "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
-                    self.need_right()?;
-                }
-                _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
+        match target {
+            SchTextTarget::Text => Ok(SchItem::Text(Text {
+                kind: TextKind::Text,
+                text,
+                at,
+                excluded_from_sim,
+                fields_autoplaced,
+                visible,
+                has_effects,
+                effects,
+                uuid,
+            })),
+            SchTextTarget::Label(kind) => {
+                let [x, y, angle] = at.unwrap_or([0.0, 0.0, 0.0]);
+                Ok(SchItem::Label(Label {
+                    kind,
+                    text,
+                    at: [x, y],
+                    angle,
+                    spin: Self::label_spin_from_angle(angle),
+                    shape,
+                    pin_length,
+                    iref_at,
+                    excluded_from_sim,
+                    fields_autoplaced: if properties.is_empty() {
+                        true
+                    } else {
+                        fields_autoplaced
+                    },
+                    visible,
+                    has_effects,
+                    effects,
+                    uuid,
+                    properties,
+                }))
             }
         }
-        Ok(Text {
-            kind,
-            text,
-            at,
-            excluded_from_sim,
-            fields_autoplaced,
-            visible,
-            has_effects,
-            effects,
-            uuid,
-        })
     }
 
     fn parse_text_box(&mut self) -> Result<TextBox, Error> {
@@ -1868,7 +1933,9 @@ impl KiCadSchematicParser {
     }
 
     fn parse_text_box_content(&mut self, table_cell: bool) -> Result<TextBox, Error> {
-        let text = self.parse_string_atom("text box text")?;
+        let text = self
+            .need_symbol_atom("text box text")
+            .map_err(|_| self.error_here("Invalid text string"))?;
         let mut at = None;
         let mut angle = 0.0;
         let mut end = None;
@@ -1945,7 +2012,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ if table_cell => {
@@ -1955,7 +2022,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        let at = at.ok_or_else(|| self.error_here("text_box missing at"))?;
+        let at = at.unwrap_or([0.0, 0.0]);
         let end = match (end, size) {
             (Some(end), _) => end,
             (None, Some(size)) => [at[0] + size[0], at[1] + size[1]],
@@ -2067,18 +2134,18 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => {
                     return Err(self.expecting(
-                        "column_count, column_widths, row_heights, border, separators, uuid, or cells",
+                        "columns, col_widths, row_heights, border, separators, uuid, header or cells",
                     ));
                 }
             }
         }
         if cells.is_empty() {
-            return Err(self.error_here("invalid table: no cells defined"));
+            return Err(self.error_here("Invalid table: no cells defined"));
         }
         Ok(Table {
             column_count,
@@ -2118,17 +2185,21 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "data" => {
                     let mut encoded = String::new();
                     while !self.at_right() {
-                        encoded.push_str(&self.parse_string_atom("base64 image data")?);
+                        encoded.push_str(
+                            &self
+                                .need_symbol_atom("base64 image data")
+                                .map_err(|_| self.expecting("base64 image data"))?,
+                        );
                     }
                     let decoded = base64::engine::general_purpose::STANDARD
                         .decode(&encoded)
-                        .map_err(|_| self.error_here("failed to read image data"))?;
+                        .map_err(|_| self.error_here("Failed to read image data."))?;
                     if self.require_known_version()? <= VERSION_IMAGE_PPI_SCALE_ADJUSTMENT {
                         if let Some(ppi) = Self::png_ppi(&decoded) {
                             scale *= ppi / 300.0;
@@ -2141,7 +2212,7 @@ impl KiCadSchematicParser {
             }
         }
         Ok(Image {
-            at: at.ok_or_else(|| self.error_here("image missing at"))?,
+            at: at.unwrap_or([0.0, 0.0]),
             scale,
             data,
             uuid,
@@ -2181,19 +2252,26 @@ impl KiCadSchematicParser {
                 }
                 "stroke" => {
                     has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    let mut parsed_stroke = self.parse_stroke()?;
+                    if self.require_known_version()? <= 20211123
+                        && parsed_stroke.style == StrokeStyle::Default
+                    {
+                        parsed_stroke.style = StrokeStyle::Dash;
+                    }
+                    stroke = Some(parsed_stroke);
                 }
                 "fill" => {
                     has_fill = true;
                     fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("pts, uuid, stroke, or fill")),
             }
         }
+        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Polyline,
             points,
@@ -2242,18 +2320,20 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, mid, end, stroke, fill or uuid")),
             }
         }
-        if points.len() != 3 {
-            return Err(self.error_here("arc requires exactly three points"));
+        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
+        let mut geometry = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
+        for (slot, point) in points.into_iter().take(3).enumerate() {
+            geometry[slot] = point;
         }
         Ok(Shape {
             kind: ShapeKind::Arc,
-            points,
+            points: geometry.to_vec(),
             radius: None,
             corner_radius: None,
             has_stroke,
@@ -2270,7 +2350,7 @@ impl KiCadSchematicParser {
 
     fn parse_circle_shape(&mut self) -> Result<Shape, Error> {
         let mut center = None;
-        let mut radius = None;
+        let mut radius = Some(0.0);
         let mut has_stroke = false;
         let mut has_fill = false;
         let mut stroke = None;
@@ -2296,15 +2376,16 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("center, radius, stroke, fill or uuid")),
             }
         }
+        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Circle,
-            points: vec![center.ok_or_else(|| self.error_here("circle missing center"))?],
+            points: vec![center.unwrap_or([0.0, 0.0])],
             radius,
             corner_radius: None,
             has_stroke,
@@ -2320,7 +2401,8 @@ impl KiCadSchematicParser {
     }
 
     fn parse_rectangle_shape(&mut self) -> Result<Shape, Error> {
-        let mut points = Vec::new();
+        let mut start = [0.0, 0.0];
+        let mut end = [0.0, 0.0];
         let mut corner_radius = None;
         let mut has_stroke = false;
         let mut has_fill = false;
@@ -2331,11 +2413,11 @@ impl KiCadSchematicParser {
             self.need_left()?;
             match self.need_atom()?.as_str() {
                 "start" => {
-                    points.push(self.parse_xy2("start")?);
+                    start = self.parse_xy2("start")?;
                     self.need_right()?;
                 }
                 "end" => {
-                    points.push(self.parse_xy2("end")?);
+                    end = self.parse_xy2("end")?;
                     self.need_right()?;
                 }
                 "radius" => {
@@ -2351,18 +2433,16 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
             }
         }
-        if points.len() != 2 {
-            return Err(self.error_here("rectangle requires exactly two points"));
-        }
+        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Rectangle,
-            points,
+            points: vec![start, end],
             radius: None,
             corner_radius,
             has_stroke,
@@ -2378,7 +2458,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_bezier_shape(&mut self) -> Result<Shape, Error> {
-        let mut points = Vec::new();
+        let mut points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         let mut has_stroke = false;
         let mut has_fill = false;
         let mut stroke = None;
@@ -2388,7 +2468,19 @@ impl KiCadSchematicParser {
             self.need_left()?;
             match self.need_atom()?.as_str() {
                 "pts" => {
-                    points = self.parse_pts()?;
+                    let mut ii = 0;
+                    while !self.at_right() {
+                        self.need_left()?;
+                        if self.need_atom()? != "xy" {
+                            return Err(self.expecting("xy"));
+                        }
+                        match ii {
+                            0..=3 => points[ii] = self.parse_xy2("xy")?,
+                            _ => return Err(self.unexpected("control point")),
+                        }
+                        ii += 1;
+                        self.need_right()?;
+                    }
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -2400,15 +2492,13 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("pts, stroke, fill or uuid")),
+                _ => return Err(self.expecting("pts, uuid, stroke, or fill")),
             }
         }
-        if points.len() != 4 {
-            return Err(self.error_here("bezier requires exactly four control points"));
-        }
+        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Bezier,
             points,
@@ -2479,9 +2569,6 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        if shape.points.len() < 3 {
-            return Err(self.error_here("rulearea requires at least 3 points"));
-        }
         Ok(shape)
     }
 
@@ -2499,7 +2586,7 @@ impl KiCadSchematicParser {
         let mut dnp = false;
         let mut fields_autoplaced = false;
         let mut uuid = None;
-        let mut properties = Vec::new();
+        let mut properties: Vec<Property> = Vec::new();
         let mut instances = Vec::new();
         let mut default_reference = None;
         let mut default_unit = None;
@@ -2512,15 +2599,28 @@ impl KiCadSchematicParser {
             let head = self.need_atom()?;
             match head.as_str() {
                 "lib_id" => {
-                    lib_id = Some(self.parse_library_id_atom(
-                        "lib_id",
-                        "Invalid symbol library ID",
-                        true,
-                    )?);
+                    let raw = self.need_symbol_or_number_atom("symbol|number")?;
+                    let normalized = raw.replace("{slash}", "/");
+
+                    if let Some(ch) = Self::find_invalid_library_identifier_char(&normalized) {
+                        return Err(self.error_here(format!(
+                            "Symbol {normalized} contains invalid character '{ch}'"
+                        )));
+                    }
+
+                    if normalized.is_empty() {
+                        return Err(self.error_here("Invalid symbol library ID"));
+                    }
+
+                    lib_id = Some(normalized);
                     self.need_right()?;
                 }
                 "lib_name" => {
-                    lib_name = Some(self.parse_string_atom("lib_name")?.replace("{slash}", "/"));
+                    lib_name = Some(
+                        self.need_symbol_atom("lib_name")
+                            .map_err(|_| self.error_here("Invalid symbol library name"))?
+                            .replace("{slash}", "/"),
+                    );
                     self.need_right()?;
                 }
                 "at" => {
@@ -2532,11 +2632,13 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "mirror" => {
-                    mirror = Some(match self.parse_string_atom("mirror axis")?.as_str() {
-                        "x" => MirrorAxis::X,
-                        "y" => MirrorAxis::Y,
-                        _ => return Err(self.expecting("x or y")),
-                    });
+                    mirror = Some(
+                        match self.need_unquoted_symbol_atom("mirror axis")?.as_str() {
+                            "x" => MirrorAxis::X,
+                            "y" => MirrorAxis::Y,
+                            _ => return Err(self.expecting("x or y")),
+                        },
+                    );
                     self.need_right()?;
                 }
                 "convert" | "body_style" => {
@@ -2572,11 +2674,11 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "property" => {
-                    let property = self.parse_property_body(FieldParent::Symbol)?;
+                    let mut property = self.parse_property_body(FieldParent::Symbol)?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
                         excluded_from_sim = property.value == "0";
                         self.need_right()?;
@@ -2587,25 +2689,276 @@ impl KiCadSchematicParser {
                         self.need_right()?;
                         continue;
                     }
-                    Self::upsert_symbol_property(&mut properties, property);
+
+                    property.key = Self::canonical_symbol_property_name(&property.key);
+
+                    if matches!(
+                        property.kind,
+                        PropertyKind::SymbolReference
+                            | PropertyKind::SymbolValue
+                            | PropertyKind::SymbolFootprint
+                            | PropertyKind::SymbolDatasheet
+                    ) {
+                        if let Some(existing) =
+                            properties.iter_mut().find(|p| p.kind == property.kind)
+                        {
+                            *existing = property;
+                        } else {
+                            properties.push(property);
+                        }
+                    } else {
+                        properties.push(property);
+                    }
                     self.need_right()?;
                 }
                 "instances" => {
-                    instances = self.parse_symbol_local_instances()?;
+                    while !self.at_right() {
+                        self.need_left()?;
+                        if self.need_atom()? != "project" {
+                            return Err(self.expecting("project"));
+                        }
+                        let project = self.need_symbol_atom("project name")?;
+                        while !self.at_right() {
+                            self.need_left()?;
+                            if self.need_atom()? != "path" {
+                                return Err(self.expecting("path"));
+                            }
+                            let path = self.need_symbol_atom("symbol instance path")?;
+                            let mut reference = None;
+                            let mut unit = None;
+                            let mut value = None;
+                            let mut footprint = None;
+                            let mut variants = Vec::new();
+                            while !self.at_right() {
+                                self.need_left()?;
+                                match self.need_atom()?.as_str() {
+                                    "reference" => {
+                                        reference = Some(self.need_symbol_atom("reference")?);
+                                        self.need_right()?;
+                                    }
+                                    "unit" => {
+                                        unit = Some(self.parse_i32_atom("symbol unit")?);
+                                        self.need_right()?;
+                                    }
+                                    "value" => {
+                                        let parsed = self.parse_symbol_text_atom("value")?;
+                                        Self::upsert_symbol_field_text(
+                                            &mut properties,
+                                            PropertyKind::SymbolValue,
+                                            parsed.clone(),
+                                        );
+                                        value = Some(parsed);
+                                        self.need_right()?;
+                                    }
+                                    "footprint" => {
+                                        let parsed = self.parse_symbol_text_atom("footprint")?;
+                                        Self::upsert_symbol_field_text(
+                                            &mut properties,
+                                            PropertyKind::SymbolFootprint,
+                                            parsed.clone(),
+                                        );
+                                        footprint = Some(parsed);
+                                        self.need_right()?;
+                                    }
+                                    "variant" => {
+                                        let mut variant_name = String::new();
+                                        let mut variant_dnp = dnp;
+                                        let mut variant_excluded_from_sim = excluded_from_sim;
+                                        let mut variant_in_bom = in_bom;
+                                        let mut variant_on_board = on_board;
+                                        let mut variant_in_pos_files = in_pos_files;
+                                        let mut variant_fields = Vec::new();
+
+                                        while !self.at_right() {
+                                            self.need_left()?;
+                                            match self.need_atom()?.as_str() {
+                                                "name" => {
+                                                    variant_name = self
+                                                        .need_symbol_atom("name")
+                                                        .map_err(|_| {
+                                                            self.error_here("Invalid variant name")
+                                                        })?;
+                                                    self.need_right()?;
+                                                }
+                                                "dnp" => {
+                                                    variant_dnp = self.parse_bool_atom("dnp")?;
+                                                    self.need_right()?;
+                                                }
+                                                "exclude_from_sim" => {
+                                                    variant_excluded_from_sim =
+                                                        self.parse_bool_atom("exclude_from_sim")?;
+                                                    self.need_right()?;
+                                                }
+                                                "in_bom" => {
+                                                    variant_in_bom =
+                                                        self.parse_bool_atom("in_bom")?;
+                                                    if self.require_known_version()?
+                                                        < VERSION_VARIANT_IN_BOM_FIX
+                                                    {
+                                                        variant_in_bom = !variant_in_bom;
+                                                    }
+                                                    self.need_right()?;
+                                                }
+                                                "on_board" => {
+                                                    variant_on_board =
+                                                        self.parse_bool_atom("on_board")?;
+                                                    self.need_right()?;
+                                                }
+                                                "in_pos_files" => {
+                                                    variant_in_pos_files =
+                                                        self.parse_bool_atom("in_pos_files")?;
+                                                    self.need_right()?;
+                                                }
+                                                "field" => {
+                                                    let mut field_name = None;
+                                                    let mut field_value = None;
+
+                                                    while !self.at_right() {
+                                                        self.need_left()?;
+                                                        match self.need_atom()?.as_str() {
+                                                            "name" => {
+                                                                field_name = Some(
+                                                                    self.need_symbol_atom("name")
+                                                                        .map_err(|_| {
+                                                                            self.error_here(
+                                                                                "Invalid variant field name",
+                                                                            )
+                                                                        })?,
+                                                                );
+                                                                self.need_right()?;
+                                                            }
+                                                            "value" => {
+                                                                field_value = Some(
+                                                                    self.need_symbol_atom("value")
+                                                                        .map_err(|_| {
+                                                                            self.error_here(
+                                                                                "Invalid variant field value",
+                                                                            )
+                                                                        })?,
+                                                                );
+                                                                self.need_right()?;
+                                                            }
+                                                            _ => {
+                                                                return Err(
+                                                                    self.expecting("name or value")
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+
+                                                    variant_fields.push(VariantField {
+                                                        name: field_name.unwrap_or_default(),
+                                                        value: field_value.unwrap_or_default(),
+                                                    });
+                                                    self.need_right()?;
+                                                }
+                                                _ => {
+                                                    return Err(self.expecting(
+                                                        "dnp, exclude_from_sim, field, in_bom, in_pos_files, name, or on_board",
+                                                    ));
+                                                }
+                                            }
+                                        }
+
+                                        variants.push(ItemVariant {
+                                            name: variant_name,
+                                            dnp: variant_dnp,
+                                            excluded_from_sim: variant_excluded_from_sim,
+                                            in_bom: variant_in_bom,
+                                            on_board: variant_on_board,
+                                            in_pos_files: variant_in_pos_files,
+                                            fields: variant_fields,
+                                        });
+                                        self.need_right()?;
+                                    }
+                                    _ => {
+                                        return Err(self.expecting(
+                                            "reference, unit, value, footprint, or variant",
+                                        ));
+                                    }
+                                }
+                            }
+                            self.need_right()?;
+                            instances.push(SymbolLocalInstance {
+                                project: project.clone(),
+                                path,
+                                reference,
+                                unit,
+                                value,
+                                footprint,
+                                variants,
+                            });
+                        }
+                        self.need_right()?;
+                    }
                     self.need_right()?;
                 }
                 "default_instance" => {
-                    (
-                        default_reference,
-                        default_unit,
-                        default_value,
-                        default_footprint,
-                    ) = self.parse_default_symbol_instance()?;
+                    while !self.at_right() {
+                        self.need_left()?;
+                        match self.need_atom()?.as_str() {
+                            "reference" => {
+                                default_reference = Some(self.need_symbol_atom("reference")?);
+                                self.need_right()?;
+                            }
+                            "unit" => {
+                                default_unit = Some(self.parse_i32_atom("symbol unit")?);
+                                self.need_right()?;
+                            }
+                            "value" => {
+                                let parsed = self.parse_symbol_text_atom("value")?;
+                                Self::upsert_symbol_field_text(
+                                    &mut properties,
+                                    PropertyKind::SymbolValue,
+                                    parsed.clone(),
+                                );
+                                default_value = Some(parsed);
+                                self.need_right()?;
+                            }
+                            "footprint" => {
+                                let parsed = self.parse_symbol_text_atom("footprint")?;
+                                Self::upsert_symbol_field_text(
+                                    &mut properties,
+                                    PropertyKind::SymbolFootprint,
+                                    parsed.clone(),
+                                );
+                                default_footprint = Some(parsed);
+                                self.need_right()?;
+                            }
+                            _ => {
+                                return Err(self.expecting("reference, unit, value or footprint"));
+                            }
+                        }
+                    }
                     self.need_right()?;
                 }
                 "pin" => {
-                    pins.push(self.parse_symbol_pin()?);
+                    let number = self.need_symbol_atom("pin number")?;
+                    let mut alternate = None;
+                    let mut pin_uuid = None;
+                    while !self.at_right() {
+                        self.need_left()?;
+                        match self.need_atom()?.as_str() {
+                            "alternate" => {
+                                alternate = Some(self.need_symbol_atom("alternate")?);
+                                self.need_right()?;
+                            }
+                            "uuid" => {
+                                let parsed = self.need_symbol_atom("uuid")?;
+                                if self.require_known_version()? >= VERSION_SYMBOL_PIN_UUID {
+                                    pin_uuid = Some(parsed);
+                                }
+                                self.need_right()?;
+                            }
+                            _ => return Err(self.expecting("alternate or uuid")),
+                        }
+                    }
                     self.need_right()?;
+                    pins.push(SymbolPin {
+                        number,
+                        alternate,
+                        uuid: pin_uuid,
+                    });
                 }
                 _ => {
                     return Err(self.expecting(
@@ -2615,8 +2968,8 @@ impl KiCadSchematicParser {
             }
         }
 
-        let lib_id = lib_id.ok_or_else(|| self.error_here("symbol missing lib_id"))?;
-        let [x, y, angle] = at.ok_or_else(|| self.error_here("symbol missing at"))?;
+        let lib_id = lib_id.unwrap_or_default();
+        let [x, y, angle] = at.unwrap_or([0.0, 0.0, 0.0]);
         let lib_name = lib_name.filter(|name| name != &lib_id);
         Ok(Symbol {
             lib_id,
@@ -2657,7 +3010,7 @@ impl KiCadSchematicParser {
         let mut dnp = false;
         let mut fields_autoplaced = false;
         let mut uuid = None;
-        let mut properties = Vec::new();
+        let mut properties: Vec<Property> = Vec::new();
         let mut pins = Vec::new();
         let mut instances = Vec::new();
 
@@ -2702,12 +3055,38 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "property" => {
-                    let property = self.parse_property_body(FieldParent::Sheet)?;
-                    Self::upsert_sheet_property(&mut properties, property);
+                    let mut property = self.parse_property_body(FieldParent::Sheet)?;
+                    if self
+                        .require_known_version()
+                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                        <= VERSION_WRONG_SHEET_FIELD_IDS
+                    {
+                        if properties.is_empty() {
+                            property.key = "Sheetname".to_string();
+                            property.kind = PropertyKind::SheetName;
+                        } else if properties.len() == 1 {
+                            property.key = "Sheetfile".to_string();
+                            property.kind = PropertyKind::SheetFile;
+                        }
+                    }
+                    if matches!(
+                        property.kind,
+                        PropertyKind::SheetName | PropertyKind::SheetFile
+                    ) {
+                        if let Some(existing) =
+                            properties.iter_mut().find(|p| p.kind == property.kind)
+                        {
+                            *existing = property;
+                        } else {
+                            properties.push(property);
+                        }
+                    } else {
+                        properties.push(property);
+                    }
                     self.need_right()?;
                 }
                 "pin" => {
@@ -2715,7 +3094,154 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "instances" => {
-                    instances = self.parse_sheet_local_instances()?;
+                    let mut parsed_instances = Vec::new();
+                    while !self.at_right() {
+                        self.need_left()?;
+                        if self.need_atom()? != "project" {
+                            return Err(self.expecting("project"));
+                        }
+                        let project = self.need_symbol_atom("project name")?;
+                        while !self.at_right() {
+                            self.need_left()?;
+                            if self.need_atom()? != "path" {
+                                return Err(self.expecting("path"));
+                            }
+                            let path = self.need_symbol_atom("sheet instance path")?;
+                            let mut page = None;
+                            let mut variants = Vec::new();
+                            while !self.at_right() {
+                                self.need_left()?;
+                                match self.need_atom()?.as_str() {
+                                    "page" => {
+                                        let raw_page = self.need_symbol_atom("page")?;
+                                        page = Some(self.normalize_page_number(raw_page));
+                                        self.need_right()?;
+                                    }
+                                    "variant" => {
+                                        let mut variant_name = String::new();
+                                        let mut variant_dnp = dnp;
+                                        let mut variant_excluded_from_sim = excluded_from_sim;
+                                        let mut variant_in_bom = in_bom;
+                                        let mut variant_on_board = on_board;
+                                        let mut variant_in_pos_files = false;
+                                        let mut variant_fields = Vec::new();
+
+                                        while !self.at_right() {
+                                            self.need_left()?;
+                                            match self.need_atom()?.as_str() {
+                                                "name" => {
+                                                    variant_name = self
+                                                        .need_symbol_atom("name")
+                                                        .map_err(|_| {
+                                                            self.error_here("Invalid variant name")
+                                                        })?;
+                                                    self.need_right()?;
+                                                }
+                                                "dnp" => {
+                                                    variant_dnp = self.parse_bool_atom("dnp")?;
+                                                    self.need_right()?;
+                                                }
+                                                "exclude_from_sim" => {
+                                                    variant_excluded_from_sim =
+                                                        self.parse_bool_atom("exclude_from_sim")?;
+                                                    self.need_right()?;
+                                                }
+                                                "in_bom" => {
+                                                    variant_in_bom =
+                                                        self.parse_bool_atom("in_bom")?;
+                                                    if self.require_known_version()?
+                                                        < VERSION_VARIANT_IN_BOM_FIX
+                                                    {
+                                                        variant_in_bom = !variant_in_bom;
+                                                    }
+                                                    self.need_right()?;
+                                                }
+                                                "on_board" => {
+                                                    variant_on_board =
+                                                        self.parse_bool_atom("on_board")?;
+                                                    self.need_right()?;
+                                                }
+                                                "in_pos_files" => {
+                                                    variant_in_pos_files =
+                                                        self.parse_bool_atom("in_pos_files")?;
+                                                    self.need_right()?;
+                                                }
+                                                "field" => {
+                                                    let mut field_name = None;
+                                                    let mut field_value = None;
+
+                                                    while !self.at_right() {
+                                                        self.need_left()?;
+                                                        match self.need_atom()?.as_str() {
+                                                            "name" => {
+                                                                field_name = Some(
+                                                                    self.need_symbol_atom("name")
+                                                                        .map_err(|_| {
+                                                                            self.error_here(
+                                                                                "Invalid variant field name",
+                                                                            )
+                                                                        })?,
+                                                                );
+                                                                self.need_right()?;
+                                                            }
+                                                            "value" => {
+                                                                field_value = Some(
+                                                                    self.need_symbol_atom("value")
+                                                                        .map_err(|_| {
+                                                                            self.error_here(
+                                                                                "Invalid variant field value",
+                                                                            )
+                                                                        })?,
+                                                                );
+                                                                self.need_right()?;
+                                                            }
+                                                            _ => {
+                                                                return Err(
+                                                                    self.expecting("name or value")
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+
+                                                    variant_fields.push(VariantField {
+                                                        name: field_name.unwrap_or_default(),
+                                                        value: field_value.unwrap_or_default(),
+                                                    });
+                                                    self.need_right()?;
+                                                }
+                                                _ => {
+                                                    return Err(self.expecting(
+                                                        "dnp, exclude_from_sim, field, in_bom, in_pos_files, name, or on_board",
+                                                    ));
+                                                }
+                                            }
+                                        }
+
+                                        variants.push(ItemVariant {
+                                            name: variant_name,
+                                            dnp: variant_dnp,
+                                            excluded_from_sim: variant_excluded_from_sim,
+                                            in_bom: variant_in_bom,
+                                            on_board: variant_on_board,
+                                            in_pos_files: variant_in_pos_files,
+                                            fields: variant_fields,
+                                        });
+                                        self.need_right()?;
+                                    }
+                                    _ => return Err(self.expecting("page or variant")),
+                                }
+                            }
+                            self.need_right()?;
+                            parsed_instances.push(SheetLocalInstance {
+                                project: project.clone(),
+                                path,
+                                page,
+                                variants,
+                            });
+                        }
+                        self.need_right()?;
+                    }
+                    instances = parsed_instances;
                     self.need_right()?;
                 }
                 _ => {
@@ -2728,23 +3254,23 @@ impl KiCadSchematicParser {
 
         let name = properties
             .iter()
-            .find(|property| Self::canonical_sheet_property_name(&property.key) == "Sheetname")
+            .find(|property| property.kind == PropertyKind::SheetName)
             .map(|property| property.value.clone());
         let filename = properties
             .iter()
-            .find(|property| Self::canonical_sheet_property_name(&property.key) == "Sheetfile")
+            .find(|property| property.kind == PropertyKind::SheetFile)
             .map(|property| property.value.clone());
 
         if name.is_none() {
-            return Err(self.error_here("missing sheet name property"));
+            return Err(self.error_here("Missing sheet name property"));
         }
         if filename.is_none() {
-            return Err(self.error_here("missing sheet file property"));
+            return Err(self.error_here("Missing sheet file property"));
         }
 
         Ok(Sheet {
-            at: at.ok_or_else(|| self.error_here("sheet missing at"))?,
-            size: size.ok_or_else(|| self.error_here("sheet missing size"))?,
+            at: at.unwrap_or([0.0, 0.0]),
+            size: size.unwrap_or([0.0, 0.0]),
             has_stroke,
             has_fill,
             stroke,
@@ -2764,11 +3290,13 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sheet_pin(&mut self) -> Result<SheetPin, Error> {
-        let name = self.parse_string_atom("sheet pin name")?;
+        let name = self
+            .need_symbol_atom("sheet pin name")
+            .map_err(|_| self.error_here("Invalid sheet pin name"))?;
         if name.is_empty() {
-            return Err(self.error_here("empty sheet pin name"));
+            return Err(self.error_here("Empty sheet pin name"));
         }
-        let shape = match self.need_atom()?.as_str() {
+        let shape = match self.need_unquoted_symbol_atom("sheet pin shape")?.as_str() {
             "input" => SheetPinShape::Input,
             "output" => SheetPinShape::Output,
             "bidirectional" => SheetPinShape::Bidirectional,
@@ -2802,7 +3330,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "effects" => {
@@ -2836,7 +3364,7 @@ impl KiCadSchematicParser {
             if head != "path" {
                 return Err(self.expecting("path"));
             }
-            let raw_path = self.parse_string_atom("sheet instance path")?;
+            let raw_path = self.need_symbol_atom("sheet instance path")?;
             let path = self.normalize_instance_path(
                 raw_path,
                 self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH,
@@ -2847,7 +3375,7 @@ impl KiCadSchematicParser {
                 let child = self.need_atom()?;
                 match child.as_str() {
                     "page" => {
-                        let raw_page = self.parse_string_atom("page")?;
+                        let raw_page = self.need_symbol_atom("page")?;
                         page = Some(self.normalize_page_number(raw_page));
                     }
                     _ => return Err(self.expecting("path or page")),
@@ -2873,7 +3401,7 @@ impl KiCadSchematicParser {
             if head != "path" {
                 return Err(self.expecting("path"));
             }
-            let raw_path = self.parse_string_atom("symbol instance path")?;
+            let raw_path = self.need_symbol_atom("symbol instance path")?;
             let path = self.normalize_instance_path(raw_path, true);
             let mut reference = None;
             let mut unit = None;
@@ -2883,11 +3411,11 @@ impl KiCadSchematicParser {
                 self.need_left()?;
                 let child = self.need_atom()?;
                 match child.as_str() {
-                    "reference" => reference = Some(self.parse_string_atom("reference")?),
+                    "reference" => reference = Some(self.need_symbol_atom("reference")?),
                     "unit" => unit = Some(self.parse_i32_atom("unit")?),
                     "value" => value = Some(self.parse_symbol_text_atom("value")?),
                     "footprint" => footprint = Some(self.parse_symbol_text_atom("footprint")?),
-                    _ => return Err(self.expecting("path, unit, value or footprint")),
+                    _ => return Err(self.expecting("reference, unit, value or footprint")),
                 }
                 self.need_right()?;
             }
@@ -2907,11 +3435,11 @@ impl KiCadSchematicParser {
         let mut name = None;
 
         while self.at_atom() {
-            let token = self.need_atom()?;
-            if token == "locked" {
+            if self.at_atom_with("locked") {
+                let _ = self.need_atom()?;
                 continue;
             }
-            name = Some(token);
+            name = Some(self.need_quoted_atom("group name or locked")?);
             break;
         }
 
@@ -2923,17 +3451,29 @@ impl KiCadSchematicParser {
             self.need_left()?;
             match self.need_atom()?.as_str() {
                 "uuid" => {
-                    uuid = Some(self.parse_string_atom("uuid")?);
+                    uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "lib_id" => {
-                    lib_id =
-                        Some(self.parse_library_id_atom("lib_id", "Invalid library ID", true)?);
+                    let raw = self.need_symbol_or_number_atom("symbol|number")?;
+                    let normalized = raw.replace("{slash}", "/");
+
+                    if let Some(ch) = Self::find_invalid_library_identifier_char(&normalized) {
+                        return Err(self.error_here(format!(
+                            "Group library link {normalized} contains invalid character '{ch}'"
+                        )));
+                    }
+
+                    if normalized.is_empty() {
+                        return Err(self.error_here("Invalid library ID"));
+                    }
+
+                    lib_id = Some(normalized);
                     self.need_right()?;
                 }
                 "members" => {
                     while !self.at_right() {
-                        members.push(self.parse_string_atom("group member uuid")?);
+                        members.push(self.need_symbol_atom("group member uuid")?);
                     }
                     self.need_right()?;
                 }
@@ -2950,274 +3490,56 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_sheet_local_instances(&mut self) -> Result<Vec<SheetLocalInstance>, Error> {
-        let mut instances = Vec::new();
-        while !self.at_right() {
-            self.need_left()?;
-            if self.need_atom()? != "project" {
-                return Err(self.expecting("project"));
-            }
-            let project = self.parse_string_atom("project name")?;
-            while !self.at_right() {
-                self.need_left()?;
-                if self.need_atom()? != "path" {
-                    return Err(self.expecting("path"));
-                }
-                let path = self.parse_string_atom("sheet instance path")?;
-                let mut page = None;
-                let mut variants = Vec::new();
-                while !self.at_right() {
-                    self.need_left()?;
-                    match self.need_atom()?.as_str() {
-                        "page" => {
-                            let raw_page = self.parse_string_atom("page")?;
-                            page = Some(self.normalize_page_number(raw_page));
-                            self.need_right()?;
-                        }
-                        "variant" => {
-                            variants.push(self.parse_variant()?);
-                            self.need_right()?;
-                        }
-                        _ => return Err(self.expecting("page or variant")),
-                    }
-                }
-                self.need_right()?;
-                instances.push(SheetLocalInstance {
-                    project: project.clone(),
-                    path,
-                    page,
-                    variants,
-                });
-            }
-            self.need_right()?;
-        }
-        Ok(instances)
-    }
-
-    fn parse_symbol_local_instances(&mut self) -> Result<Vec<SymbolLocalInstance>, Error> {
-        let mut instances = Vec::new();
-        while !self.at_right() {
-            self.need_left()?;
-            if self.need_atom()? != "project" {
-                return Err(self.expecting("project"));
-            }
-            let project = self.parse_string_atom("project name")?;
-            while !self.at_right() {
-                self.need_left()?;
-                if self.need_atom()? != "path" {
-                    return Err(self.expecting("path"));
-                }
-                let path = self.parse_string_atom("symbol instance path")?;
-                let mut reference = None;
-                let mut unit = None;
-                let mut value = None;
-                let mut footprint = None;
-                let mut variants = Vec::new();
-                while !self.at_right() {
-                    self.need_left()?;
-                    match self.need_atom()?.as_str() {
-                        "reference" => {
-                            reference = Some(self.parse_string_atom("reference")?);
-                            self.need_right()?;
-                        }
-                        "unit" => {
-                            unit = Some(self.parse_i32_atom("symbol unit")?);
-                            self.need_right()?;
-                        }
-                        "value" => {
-                            value = Some(self.parse_symbol_text_atom("value")?);
-                            self.need_right()?;
-                        }
-                        "footprint" => {
-                            footprint = Some(self.parse_symbol_text_atom("footprint")?);
-                            self.need_right()?;
-                        }
-                        "variant" => {
-                            variants.push(self.parse_variant()?);
-                            self.need_right()?;
-                        }
-                        _ => {
-                            return Err(
-                                self.expecting("reference, unit, value, footprint, or variant")
-                            );
-                        }
-                    }
-                }
-                self.need_right()?;
-                instances.push(SymbolLocalInstance {
-                    project: project.clone(),
-                    path,
-                    reference,
-                    unit,
-                    value,
-                    footprint,
-                    variants,
-                });
-            }
-            self.need_right()?;
-        }
-        Ok(instances)
-    }
-
-    fn parse_variant(&mut self) -> Result<ItemVariant, Error> {
-        let mut name = String::new();
-        let mut dnp = false;
-        let mut excluded_from_sim = false;
-        let mut in_bom = true;
-        let mut on_board = true;
-        let mut in_pos_files = true;
-        let mut fields = Vec::new();
-
-        while !self.at_right() {
-            self.need_left()?;
-            match self.need_atom()?.as_str() {
-                "name" => {
-                    name = self.parse_string_atom("name")?;
-                    self.need_right()?;
-                }
-                "dnp" => {
-                    dnp = self.parse_bool_atom("dnp")?;
-                    self.need_right()?;
-                }
-                "exclude_from_sim" => {
-                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
-                    self.need_right()?;
-                }
-                "in_bom" => {
-                    in_bom = self.parse_bool_atom("in_bom")?;
-                    if self.require_known_version()? >= VERSION_VARIANT_IN_BOM_FIX {
-                        in_bom = !in_bom;
-                    }
-                    self.need_right()?;
-                }
-                "on_board" => {
-                    on_board = self.parse_bool_atom("on_board")?;
-                    self.need_right()?;
-                }
-                "in_pos_files" => {
-                    in_pos_files = self.parse_bool_atom("in_pos_files")?;
-                    self.need_right()?;
-                }
-                "field" => {
-                    fields.push(self.parse_variant_field()?);
-                    self.need_right()?;
-                }
-                _ => {
-                    return Err(self.expecting(
-                        "dnp, exclude_from_sim, field, in_bom, in_pos_files, name, or on_board",
-                    ));
-                }
-            }
-        }
-
-        Ok(ItemVariant {
-            name,
-            dnp,
-            excluded_from_sim,
-            in_bom,
-            on_board,
-            in_pos_files,
-            fields,
-        })
-    }
-
-    fn parse_default_symbol_instance(
-        &mut self,
-    ) -> Result<(Option<String>, Option<i32>, Option<String>, Option<String>), Error> {
-        let mut reference = None;
-        let mut unit = None;
-        let mut value = None;
-        let mut footprint = None;
-        while !self.at_right() {
-            self.need_left()?;
-            match self.need_atom()?.as_str() {
-                "reference" => {
-                    reference = Some(self.parse_string_atom("reference")?);
-                    self.need_right()?;
-                }
-                "unit" => {
-                    unit = Some(self.parse_i32_atom("symbol unit")?);
-                    self.need_right()?;
-                }
-                "value" => {
-                    value = Some(self.parse_symbol_text_atom("value")?);
-                    self.need_right()?;
-                }
-                "footprint" => {
-                    footprint = Some(self.parse_symbol_text_atom("footprint")?);
-                    self.need_right()?;
-                }
-                _ => return Err(self.expecting("reference, unit, value or footprint")),
-            }
-        }
-        Ok((reference, unit, value, footprint))
-    }
-
-    fn parse_symbol_pin(&mut self) -> Result<SymbolPin, Error> {
-        let number = self.parse_string_atom("pin number")?;
-        let mut alternate = None;
-        let mut uuid = None;
-        while !self.at_right() {
-            self.need_left()?;
-            match self.need_atom()?.as_str() {
-                "alternate" => {
-                    alternate = Some(self.parse_string_atom("alternate")?);
-                    self.need_right()?;
-                }
-                "uuid" => {
-                    let parsed = self.parse_string_atom("uuid")?;
-                    if self.require_known_version()? >= VERSION_SYMBOL_PIN_UUID {
-                        uuid = Some(parsed);
-                    }
-                    self.need_right()?;
-                }
-                _ => return Err(self.expecting("alternate or uuid")),
-            }
-        }
-        Ok(SymbolPin {
-            number,
-            alternate,
-            uuid,
-        })
-    }
-
-    fn parse_variant_field(&mut self) -> Result<VariantField, Error> {
-        let mut name = None;
-        let mut value = None;
-        while !self.at_right() {
-            self.need_left()?;
-            match self.need_atom()?.as_str() {
-                "name" => {
-                    name = Some(self.parse_string_atom("name")?);
-                    self.need_right()?;
-                }
-                "value" => {
-                    value = Some(self.parse_string_atom("value")?);
-                    self.need_right()?;
-                }
-                _ => return Err(self.expecting("name or value")),
-            }
-        }
-        Ok(VariantField {
-            name: name.unwrap_or_default(),
-            value: value.unwrap_or_default(),
-        })
-    }
-
     fn parse_property_body(&mut self, parent: FieldParent) -> Result<Property, Error> {
         let mut is_private = false;
         if self.at_atom_with("private") {
             self.need_atom()?;
             is_private = true;
         }
-        let key = self.parse_string_atom("property key")?;
+        let key = self
+            .need_symbol_atom("property name")
+            .map_err(|_| self.error_here("Invalid property name"))?;
         if key.is_empty() {
-            return Err(self.error_here("empty property name"));
+            return Err(self.error_here("Empty property name"));
         }
-        let value = self.parse_symbol_text_atom("property value")?;
+        let mut value = self
+            .need_symbol_atom("property value")
+            .map_err(|_| self.error_here("Invalid property value"))?;
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
+            && value == "~"
+        {
+            value.clear();
+        }
         let mut key = key;
-        let kind = self.classify_property_kind(parent, &key);
-        key = self.canonicalize_property_key(kind, key);
+        let kind = match parent {
+            FieldParent::Symbol => match key.to_ascii_lowercase().as_str() {
+                "reference" => PropertyKind::SymbolReference,
+                "value" => PropertyKind::SymbolValue,
+                "footprint" => PropertyKind::SymbolFootprint,
+                "datasheet" => PropertyKind::SymbolDatasheet,
+                _ => PropertyKind::User,
+            },
+            FieldParent::Sheet => match key.to_ascii_lowercase().as_str() {
+                "sheetname" | "sheet name" => PropertyKind::SheetName,
+                "sheetfile" | "sheet file" => PropertyKind::SheetFile,
+                _ => PropertyKind::SheetUser,
+            },
+            FieldParent::GlobalLabel => match key.to_ascii_lowercase().as_str() {
+                "intersheet references" => PropertyKind::GlobalLabelIntersheetRefs,
+                _ => PropertyKind::User,
+            },
+            FieldParent::OtherLabel => PropertyKind::User,
+        };
+        key = match kind {
+            PropertyKind::SymbolReference => "Reference".to_string(),
+            PropertyKind::SymbolValue => "Value".to_string(),
+            PropertyKind::SymbolFootprint => "Footprint".to_string(),
+            PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
+            PropertyKind::SheetName => "Sheetname".to_string(),
+            PropertyKind::SheetFile => "Sheetfile".to_string(),
+            PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References".to_string(),
+            _ => key,
+        };
         let mut at = None;
         let mut angle = None;
         let mut visible = true;
@@ -3272,7 +3594,7 @@ impl KiCadSchematicParser {
             key,
             value,
             kind,
-            is_private: matches!(kind, PropertyKind::User | PropertyKind::SheetUser) && is_private,
+            is_private: matches!(kind, PropertyKind::User) && is_private,
             at,
             angle,
             visible,
@@ -3298,7 +3620,12 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "type" => {
-                    stroke.style = match self.need_atom()?.as_str() {
+                    stroke.style = match self
+                        .need_unquoted_symbol_atom(
+                            "default, dash, dot, dash_dot, dash_dot_dot, or solid",
+                        )?
+                        .as_str()
+                    {
                         "default" => StrokeStyle::Default,
                         "dash" => StrokeStyle::Dash,
                         "dot" => StrokeStyle::Dot,
@@ -3344,7 +3671,12 @@ impl KiCadSchematicParser {
             self.need_left()?;
             match self.need_atom()?.as_str() {
                 "type" => {
-                    fill.fill_type = match self.need_atom()?.as_str() {
+                    fill.fill_type = match self
+                        .need_unquoted_symbol_atom(
+                            "none, outline, hatch, reverse_hatch, cross_hatch, color or background",
+                        )?
+                        .as_str()
+                    {
                         "none" => FillType::None,
                         "outline" => FillType::Outline,
                         "background" => FillType::Background,
@@ -3375,26 +3707,13 @@ impl KiCadSchematicParser {
         Ok(fill)
     }
 
-    fn parse_library_id_atom(
-        &mut self,
-        expected: &'static str,
-        generic_error: &'static str,
-        _allow_numeric: bool,
-    ) -> Result<String, Error> {
-        let raw = self.parse_string_atom(expected)?;
-        let normalized = raw.replace("{slash}", "/");
-
-        if let Some(ch) = Self::find_invalid_library_identifier_char(&normalized) {
-            return Err(self.error_here(format!(
-                "Symbol {normalized} contains invalid character '{ch}'"
-            )));
+    fn fixup_schematic_fill_mode(fill: &mut Option<Fill>, stroke: &Option<Stroke>) {
+        if let Some(fill) = fill.as_mut() {
+            if fill.fill_type == FillType::Outline {
+                fill.fill_type = FillType::Color;
+                fill.color = stroke.as_ref().and_then(|stroke| stroke.color);
+            }
         }
-
-        if normalized.is_empty() {
-            return Err(self.error_here(generic_error));
-        }
-
-        Ok(normalized)
     }
 
     fn find_invalid_library_identifier_char(value: &str) -> Option<char> {
@@ -3482,7 +3801,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             if self.at_atom() {
-                match self.need_atom()?.as_str() {
+                match self
+                    .need_unquoted_symbol_atom("font, justify, hide or href")?
+                    .as_str()
+                {
                     "hide" => {
                         summary.effects.hidden = self.parse_maybe_absent_bool(true)?;
                     }
@@ -3493,7 +3815,10 @@ impl KiCadSchematicParser {
             }
 
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("font, justify, hide or href")?
+                .as_str()
+            {
                 "font" => self.parse_effects_font(&mut summary.effects)?,
                 "justify" => self.parse_effects_justify(&mut summary.effects)?,
                 "href" => {
@@ -3518,7 +3843,12 @@ impl KiCadSchematicParser {
     fn parse_effects_font(&mut self, effects: &mut TextEffects) -> Result<(), Error> {
         while !self.at_right() {
             if self.at_atom() {
-                match self.need_atom()?.as_str() {
+                match self
+                    .need_unquoted_symbol_atom(
+                        "face, size, thickness, line_spacing, bold, or italic",
+                    )?
+                    .as_str()
+                {
                     "bold" => effects.bold = self.parse_inline_optional_bool(true)?,
                     "italic" => effects.italic = self.parse_inline_optional_bool(true)?,
                     _ => {
@@ -3532,7 +3862,10 @@ impl KiCadSchematicParser {
             }
 
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("face, size, thickness, line_spacing, bold, or italic")?
+                .as_str()
+            {
                 "face" => {
                     effects.font_face = Some(self.parse_string_atom("font face")?);
                     self.need_right()?;
@@ -3561,6 +3894,17 @@ impl KiCadSchematicParser {
                     effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
                     self.need_right()?;
                 }
+                // Upstream: parseMaybeAbsentBool checks PrevTok()==T_LEFT.
+                // When bold/italic are inside parens like (bold yes), the
+                // sub-expression branch handles them and consumes the closing ).
+                "bold" => {
+                    effects.bold = self.parse_maybe_absent_bool(true)?;
+                    self.need_right()?;
+                }
+                "italic" => {
+                    effects.italic = self.parse_maybe_absent_bool(true)?;
+                    self.need_right()?;
+                }
                 _ => {
                     return Err(
                         self.expecting("face, size, thickness, line_spacing, bold, or italic")
@@ -3575,7 +3919,10 @@ impl KiCadSchematicParser {
 
     fn parse_effects_justify(&mut self, effects: &mut TextEffects) -> Result<(), Error> {
         while !self.at_right() {
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("left, right, top, bottom, or mirror")?
+                .as_str()
+            {
                 "left" => effects.h_justify = TextHJustify::Left,
                 "right" => effects.h_justify = TextHJustify::Right,
                 "top" => effects.v_justify = TextVJustify::Top,
@@ -3601,7 +3948,10 @@ impl KiCadSchematicParser {
         // Check for a URI scheme: at least one alpha char followed by ':'
         if let Some(colon_pos) = href.find(':') {
             let scheme = &href[..colon_pos];
-            return !scheme.is_empty() && scheme.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'-' || b == b'.');
+            return !scheme.is_empty()
+                && scheme
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'-' || b == b'.');
         }
 
         false
@@ -3773,7 +4123,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_symbol_text_atom(&mut self, field: &str) -> Result<String, Error> {
-        let value = self.parse_string_atom(field.to_string())?;
+        let value = self.need_symbol_atom(field)?;
         if self
             .require_known_version()
             .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -3867,6 +4217,32 @@ impl KiCadSchematicParser {
         }
     }
 
+    fn need_unquoted_symbol_atom(&mut self, expected: &str) -> Result<String, Error> {
+        match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+            {
+                let out = value.clone();
+                self.idx += 1;
+                Ok(out)
+            }
+            _ => Err(self.expecting(expected)),
+        }
+    }
+
+    fn need_quoted_atom(&mut self, expected: &str) -> Result<String, Error> {
+        match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Quoted)) =>
+            {
+                let out = value.clone();
+                self.idx += 1;
+                Ok(out)
+            }
+            _ => Err(self.expecting(expected)),
+        }
+    }
+
     fn need_symbol_or_number_atom(&mut self, expected: &str) -> Result<String, Error> {
         match &self.current().kind {
             TokKind::Atom(value)
@@ -3912,6 +4288,13 @@ impl KiCadSchematicParser {
 
     fn at_atom_with(&self, expected: &str) -> bool {
         matches!(&self.current().kind, TokKind::Atom(value) if value == expected)
+    }
+
+    fn at_unquoted_symbol_with(&self, expected: &str) -> bool {
+        matches!(
+            (&self.current().kind, self.current().atom_class),
+            (TokKind::Atom(value), Some(AtomClass::Symbol)) if value == expected
+        )
     }
 
     fn current_is_list_named(&self, expected: &str) -> bool {
@@ -3972,6 +4355,10 @@ impl KiCadSchematicParser {
         self.error_here(format!("expecting {expected}"))
     }
 
+    fn unexpected(&self, found: &str) -> Error {
+        self.error_here(format!("unexpected {found}"))
+    }
+
     fn expecting_known_section(&self, found: &str) -> Error {
         self.validation(
             Some(self.current_span()),
@@ -4009,13 +4396,37 @@ impl KiCadSchematicParser {
     }
 
     fn parse_page_info(&mut self) -> Result<Paper, Error> {
-        let page_info = self.parse_page_info_type()?;
+        let token_span = self.current_span();
+        let raw_kind = self
+            .need_symbol_atom("paper kind")
+            .map_err(|_| self.error_here("missing paper kind"))?;
+        let page_info = Self::lookup_standard_page_info(&raw_kind)
+            .ok_or_else(|| self.validation(Some(token_span), "Invalid page type"))?;
         let [width, height] = if page_info.kind == "User" {
-            self.parse_user_page_dimensions()?
+            let width = self
+                .parse_f64_number_atom("width")?
+                .clamp(MIN_PAGE_SIZE_MM, MAX_PAGE_SIZE_EESCHEMA_MM);
+            let height = self
+                .parse_f64_number_atom("height")?
+                .clamp(MIN_PAGE_SIZE_MM, MAX_PAGE_SIZE_EESCHEMA_MM);
+            [width, height]
         } else {
-            self.parse_standard_page_dimensions(page_info)?
+            page_info
+                .dimensions_mm
+                .ok_or_else(|| self.error_here("Invalid page type"))?
         };
-        let portrait = self.parse_page_info_tail_and_right()?;
+        let token = self.current().clone();
+        self.idx += 1;
+        let portrait = match token.kind {
+            TokKind::Right => false,
+            TokKind::Atom(value)
+                if token.atom_class == Some(AtomClass::Symbol) && value == "portrait" =>
+            {
+                self.need_right()?;
+                true
+            }
+            _ => return Err(self.validation(Some(token.span), "expecting portrait")),
+        };
 
         Ok(Self::build_page_info(
             page_info.kind.to_string(),
@@ -4023,50 +4434,6 @@ impl KiCadSchematicParser {
             height,
             portrait,
         ))
-    }
-
-    fn parse_page_info_type(&mut self) -> Result<StandardPageInfo, Error> {
-        let token_span = self.current_span();
-        let raw_kind = self
-            .need_symbol_atom("paper kind")
-            .map_err(|_| self.error_here("missing paper kind"))?;
-        Self::lookup_standard_page_info(&raw_kind)
-            .ok_or_else(|| self.validation(Some(token_span), "Invalid page type"))
-    }
-
-    fn parse_user_page_dimensions(&mut self) -> Result<[f64; 2], Error> {
-        let width = self
-            .parse_f64_number_atom("width")?
-            .clamp(MIN_PAGE_SIZE_MM, MAX_PAGE_SIZE_EESCHEMA_MM);
-        let height = self
-            .parse_f64_number_atom("height")?
-            .clamp(MIN_PAGE_SIZE_MM, MAX_PAGE_SIZE_EESCHEMA_MM);
-        Ok([width, height])
-    }
-
-    fn parse_standard_page_dimensions(
-        &self,
-        page_info: StandardPageInfo,
-    ) -> Result<[f64; 2], Error> {
-        page_info
-            .dimensions_mm
-            .ok_or_else(|| self.error_here("Invalid page type"))
-    }
-
-    fn parse_page_info_tail_and_right(&mut self) -> Result<bool, Error> {
-        let token = self.current().clone();
-        self.idx += 1;
-
-        match token.kind {
-            TokKind::Right => Ok(false),
-            TokKind::Atom(value)
-                if token.atom_class == Some(AtomClass::Symbol) && value == "portrait" =>
-            {
-                self.need_right()?;
-                Ok(true)
-            }
-            _ => Err(self.validation(Some(token.span), "expecting portrait")),
-        }
     }
 
     fn build_page_info(
@@ -4175,27 +4542,34 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn canonical_sheet_property_name(key: &str) -> String {
-        match key.to_ascii_lowercase().as_str() {
-            "sheetname" | "sheet name" => "Sheetname".to_string(),
-            "sheetfile" | "sheet file" => "Sheetfile".to_string(),
-            _ => key.to_string(),
-        }
-    }
+    fn upsert_symbol_field_text(properties: &mut Vec<Property>, kind: PropertyKind, value: String) {
+        let key = match kind {
+            PropertyKind::SymbolReference => "Reference",
+            PropertyKind::SymbolValue => "Value",
+            PropertyKind::SymbolFootprint => "Footprint",
+            PropertyKind::SymbolDatasheet => "Datasheet",
+            _ => return,
+        };
 
-    fn upsert_symbol_property(properties: &mut Vec<Property>, mut property: Property) {
-        let canonical = Self::canonical_symbol_property_name(&property.key).to_string();
-        property.key = canonical.clone();
-        if matches!(
-            canonical.as_str(),
-            "Reference" | "Value" | "Footprint" | "Datasheet"
-        ) {
-            if let Some(existing) = properties.iter_mut().find(|p| p.key == canonical) {
-                *existing = property;
-                return;
-            }
+        let property = Property {
+            key: key.to_string(),
+            value,
+            kind,
+            is_private: false,
+            at: None,
+            angle: None,
+            visible: true,
+            show_name: true,
+            can_autoplace: true,
+            has_effects: false,
+            effects: None,
+        };
+
+        if let Some(existing) = properties.iter_mut().find(|p| p.kind == kind) {
+            *existing = property;
+        } else {
+            properties.push(property);
         }
-        properties.push(property);
     }
 
     fn upsert_lib_symbol_property(properties: &mut Vec<Property>, mut property: Property) {
@@ -4237,18 +4611,6 @@ impl KiCadSchematicParser {
         properties.push(property);
     }
 
-    fn upsert_sheet_property(properties: &mut Vec<Property>, mut property: Property) {
-        let canonical = Self::canonical_sheet_property_name(&property.key).to_string();
-        property.key = canonical.clone();
-        if matches!(canonical.as_str(), "Sheetname" | "Sheetfile") {
-            if let Some(existing) = properties.iter_mut().find(|p| p.key == canonical) {
-                *existing = property;
-                return;
-            }
-        }
-        properties.push(property);
-    }
-
     fn upsert_global_label_property(properties: &mut Vec<Property>, property: Property) {
         if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
             if let Some(existing) = properties
@@ -4262,43 +4624,8 @@ impl KiCadSchematicParser {
         properties.push(property);
     }
 
-    fn classify_property_kind(&self, parent: FieldParent, key: &str) -> PropertyKind {
-        match parent {
-            FieldParent::Symbol => match key.to_ascii_lowercase().as_str() {
-                "reference" => PropertyKind::SymbolReference,
-                "value" => PropertyKind::SymbolValue,
-                "footprint" => PropertyKind::SymbolFootprint,
-                "datasheet" => PropertyKind::SymbolDatasheet,
-                _ => PropertyKind::User,
-            },
-            FieldParent::Sheet => match key.to_ascii_lowercase().as_str() {
-                "sheetname" | "sheet name" => PropertyKind::SheetName,
-                "sheetfile" | "sheet file" => PropertyKind::SheetFile,
-                _ => PropertyKind::SheetUser,
-            },
-            FieldParent::GlobalLabel => match key.to_ascii_lowercase().as_str() {
-                "intersheet references" => PropertyKind::GlobalLabelIntersheetRefs,
-                _ => PropertyKind::User,
-            },
-            FieldParent::OtherLabel => PropertyKind::User,
-        }
-    }
-
-    fn canonicalize_property_key(&self, kind: PropertyKind, key: String) -> String {
-        match kind {
-            PropertyKind::SymbolReference => "Reference".to_string(),
-            PropertyKind::SymbolValue => "Value".to_string(),
-            PropertyKind::SymbolFootprint => "Footprint".to_string(),
-            PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
-            PropertyKind::SheetName => "Sheetname".to_string(),
-            PropertyKind::SheetFile => "Sheetfile".to_string(),
-            PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References".to_string(),
-            _ => key,
-        }
-    }
-
     fn parse_label_shape(&mut self) -> Result<LabelShape, Error> {
-        match self.parse_string_atom("shape")?.as_str() {
+        match self.need_unquoted_symbol_atom("shape")?.as_str() {
             "input" => Ok(LabelShape::Input),
             "output" => Ok(LabelShape::Output),
             "bidirectional" => Ok(LabelShape::Bidirectional),
@@ -4422,9 +4749,19 @@ impl KiCadSchematicParser {
     }
 
     fn set_legacy_symbol_instance_data(&mut self) {
-        // The current Rust model already keeps per-symbol instance data in `Symbol.instances`,
-        // so the KiCad legacy fixup is largely represented already. Keep the structural hook here
-        // so the post-parse flow matches upstream.
+        // Upstream: SCH_SCREEN::SetLegacySymbolInstanceData()
+        // For files < 20200828, per-symbol instance data may carry stale value/footprint
+        // fields. The C++ code re-adds each instance with only path/reference/unit, which
+        // effectively clears value and footprint so that the later post-load
+        // UpdateSymbolInstanceData can fill them from the screen-level symbol_instances list.
+        for item in &mut self.screen.items {
+            if let SchItem::Symbol(symbol) = item {
+                for instance in &mut symbol.instances {
+                    instance.value = None;
+                    instance.footprint = None;
+                }
+            }
+        }
     }
 
     fn resolve_groups(&mut self) {

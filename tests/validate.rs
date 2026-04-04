@@ -6,8 +6,8 @@ use ki2::core::SchematicProject;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
-    FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis, SchItem, ShapeKind, SheetPinShape,
-    SheetSide, StrokeStyle, TextHJustify, TextKind, TextVJustify,
+    FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis, PropertyKind, SchItem, ShapeKind,
+    SheetPinShape, SheetSide, StrokeStyle, TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 
@@ -167,6 +167,32 @@ fn rejects_unknown_top_level_sections() {
 }
 
 #[test]
+fn rejects_invalid_generator_and_legacy_host_tokens() {
+    let bad_generator = r#"(kicad_sch
+  (version 20260306)
+  (generator (bogus))
+  (uuid "u-1")
+)"#;
+    let bad_generator_path = temp_schematic("bad_generator_token", bad_generator);
+    let err = parse_schematic_file(Path::new(&bad_generator_path))
+        .expect_err("must reject invalid generator token");
+    assert!(err.to_string().contains("expecting generator"));
+
+    let bad_host = r#"(kicad_sch
+  (version 20200826)
+  (host "eeschema" (bogus))
+  (uuid "u-1")
+)"#;
+    let bad_host_path = temp_schematic("bad_legacy_host_version_token", bad_host);
+    let err = parse_schematic_file(Path::new(&bad_host_path))
+        .expect_err("must reject invalid legacy host version token");
+    assert!(err.to_string().contains("expecting host version"));
+
+    let _ = fs::remove_file(bad_generator_path);
+    let _ = fs::remove_file(bad_host_path);
+}
+
+#[test]
 fn rejects_invalid_title_block_comment_number() {
     let src = r#"(kicad_sch
   (version 20250114)
@@ -182,6 +208,50 @@ fn rejects_invalid_title_block_comment_number() {
             .contains("Invalid title block comment number")
     );
     let _ = fs::remove_file(path);
+
+    let valid_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (title_block (comment 9 "ok"))
+)"#;
+    let valid_path = temp_schematic("title_block_comment_nine", valid_src);
+    let schematic =
+        parse_schematic_file(Path::new(&valid_path)).expect("must accept comment slot 9");
+    let title_block = schematic.screen.title_block.as_ref().expect("title block");
+    assert_eq!(
+        title_block
+            .comments
+            .iter()
+            .find(|(idx, _)| *idx == 9)
+            .map(|(_, value)| value.as_str()),
+        Some("ok")
+    );
+    let _ = fs::remove_file(valid_path);
+
+    let numeric_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-2")
+  (paper "A4")
+  (title_block (title 2026) (rev 7) (comment 1 99))
+)"#;
+    let numeric_path = temp_schematic("title_block_numeric_values", numeric_src);
+    let schematic =
+        parse_schematic_file(Path::new(&numeric_path)).expect("must accept numeric title values");
+    let title_block = schematic.screen.title_block.as_ref().expect("title block");
+    assert_eq!(title_block.title.as_deref(), Some("2026"));
+    assert_eq!(title_block.revision.as_deref(), Some("7"));
+    assert_eq!(
+        title_block
+            .comments
+            .iter()
+            .find(|(idx, _)| *idx == 1)
+            .map(|(_, value)| value.as_str()),
+        Some("99")
+    );
+    let _ = fs::remove_file(numeric_path);
 }
 
 #[test]
@@ -1057,6 +1127,70 @@ fn rejects_invalid_page_type() {
 }
 
 #[test]
+fn rejects_missing_tokens_in_paper_and_page_branches() {
+    let missing_paper_kind_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper)
+)"#;
+    let missing_paper_kind_path = temp_schematic("missing_paper_kind", missing_paper_kind_src);
+    let err = parse_schematic_file(Path::new(&missing_paper_kind_path))
+        .expect_err("must reject missing paper kind");
+    assert!(err.to_string().contains("missing paper kind"));
+    let _ = fs::remove_file(missing_paper_kind_path);
+
+    let missing_user_width_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper User)
+)"#;
+    let missing_user_width_path = temp_schematic("missing_user_width", missing_user_width_src);
+    let err = parse_schematic_file(Path::new(&missing_user_width_path))
+        .expect_err("must reject missing custom width");
+    assert!(err.to_string().contains("missing width"));
+    let _ = fs::remove_file(missing_user_width_path);
+
+    let missing_user_height_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper User 123.4)
+)"#;
+    let missing_user_height_path = temp_schematic("missing_user_height", missing_user_height_src);
+    let err = parse_schematic_file(Path::new(&missing_user_height_path))
+        .expect_err("must reject missing custom height");
+    assert!(err.to_string().contains("missing height"));
+    let _ = fs::remove_file(missing_user_height_path);
+
+    let missing_page_sheet_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (page 7)
+)"#;
+    let missing_page_sheet_path = temp_schematic("missing_page_sheet", missing_page_sheet_src);
+    let err = parse_schematic_file(Path::new(&missing_page_sheet_path))
+        .expect_err("must reject missing page sheet token");
+    assert!(err.to_string().contains("missing page sheet"));
+    let _ = fs::remove_file(missing_page_sheet_path);
+
+    let missing_page_right_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (page 7 9
+)"#;
+    let missing_page_right_path = temp_schematic("missing_page_right", missing_page_right_src);
+    let err = parse_schematic_file(Path::new(&missing_page_right_path))
+        .expect_err("must reject missing closing paren in page sniff");
+    assert!(matches!(err, Error::Validation { .. }));
+    assert!(err.to_string().contains("expecting ("));
+    let _ = fs::remove_file(missing_page_right_path);
+}
+
+#[test]
 fn rejects_future_schematic_version() {
     let src = r#"(kicad_sch
   (version 20990101)
@@ -1358,6 +1492,44 @@ fn parses_symbol_mirror_body_style_and_sheet_pins() {
 }
 
 #[test]
+fn rejects_invalid_sheet_pin_name() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin (at 1 2 180) input))
+)"#;
+    let path = temp_schematic("invalid_sheet_pin_name", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must fail");
+    assert!(format!("{err}").contains("Invalid sheet pin name"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_sheet_pin_uuid_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input (at 1 2 180) (uuid (bogus))))
+)"#;
+    let path = temp_schematic("invalid_sheet_pin_uuid", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must fail");
+    assert!(format!("{err}").contains("expecting uuid"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_property_metadata_semantics() {
     let src = r#"(kicad_sch
   (version 20231120)
@@ -1399,6 +1571,135 @@ fn parses_property_metadata_semantics() {
     assert_eq!(effects.font_size, Some([1.27, 1.27]));
     assert_eq!(effects.h_justify, TextHJustify::Center);
     assert_eq!(effects.v_justify, TextVJustify::Center);
+
+    let bare_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (at 10 20 0)
+    (property "UserField" "R1"
+      (show_name)
+      (do_not_autoplace)))
+)"#;
+    let bare_path = temp_schematic("property_metadata_bare_bools", bare_src);
+    let schematic = parse_schematic_file(Path::new(&bare_path)).expect("must parse bare bools");
+    let property = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => symbol.properties.first(),
+            _ => None,
+        })
+        .expect("property");
+    assert!(property.show_name);
+    assert!(!property.can_autoplace);
+    let _ = fs::remove_file(bare_path);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_property_header_tokens() {
+    let invalid_name_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id "Device:R") (at 1 2 0) (property))
+)"#;
+    let invalid_name_path = temp_schematic("invalid_property_name", invalid_name_src);
+    let err = parse_schematic_file(Path::new(&invalid_name_path))
+        .expect_err("must reject invalid property name");
+    assert!(err.to_string().contains("Invalid property name"));
+    let _ = fs::remove_file(invalid_name_path);
+
+    let empty_name_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id "Device:R") (at 1 2 0) (property "" "v"))
+)"#;
+    let empty_name_path = temp_schematic("empty_property_name", empty_name_src);
+    let err = parse_schematic_file(Path::new(&empty_name_path))
+        .expect_err("must reject empty property name");
+    assert!(err.to_string().contains("Empty property name"));
+    let _ = fs::remove_file(empty_name_path);
+
+    let invalid_value_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id "Device:R") (at 1 2 0) (property "X"))
+)"#;
+    let invalid_value_path = temp_schematic("invalid_property_value", invalid_value_src);
+    let err = parse_schematic_file(Path::new(&invalid_value_path))
+        .expect_err("must reject invalid property value");
+    assert!(err.to_string().contains("Invalid property value"));
+    let _ = fs::remove_file(invalid_value_path);
+}
+
+#[test]
+fn private_only_survives_on_true_user_fields() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id "Device:R") (at 1 2 0)
+    (property private "UserField" "sym"))
+  (sheet (at 0 0) (size 10 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (property private "UserField" "sheet"))
+  (global_label "G" (shape input) (at 0 0 0)
+    (property private "UserField" "glob"))
+)"#;
+    let path = temp_schematic("private_true_user_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert!(symbol.properties[0].is_private);
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    let sheet_user = sheet
+        .properties
+        .iter()
+        .find(|property| property.kind == ki2::model::PropertyKind::SheetUser)
+        .expect("sheet user field");
+    assert!(!sheet_user.is_private);
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    assert!(global.properties[0].is_private);
 
     let _ = fs::remove_file(path);
 }
@@ -1448,7 +1749,56 @@ fn rejects_sheet_missing_required_properties() {
 )"#;
     let path = temp_schematic("missing_sheet_file", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject missing sheet file");
-    assert!(err.to_string().contains("missing sheet file property"));
+    assert!(err.to_string().contains("Missing sheet file property"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn sheet_does_not_require_at_or_size() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+)"#;
+    let path = temp_schematic("sheet_without_at_or_size", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept sheet without at or size");
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.at, [0.0, 0.0]);
+    assert_eq!(sheet.size, [0.0, 0.0]);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_sheet_child_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet (at 0 0) (size 20 10)
+    (bogus 1)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+)"#;
+    let path = temp_schematic("unexpected_sheet_child", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad sheet child");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("expecting at, size, stroke, background, instances, uuid, property, or pin")
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -1510,6 +1860,24 @@ fn canonicalizes_and_replaces_mandatory_properties() {
     assert_eq!(sheet.name.as_deref(), Some("New Name"));
     assert_eq!(sheet.filename.as_deref(), Some("new.kicad_sch"));
 
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_symbol_child_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-unexpected")
+  (symbol
+    (lib_id "Device:R")
+    (at 10 20 0)
+    (bogus 1))
+)"#;
+    let path = temp_schematic("unexpected_symbol_child", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol child");
+    let msg = err.to_string();
+    assert!(msg.contains("expecting lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances"));
     let _ = fs::remove_file(path);
 }
 
@@ -1593,6 +1961,431 @@ fn parses_text_and_label_semantics() {
         .expect("directive label");
     assert_eq!(directive.pin_length, Some(3.5));
 
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
+    let text_property_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text "hello" (property "X" "Y"))
+)"#;
+    let text_property_path = temp_schematic("text_unexpected_property", text_property_src);
+    let err = parse_schematic_file(Path::new(&text_property_path))
+        .expect_err("must reject property on schematic text");
+    assert!(err.to_string().contains("unexpected property"));
+    let _ = fs::remove_file(text_property_path);
+
+    let local_label_shape_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (label "L" (at 0 0 0) (shape input))
+)"#;
+    let local_label_shape_path =
+        temp_schematic("local_label_unexpected_shape", local_label_shape_src);
+    let err = parse_schematic_file(Path::new(&local_label_shape_path))
+        .expect_err("must reject shape on local label");
+    assert!(err.to_string().contains("unexpected shape"));
+    let _ = fs::remove_file(local_label_shape_path);
+
+    let bad_global_shape_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (global_label "G" (at 0 0 0) (shape (bogus)))
+)"#;
+    let bad_global_shape_path =
+        temp_schematic("global_label_invalid_shape_token", bad_global_shape_src);
+    let err = parse_schematic_file(Path::new(&bad_global_shape_path))
+        .expect_err("must reject invalid shape token on global label");
+    assert!(err.to_string().contains("expecting shape"));
+    let _ = fs::remove_file(bad_global_shape_path);
+
+    let hierarchical_length_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (hierarchical_label "H" (at 0 0 0) (shape input) (length 10))
+)"#;
+    let hierarchical_length_path = temp_schematic(
+        "hierarchical_label_unexpected_length",
+        hierarchical_length_src,
+    );
+    let err = parse_schematic_file(Path::new(&hierarchical_length_path))
+        .expect_err("must reject length on hierarchical label");
+    assert!(err.to_string().contains("unexpected length"));
+    let _ = fs::remove_file(hierarchical_length_path);
+
+    let local_iref_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (label "L" (at 0 0 0) (iref 1 2))
+)"#;
+    let local_iref_path = temp_schematic("local_label_iref", local_iref_src);
+    let err = parse_schematic_file(Path::new(&local_iref_path))
+        .expect_err("must reject iref payload on local label");
+    assert!(err.to_string().contains("expecting ("));
+    let _ = fs::remove_file(local_iref_path);
+
+    let empty_local_iref_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (label "L" (at 0 0 0) (iref))
+)"#;
+    let empty_local_iref_path = temp_schematic("local_label_empty_iref", empty_local_iref_src);
+    let err = parse_schematic_file(Path::new(&empty_local_iref_path))
+        .expect_err("empty legacy iref on local label should fall out to shared parser flow");
+    assert!(err.to_string().contains("expecting end of file"));
+    let _ = fs::remove_file(empty_local_iref_path);
+}
+
+#[test]
+fn non_local_labels_do_not_require_shape() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (global_label "VCC" (at 5 6 180) (uuid "g-1"))
+  (hierarchical_label "NET_A" (at 7 8 90) (uuid "h-1"))
+)"#;
+    let path = temp_schematic("non_local_labels_without_shape", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept non-local labels without shape");
+    let labels: Vec<_> = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Label(label) => Some(label),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(labels.len(), 2);
+    assert!(labels.iter().all(|label| label.shape.is_none()));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_quoted_label_and_sheet_pin_shape_tokens() {
+    let quoted_label_shape = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-label-shape")
+  (global_label "VCC" (shape "input"))
+)"#;
+    let quoted_label_shape_path = temp_schematic("quoted_label_shape_token", quoted_label_shape);
+    let err = parse_schematic_file(Path::new(&quoted_label_shape_path))
+        .expect_err("must reject quoted label shape token");
+    assert!(err.to_string().contains("expecting shape"));
+
+    let quoted_sheet_pin_shape = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-sheet-pin-shape")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "P1" "input"))
+)"#;
+    let quoted_sheet_pin_shape_path =
+        temp_schematic("quoted_sheet_pin_shape_token", quoted_sheet_pin_shape);
+    let err = parse_schematic_file(Path::new(&quoted_sheet_pin_shape_path))
+        .expect_err("must reject quoted sheet pin shape token");
+    assert!(err.to_string().contains("expecting sheet pin shape"));
+
+    let _ = fs::remove_file(quoted_label_shape_path);
+    let _ = fs::remove_file(quoted_sheet_pin_shape_path);
+}
+
+#[test]
+fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
+    let quoted_mirror = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-mirror")
+  (symbol
+    (lib_id "Device:R")
+    (mirror "x"))
+)"#;
+    let quoted_mirror_path = temp_schematic("quoted_symbol_mirror", quoted_mirror);
+    let err = parse_schematic_file(Path::new(&quoted_mirror_path))
+        .expect_err("must reject quoted mirror axis");
+    assert!(err.to_string().contains("expecting mirror axis"));
+
+    let quoted_lib_pin_type = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-pin-type")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin "input" line
+        (at 0 0 0)
+        (length 2.54)
+        (name "PIN")
+        (number "1"))))
+)"#;
+    let quoted_lib_pin_type_path = temp_schematic("quoted_lib_pin_type", quoted_lib_pin_type);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_type_path))
+        .expect("quoted lib pin type should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting pin type"))
+    );
+
+    let quoted_lib_pin_shape = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-pin-shape")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin input "line"
+        (at 0 0 0)
+        (length 2.54)
+        (name "PIN")
+        (number "1"))))
+)"#;
+    let quoted_lib_pin_shape_path = temp_schematic("quoted_lib_pin_shape", quoted_lib_pin_shape);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_shape_path))
+        .expect("quoted lib pin shape should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting pin shape"))
+    );
+
+    let _ = fs::remove_file(quoted_mirror_path);
+    let _ = fs::remove_file(quoted_lib_pin_type_path);
+    let _ = fs::remove_file(quoted_lib_pin_shape_path);
+}
+
+#[test]
+fn rejects_quoted_effects_keyword_tokens() {
+    let quoted_justify = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-justify")
+  (text "note" (effects (justify "left")))
+)"#;
+    let quoted_justify_path = temp_schematic("quoted_effects_justify", quoted_justify);
+    let err = parse_schematic_file(Path::new(&quoted_justify_path))
+        .expect_err("must reject quoted justify token");
+    assert!(
+        err.to_string()
+            .contains("expecting left, right, top, bottom, or mirror")
+    );
+
+    let quoted_font_bold = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-font-bold")
+  (text "note" (effects (font "bold")))
+)"#;
+    let quoted_font_bold_path = temp_schematic("quoted_effects_font_bold", quoted_font_bold);
+    let err = parse_schematic_file(Path::new(&quoted_font_bold_path))
+        .expect_err("must reject quoted font keyword");
+    assert!(
+        err.to_string()
+            .contains("expecting face, size, thickness, line_spacing, bold, or italic")
+    );
+
+    let quoted_hide = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-hide")
+  (text "note" (effects "hide"))
+)"#;
+    let quoted_hide_path = temp_schematic("quoted_effects_hide", quoted_hide);
+    let err = parse_schematic_file(Path::new(&quoted_hide_path))
+        .expect_err("must reject quoted hide token");
+    assert!(
+        err.to_string()
+            .contains("expecting font, justify, hide or href")
+    );
+
+    let _ = fs::remove_file(quoted_justify_path);
+    let _ = fs::remove_file(quoted_font_bold_path);
+    let _ = fs::remove_file(quoted_hide_path);
+}
+
+#[test]
+fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
+    let quoted_power_scope = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-power-scope")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (power "local")))
+)"#;
+    let quoted_power_scope_path = temp_schematic("quoted_power_scope", quoted_power_scope);
+    let schematic = parse_schematic_file(Path::new(&quoted_power_scope_path))
+        .expect("quoted lib power scope should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting global or local"))
+    );
+
+    let quoted_stroke_type = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-stroke-type")
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke (type "dash")))
+)"#;
+    let quoted_stroke_type_path = temp_schematic("quoted_stroke_type", quoted_stroke_type);
+    let err = parse_schematic_file(Path::new(&quoted_stroke_type_path))
+        .expect_err("must reject quoted stroke type");
+    assert!(
+        err.to_string()
+            .contains("expecting default, dash, dot, dash_dot, dash_dot_dot, or solid")
+    );
+
+    let quoted_fill_type = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-fill-type")
+  (polyline (pts (xy 0 0) (xy 1 0) (xy 1 1)) (fill (type "color")))
+)"#;
+    let quoted_fill_type_path = temp_schematic("quoted_fill_type", quoted_fill_type);
+    let err = parse_schematic_file(Path::new(&quoted_fill_type_path))
+        .expect_err("must reject quoted fill type");
+    assert!(err.to_string().contains(
+        "expecting none, outline, hatch, reverse_hatch, cross_hatch, color or background"
+    ));
+
+    let _ = fs::remove_file(quoted_power_scope_path);
+    let _ = fs::remove_file(quoted_stroke_type_path);
+    let _ = fs::remove_file(quoted_fill_type_path);
+}
+
+#[test]
+fn rejects_quoted_bare_hide_in_lib_pin_names_and_numbers() {
+    let quoted_pin_names_hide = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-pin-names-hide")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin_names "hide")))
+)"#;
+    let quoted_pin_names_hide_path = temp_schematic("quoted_pin_names_hide", quoted_pin_names_hide);
+    let schematic = parse_schematic_file(Path::new(&quoted_pin_names_hide_path))
+        .expect("quoted pin_names hide should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting ("))
+    );
+
+    let quoted_pin_numbers_hide = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-pin-numbers-hide")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin_numbers "hide")))
+)"#;
+    let quoted_pin_numbers_hide_path =
+        temp_schematic("quoted_pin_numbers_hide", quoted_pin_numbers_hide);
+    let schematic = parse_schematic_file(Path::new(&quoted_pin_numbers_hide_path))
+        .expect("quoted pin_numbers hide should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting ("))
+    );
+
+    let _ = fs::remove_file(quoted_pin_names_hide_path);
+    let _ = fs::remove_file(quoted_pin_numbers_hide_path);
+}
+
+#[test]
+fn quoted_demorgan_in_body_styles_is_not_the_keyword_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-demorgan")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (body_styles "demorgan" "ALT")))
+)"#;
+    let path = temp_schematic("quoted_demorgan_body_styles", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    assert_eq!(schematic.screen.lib_symbols.len(), 1);
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    assert!(!lib_symbol.has_demorgan);
+    assert_eq!(
+        lib_symbol.body_style_names,
+        vec!["demorgan".to_string(), "ALT".to_string()]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn labels_do_not_require_at() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (label "LOCAL")
+  (global_label "GLOBAL" (shape input))
+)"#;
+    let path = temp_schematic("labels_without_at", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must accept labels without at");
+    let local = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Local => Some(label),
+            _ => None,
+        })
+        .expect("local label");
+    assert_eq!(local.at, [0.0, 0.0]);
+    assert_eq!(local.angle, 0.0);
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    assert_eq!(global.at, [0.0, 0.0]);
+    assert_eq!(global.angle, 0.0);
     let _ = fs::remove_file(path);
 }
 
@@ -1761,6 +2554,50 @@ fn parses_upstream_bus_alias_and_legacy_overbar_notation() {
 }
 
 #[test]
+fn rejects_invalid_bus_alias_name_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bus-alias")
+  (bus_alias (bogus) (members A0 A1))
+)"#;
+    let path = temp_schematic("bad_bus_alias_name", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad bus alias name");
+    assert!(err.to_string().contains("expecting bus alias name"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_bus_alias_member_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bus-alias-member")
+  (bus_alias "ADDR" (members (bogus)))
+)"#;
+    let path = temp_schematic("bad_bus_alias_member", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad bus alias member");
+    assert!(err.to_string().contains("expecting quoted string"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn allows_empty_bus_alias_members_like_upstream() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bus-alias-empty")
+  (bus_alias "ADDR" (members))
+)"#;
+    let path = temp_schematic("empty_bus_alias_members", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must accept empty bus alias");
+    assert_eq!(schematic.screen.bus_aliases.len(), 1);
+    assert_eq!(schematic.screen.bus_aliases[0].name, "ADDR");
+    assert!(schematic.screen.bus_aliases[0].members.is_empty());
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_table_without_cells() {
     let src = r#"(kicad_sch
   (version 20250114)
@@ -1771,8 +2608,82 @@ fn rejects_table_without_cells() {
 )"#;
     let path = temp_schematic("table_no_cells", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject empty table");
-    assert!(err.to_string().contains("invalid table: no cells defined"));
+    assert!(err.to_string().contains("Invalid table: no cells defined"));
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn line_and_polyline_keep_upstream_error_text() {
+    let bad_wire_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (wire (bogus yes))
+)"#;
+    let bad_wire_path = temp_schematic("bad_wire_child", bad_wire_src);
+    let err =
+        parse_schematic_file(Path::new(&bad_wire_path)).expect_err("must reject bad wire child");
+    assert!(err.to_string().contains("expecting at, uuid or stroke"));
+    let _ = fs::remove_file(bad_wire_path);
+
+    let short_wire_pts_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (wire (pts (xy 0 0)))
+)"#;
+    let short_wire_pts_path = temp_schematic("short_wire_pts", short_wire_pts_src);
+    let err = parse_schematic_file(Path::new(&short_wire_pts_path))
+        .expect_err("must reject one-point wire pts");
+    assert!(err.to_string().contains("expecting ("));
+    let _ = fs::remove_file(short_wire_pts_path);
+
+    let long_wire_pts_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 1 1) (xy 2 2)))
+)"#;
+    let long_wire_pts_path = temp_schematic("long_wire_pts", long_wire_pts_src);
+    let err = parse_schematic_file(Path::new(&long_wire_pts_path))
+        .expect_err("must reject three-point wire pts");
+    assert!(err.to_string().contains("expecting )"));
+    let _ = fs::remove_file(long_wire_pts_path);
+
+    let short_polyline_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (polyline (pts (xy 0 0)))
+)"#;
+    let short_polyline_path = temp_schematic("short_polyline", short_polyline_src);
+    let err = parse_schematic_file(Path::new(&short_polyline_path))
+        .expect_err("must reject short schematic polyline");
+    assert!(
+        err.to_string()
+            .contains("Schematic polyline has too few points")
+    );
+    let _ = fs::remove_file(short_polyline_path);
+
+    let bad_polyline_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (polyline (bogus yes))
+)"#;
+    let bad_polyline_path = temp_schematic("bad_polyline_child", bad_polyline_src);
+    let err = parse_schematic_file(Path::new(&bad_polyline_path))
+        .expect_err("must reject bad polyline child");
+    assert!(
+        err.to_string()
+            .contains("expecting pts, uuid, stroke, or fill")
+    );
+    let _ = fs::remove_file(bad_polyline_path);
 }
 
 #[test]
@@ -1786,7 +2697,47 @@ fn rejects_invalid_image_data() {
 )"#;
     let path = temp_schematic("bad_image_data", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject invalid image data");
-    assert!(err.to_string().contains("failed to read image data"));
+    assert!(err.to_string().contains("Failed to read image data."));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_image_data_token() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (image (at 1 2) (scale 1.0) (data (bogus)) (uuid "img-1"))
+)"#;
+    let path = temp_schematic("bad_image_data_token", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject invalid image data token");
+    assert!(err.to_string().contains("expecting base64 image data"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn image_does_not_require_at() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (image (scale 1.0) (data "QUJD") (uuid "img-1"))
+)"#;
+    let path = temp_schematic("image_without_at", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must accept image without at");
+    let image = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Image(image) => Some(image),
+            _ => None,
+        })
+        .expect("image");
+    assert_eq!(image.at, [0.0, 0.0]);
     let _ = fs::remove_file(path);
 }
 
@@ -1873,6 +2824,52 @@ fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
         Some(SchItem::Group(Group { uuid, members, .. }))
             if uuid.as_deref() == Some("group-u") && members == &vec!["wire-u".to_string()]
     ));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_table_child_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-table-unexpected")
+  (table
+    (bogus 1)
+    (cells
+      (table_cell "c" (at 0 0 0) (size 5 5))))
+)"#;
+    let path = temp_schematic("unexpected_table_child", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad table child");
+    let msg = err.to_string();
+    assert!(msg.contains(
+        "expecting columns, col_widths, row_heights, border, separators, uuid, header or cells"
+    ));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn schematic_text_box_does_not_require_at() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text_box "body" (size 3 4) (uuid "tb"))
+)"#;
+    let path = temp_schematic("text_box_without_at", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept text_box without at");
+    let text_box = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::TextBox(text_box) => Some(text_box),
+            _ => None,
+        })
+        .expect("text box");
+    assert_eq!(text_box.at, [0.0, 0.0]);
+    assert_eq!(text_box.end, [3.0, 4.0]);
     let _ = fs::remove_file(path);
 }
 
@@ -1977,6 +2974,22 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     assert_eq!(symbol.lib_name, None);
     assert_eq!(symbol.default_reference.as_deref(), Some("R?"));
     assert_eq!(symbol.default_value.as_deref(), Some("10k"));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
     assert_eq!(symbol.pins.len(), 1);
     assert_eq!(symbol.pins[0].alternate.as_deref(), Some("A"));
     assert_eq!(symbol.pins[0].uuid.as_deref(), Some("pin-u"));
@@ -1999,9 +3012,1155 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     assert_eq!(sheet.instances[0].project, "demo");
     assert_eq!(sheet.instances[0].page.as_deref(), Some("2"));
     assert_eq!(sheet.instances[0].variants[0].name, "ASSEMBLY");
-    assert!(!sheet.instances[0].variants[0].in_bom);
+    assert!(sheet.instances[0].variants[0].in_bom);
     assert!(!sheet.instances[0].variants[0].in_pos_files);
 
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn symbol_instance_value_and_footprint_update_symbol_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-instance-fields")
+  (symbol
+    (lib_id "Device:R")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (default_instance
+      (value "default-value")
+      (footprint "default-footprint"))
+    (instances
+      (project "demo"
+        (path "/A"
+          (value "instance-value")
+          (footprint "instance-footprint")))))
+)"#;
+    let path = temp_schematic("symbol_instance_updates_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.default_value.as_deref(), Some("default-value"));
+    assert_eq!(
+        symbol.default_footprint.as_deref(),
+        Some("default-footprint")
+    );
+    assert_eq!(symbol.instances[0].value.as_deref(), Some("instance-value"));
+    assert_eq!(
+        symbol.instances[0].footprint.as_deref(),
+        Some("instance-footprint")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("instance-value")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("instance-footprint")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn sheet_variant_in_bom_respects_20260306_fix_boundary() {
+    let old_src = r#"(kicad_sch
+  (version 20260305)
+  (generator "eeschema")
+  (uuid "root-old")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S"
+          (variant
+            (name "OLD")
+            (in_bom yes))))))
+)"#;
+    let old_path = temp_schematic("sheet_variant_in_bom_old", old_src);
+    let old = parse_schematic_file(Path::new(&old_path)).expect("old version must parse");
+    let old_sheet = old
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("old sheet");
+    assert!(!old_sheet.instances[0].variants[0].in_bom);
+
+    let new_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-new")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S"
+          (variant
+            (name "NEW")
+            (in_bom yes))))))
+)"#;
+    let new_path = temp_schematic("sheet_variant_in_bom_new", new_src);
+    let new = parse_schematic_file(Path::new(&new_path)).expect("new version must parse");
+    let new_sheet = new
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("new sheet");
+    assert!(new_sheet.instances[0].variants[0].in_bom);
+
+    let _ = fs::remove_file(old_path);
+    let _ = fs::remove_file(new_path);
+}
+
+#[test]
+fn symbol_and_sheet_variants_inherit_parent_attributes() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-variant-inherit")
+  (symbol
+    (lib_id "Device:R")
+    (exclude_from_sim yes)
+    (in_bom no)
+    (on_board no)
+    (in_pos_files no)
+    (dnp yes)
+    (instances
+      (project "demo"
+        (path "/A"
+          (variant
+            (name "SYM")
+            (field (name "MPN") (value "123")))))))
+  (sheet
+    (exclude_from_sim yes)
+    (in_bom no)
+    (on_board no)
+    (dnp yes)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S"
+          (variant
+            (name "SHEET")
+            (field (name "POP") (value "DNP")))))))
+)"#;
+    let path = temp_schematic("variant_inherit_parent_attributes", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    let sym_variant = &symbol.instances[0].variants[0];
+    assert_eq!(sym_variant.name, "SYM");
+    assert!(sym_variant.dnp);
+    assert!(sym_variant.excluded_from_sim);
+    assert!(!sym_variant.in_bom);
+    assert!(!sym_variant.on_board);
+    assert!(!sym_variant.in_pos_files);
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    let sheet_variant = &sheet.instances[0].variants[0];
+    assert_eq!(sheet_variant.name, "SHEET");
+    assert!(sheet_variant.dnp);
+    assert!(sheet_variant.excluded_from_sim);
+    assert!(!sheet_variant.in_bom);
+    assert!(!sheet_variant.on_board);
+    assert!(!sheet_variant.in_pos_files);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_variant_field_name_and_value_tokens() {
+    let bad_name = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-name")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (instances
+      (project "demo"
+        (path "/A"
+          (variant
+            (name "ALT")
+            (field (name (bogus)) (value "123")))))))
+)"#;
+    let bad_name_path = temp_schematic("bad_variant_field_name", bad_name);
+    let err =
+        parse_schematic_file(Path::new(&bad_name_path)).expect_err("must reject bad field name");
+    assert!(err.to_string().contains("Invalid variant field name"));
+
+    let bad_variant_name = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-variant")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (instances
+      (project "demo"
+        (path "/A"
+          (variant
+            (name (bogus))
+            (field (name "MPN") (value "123")))))))
+)"#;
+    let bad_variant_name_path = temp_schematic("bad_variant_name", bad_variant_name);
+    let err = parse_schematic_file(Path::new(&bad_variant_name_path))
+        .expect_err("must reject bad variant name");
+    assert!(err.to_string().contains("Invalid variant name"));
+
+    let bad_value = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-value")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S"
+          (variant
+            (name "ALT")
+            (field (name "MPN") (value (bogus)))))))
+)"#;
+    let bad_value_path = temp_schematic("bad_variant_field_value", bad_value);
+    let err =
+        parse_schematic_file(Path::new(&bad_value_path)).expect_err("must reject bad field value");
+    assert!(err.to_string().contains("Invalid variant field value"));
+
+    let _ = fs::remove_file(bad_name_path);
+    let _ = fs::remove_file(bad_variant_name_path);
+    let _ = fs::remove_file(bad_value_path);
+}
+
+#[test]
+fn rejects_invalid_nested_instance_symbol_headers() {
+    let bad_symbol_project = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-project")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (instances
+      (project (bogus)
+        (path "/A" (reference "R1")))))
+)"#;
+    let bad_symbol_project_path = temp_schematic("bad_symbol_project_name", bad_symbol_project);
+    let err = parse_schematic_file(Path::new(&bad_symbol_project_path))
+        .expect_err("must reject bad project name");
+    assert!(err.to_string().contains("expecting project name"));
+
+    let bad_sheet_path = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-path")
+  (sheet_instances
+    (path (bogus) (page "1")))
+)"#;
+    let bad_sheet_path_path = temp_schematic("bad_sheet_instance_path", bad_sheet_path);
+    let err = parse_schematic_file(Path::new(&bad_sheet_path_path))
+        .expect_err("must reject bad sheet instance path");
+    assert!(err.to_string().contains("expecting sheet instance path"));
+
+    let bad_symbol_reference = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-ref")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (instances
+      (project "demo"
+        (path "/A" (reference (bogus)))))) 
+)"#;
+    let bad_symbol_reference_path =
+        temp_schematic("bad_symbol_instance_reference", bad_symbol_reference);
+    let err = parse_schematic_file(Path::new(&bad_symbol_reference_path))
+        .expect_err("must reject bad symbol reference");
+    assert!(err.to_string().contains("expecting reference"));
+
+    let _ = fs::remove_file(bad_symbol_project_path);
+    let _ = fs::remove_file(bad_sheet_path_path);
+    let _ = fs::remove_file(bad_symbol_reference_path);
+}
+
+#[test]
+fn rejects_invalid_sheet_instance_page_tokens() {
+    let bad_top_level = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-page")
+  (sheet_instances
+    (path "/A" (page (bogus))))
+)"#;
+    let bad_top_level_path = temp_schematic("bad_sheet_instance_page", bad_top_level);
+    let err = parse_schematic_file(Path::new(&bad_top_level_path))
+        .expect_err("must reject bad top-level sheet page");
+    assert!(err.to_string().contains("expecting page"));
+
+    let bad_nested = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-nested-page")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S" (page (bogus))))))
+)"#;
+    let bad_nested_path = temp_schematic("bad_nested_sheet_page", bad_nested);
+    let err = parse_schematic_file(Path::new(&bad_nested_path))
+        .expect_err("must reject bad nested sheet page");
+    assert!(err.to_string().contains("expecting page"));
+
+    let bad_nested_child = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-nested-child")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S" (bogus "x")))))
+)"#;
+    let bad_nested_child_path = temp_schematic("bad_nested_sheet_instance_child", bad_nested_child);
+    let err = parse_schematic_file(Path::new(&bad_nested_child_path))
+        .expect_err("must reject bad nested sheet instance child");
+    assert!(err.to_string().contains("expecting page or variant"));
+
+    let _ = fs::remove_file(bad_top_level_path);
+    let _ = fs::remove_file(bad_nested_path);
+    let _ = fs::remove_file(bad_nested_child_path);
+}
+
+#[test]
+fn rejects_unknown_top_level_symbol_instance_child() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-instance-child")
+  (symbol_instances
+    (path "/A" (bogus "R1")))
+)"#;
+    let path = temp_schematic("bad_top_level_symbol_instance_child", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject bad top-level symbol instance child");
+    assert!(
+        err.to_string()
+            .contains("expecting reference, unit, value or footprint")
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_default_instance_reference() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-default-ref")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (default_instance
+      (reference (bogus))
+      (unit 1)
+      (value "10k")
+      (footprint "Resistor_SMD:R_0603")))
+)"#;
+    let path = temp_schematic("bad_default_instance_reference", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject bad default instance reference");
+    assert!(err.to_string().contains("expecting reference"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_symbol_instance_value_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-default-value")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (instances
+      (project "demo"
+        (path "/A"
+          (reference "R1")
+          (unit 1)
+          (value (bogus))
+          (footprint "Resistor_SMD:R_0603")))))
+)"#;
+    let path = temp_schematic("bad_symbol_instance_value", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol instance value");
+    assert!(err.to_string().contains("expecting value"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_symbol_pin_number() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-pin")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (pin (bogus) (alternate "A")))
+)"#;
+    let path = temp_schematic("bad_symbol_pin_number", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol pin number");
+    assert!(err.to_string().contains("expecting pin number"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_symbol_pin_uuid_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-pin-uuid")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (pin "1" (uuid (bogus))))
+)"#;
+    let path = temp_schematic("bad_symbol_pin_uuid", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol pin uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_symbol_pin_alternate_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-pin-alt")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (pin "1" (alternate (bogus))))
+)"#;
+    let path = temp_schematic("bad_symbol_pin_alternate", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol pin alternate");
+    assert!(err.to_string().contains("expecting alternate"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_symbol_mirror_axis_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-mirror")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (mirror (bogus)))
+)"#;
+    let path = temp_schematic("bad_symbol_mirror_axis", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad mirror axis token");
+    assert!(err.to_string().contains("expecting mirror axis"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_lib_symbol_name_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-name")
+  (lib_symbols
+    (symbol (bogus)))
+)"#;
+    let path = temp_schematic("bad_lib_symbol_name", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid symbol name"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_lib_symbol_parent_name_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-parent")
+  (lib_symbols
+    (symbol "Child:R"
+      (extends (bogus))))
+)"#;
+    let path = temp_schematic("bad_lib_symbol_parent_name", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid parent symbol name"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_lib_symbol_unit_name_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-unit")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol (bogus))))
+)"#;
+    let path = temp_schematic("bad_lib_symbol_unit_name", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid symbol unit name"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_numeric_lib_unit_name_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-unit-name")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (unit_name 123))))
+)"#;
+    let path = temp_schematic("bad_lib_unit_name_token", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting )"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_title_block_value_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-title")
+  (title_block
+    (title (bogus)))
+)"#;
+    let path = temp_schematic("bad_title_block_value", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad title block value");
+    assert!(err.to_string().contains("missing title"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_schematic_text_string_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-text")
+  (text (bogus) (at 1 2 0))
+)"#;
+    let path = temp_schematic("bad_schematic_text_string", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad schematic text string");
+    assert!(err.to_string().contains("Invalid text string"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_schematic_text_uuid_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-text-uuid")
+  (text "note" (at 1 2 0) (uuid (bogus)))
+)"#;
+    let path = temp_schematic("bad_schematic_text_uuid", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad schematic text uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_schematic_text_box_string_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-text-box")
+  (text_box (bogus) (at 1 2 0) (size 3 4))
+)"#;
+    let path = temp_schematic("bad_schematic_text_box_string", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject bad schematic text box string");
+    assert!(err.to_string().contains("Invalid text string"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_schematic_text_box_uuid_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-text-box-uuid")
+  (text_box "body" (at 1 2 0) (size 3 4) (uuid (bogus)))
+)"#;
+    let path = temp_schematic("bad_schematic_text_box_uuid", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject bad schematic text box uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_image_uuid_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-image")
+  (image (at 1 2) (uuid (bogus)) (data "QUJD"))
+)"#;
+    let path = temp_schematic("bad_image_uuid", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad image uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
+    let bad_root = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid (bogus))
+)"#;
+    let bad_root_path = temp_schematic("bad_root_uuid", bad_root);
+    let err =
+        parse_schematic_file(Path::new(&bad_root_path)).expect_err("must reject bad root uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+
+    let bad_symbol = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-uuid")
+  (symbol (lib_id "Device:R") (at 1 2 0) (uuid (bogus)))
+)"#;
+    let bad_symbol_path = temp_schematic("bad_symbol_uuid", bad_symbol);
+    let err =
+        parse_schematic_file(Path::new(&bad_symbol_path)).expect_err("must reject bad symbol uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+
+    let bad_group = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-uuid")
+  (group "g"
+    (uuid (bogus))
+    (members "a")))
+)"#;
+    let bad_group_path = temp_schematic("bad_group_uuid", bad_group);
+    let err =
+        parse_schematic_file(Path::new(&bad_group_path)).expect_err("must reject bad group uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+
+    let bad_group_member = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-member-uuid")
+  (group "g"
+    (uuid "group-uuid")
+    (members (bogus))))
+)"#;
+    let bad_group_member_path = temp_schematic("bad_group_member_uuid", bad_group_member);
+    let err = parse_schematic_file(Path::new(&bad_group_member_path))
+        .expect_err("must reject bad group member uuid");
+    assert!(err.to_string().contains("expecting group member uuid"));
+
+    let bad_group_name = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-name")
+  (group g
+    (uuid "group-uuid")
+    (members "a")))
+)"#;
+    let bad_group_name_path = temp_schematic("bad_group_name", bad_group_name);
+    let err = parse_schematic_file(Path::new(&bad_group_name_path))
+        .expect_err("must reject unquoted group name");
+    assert!(err.to_string().contains("expecting group name or locked"));
+
+    let bad_group_lib_id = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-lib-id")
+  (group "g"
+    (uuid "group-uuid")
+    (lib_id "lib:block:bad")
+    (members "a")))
+)"#;
+    let bad_group_lib_id_path = temp_schematic("bad_group_lib_id", bad_group_lib_id);
+    let err = parse_schematic_file(Path::new(&bad_group_lib_id_path))
+        .expect_err("must reject bad group lib_id");
+    assert!(
+        err.to_string()
+            .contains("Group library link lib:block:bad contains invalid character ':'")
+    );
+
+    let bad_rectangle = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-rect-uuid")
+  (rectangle (start 0 0) (end 1 1) (uuid (bogus)))
+)"#;
+    let bad_rectangle_path = temp_schematic("bad_rectangle_uuid", bad_rectangle);
+    let err = parse_schematic_file(Path::new(&bad_rectangle_path))
+        .expect_err("must reject bad rectangle uuid");
+    assert!(err.to_string().contains("expecting uuid"));
+
+    let _ = fs::remove_file(bad_root_path);
+    let _ = fs::remove_file(bad_symbol_path);
+    let _ = fs::remove_file(bad_group_path);
+    let _ = fs::remove_file(bad_group_member_path);
+    let _ = fs::remove_file(bad_group_name_path);
+    let _ = fs::remove_file(bad_group_lib_id_path);
+    let _ = fs::remove_file(bad_rectangle_path);
+}
+
+#[test]
+fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-prop")
+  (lib_symbols
+    (symbol "Device:R"
+      (property private "UserField" "R1"
+        (show_name)
+        (do_not_autoplace)))))
+"#;
+    let path = temp_schematic("lib_property_metadata", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    let property = lib_symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "UserField")
+        .expect("user field");
+    assert!(property.is_private);
+    assert!(property.show_name);
+    assert!(!property.can_autoplace);
+    let _ = fs::remove_file(path);
+
+    let hidden_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-property-hidden")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "UserField" "R1"
+        (effects (font (size 1 1)) (hide)))))
+)
+"#;
+    let hidden_path = temp_schematic("lib_property_hidden_effects", hidden_src);
+    let schematic = parse_schematic_file(Path::new(&hidden_path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    let property = lib_symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "UserField")
+        .expect("user field");
+    assert!(!property.visible);
+    assert!(property.has_effects);
+    assert!(property.effects.as_ref().expect("effects").hidden);
+    let _ = fs::remove_file(hidden_path);
+
+    let bad_name = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-prop-name")
+  (lib_symbols
+    (symbol "Device:R"
+      (property (bogus) "R1")))
+)"#;
+    let bad_name_path = temp_schematic("bad_lib_property_name", bad_name);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_name_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid property name"))
+    );
+
+    let bad_value = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-prop-value")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "UserField" (bogus))))
+)"#;
+    let bad_value_path = temp_schematic("bad_lib_property_value", bad_value);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_value_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid property value"))
+    );
+
+    let _ = fs::remove_file(bad_name_path);
+    let _ = fs::remove_file(bad_value_path);
+}
+
+#[test]
+fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
+    let bad_name = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-name")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (name (bogus)))))
+)"#;
+    let bad_name_path = temp_schematic("bad_lib_pin_name", bad_name);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_name_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid pin name"))
+    );
+
+    let bad_number = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-number")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (number (bogus)))))
+)"#;
+    let bad_number_path = temp_schematic("bad_lib_pin_number", bad_number);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_number_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid pin number"))
+    );
+
+    let bad_alternate = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-alt")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (alternate (bogus) passive line))))
+)"#;
+    let bad_alternate_path = temp_schematic("bad_lib_pin_alternate_name", bad_alternate);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_alternate_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid alternate pin name"))
+    );
+
+    let bad_alternate_type = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-alt-type")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (alternate "ALT" (bogus) line))))
+)"#;
+    let bad_alternate_type_path = temp_schematic("bad_lib_pin_alternate_type", bad_alternate_type);
+    let schematic = parse_schematic_file(Path::new(&bad_alternate_type_path))
+        .expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting alternate pin type"))
+    );
+
+    let bad_alternate_shape = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-alt-shape")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (alternate "ALT" passive (bogus)))))
+)"#;
+    let bad_alternate_shape_path =
+        temp_schematic("bad_lib_pin_alternate_shape", bad_alternate_shape);
+    let schematic = parse_schematic_file(Path::new(&bad_alternate_shape_path))
+        .expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting alternate pin shape"))
+    );
+
+    let _ = fs::remove_file(bad_name_path);
+    let _ = fs::remove_file(bad_number_path);
+    let _ = fs::remove_file(bad_alternate_path);
+    let _ = fs::remove_file(bad_alternate_type_path);
+    let _ = fs::remove_file(bad_alternate_shape_path);
+}
+
+#[test]
+fn rejects_invalid_lib_pin_type_and_shape_tokens() {
+    let bad_type = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-type")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin (bogus) line)))
+)"#;
+    let bad_type_path = temp_schematic("bad_lib_pin_type", bad_type);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_type_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting pin type"))
+    );
+
+    let bad_shape = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-shape")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive (bogus))))
+)"#;
+    let bad_shape_path = temp_schematic("bad_lib_pin_shape", bad_shape);
+    let schematic =
+        parse_schematic_file(Path::new(&bad_shape_path)).expect("schematic should recover");
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting pin shape"))
+    );
+
+    let _ = fs::remove_file(bad_type_path);
+    let _ = fs::remove_file(bad_shape_path);
+}
+
+#[test]
+fn rejects_invalid_lib_text_string_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-text")
+  (lib_symbols
+    (symbol "Device:R"
+      (text (bogus) (at 0 0 0))))
+)"#;
+    let path = temp_schematic("bad_lib_text_string", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid text string"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_lib_text_box_string_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-text-box")
+  (lib_symbols
+    (symbol "Device:R"
+      (text_box (bogus) (at 0 0 0) (size 1 1))))
+)"#;
+    let path = temp_schematic("bad_lib_text_box_string", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Invalid text string"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_lib_jumper_pin_group_member_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-jumper-group")
+  (lib_symbols
+    (symbol "Device:R"
+      (jumper_pin_groups ((bogus) "2"))))
+)"#;
+    let path = temp_schematic("bad_lib_jumper_pin_group_member", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting list of pin names"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-unexpected")
+  (lib_symbols
+    (symbol "Device:R"
+      (bogus 1)))
+)"#;
+    let path = temp_schematic("bad_lib_symbol_child", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains(
+                "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
+            ))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_lib_symbol_unit_child_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-unit-unexpected")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (bogus 1))))
+)"#;
+    let path = temp_schematic("bad_lib_symbol_unit_child", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
+        warning.contains("expecting arc, bezier, circle, pin, polyline, rectangle, or text")
+    }));
     let _ = fs::remove_file(path);
 }
 
@@ -2012,7 +4171,7 @@ fn preserves_shape_stroke_and_fill_presence() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (arc (start 0 0) (mid 1 1) (end 2 0) (stroke (width 0.1)) (fill (type outline)) (uuid "a-1"))
+  (arc (start 0 0) (mid 1 1) (end 2 0) (stroke (width 0.1) (color 10 20 30 0.5)) (fill (type outline)) (uuid "a-1"))
   (rule_area (polyline (pts (xy 0 0) (xy 2 0) (xy 2 2)) (stroke (width 0.2)) (fill (type background)) (uuid "ra-1")))
 )"#;
     let path = temp_schematic("shape_stroke_fill", src);
@@ -2035,7 +4194,11 @@ fn preserves_shape_stroke_and_fill_presence() {
     );
     assert_eq!(
         shapes[0].fill.as_ref().map(|fill| fill.fill_type.clone()),
-        Some(FillType::Outline)
+        Some(FillType::Color)
+    );
+    assert_eq!(
+        shapes[0].fill.as_ref().and_then(|fill| fill.color),
+        Some([10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 0.5])
     );
     assert!(shapes[1].has_stroke);
     assert!(shapes[1].has_fill);
@@ -2124,6 +4287,222 @@ fn parses_explicit_sheet_line_and_bus_entry_stroke_tokens() {
 }
 
 #[test]
+fn junction_no_connect_and_bus_entry_do_not_require_geometry_tokens() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (junction)
+  (no_connect)
+  (bus_entry)
+)"#;
+    let path = temp_schematic("default_point_items", src);
+    let schematic = parse_schematic_file(Path::new(&path))
+        .expect("must accept missing geometry on point-style items");
+
+    let junction = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction),
+            _ => None,
+        })
+        .expect("junction");
+    assert_eq!(junction.at, [0.0, 0.0]);
+
+    let no_connect = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::NoConnect(no_connect) => Some(no_connect),
+            _ => None,
+        })
+        .expect("no_connect");
+    assert_eq!(no_connect.at, [0.0, 0.0]);
+
+    let bus_entry = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::BusEntry(bus_entry) => Some(bus_entry),
+            _ => None,
+        })
+        .expect("bus_entry");
+    assert_eq!(bus_entry.at, [0.0, 0.0]);
+    assert_eq!(bus_entry.size, [0.0, 0.0]);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn wire_and_bus_do_not_require_pts() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (wire)
+  (bus)
+)"#;
+    let path = temp_schematic("default_wire_bus", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept wire/bus without pts");
+
+    let lines: Vec<_> = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Wire(line) | SchItem::Bus(line) => Some(line),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert!(
+        lines
+            .iter()
+            .all(|line| line.points == vec![[0.0, 0.0], [0.0, 0.0]])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn schematic_arc_and_circle_use_upstream_safe_defaults() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (arc)
+  (circle)
+)"#;
+    let path = temp_schematic("default_arc_circle", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept missing arc/circle geometry");
+
+    let arc = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Arc => Some(shape),
+            _ => None,
+        })
+        .expect("arc");
+    assert_eq!(arc.points, vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]);
+
+    let circle = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Circle => Some(shape),
+            _ => None,
+        })
+        .expect("circle");
+    assert_eq!(circle.points, vec![[0.0, 0.0]]);
+    assert_eq!(circle.radius, Some(0.0));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rule_area_does_not_require_three_points() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (rule_area (polyline (pts (xy 0 0) (xy 1 0))))
+)"#;
+    let path = temp_schematic("rule_area_two_points", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept short rule_area polyline");
+    let rule_area = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => Some(shape),
+            _ => None,
+        })
+        .expect("rule area");
+    assert_eq!(rule_area.points, vec![[0.0, 0.0], [1.0, 0.0]]);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rectangle_uses_upstream_safe_defaults() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (rectangle)
+)"#;
+    let path = temp_schematic("default_rectangle", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept rectangle without start/end");
+    let rectangle = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Rectangle => Some(shape),
+            _ => None,
+        })
+        .expect("rectangle");
+    assert_eq!(rectangle.points, vec![[0.0, 0.0], [0.0, 0.0]]);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn schematic_bezier_follows_upstream_control_point_rules() {
+    let short_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (bezier (pts (xy 0 0) (xy 1 1)))
+)"#;
+    let short_path = temp_schematic("short_schematic_bezier", short_src);
+    let schematic = parse_schematic_file(Path::new(&short_path))
+        .expect("must accept missing bezier control points");
+    let bezier = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Bezier => Some(shape),
+            _ => None,
+        })
+        .expect("bezier");
+    assert_eq!(
+        bezier.points,
+        vec![[0.0, 0.0], [1.0, 1.0], [0.0, 0.0], [0.0, 0.0]]
+    );
+    let _ = fs::remove_file(short_path);
+
+    let extra_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (bezier (pts (xy 0 0) (xy 1 1) (xy 2 2) (xy 3 3) (xy 4 4)))
+)"#;
+    let extra_path = temp_schematic("extra_schematic_bezier", extra_src);
+    let err = parse_schematic_file(Path::new(&extra_path))
+        .expect_err("must reject extra bezier control point");
+    assert!(err.to_string().contains("unexpected control point"));
+    let _ = fs::remove_file(extra_path);
+}
+
+#[test]
 fn parses_stroke_and_fill_payload_details() {
     let src = r#"(kicad_sch
   (version 20250114)
@@ -2175,6 +4554,33 @@ fn parses_stroke_and_fill_payload_details() {
         Some([1.0 / 255.0, 2.0 / 255.0, 3.0 / 255.0, 0.25])
     );
 
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn legacy_schematic_polyline_defaults_to_dash_stroke() {
+    let src = r#"(kicad_sch
+  (version 20211123)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (polyline (pts (xy 0 0) (xy 1 1)) (stroke (width 0.15)))
+)"#;
+    let path = temp_schematic("legacy_polyline_default_dash", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let line = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Polyline(line) => Some(line),
+            _ => None,
+        })
+        .expect("polyline");
+    assert_eq!(
+        line.stroke.as_ref().map(|stroke| stroke.style.clone()),
+        Some(StrokeStyle::Dash)
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -2257,6 +4663,56 @@ fn parses_symbol_in_pos_files_and_validates_library_ids() {
     let err = parse_schematic_file(Path::new(&bad_path)).expect_err("must reject malformed lib_id");
     assert!(err.to_string().contains("contains invalid character ':'"));
     let _ = fs::remove_file(bad_path);
+
+    let invalid_token_lib_id = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id (bogus)) (at 1 2 0))
+)"#;
+    let quoted_path = temp_schematic("bad_symbol_lib_id_token", invalid_token_lib_id);
+    let err = parse_schematic_file(Path::new(&quoted_path))
+        .expect_err("must reject invalid lib_id token");
+    assert!(err.to_string().contains("expecting symbol|number"));
+    let _ = fs::remove_file(quoted_path);
+
+    let bad_lib_name = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id "Device:R") (lib_name (bogus)) (at 1 2 0))
+)"#;
+    let bad_lib_name_path = temp_schematic("bad_symbol_lib_name", bad_lib_name);
+    let err =
+        parse_schematic_file(Path::new(&bad_lib_name_path)).expect_err("must reject bad lib_name");
+    assert!(err.to_string().contains("Invalid symbol library name"));
+    let _ = fs::remove_file(bad_lib_name_path);
+
+    let defaults_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol)
+)"#;
+    let defaults_path = temp_schematic("symbol_without_lib_id_or_at", defaults_src);
+    let schematic = parse_schematic_file(Path::new(&defaults_path))
+        .expect("must accept symbol without lib_id or at");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert_eq!(symbol.lib_id, "");
+    assert_eq!(symbol.at, [0.0, 0.0]);
+    assert_eq!(symbol.angle, 0.0);
+    let _ = fs::remove_file(defaults_path);
 }
 
 #[test]
@@ -2543,6 +4999,26 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     assert_eq!(item.arc_start_angle, Some(0.0));
     assert_eq!(item.arc_end_angle, Some(90.0));
     let _ = fs::remove_file(legacy_arc_path);
+
+    let default_arc_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (arc)))) 
+)"#;
+    let default_arc_path = temp_schematic("lib_arc_default_geometry", default_arc_src);
+    let schematic = parse_schematic_file(Path::new(&default_arc_path)).expect("must parse");
+    let item = &schematic.screen.lib_symbols[0].units[0].draw_items[0];
+    assert_eq!(item.kind, "arc");
+    assert_eq!(item.points, vec![[1.0, 0.0], [0.0, 1.0]]);
+    assert_eq!(item.arc_center, Some([0.0, 0.0]));
+    assert_eq!(item.arc_start_angle, Some(0.0));
+    assert_eq!(item.arc_end_angle, Some(90.0));
+    let _ = fs::remove_file(default_arc_path);
 
     let bad_arc_src = r#"(kicad_sch
   (version 20250114)
