@@ -2931,6 +2931,53 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
 }
 
 #[test]
+fn rejects_quoted_junction_no_connect_and_bus_entry_heads() {
+    let quoted_junction_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-junction-head")
+  (junction ("at" 1 2))
+)"#;
+    let quoted_junction_head_path = temp_schematic("quoted_junction_head", quoted_junction_head);
+    let err = parse_schematic_file(Path::new(&quoted_junction_head_path))
+        .expect_err("must reject quoted junction head");
+    assert!(
+        err.to_string()
+            .contains("expecting at, diameter, color or uuid")
+    );
+
+    let quoted_no_connect_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-no-connect-head")
+  (no_connect ("at" 1 2))
+)"#;
+    let quoted_no_connect_head_path =
+        temp_schematic("quoted_no_connect_head", quoted_no_connect_head);
+    let err = parse_schematic_file(Path::new(&quoted_no_connect_head_path))
+        .expect_err("must reject quoted no_connect head");
+    assert!(err.to_string().contains("expecting at or uuid"));
+
+    let quoted_bus_entry_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-bus-entry-head")
+  (bus_entry ("at" 1 2) (size 3 4))
+)"#;
+    let quoted_bus_entry_head_path = temp_schematic("quoted_bus_entry_head", quoted_bus_entry_head);
+    let err = parse_schematic_file(Path::new(&quoted_bus_entry_head_path))
+        .expect_err("must reject quoted bus_entry head");
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, uuid or stroke")
+    );
+
+    let _ = fs::remove_file(quoted_junction_head_path);
+    let _ = fs::remove_file(quoted_no_connect_head_path);
+    let _ = fs::remove_file(quoted_bus_entry_head_path);
+}
+
+#[test]
 fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
     let quoted_power_scope = r#"(kicad_sch
   (version 20260306)
