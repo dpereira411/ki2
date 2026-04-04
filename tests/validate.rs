@@ -498,8 +498,8 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
     (lib_id "Device:R")
     (uuid "sym-u")
     (property "Reference" "R?" (at 1 2 90) (hide yes) (show_name no))
-    (property "Value" "seed")
-    (property "Footprint" "seed-footprint")
+    (property "Value" "seed" (at 3 4 180) (do_not_autoplace yes))
+    (property "Footprint" "seed-footprint" (at 5 6 270))
     (at 10 10 0)
     (instances
       (project "demo"
@@ -570,6 +570,14 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
             .map(|property| property.value.as_str()),
         Some("22k")
     );
+    let value = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .expect("value");
+    assert_eq!(value.at, Some([3.0, 4.0]));
+    assert_eq!(value.angle, Some(180.0));
+    assert!(!value.can_autoplace);
     assert_eq!(
         symbol
             .properties
@@ -578,6 +586,13 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
             .map(|property| property.value.as_str()),
         Some("Resistor_SMD:R_0402")
     );
+    let footprint = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolFootprint)
+        .expect("footprint");
+    assert_eq!(footprint.at, Some([5.0, 6.0]));
+    assert_eq!(footprint.angle, Some(270.0));
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
     let _ = fs::remove_dir(dir);

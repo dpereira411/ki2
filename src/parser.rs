@@ -3256,7 +3256,9 @@ impl KiCadSchematicParser {
                                             .iter_mut()
                                             .find(|p| p.kind == PropertyKind::SymbolValue)
                                         {
-                                            *existing = property;
+                                            existing.id = property.id;
+                                            existing.key = property.key;
+                                            existing.value = property.value;
                                         } else {
                                             symbol.properties.push(property);
                                         }
@@ -3296,7 +3298,9 @@ impl KiCadSchematicParser {
                                             .iter_mut()
                                             .find(|p| p.kind == PropertyKind::SymbolFootprint)
                                         {
-                                            *existing = property;
+                                            existing.id = property.id;
+                                            existing.key = property.key;
+                                            existing.value = property.value;
                                         } else {
                                             symbol.properties.push(property);
                                         }
@@ -3496,7 +3500,9 @@ impl KiCadSchematicParser {
                                     .iter_mut()
                                     .find(|p| p.kind == PropertyKind::SymbolValue)
                                 {
-                                    *existing = property;
+                                    existing.id = property.id;
+                                    existing.key = property.key;
+                                    existing.value = property.value;
                                 } else {
                                     symbol.properties.push(property);
                                 }
@@ -3536,7 +3542,9 @@ impl KiCadSchematicParser {
                                     .iter_mut()
                                     .find(|p| p.kind == PropertyKind::SymbolFootprint)
                                 {
-                                    *existing = property;
+                                    existing.id = property.id;
+                                    existing.key = property.key;
+                                    existing.value = property.value;
                                 } else {
                                     symbol.properties.push(property);
                                 }
