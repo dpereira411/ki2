@@ -1898,7 +1898,8 @@ impl KiCadSchematicParser {
                     {
                         property.value = self.convert_old_overbar_notation(property.value.clone());
                     }
-                    let effects = self.parse_eda_text(kind == PropertyKind::SymbolValue, true)?;
+                    let effects =
+                        self.parse_eda_text(property.kind == PropertyKind::SymbolValue, true)?;
                     property.has_effects = true;
                     if effects.hidden {
                         property.visible = false;
@@ -4122,13 +4123,19 @@ impl KiCadSchematicParser {
             PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References".to_string(),
             _ => key,
         };
-        let mut at = None;
-        let mut angle = None;
-        let mut visible = true;
-        let mut show_name = true;
-        let mut can_autoplace = true;
-        let mut has_effects = false;
-        let mut effects = None;
+        let mut property = Property {
+            key,
+            value,
+            kind,
+            is_private: matches!(kind, PropertyKind::User) && is_private,
+            at: None,
+            angle: None,
+            visible: true,
+            show_name: true,
+            can_autoplace: true,
+            has_effects: false,
+            effects: None,
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -4142,36 +4149,36 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let parsed = self.parse_xy3("property at")?;
-                    at = Some([parsed[0], parsed[1]]);
-                    angle = Some(parsed[2]);
+                    property.at = Some([parsed[0], parsed[1]]);
+                    property.angle = Some(parsed[2]);
                     self.need_right()?;
                 }
                 "hide" => {
-                    visible = !self.parse_bool_atom("hide")?;
+                    property.visible = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
                 "show_name" => {
-                    show_name = self.parse_maybe_absent_bool(true)?;
+                    property.show_name = self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
                 "do_not_autoplace" => {
-                    can_autoplace = !self.parse_maybe_absent_bool(true)?;
+                    property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
                 "effects" => {
-                    if kind == PropertyKind::SymbolValue
+                    if property.kind == PropertyKind::SymbolValue
                         && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                             < VERSION_TEXT_OVERBAR_NOTATION
                     {
-                        value = self.convert_old_overbar_notation(value);
+                        property.value = self.convert_old_overbar_notation(property.value.clone());
                     }
                     let parsed_effects =
-                        self.parse_eda_text(kind == PropertyKind::SymbolValue, true)?;
-                    has_effects = true;
+                        self.parse_eda_text(property.kind == PropertyKind::SymbolValue, true)?;
+                    property.has_effects = true;
                     if parsed_effects.hidden {
-                        visible = false;
+                        property.visible = false;
                     }
-                    effects = Some(parsed_effects);
+                    property.effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 _ => {
@@ -4181,19 +4188,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        Ok(Property {
-            key,
-            value,
-            kind,
-            is_private: matches!(kind, PropertyKind::User) && is_private,
-            at,
-            angle,
-            visible,
-            show_name,
-            can_autoplace,
-            has_effects,
-            effects,
-        })
+        Ok(property)
     }
 
     fn parse_stroke(&mut self) -> Result<Stroke, Error> {
