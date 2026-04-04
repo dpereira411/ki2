@@ -9,10 +9,10 @@ use crate::error::Error;
 use crate::model::{
     BusAlias, BusEntry, EmbeddedFile, EmbeddedFileType, FieldAutoplacement, Fill, FillType, Group,
     Image, ItemVariant, Junction, Label, LabelKind, LabelShape, LabelSpin, LibDrawItem,
-    LibPinAlternate, LibSymbol, Line, LineKind, MirrorAxis, NoConnect, Page, Paper, Property,
-    PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet, SheetInstance,
-    SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle, Symbol,
-    SymbolInstance, SymbolLocalInstance, SymbolPin, Table, Text, TextBox, TextEffects,
+    LibPinAlternate, LibSymbol, LibSymbolUnit, Line, LineKind, MirrorAxis, NoConnect, Page, Paper,
+    Property, PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet,
+    SheetInstance, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle,
+    Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, Text, TextBox, TextEffects,
     TextHJustify, TextKind, TextVJustify, TitleBlock, VariantField,
 };
 use crate::token::{AtomClass, TokKind, Token, lex};
@@ -881,8 +881,23 @@ impl KiCadSchematicParser {
                     }
 
                     let unit_name = unit_full_name;
-                    let unit_index =
-                        symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
+                    let unit_index = if let Some(index) = symbol.units.iter().position(|existing| {
+                        existing.unit_number == unit_number
+                            && existing.body_style == body_style
+                            && existing.name == unit_name
+                    }) {
+                        index
+                    } else {
+                        symbol.units.push(LibSymbolUnit {
+                            name: unit_name.clone(),
+                            unit_number,
+                            body_style,
+                            unit_name: None,
+                            draw_item_kinds: Vec::new(),
+                            draw_items: Vec::new(),
+                        });
+                        symbol.units.len() - 1
+                    };
 
                     while !self.at_right() {
                         self.need_left()?;

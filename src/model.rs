@@ -112,29 +112,6 @@ pub struct LibSymbol {
     pub embedded_files: Vec<EmbeddedFile>,
 }
 
-impl LibSymbol {
-    pub fn ensure_unit_index(&mut self, name: String, unit_number: i32, body_style: i32) -> usize {
-        if let Some(index) = self.units.iter().position(|existing| {
-            existing.unit_number == unit_number
-                && existing.body_style == body_style
-                && existing.name == name
-        }) {
-            return index;
-        }
-
-        self.units.push(LibSymbolUnit {
-            name,
-            unit_number,
-            body_style,
-            unit_name: None,
-            draw_item_kinds: Vec::new(),
-            draw_items: Vec::new(),
-        });
-
-        self.units.len() - 1
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibSymbolUnit {
     pub name: String,
