@@ -1151,26 +1151,35 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("start, mid, end, radius, stroke, or fill")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("start, mid, end, radius, stroke, or fill")),
+            };
+            match head.as_str() {
                 "start" => {
+                    let _ = self.need_unquoted_symbol_atom("start")?;
                     item.points[0] = self.parse_xy2("arc start")?;
                     saw_start = true;
                     self.need_right()?;
                 }
                 "mid" => {
+                    let _ = self.need_unquoted_symbol_atom("mid")?;
                     item.points[1] = self.parse_xy2("arc mid")?;
                     saw_mid = true;
                     self.need_right()?;
                 }
                 "end" => {
+                    let _ = self.need_unquoted_symbol_atom("end")?;
                     item.points[2] = self.parse_xy2("arc end")?;
                     saw_end = true;
                     self.need_right()?;
                 }
                 "radius" => {
+                    let _ = self.need_unquoted_symbol_atom("radius")?;
                     while !self.at_right() {
                         self.need_left()?;
                         match self
@@ -1196,8 +1205,14 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                "stroke" => item.stroke = Some(self.parse_stroke()?),
-                "fill" => item.fill = Some(self.parse_fill()?),
+                "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
+                    item.stroke = Some(self.parse_stroke()?);
+                }
+                "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
+                    item.fill = Some(self.parse_fill()?);
+                }
                 _ => return Err(self.expecting("start, mid, end, radius, stroke, or fill")),
             }
         }
@@ -1251,11 +1266,17 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("pts, stroke, or fill")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("pts, stroke, or fill")),
+            };
+            match head.as_str() {
                 "pts" => {
+                    let _ = self.need_unquoted_symbol_atom("pts")?;
                     let mut points = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
@@ -1271,8 +1292,14 @@ impl KiCadSchematicParser {
                     item.points = points;
                     self.need_right()?;
                 }
-                "stroke" => item.stroke = Some(self.parse_stroke()?),
-                "fill" => item.fill = Some(self.parse_fill()?),
+                "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
+                    item.stroke = Some(self.parse_stroke()?);
+                }
+                "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
+                    item.fill = Some(self.parse_fill()?);
+                }
                 _ => return Err(self.expecting("pts, stroke, or fill")),
             }
         }
@@ -1320,20 +1347,33 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("center, radius, stroke, or fill")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("center, radius, stroke, or fill")),
+            };
+            match head.as_str() {
                 "center" => {
+                    let _ = self.need_unquoted_symbol_atom("center")?;
                     item.points[0] = self.parse_xy2("circle center")?;
                     self.need_right()?;
                 }
                 "radius" => {
+                    let _ = self.need_unquoted_symbol_atom("radius")?;
                     item.radius = Some(self.parse_f64_atom("radius length")?);
                     self.need_right()?;
                 }
-                "stroke" => item.stroke = Some(self.parse_stroke()?),
-                "fill" => item.fill = Some(self.parse_fill()?),
+                "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
+                    item.stroke = Some(self.parse_stroke()?);
+                }
+                "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
+                    item.fill = Some(self.parse_fill()?);
+                }
                 _ => return Err(self.expecting("center, radius, stroke, or fill")),
             }
         }
@@ -1381,11 +1421,17 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("pts, stroke, or fill")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("pts, stroke, or fill")),
+            };
+            match head.as_str() {
                 "pts" => {
+                    let _ = self.need_unquoted_symbol_atom("pts")?;
                     let mut points = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
@@ -1399,8 +1445,14 @@ impl KiCadSchematicParser {
                     item.points = points;
                     self.need_right()?;
                 }
-                "stroke" => item.stroke = Some(self.parse_stroke()?),
-                "fill" => item.fill = Some(self.parse_fill()?),
+                "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
+                    item.stroke = Some(self.parse_stroke()?);
+                }
+                "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
+                    item.fill = Some(self.parse_fill()?);
+                }
                 _ => return Err(self.expecting("pts, stroke, or fill")),
             }
         }
@@ -1448,24 +1500,38 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("start, end, stroke, or fill")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("start, end, stroke, or fill")),
+            };
+            match head.as_str() {
                 "start" => {
+                    let _ = self.need_unquoted_symbol_atom("start")?;
                     item.points.push(self.parse_xy2("rectangle start")?);
                     self.need_right()?;
                 }
                 "end" => {
+                    let _ = self.need_unquoted_symbol_atom("end")?;
                     item.end = Some(self.parse_xy2("rectangle end")?);
                     self.need_right()?;
                 }
                 "radius" => {
+                    let _ = self.need_unquoted_symbol_atom("radius")?;
                     item.radius = Some(self.parse_f64_atom("corner radius")?);
                     self.need_right()?;
                 }
-                "stroke" => item.stroke = Some(self.parse_stroke()?),
-                "fill" => item.fill = Some(self.parse_fill()?),
+                "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
+                    item.stroke = Some(self.parse_stroke()?);
+                }
+                "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
+                    item.fill = Some(self.parse_fill()?);
+                }
                 _ => return Err(self.expecting("start, end, stroke, or fill")),
             }
         }
