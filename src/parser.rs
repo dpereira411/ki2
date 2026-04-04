@@ -2317,7 +2317,10 @@ impl KiCadSchematicParser {
                             } else {
                                 self.parse_sch_field(FieldParent::OtherLabel)?
                             };
-                            if matches!(label.kind, LabelKind::Global) {
+                            if matches!(
+                                (label.kind, property.kind),
+                                (LabelKind::Global, PropertyKind::GlobalLabelIntersheetRefs)
+                            ) {
                                 if let Some(existing) = label
                                     .properties
                                     .iter_mut()
@@ -3183,6 +3186,12 @@ impl KiCadSchematicParser {
                         } else {
                             symbol.properties.push(property);
                         }
+                    } else if let Some(existing) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|p| p.kind == property.kind && p.key == property.key)
+                    {
+                        *existing = property;
                     } else {
                         symbol.properties.push(property);
                     }

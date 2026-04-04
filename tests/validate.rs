@@ -4790,6 +4790,77 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
 }
 
 #[test]
+fn symbol_duplicate_user_property_overwrites_by_name() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "symbol-duplicate-user-property")
+  (symbol
+    (lib_id "Device:R")
+    (property "MPN" "first" (at 0 0 0))
+    (property "MPN" "second" (at 1 2 0))))
+"#;
+    let path = temp_schematic("symbol_duplicate_user_property", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    let mpn_properties = symbol
+        .properties
+        .iter()
+        .filter(|property| property.key == "MPN")
+        .collect::<Vec<_>>();
+    assert_eq!(mpn_properties.len(), 1);
+    assert_eq!(mpn_properties[0].value, "second");
+    assert_eq!(mpn_properties[0].at, Some([1.0, 2.0]));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn global_label_duplicate_user_properties_are_appended() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "global-label-duplicate-user-property")
+  (global_label "GL"
+    (property "FOO" "first" (at 0 0 0))
+    (property "FOO" "second" (at 1 2 0))))
+"#;
+    let path = temp_schematic("global_label_duplicate_user_property", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let label = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+
+    let foo_properties = label
+        .properties
+        .iter()
+        .filter(|property| property.key == "FOO")
+        .collect::<Vec<_>>();
+    assert_eq!(foo_properties.len(), 2);
+    assert_eq!(foo_properties[0].value, "first");
+    assert_eq!(foo_properties[1].value, "second");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sheet_variant_in_bom_respects_20260306_fix_boundary() {
     let old_src = r#"(kicad_sch
   (version 20260305)
