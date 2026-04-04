@@ -2890,15 +2890,26 @@ impl KiCadSchematicParser {
         };
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "columns, col_widths, row_heights, border, separators, uuid, header or cells",
-            )?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => {
+                    return Err(self.expecting(
+                        "columns, col_widths, row_heights, border, separators, uuid, header or cells",
+                    ));
+                }
+            };
             match head.as_str() {
                 "column_count" => {
+                    let _ = self.need_unquoted_symbol_atom("column_count")?;
                     table.column_count = Some(self.parse_i32_atom("column count")?);
                     self.need_right()?;
                 }
                 "column_widths" => {
+                    let _ = self.need_unquoted_symbol_atom("column_widths")?;
                     let mut values = Vec::new();
                     while !self.at_right() {
                         values.push(self.parse_f64_atom("column width")?);
@@ -2907,6 +2918,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "row_heights" => {
+                    let _ = self.need_unquoted_symbol_atom("row_heights")?;
                     let mut values = Vec::new();
                     while !self.at_right() {
                         values.push(self.parse_f64_atom("row height")?);
@@ -2915,6 +2927,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "cells" => {
+                    let _ = self.need_unquoted_symbol_atom("cells")?;
                     while !self.at_right() {
                         self.need_left()?;
                         let cell = self.parse_sch_table_cell()?;
@@ -2924,21 +2937,30 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "border" => {
+                    let _ = self.need_unquoted_symbol_atom("border")?;
                     while !self.at_right() {
                         self.need_left()?;
-                        match self
-                            .need_unquoted_symbol_atom("external, header or stroke")?
-                            .as_str()
-                        {
+                        let border_head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("external, header or stroke")),
+                        };
+                        match border_head.as_str() {
                             "external" => {
+                                let _ = self.need_unquoted_symbol_atom("external")?;
                                 table.border_external = Some(self.parse_bool_atom("external")?);
                                 self.need_right()?;
                             }
                             "header" => {
+                                let _ = self.need_unquoted_symbol_atom("header")?;
                                 table.border_header = Some(self.parse_bool_atom("header")?);
                                 self.need_right()?;
                             }
                             "stroke" => {
+                                let _ = self.need_unquoted_symbol_atom("stroke")?;
                                 table.border_stroke = Some(self.parse_stroke()?);
                             }
                             _ => return Err(self.expecting("external, header or stroke")),
@@ -2947,21 +2969,30 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "separators" => {
+                    let _ = self.need_unquoted_symbol_atom("separators")?;
                     while !self.at_right() {
                         self.need_left()?;
-                        match self
-                            .need_unquoted_symbol_atom("rows, cols, or stroke")?
-                            .as_str()
-                        {
+                        let separators_head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("rows, cols, or stroke")),
+                        };
+                        match separators_head.as_str() {
                             "rows" => {
+                                let _ = self.need_unquoted_symbol_atom("rows")?;
                                 table.separators_rows = Some(self.parse_bool_atom("rows")?);
                                 self.need_right()?;
                             }
                             "cols" => {
+                                let _ = self.need_unquoted_symbol_atom("cols")?;
                                 table.separators_cols = Some(self.parse_bool_atom("cols")?);
                                 self.need_right()?;
                             }
                             "stroke" => {
+                                let _ = self.need_unquoted_symbol_atom("stroke")?;
                                 table.separators_stroke = Some(self.parse_stroke()?);
                             }
                             _ => return Err(self.expecting("rows, cols, or stroke")),
@@ -2970,6 +3001,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     table.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
