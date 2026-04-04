@@ -52,6 +52,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.update_symbol_instance_data(&root_path, &sheet_paths);
     loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
     loader.fix_legacy_power_symbol_mismatches(&root_path);
+    loader.annotate_power_symbols();
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
     loader.update_all_screen_references(&sheet_paths);
@@ -69,6 +70,15 @@ struct SchematicLoader {
     loaded_by_canonical: HashMap<PathBuf, usize>,
     current_sheet_path: Vec<PathBuf>,
     current_path: Vec<PathBuf>,
+}
+
+#[derive(Clone)]
+struct PowerLibSymbolInfo {
+    power: bool,
+    local_power: bool,
+    first_pin_name: Option<String>,
+    first_pin_electrical_type: Option<String>,
+    first_pin_visible: bool,
 }
 
 impl SchematicLoader {
@@ -386,6 +396,8 @@ impl SchematicLoader {
         }
 
         for schematic in &mut self.schematics {
+            let power_infos = Self::collect_power_lib_symbol_info(schematic);
+
             for item in &mut schematic.screen.items {
                 let SchItem::Symbol(symbol) = item else {
                     continue;
@@ -397,12 +409,7 @@ impl SchematicLoader {
                     .or(symbol.lib_name.as_deref())
                     .unwrap_or(symbol.lib_id.as_str());
 
-                let Some(lib_symbol) = schematic
-                    .screen
-                    .lib_symbols
-                    .iter()
-                    .find(|candidate| candidate.name == lib_symbol_name)
-                else {
+                let Some(lib_symbol) = power_infos.get(lib_symbol_name) else {
                     continue;
                 };
 
@@ -410,26 +417,126 @@ impl SchematicLoader {
                     continue;
                 }
 
-                let Some(first_pin) = lib_symbol
-                    .units
-                    .iter()
-                    .flat_map(|unit| unit.draw_items.iter())
-                    .find(|draw_item| draw_item.kind == "pin")
-                else {
-                    continue;
-                };
-
-                if first_pin.electrical_type.as_deref() != Some("power_in") || first_pin.visible {
+                if lib_symbol.first_pin_electrical_type.as_deref() != Some("power_in")
+                    || lib_symbol.first_pin_visible
+                {
                     continue;
                 }
 
-                let Some(pin_name) = first_pin.name.clone() else {
+                let Some(pin_name) = lib_symbol.first_pin_name.clone() else {
                     continue;
                 };
 
                 upsert_symbol_property(symbol, "Value", pin_name, PropertyKind::SymbolValue);
             }
         }
+    }
+
+    fn annotate_power_symbols(&mut self) {
+        let mut seen_refs: HashMap<String, usize> = HashMap::new();
+        let mut normalized_refs: Vec<(usize, usize, String)> = Vec::new();
+
+        for (schematic_index, schematic) in self.schematics.iter().enumerate() {
+            let power_infos = Self::collect_power_lib_symbol_info(schematic);
+
+            for (item_index, item) in schematic.screen.items.iter().enumerate() {
+                let SchItem::Symbol(symbol) = item else {
+                    continue;
+                };
+
+                let lib_symbol_name = symbol
+                    .linked_lib_symbol_name
+                    .as_deref()
+                    .or(symbol.lib_name.as_deref())
+                    .unwrap_or(symbol.lib_id.as_str());
+
+                let Some(lib_symbol) = power_infos.get(lib_symbol_name) else {
+                    continue;
+                };
+
+                if !lib_symbol.power {
+                    continue;
+                }
+
+                let Some(reference) = symbol
+                    .properties
+                    .iter()
+                    .find(|property| property.kind == PropertyKind::SymbolReference)
+                    .map(|property| property.value.clone())
+                else {
+                    continue;
+                };
+
+                if reference.is_empty() {
+                    continue;
+                }
+
+                let duplicate_index = seen_refs.entry(reference.clone()).or_insert(0);
+                let mut normalized = reference;
+
+                if *duplicate_index > 0 {
+                    while normalized
+                        .chars()
+                        .last()
+                        .is_some_and(|ch| ch.is_ascii_digit())
+                    {
+                        normalized.pop();
+                    }
+                }
+
+                *duplicate_index += 1;
+
+                if !normalized.starts_with('#') {
+                    normalized.insert(0, '#');
+                }
+
+                normalized_refs.push((schematic_index, item_index, normalized));
+            }
+        }
+
+        for (schematic_index, item_index, normalized) in normalized_refs {
+            let Some(SchItem::Symbol(symbol)) = self.schematics[schematic_index]
+                .screen
+                .items
+                .get_mut(item_index)
+            else {
+                continue;
+            };
+
+            upsert_symbol_property(
+                symbol,
+                "Reference",
+                normalized,
+                PropertyKind::SymbolReference,
+            );
+        }
+    }
+
+    fn collect_power_lib_symbol_info(schematic: &Schematic) -> HashMap<String, PowerLibSymbolInfo> {
+        schematic
+            .screen
+            .lib_symbols
+            .iter()
+            .map(|lib_symbol| {
+                let first_pin = lib_symbol
+                    .units
+                    .iter()
+                    .flat_map(|unit| unit.draw_items.iter())
+                    .find(|draw_item| draw_item.kind == "pin");
+
+                (
+                    lib_symbol.name.clone(),
+                    PowerLibSymbolInfo {
+                        power: lib_symbol.power,
+                        local_power: lib_symbol.local_power,
+                        first_pin_name: first_pin.and_then(|pin| pin.name.clone()),
+                        first_pin_electrical_type: first_pin
+                            .and_then(|pin| pin.electrical_type.clone()),
+                        first_pin_visible: first_pin.is_some_and(|pin| pin.visible),
+                    },
+                )
+            })
+            .collect()
     }
 
     fn set_sheet_number_and_count(&self, sheet_paths: &mut [LoadedSheetPath]) {

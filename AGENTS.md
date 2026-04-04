@@ -98,6 +98,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same shared `parseSchText()` path, global-label `Intersheet References` accumulation should stay inline in the owning routine for both `iref` and explicit `property` branches, not behind a repo-local `upsert_global_label_property()` helper.
 - In that same global-label path, legacy `iref` should only update the existing mandatory `Intersheet References` field’s position/visibility when it already exists. Do not replace the whole property object and wipe text/effects set by an explicit `property` branch.
 - In loader-side `RecomputeIntersheetRefs` flow, re-canonicalize existing `Intersheet References` field identity too. Do not update only the text and leave a malformed stored `id` or key behind.
+- The loader-side post-load pipeline should include `AnnotatePowerSymbols()`-style reference normalization. Power-symbol references should be normalized after hierarchy load so their `Reference` field text is `#`-prefixed the way KiCad does.
 - In that shared `parseSchText()` path, keep the leading text payload on a strict symbol-token path with its own `Invalid text string` branch before any type-specific body parsing runs.
 - In that same shared `parseSchText()` path, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep the text payload on the same strict `Invalid text string` symbol-token path as upstream before any textbox body parsing runs.
