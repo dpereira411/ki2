@@ -703,12 +703,22 @@ impl KiCadSchematicParser {
             }
 
             self.need_left()?;
-            match self.need_unquoted_symbol_atom("offset or hide")?.as_str() {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("offset or hide")),
+            };
+            match head.as_str() {
                 "offset" => {
+                    let _ = self.need_unquoted_symbol_atom("offset")?;
                     symbol.pin_name_offset = Some(self.parse_f64_atom("pin name offset")?);
                     self.need_right()?;
                 }
                 "hide" => {
+                    let _ = self.need_unquoted_symbol_atom("hide")?;
                     symbol.show_pin_names = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
@@ -729,8 +739,17 @@ impl KiCadSchematicParser {
             }
 
             self.need_left()?;
-            match self.need_unquoted_symbol_atom("hide")?.as_str() {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("hide")),
+            };
+            match head.as_str() {
                 "hide" => {
+                    let _ = self.need_unquoted_symbol_atom("hide")?;
                     symbol.show_pin_numbers = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
@@ -830,11 +849,20 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("power")?;
                     symbol.power = true;
                     if matches!(self.current().kind, TokKind::Atom(_)) {
-                        match self.need_unquoted_symbol_atom("global or local")?.as_str() {
+                        let scope = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("global or local")),
+                        };
+                        match scope.as_str() {
                             "local" => symbol.local_power = true,
                             "global" => symbol.local_power = false,
                             _ => return Err(self.expecting("global or local")),
                         }
+                        let _ = self.need_unquoted_symbol_atom("global or local")?;
                     }
                     self.need_right()?;
                 }
