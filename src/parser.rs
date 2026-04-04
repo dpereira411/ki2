@@ -3061,8 +3061,6 @@ impl KiCadSchematicParser {
             uuid: None,
             properties: Vec::new(),
             instances: Vec::new(),
-            default_reference: None,
-            default_unit: None,
             default_value: None,
             default_footprint: None,
             pins: Vec::new(),
@@ -3462,12 +3460,11 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "reference" => {
-                                symbol.default_reference =
-                                    Some(self.need_symbol_atom("reference")?);
+                                let _ = self.need_symbol_atom("reference")?;
                                 self.need_right()?;
                             }
                             "unit" => {
-                                symbol.default_unit = Some(self.parse_i32_atom("symbol unit")?);
+                                let _ = self.parse_i32_atom("symbol unit")?;
                                 self.need_right()?;
                             }
                             "value" => {

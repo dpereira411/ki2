@@ -433,8 +433,6 @@ pub struct Symbol {
     pub uuid: Option<String>,
     pub properties: Vec<Property>,
     pub instances: Vec<SymbolLocalInstance>,
-    pub default_reference: Option<String>,
-    pub default_unit: Option<i32>,
     pub default_value: Option<String>,
     pub default_footprint: Option<String>,
     pub pins: Vec<SymbolPin>,
