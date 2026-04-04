@@ -7,12 +7,13 @@ use uuid::Uuid;
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    BusAlias, BusEntry, EmbeddedFile, Fill, FillType, Group, Image, ItemVariant, Junction, Label,
-    LabelKind, LabelShape, LabelSpin, LibDrawItem, LibPinAlternate, LibSymbol, Line, LineKind,
-    MirrorAxis, NoConnect, Page, Paper, Property, PropertyKind, RootSheet, SchItem, Schematic,
-    Screen, Shape, ShapeKind, Sheet, SheetInstance, SheetLocalInstance, SheetPin, SheetPinShape,
-    SheetSide, Stroke, StrokeStyle, Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table,
-    Text, TextBox, TextEffects, TextHJustify, TextKind, TextVJustify, TitleBlock, VariantField,
+    BusAlias, BusEntry, EmbeddedFile, FieldAutoplacement, Fill, FillType, Group, Image,
+    ItemVariant, Junction, Label, LabelKind, LabelShape, LabelSpin, LibDrawItem,
+    LibPinAlternate, LibSymbol, Line, LineKind, MirrorAxis, NoConnect, Page, Paper, Property,
+    PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet, SheetInstance,
+    SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle, Symbol,
+    SymbolInstance, SymbolLocalInstance, SymbolPin, Table, Text, TextBox, TextEffects,
+    TextHJustify, TextKind, TextVJustify, TitleBlock, VariantField,
 };
 use crate::token::{AtomClass, TokKind, Token, lex};
 
@@ -2130,7 +2131,7 @@ impl KiCadSchematicParser {
         let mut pin_length = None;
         let mut iref_at = None;
         let mut excluded_from_sim = false;
-        let mut fields_autoplaced = false;
+        let mut fields_autoplaced = FieldAutoplacement::None;
         let mut visible = true;
         let mut has_effects = false;
         let mut effects = None;
@@ -2186,7 +2187,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "fields_autoplaced" => {
-                    fields_autoplaced = self.parse_maybe_absent_bool(true)?;
+                    if self.parse_maybe_absent_bool(true)? {
+                        fields_autoplaced = FieldAutoplacement::Auto;
+                    }
                     self.need_right()?;
                 }
                 "effects" => {
@@ -2275,7 +2278,7 @@ impl KiCadSchematicParser {
                     iref_at,
                     excluded_from_sim,
                     fields_autoplaced: if properties.is_empty() {
-                        true
+                        FieldAutoplacement::Auto
                     } else {
                         fields_autoplaced
                     },
@@ -2990,7 +2993,7 @@ impl KiCadSchematicParser {
         let mut on_board = true;
         let mut in_pos_files = true;
         let mut dnp = false;
-        let mut fields_autoplaced = false;
+        let mut fields_autoplaced = FieldAutoplacement::None;
         let mut uuid = None;
         let mut properties: Vec<Property> = Vec::new();
         let mut instances = Vec::new();
@@ -3078,7 +3081,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "fields_autoplaced" => {
-                    fields_autoplaced = self.parse_maybe_absent_bool(true)?;
+                    if self.parse_maybe_absent_bool(true)? {
+                        fields_autoplaced = FieldAutoplacement::Auto;
+                    }
                     self.need_right()?;
                 }
                 "uuid" => {
@@ -3547,7 +3552,7 @@ impl KiCadSchematicParser {
         let mut in_bom = true;
         let mut on_board = true;
         let mut dnp = false;
-        let mut fields_autoplaced = false;
+        let mut fields_autoplaced = FieldAutoplacement::None;
         let mut uuid = None;
         let mut properties: Vec<Property> = Vec::new();
         let mut pins = Vec::new();
@@ -3584,7 +3589,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "fields_autoplaced" => {
-                    fields_autoplaced = self.parse_maybe_absent_bool(true)?;
+                    if self.parse_maybe_absent_bool(true)? {
+                        fields_autoplaced = FieldAutoplacement::Auto;
+                    }
                     self.need_right()?;
                 }
                 "stroke" => {

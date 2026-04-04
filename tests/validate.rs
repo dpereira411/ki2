@@ -6,8 +6,9 @@ use ki2::core::SchematicProject;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
-    FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis, PropertyKind, SchItem, ShapeKind,
-    SheetPinShape, SheetSide, StrokeStyle, TextHJustify, TextKind, TextVJustify,
+    FieldAutoplacement, FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis,
+    PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle, TextHJustify,
+    TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 
@@ -1546,7 +1547,7 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert!(!symbol.in_bom);
     assert!(!symbol.on_board);
     assert!(symbol.dnp);
-    assert!(symbol.fields_autoplaced);
+    assert_eq!(symbol.fields_autoplaced, FieldAutoplacement::Auto);
     assert_eq!(symbol.properties[0].value, "");
 
     let sheet = schematic
@@ -1561,7 +1562,7 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert!(!sheet.in_bom);
     assert!(!sheet.on_board);
     assert!(sheet.dnp);
-    assert!(sheet.fields_autoplaced);
+    assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::Auto);
 
     assert_eq!(schematic.screen.sheet_instances.len(), 2);
     assert_eq!(schematic.screen.sheet_instances[0].path, "");
@@ -2116,7 +2117,7 @@ fn parses_text_and_label_semantics() {
         })
         .expect("text");
     assert!(text.excluded_from_sim);
-    assert!(text.fields_autoplaced);
+    assert_eq!(text.fields_autoplaced, FieldAutoplacement::Auto);
     assert!(text.has_effects);
     assert!(text.visible);
     assert_eq!(
@@ -2134,7 +2135,7 @@ fn parses_text_and_label_semantics() {
         })
         .expect("global label");
     assert!(global.excluded_from_sim);
-    assert!(!global.fields_autoplaced);
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
     assert_eq!(global.properties.len(), 1);
     assert_eq!(global.iref_at, Some([9.0, 10.0]));
     assert!(global.has_effects);
@@ -2155,7 +2156,7 @@ fn parses_text_and_label_semantics() {
             _ => None,
         })
         .expect("local label");
-    assert!(local.fields_autoplaced);
+    assert_eq!(local.fields_autoplaced, FieldAutoplacement::Auto);
 
     let directive = schematic
         .screen

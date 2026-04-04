@@ -227,7 +227,7 @@ pub struct Label {
     pub pin_length: Option<f64>,
     pub iref_at: Option<[f64; 2]>,
     pub excluded_from_sim: bool,
-    pub fields_autoplaced: bool,
+    pub fields_autoplaced: FieldAutoplacement,
     pub visible: bool,
     pub has_effects: bool,
     pub effects: Option<TextEffects>,
@@ -271,7 +271,7 @@ pub struct Text {
     pub text: String,
     pub at: Option<[f64; 3]>,
     pub excluded_from_sim: bool,
-    pub fields_autoplaced: bool,
+    pub fields_autoplaced: FieldAutoplacement,
     pub visible: bool,
     pub has_effects: bool,
     pub effects: Option<TextEffects>,
@@ -430,7 +430,7 @@ pub struct Symbol {
     pub on_board: bool,
     pub in_pos_files: bool,
     pub dnp: bool,
-    pub fields_autoplaced: bool,
+    pub fields_autoplaced: FieldAutoplacement,
     pub uuid: Option<String>,
     pub properties: Vec<Property>,
     pub instances: Vec<SymbolLocalInstance>,
@@ -453,7 +453,7 @@ pub struct Sheet {
     pub in_bom: bool,
     pub on_board: bool,
     pub dnp: bool,
-    pub fields_autoplaced: bool,
+    pub fields_autoplaced: FieldAutoplacement,
     pub uuid: Option<String>,
     pub name: Option<String>,
     pub filename: Option<String>,
@@ -466,6 +466,14 @@ pub struct Sheet {
 pub enum MirrorAxis {
     X,
     Y,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FieldAutoplacement {
+    #[default]
+    None,
+    Auto,
+    Manual,
 }
 
 #[derive(Debug, Clone, PartialEq)]
