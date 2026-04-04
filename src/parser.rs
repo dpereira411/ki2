@@ -709,7 +709,6 @@ impl KiCadSchematicParser {
             let block_depth = self.current_nesting_depth();
             match self.parse_lib_symbol() {
                 Ok(symbol) => {
-                    self.need_right()?;
                     self.screen.lib_symbols.push(symbol);
                 }
                 Err(err) => {
@@ -1230,6 +1229,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(symbol)
     }
 
