@@ -4153,6 +4153,37 @@ fn parses_shared_effects_payload_and_text_hide_override() {
 }
 
 #[test]
+fn preserves_label_hide_from_shared_effects() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (global_label "GL" (shape input) (at 1 2 180)
+    (effects
+      (font (size 1.5 2.5))
+      (hide)))
+)"#;
+    let path = temp_schematic("label_effects_hide", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let label = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+
+    assert!(!label.visible);
+    assert!(label.effects.as_ref().expect("effects").hidden);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_effects_hyperlink() {
     let src = r#"(kicad_sch
   (version 20231120)
