@@ -3021,7 +3021,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin",
+                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
             )?;
             match head.as_str() {
                 "lib_id" => {
@@ -3519,7 +3519,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin",
+                        "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
                     ));
                 }
             }

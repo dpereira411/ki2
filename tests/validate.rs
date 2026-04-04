@@ -2084,7 +2084,7 @@ fn rejects_unexpected_symbol_child_with_upstream_expect_list() {
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol child");
     let msg = err.to_string();
     assert!(msg.contains(
-        "expecting lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin"
+        "expecting lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances"
     ));
     let _ = fs::remove_file(path);
 }
@@ -2560,7 +2560,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_symbol_head_path))
         .expect_err("must reject quoted top-level symbol head token");
     assert!(err.to_string().contains(
-        "expecting lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin"
+        "expecting lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances"
     ));
 
     let quoted_symbol_project = r#"(kicad_sch
@@ -2626,7 +2626,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_symbol_fields_autoplaced_path))
         .expect_err("must reject quoted symbol fields_autoplaced head");
     assert!(err.to_string().contains(
-        "expecting lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin"
+        "expecting lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances"
     ));
 
     let quoted_sheet_fields_autoplaced = r#"(kicad_sch
@@ -5757,7 +5757,7 @@ fn rejects_unknown_children_in_strict_item_parsers() {
     let err =
         parse_schematic_file(Path::new(&symbol_path)).expect_err("must reject bad symbol child");
     assert!(err.to_string().contains(
-        "expecting lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin"
+        "expecting lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances"
     ));
     let _ = fs::remove_file(symbol_path);
 }
