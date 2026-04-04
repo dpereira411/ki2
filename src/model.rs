@@ -531,6 +531,9 @@ pub struct TextBox {
 
 impl TextBox {
     pub fn new() -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             text: String::new(),
             at: [0.0, 0.0],
@@ -540,8 +543,8 @@ impl TextBox {
             visible: true,
             has_effects: false,
             effects: None,
-            stroke: None,
-            fill: None,
+            stroke: Some(stroke),
+            fill: Some(Fill::new()),
             span: None,
             margins: None,
             uuid: None,
@@ -568,6 +571,9 @@ pub struct TableCell {
 
 impl TableCell {
     pub fn new() -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             text: String::new(),
             at: [0.0, 0.0],
@@ -577,8 +583,8 @@ impl TableCell {
             visible: true,
             has_effects: false,
             effects: None,
-            stroke: None,
-            fill: None,
+            stroke: Some(stroke),
+            fill: Some(Fill::new()),
             span: None,
             margins: None,
             uuid: None,
@@ -1062,8 +1068,27 @@ mod tests {
 
     #[test]
     fn text_boxes_start_visible() {
-        assert!(TextBox::new().visible);
-        assert!(TableCell::new().visible);
+        let text_box = TextBox::new();
+        let table_cell = TableCell::new();
+
+        assert!(text_box.visible);
+        assert!(table_cell.visible);
+        assert_eq!(
+            text_box.stroke.as_ref().expect("text box stroke").width,
+            Some(0.0)
+        );
+        assert_eq!(
+            text_box.fill.as_ref().expect("text box fill").fill_type,
+            super::FillType::None
+        );
+        assert_eq!(
+            table_cell.stroke.as_ref().expect("table cell stroke").width,
+            Some(0.0)
+        );
+        assert_eq!(
+            table_cell.fill.as_ref().expect("table cell fill").fill_type,
+            super::FillType::None
+        );
     }
 
     #[test]

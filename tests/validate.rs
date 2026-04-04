@@ -5650,11 +5650,86 @@ fn applies_upstream_default_text_box_margins_when_omitted() {
         .expect("text box");
 
     let margins = text_box.margins.expect("default margins");
+    assert_eq!(
+        text_box.stroke.as_ref().expect("text box stroke").width,
+        Some(0.2)
+    );
     let expected = 0.2 / 2.0 + 3.0 * 0.75;
     assert!((margins[0] - expected).abs() < 1e-9);
     assert!((margins[1] - expected).abs() < 1e-9);
     assert!((margins[2] - expected).abs() < 1e-9);
     assert!((margins[3] - expected).abs() < 1e-9);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn text_boxes_and_table_cells_keep_constructor_graphic_defaults() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-tb-defaults")
+  (text_box "box" (at 0 0 0) (size 5 5))
+  (table
+    (column_count 1)
+    (column_widths 5)
+    (row_heights 5)
+    (cells
+      (table_cell "cell" (at 0 0 0) (size 5 5))))
+)"#;
+    let path = temp_schematic("textbox_and_table_cell_defaults", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let text_box = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::TextBox(text_box) => Some(text_box),
+            _ => None,
+        })
+        .expect("text box");
+    assert_eq!(
+        text_box
+            .stroke
+            .as_ref()
+            .expect("default text box stroke")
+            .width,
+        Some(0.0)
+    );
+    assert_eq!(
+        text_box
+            .fill
+            .as_ref()
+            .expect("default text box fill")
+            .fill_type,
+        FillType::None
+    );
+
+    let table = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Table(table) => Some(table),
+            _ => None,
+        })
+        .expect("table");
+    let cell = table.first_cell().expect("table cell");
+    assert_eq!(
+        cell.stroke
+            .as_ref()
+            .expect("default table cell stroke")
+            .width,
+        Some(0.0)
+    );
+    assert_eq!(
+        cell.fill
+            .as_ref()
+            .expect("default table cell fill")
+            .fill_type,
+        FillType::None
+    );
 
     let _ = fs::remove_file(path);
 }
