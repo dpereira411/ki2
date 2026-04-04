@@ -722,7 +722,112 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "symbol" => {
-                    units.push(self.parse_lib_symbol_unit(&name)?);
+                    let unit_name_raw = self
+                        .need_symbol_atom("symbol unit name")
+                        .map_err(|_| self.error_here("Invalid symbol unit name"))?;
+                    let unit_full_name = unit_name_raw.replace("{slash}", "/");
+
+                    if !unit_full_name.starts_with(&name) {
+                        return Err(self.error_here(format!(
+                            "invalid symbol unit name prefix {unit_full_name}"
+                        )));
+                    }
+
+                    let suffix = unit_full_name
+                        .strip_prefix(&name)
+                        .and_then(|rest| rest.strip_prefix('_'))
+                        .ok_or_else(|| {
+                            self.error_here(format!(
+                                "invalid symbol unit name prefix {unit_full_name}"
+                            ))
+                        })?;
+                    let mut parts = suffix.split('_');
+                    let unit_number = parts
+                        .next()
+                        .ok_or_else(|| {
+                            self.error_here(format!("invalid symbol unit name suffix {suffix}"))
+                        })?
+                        .parse::<i32>()
+                        .map_err(|_| self.error_here(format!("invalid symbol unit number {suffix}")))?;
+                    let body_style = parts
+                        .next()
+                        .ok_or_else(|| {
+                            self.error_here(format!("invalid symbol unit name suffix {suffix}"))
+                        })?
+                        .parse::<i32>()
+                        .map_err(|_| {
+                            self.error_here(format!("invalid symbol body style number {suffix}"))
+                        })?;
+
+                    if parts.next().is_some() {
+                        return Err(
+                            self.error_here(format!("invalid symbol unit name suffix {suffix}"))
+                        );
+                    }
+
+                    let mut unit_name = None;
+                    let mut draw_item_kinds = Vec::new();
+                    let mut draw_items = Vec::new();
+
+                    while !self.at_right() {
+                        self.need_left()?;
+                        let head = self.need_unquoted_symbol_atom(
+                            "arc, bezier, circle, pin, polyline, rectangle, or text",
+                        )?;
+                        match head.as_str() {
+                            "unit_name" => {
+                                if matches!(
+                                    self.current().atom_class,
+                                    Some(AtomClass::Symbol | AtomClass::Quoted)
+                                ) {
+                                    unit_name = Some(self.need_symbol_atom("unit_name")?);
+                                }
+                                self.need_right()?;
+                            }
+                            "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
+                            | "text" | "text_box" => {
+                                let item = match head.as_str() {
+                                    "arc" => self.parse_lib_arc_draw_item(unit_number, body_style),
+                                    "bezier" => {
+                                        self.parse_lib_bezier_draw_item(unit_number, body_style)
+                                    }
+                                    "circle" => {
+                                        self.parse_lib_circle_draw_item(unit_number, body_style)
+                                    }
+                                    "polyline" => {
+                                        self.parse_lib_polyline_draw_item(unit_number, body_style)
+                                    }
+                                    "rectangle" => self
+                                        .parse_lib_rectangle_draw_item(unit_number, body_style),
+                                    "text" => self.parse_lib_text_draw_item(unit_number, body_style),
+                                    "text_box" => {
+                                        self.parse_lib_text_box_draw_item(unit_number, body_style)
+                                    }
+                                    "pin" => self.parse_lib_pin_draw_item(unit_number, body_style),
+                                    _ => Err(self.expecting(
+                                        "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
+                                    )),
+                                }?;
+                                self.need_right()?;
+                                draw_item_kinds.push(head.to_string());
+                                draw_items.push(item);
+                            }
+                            _ => {
+                                return Err(self.expecting(
+                                    "arc, bezier, circle, pin, polyline, rectangle, or text",
+                                ));
+                            }
+                        }
+                    }
+
+                    units.push(crate::model::LibSymbolUnit {
+                        name: unit_full_name,
+                        unit_number,
+                        body_style,
+                        unit_name,
+                        draw_item_kinds,
+                        draw_items,
+                    });
                     self.need_right()?;
                 }
                 kind @ ("arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
@@ -843,95 +948,6 @@ impl KiCadSchematicParser {
             units,
             embedded_fonts,
             embedded_files,
-        })
-    }
-
-    fn parse_lib_symbol_unit(
-        &mut self,
-        parent_name: &str,
-    ) -> Result<crate::model::LibSymbolUnit, Error> {
-        let name = self
-            .need_symbol_atom("symbol unit name")
-            .map_err(|_| self.error_here("Invalid symbol unit name"))?
-            .replace("{slash}", "/");
-
-        if !name.starts_with(parent_name) {
-            return Err(self.error_here(format!("invalid symbol unit name prefix {name}")));
-        }
-
-        let suffix = name
-            .strip_prefix(parent_name)
-            .and_then(|rest| rest.strip_prefix('_'))
-            .ok_or_else(|| self.error_here(format!("invalid symbol unit name prefix {name}")))?;
-        let mut parts = suffix.split('_');
-        let unit_number = parts
-            .next()
-            .ok_or_else(|| self.error_here(format!("invalid symbol unit name suffix {suffix}")))?
-            .parse::<i32>()
-            .map_err(|_| self.error_here(format!("invalid symbol unit number {suffix}")))?;
-        let body_style = parts
-            .next()
-            .ok_or_else(|| self.error_here(format!("invalid symbol unit name suffix {suffix}")))?
-            .parse::<i32>()
-            .map_err(|_| self.error_here(format!("invalid symbol body style number {suffix}")))?;
-
-        if parts.next().is_some() {
-            return Err(self.error_here(format!("invalid symbol unit name suffix {suffix}")));
-        }
-
-        let mut unit_name = None;
-        let mut draw_item_kinds = Vec::new();
-        let mut draw_items = Vec::new();
-
-        while !self.at_right() {
-            self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "arc, bezier, circle, pin, polyline, rectangle, or text",
-            )?;
-            match head.as_str() {
-                "unit_name" => {
-                    if matches!(
-                        self.current().atom_class,
-                        Some(AtomClass::Symbol | AtomClass::Quoted)
-                    ) {
-                        unit_name = Some(self.need_symbol_atom("unit_name")?);
-                    }
-                    self.need_right()?;
-                }
-                "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
-                | "text_box" => {
-                    let item = match head.as_str() {
-                        "arc" => self.parse_lib_arc_draw_item(unit_number, body_style),
-                        "bezier" => self.parse_lib_bezier_draw_item(unit_number, body_style),
-                        "circle" => self.parse_lib_circle_draw_item(unit_number, body_style),
-                        "polyline" => self.parse_lib_polyline_draw_item(unit_number, body_style),
-                        "rectangle" => self.parse_lib_rectangle_draw_item(unit_number, body_style),
-                        "text" => self.parse_lib_text_draw_item(unit_number, body_style),
-                        "text_box" => self.parse_lib_text_box_draw_item(unit_number, body_style),
-                        "pin" => self.parse_lib_pin_draw_item(unit_number, body_style),
-                        _ => Err(self.expecting(
-                            "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
-                        )),
-                    }?;
-                    self.need_right()?;
-                    draw_item_kinds.push(head.to_string());
-                    draw_items.push(item);
-                }
-                _ => {
-                    return Err(
-                        self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")
-                    );
-                }
-            }
-        }
-
-        Ok(crate::model::LibSymbolUnit {
-            name,
-            unit_number,
-            body_style,
-            unit_name,
-            draw_item_kinds,
-            draw_items,
         })
     }
 
