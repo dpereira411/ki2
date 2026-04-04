@@ -713,11 +713,13 @@ impl KiCadSchematicParser {
 
     fn parse_symbol_draw_item(
         &mut self,
-        kind: &str,
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        match kind {
+        match self
+            .need_unquoted_symbol_atom("arc, bezier, circle, pin, polyline, rectangle, or text")?
+            .as_str()
+        {
             "arc" => self.parse_symbol_arc(unit_number, body_style),
             "bezier" => self.parse_symbol_bezier(unit_number, body_style),
             "circle" => self.parse_symbol_circle(unit_number, body_style),
@@ -726,10 +728,7 @@ impl KiCadSchematicParser {
             "rectangle" => self.parse_symbol_rectangle(unit_number, body_style),
             "text" => self.parse_symbol_text(unit_number, body_style),
             "text_box" => self.parse_symbol_text_box(unit_number, body_style),
-            _ => {
-                Err(self
-                    .expecting("arc, bezier, circle, pin, polyline, rectangle, text, or text_box"))
-            }
+            _ => Err(self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")),
         }
     }
 
@@ -782,11 +781,21 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let branch = self.need_unquoted_symbol_atom(
-                "pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text",
-            )?;
+            let branch = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => {
+                    return Err(self.expecting(
+                        "pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text",
+                    ))
+                }
+            };
             match branch.as_str() {
                 "power" => {
+                    let _ = self.need_unquoted_symbol_atom("power")?;
                     symbol.power = true;
                     if matches!(self.current().kind, TokKind::Atom(_)) {
                         match self.need_unquoted_symbol_atom("global or local")?.as_str() {
@@ -797,31 +806,46 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                "body_styles" => self.parse_body_styles(&mut symbol)?,
-                "pin_names" => self.parse_pin_names(&mut symbol)?,
-                "pin_numbers" => self.parse_pin_numbers(&mut symbol)?,
+                "body_styles" => {
+                    let _ = self.need_unquoted_symbol_atom("body_styles")?;
+                    self.parse_body_styles(&mut symbol)?;
+                }
+                "pin_names" => {
+                    let _ = self.need_unquoted_symbol_atom("pin_names")?;
+                    self.parse_pin_names(&mut symbol)?;
+                }
+                "pin_numbers" => {
+                    let _ = self.need_unquoted_symbol_atom("pin_numbers")?;
+                    self.parse_pin_numbers(&mut symbol)?;
+                }
                 "exclude_from_sim" => {
+                    let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
                     symbol.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "in_bom" => {
+                    let _ = self.need_unquoted_symbol_atom("in_bom")?;
                     symbol.in_bom = self.parse_bool_atom("in_bom")?;
                     self.need_right()?;
                 }
                 "on_board" => {
+                    let _ = self.need_unquoted_symbol_atom("on_board")?;
                     symbol.on_board = self.parse_bool_atom("on_board")?;
                     self.need_right()?;
                 }
                 "in_pos_files" => {
+                    let _ = self.need_unquoted_symbol_atom("in_pos_files")?;
                     symbol.in_pos_files = self.parse_bool_atom("in_pos_files")?;
                     self.need_right()?;
                 }
                 "duplicate_pin_numbers_are_jumpers" => {
+                    let _ = self.need_unquoted_symbol_atom("duplicate_pin_numbers_are_jumpers")?;
                     symbol.duplicate_pin_numbers_are_jumpers =
                         self.parse_bool_atom("duplicate_pin_numbers_are_jumpers")?;
                     self.need_right()?;
                 }
                 "jumper_pin_groups" => {
+                    let _ = self.need_unquoted_symbol_atom("jumper_pin_groups")?;
                     while !self.at_right() {
                         self.need_left()?;
                         let mut group = Vec::new();
@@ -833,8 +857,12 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                "property" => self.parse_lib_property(&mut symbol)?,
+                "property" => {
+                    let _ = self.need_unquoted_symbol_atom("property")?;
+                    self.parse_lib_property(&mut symbol)?;
+                }
                 "extends" => {
+                    let _ = self.need_unquoted_symbol_atom("extends")?;
                     symbol.extends = Some(
                         self.need_symbol_atom("parent symbol name")
                             .map_err(|_| self.error_here("Invalid parent symbol name"))?
@@ -843,6 +871,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "symbol" => {
+                    let _ = self.need_unquoted_symbol_atom("symbol")?;
                     let unit_name_raw = self
                         .need_symbol_atom("symbol unit name")
                         .map_err(|_| self.error_here("Invalid symbol unit name"))?;
@@ -907,49 +936,39 @@ impl KiCadSchematicParser {
 
                     while !self.at_right() {
                         self.need_left()?;
-                        let head = self.need_unquoted_symbol_atom(
-                            "arc, bezier, circle, pin, polyline, rectangle, or text",
-                        )?;
-                        match head.as_str() {
-                            "unit_name" => {
-                                if matches!(
-                                    self.current().atom_class,
-                                    Some(AtomClass::Symbol | AtomClass::Quoted)
-                                ) {
-                                    symbol.units[unit_index].unit_name =
-                                        Some(self.need_symbol_atom("unit_name")?);
-                                }
-                                self.need_right()?;
+                        if self.at_unquoted_symbol_with("unit_name") {
+                            let _ = self.need_unquoted_symbol_atom("unit_name")?;
+                            if matches!(
+                                self.current().atom_class,
+                                Some(AtomClass::Symbol | AtomClass::Quoted)
+                            ) {
+                                symbol.units[unit_index].unit_name =
+                                    Some(self.need_symbol_atom("unit_name")?);
                             }
-                            "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
-                            | "text" | "text_box" => {
-                                let item =
-                                    self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
-                                self.need_right()?;
-                                symbol.units[unit_index].draw_item_kinds.push(item.kind.clone());
-                                symbol.units[unit_index].draw_items.push(item);
-                            }
-                            _ => {
-                                return Err(self.expecting(
-                                    "arc, bezier, circle, pin, polyline, rectangle, or text",
-                                ));
-                            }
+                            self.need_right()?;
+                        } else {
+                            let item = self.parse_symbol_draw_item(unit_number, body_style)?;
+                            self.need_right()?;
+                            symbol.units[unit_index].draw_item_kinds.push(item.kind.clone());
+                            symbol.units[unit_index].draw_items.push(item);
                         }
                     }
                     self.need_right()?;
                 }
-                kind @ ("arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
-                | "text" | "text_box") => {
-                    let item = self.parse_symbol_draw_item(kind, 1, 1)?;
+                "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
+                | "text_box" => {
+                    let item = self.parse_symbol_draw_item(1, 1)?;
                     self.need_right()?;
                     symbol.units[0].draw_item_kinds.push(item.kind.clone());
                     symbol.units[0].draw_items.push(item);
                 }
                 "embedded_fonts" => {
+                    let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
                     symbol.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                     self.need_right()?;
                 }
                 "embedded_files" => {
+                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let block_depth = self.current_nesting_depth();
                     match (|| -> Result<Vec<EmbeddedFile>, Error> {
                         let mut files = Vec::new();
