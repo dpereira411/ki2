@@ -2869,7 +2869,6 @@ impl KiCadSchematicParser {
                     } else {
                         label.properties.push(property);
                     }
-                    self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
             }
@@ -3935,12 +3934,10 @@ impl KiCadSchematicParser {
                     let property = self.parse_sch_field(FieldParent::Symbol)?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
                         symbol.excluded_from_sim = property.value == "0";
-                        self.need_right()?;
                         continue;
                     }
                     if property.key == SIM_LEGACY_ENABLE_FIELD {
                         symbol.excluded_from_sim = property.value == "N";
-                        self.need_right()?;
                         continue;
                     }
 
@@ -3971,7 +3968,6 @@ impl KiCadSchematicParser {
                             symbol.properties.push(property);
                         }
                     }
-                    self.need_right()?;
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
@@ -4456,11 +4452,9 @@ impl KiCadSchematicParser {
                         }
                     }
                     properties.push(property);
-                    self.need_right()?;
                 }
                 "pin" => {
                     sheet.pins.push(self.parse_sch_sheet_pin()?);
-                    self.need_right()?;
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
@@ -4802,6 +4796,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(sheet_pin)
     }
 
@@ -5187,6 +5182,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
+        self.need_right()?;
         Ok(property)
     }
 
