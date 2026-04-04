@@ -786,6 +786,7 @@ pub struct Symbol {
     pub lib_id: String,
     pub lib_name: Option<String>,
     pub linked_lib_symbol_name: Option<String>,
+    pub prefix: String,
     pub at: [f64; 2],
     pub angle: f64,
     pub mirror: Option<MirrorAxis>,
@@ -809,6 +810,7 @@ impl Symbol {
             lib_id: String::new(),
             lib_name: None,
             linked_lib_symbol_name: None,
+            prefix: "U".to_string(),
             at: [0.0, 0.0],
             angle: 0.0,
             mirror: None,
@@ -842,10 +844,34 @@ impl Symbol {
         existing.id = kind.default_field_id().or(existing.id);
         existing.key = kind.canonical_key().to_string();
         existing.value = value;
+
+        if kind == PropertyKind::SymbolReference {
+            self.update_prefix_from_reference();
+        }
     }
 
     pub fn add_pin(&mut self, pin: SymbolPin) {
         self.pins.push(pin);
+    }
+
+    pub fn update_prefix_from_reference(&mut self) {
+        let Some(reference) = self
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.replace('~', " "))
+        else {
+            return;
+        };
+
+        let trimmed = reference
+            .trim()
+            .trim_end_matches(|ch: char| ch.is_ascii_digit() || matches!(ch, '?' | '*'))
+            .trim();
+
+        if !trimmed.is_empty() {
+            self.prefix = trimmed.to_string();
+        }
     }
 }
 
@@ -929,6 +955,7 @@ mod tests {
     fn placed_symbols_start_with_mandatory_fields() {
         let symbol = Symbol::new();
 
+        assert_eq!(symbol.prefix, "U");
         assert_eq!(symbol.unit, Some(1));
         assert_eq!(symbol.body_style, Some(1));
         assert_eq!(
@@ -945,6 +972,20 @@ mod tests {
                 PropertyKind::SymbolDescription,
             ]
         );
+    }
+
+    #[test]
+    fn reference_updates_refresh_symbol_prefix() {
+        let mut symbol = Symbol::new();
+
+        symbol.set_field_text(PropertyKind::SymbolReference, "J12".to_string());
+        assert_eq!(symbol.prefix, "J");
+
+        symbol.set_field_text(PropertyKind::SymbolReference, "TP?".to_string());
+        assert_eq!(symbol.prefix, "TP");
+
+        symbol.set_field_text(PropertyKind::SymbolReference, "".to_string());
+        assert_eq!(symbol.prefix, "TP");
     }
 
     #[test]

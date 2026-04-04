@@ -472,6 +472,7 @@ fn placed_symbols_start_with_mandatory_fields() {
             .iter()
             .all(|property| property.value.is_empty())
     );
+    assert_eq!(symbol.prefix, "U");
     assert_eq!(symbol.unit, Some(1));
     assert_eq!(symbol.body_style, Some(1));
 
@@ -501,6 +502,40 @@ fn parser_resets_sheet_fields_autoplaced_before_branch_walk() {
         .expect("sheet");
 
     assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::None);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn symbol_reference_property_updates_prefix() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-prefix")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "J12")))"#;
+    let path = temp_schematic("symbol_prefix_from_reference", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.prefix, "J");
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("J12")
+    );
 
     let _ = fs::remove_file(path);
 }

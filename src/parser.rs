@@ -3481,7 +3481,11 @@ impl KiCadSchematicParser {
                             .iter_mut()
                             .find(|existing| existing.kind == property.kind)
                             .expect("placed symbols start with mandatory fields");
+                        let kind = property.kind;
                         *existing = property;
+                        if kind == PropertyKind::SymbolReference {
+                            symbol.update_prefix_from_reference();
+                        }
                     } else if let Some(existing) = symbol
                         .properties
                         .iter_mut()
