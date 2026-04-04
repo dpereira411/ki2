@@ -1362,18 +1362,39 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let text = self
-            .need_symbol_atom("text box text")
-            .map_err(|_| self.error_here("Invalid text string"))?;
-        let mut at = None;
-        let mut angle = 0.0;
+        let mut item = LibDrawItem {
+            kind: "text_box".to_string(),
+            is_private,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: Some(0.0),
+            points: Vec::new(),
+            end: None,
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: Some(
+                self.need_symbol_atom("text box text")
+                    .map_err(|_| self.error_here("Invalid text string"))?,
+            ),
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+        };
+        let mut has_at = false;
         let mut end = None;
         let mut size = None;
-        let mut has_effects = false;
-        let mut effects = None;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut margins = None;
         let mut stroke_width = None;
         let mut text_size_y = None;
 
@@ -1382,7 +1403,8 @@ impl KiCadSchematicParser {
             let head = self.need_unquoted_symbol_atom("at, size, stroke, fill or effects")?;
             match head.as_str() {
                 "start" => {
-                    at = Some(self.parse_xy2("text_box start")?);
+                    item.at = Some(self.parse_xy2("text_box start")?);
+                    has_at = true;
                     self.need_right()?;
                 }
                 "end" => {
@@ -1391,8 +1413,9 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let parsed = self.parse_xy3("text_box at")?;
-                    at = Some([parsed[0], parsed[1]]);
-                    angle = parsed[2];
+                    item.at = Some([parsed[0], parsed[1]]);
+                    item.angle = Some(parsed[2]);
+                    has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
@@ -1402,27 +1425,27 @@ impl KiCadSchematicParser {
                 "stroke" => {
                     let parsed_stroke = self.parse_stroke()?;
                     stroke_width = parsed_stroke.width;
-                    stroke = Some(parsed_stroke);
+                    item.stroke = Some(parsed_stroke);
                 }
                 "fill" => {
-                    fill = Some(self.parse_fill()?);
+                    item.fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
                     let mut parsed_effects = TextEffects::default();
-                    let mut visible = true;
+                    let mut visible = item.visible;
                     self.parse_eda_text(None, &mut parsed_effects, &mut visible, false, true)?;
-                    has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
-                    effects = Some(parsed_effects);
+                    item.visible = visible;
+                    item.effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 "margins" => {
-                    margins = Some([
+                    let _margins = [
                         self.parse_f64_atom("margin left")?,
                         self.parse_f64_atom("margin top")?,
                         self.parse_f64_atom("margin right")?,
                         self.parse_f64_atom("margin bottom")?,
-                    ]);
+                    ];
                     self.need_right()?;
                 }
                 _ => {
@@ -1431,53 +1454,25 @@ impl KiCadSchematicParser {
             }
         }
 
-        let at = at.unwrap_or([0.0, 0.0]);
-        let end = match (end, size) {
+        if !has_at {
+            item.at = Some([0.0, 0.0]);
+        }
+
+        let at = item.at.unwrap_or([0.0, 0.0]);
+        item.end = Some(match (end, size) {
             (Some(end), _) => end,
             (None, Some(size)) => [at[0] + size[0], at[1] + size[1]],
             (None, None) => return Err(self.expecting("size")),
-        };
-        let margins = margins.or_else(|| {
+        });
+        let _margins = Some({
             let margin = Self::get_legacy_text_margin(
                 stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
                 text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
             );
-            Some([margin, margin, margin, margin])
+            [margin, margin, margin, margin]
         });
-        let visible = !effects
-            .as_ref()
-            .map(|effects| effects.hidden)
-            .unwrap_or(false);
-        let _ = has_effects;
-        let _ = margins;
 
-        Ok(LibDrawItem {
-            kind: "text_box".to_string(),
-            is_private,
-            unit_number,
-            body_style,
-            visible,
-            at: Some(at),
-            angle: Some(angle),
-            points: Vec::new(),
-            end: Some(end),
-            radius: None,
-            arc_center: None,
-            arc_start_angle: None,
-            arc_end_angle: None,
-            length: None,
-            text: Some(text),
-            name: None,
-            number: None,
-            name_effects: None,
-            number_effects: None,
-            electrical_type: None,
-            graphic_shape: None,
-            alternates: Vec::new(),
-            stroke,
-            fill,
-            effects,
-        })
+        Ok(item)
     }
 
     fn parse_symbol_pin(
@@ -2249,21 +2244,25 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_text_box_content(&mut self, table_cell: bool) -> Result<TextBox, Error> {
-        let mut text = self
-            .need_symbol_atom("text box text")
-            .map_err(|_| self.error_here("Invalid text string"))?;
-        let mut at = None;
-        let mut angle = 0.0;
+        let mut text_box = TextBox {
+            text: self
+                .need_symbol_atom("text box text")
+                .map_err(|_| self.error_here("Invalid text string"))?,
+            at: [0.0, 0.0],
+            angle: 0.0,
+            end: [0.0, 0.0],
+            excluded_from_sim: false,
+            has_effects: false,
+            effects: None,
+            stroke: None,
+            fill: None,
+            span: None,
+            margins: None,
+            uuid: None,
+        };
+        let mut has_at = false;
         let mut end = None;
         let mut size = None;
-        let mut excluded_from_sim = false;
-        let mut has_effects = false;
-        let mut effects = None;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut span = None;
-        let mut margins = None;
-        let mut uuid = None;
         let mut stroke_width = None;
         let mut text_size_y = None;
 
@@ -2276,11 +2275,12 @@ impl KiCadSchematicParser {
             })?;
             match head.as_str() {
                 "exclude_from_sim" => {
-                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    text_box.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "start" => {
-                    at = Some(self.parse_xy2("text_box start")?);
+                    text_box.at = self.parse_xy2("text_box start")?;
+                    has_at = true;
                     self.need_right()?;
                 }
                 "end" => {
@@ -2289,8 +2289,9 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let parsed = self.parse_xy3("text_box at")?;
-                    at = Some([parsed[0], parsed[1]]);
-                    angle = parsed[2];
+                    text_box.at = [parsed[0], parsed[1]];
+                    text_box.angle = parsed[2];
+                    has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
@@ -2298,7 +2299,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "span" if table_cell => {
-                    span = Some([
+                    text_box.span = Some([
                         self.parse_i32_atom("column span")?,
                         self.parse_i32_atom("row span")?,
                     ]);
@@ -2307,28 +2308,28 @@ impl KiCadSchematicParser {
                 "stroke" => {
                     let parsed_stroke = self.parse_stroke()?;
                     stroke_width = parsed_stroke.width;
-                    stroke = Some(parsed_stroke);
+                    text_box.stroke = Some(parsed_stroke);
                 }
                 "fill" => {
-                    fill = Some(self.parse_fill()?);
+                    text_box.fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
                     let mut parsed_effects = TextEffects::default();
                     let mut visible = true;
                     self.parse_eda_text(
-                        Some(&mut text),
+                        Some(&mut text_box.text),
                         &mut parsed_effects,
                         &mut visible,
                         false,
                         true,
                     )?;
-                    has_effects = true;
+                    text_box.has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
-                    effects = Some(parsed_effects);
+                    text_box.effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 "margins" => {
-                    margins = Some([
+                    text_box.margins = Some([
                         self.parse_f64_atom("margin left")?,
                         self.parse_f64_atom("margin top")?,
                         self.parse_f64_atom("margin right")?,
@@ -2337,7 +2338,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    text_box.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => {
@@ -2350,13 +2351,16 @@ impl KiCadSchematicParser {
             }
         }
 
-        let at = at.unwrap_or([0.0, 0.0]);
-        let end = match (end, size) {
+        if !has_at {
+            text_box.at = [0.0, 0.0];
+        }
+
+        text_box.end = match (end, size) {
             (Some(end), _) => end,
-            (None, Some(size)) => [at[0] + size[0], at[1] + size[1]],
+            (None, Some(size)) => [text_box.at[0] + size[0], text_box.at[1] + size[1]],
             (None, None) => return Err(self.expecting("size")),
         };
-        let margins = margins.or_else(|| {
+        text_box.margins = text_box.margins.or_else(|| {
             let margin = Self::get_legacy_text_margin(
                 stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
                 text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
@@ -2364,20 +2368,7 @@ impl KiCadSchematicParser {
             Some([margin, margin, margin, margin])
         });
 
-        Ok(TextBox {
-            text,
-            at,
-            angle,
-            end,
-            excluded_from_sim,
-            has_effects,
-            effects,
-            stroke,
-            fill,
-            span,
-            margins,
-            uuid,
-        })
+        Ok(text_box)
     }
 
     fn parse_sch_table(&mut self) -> Result<Table, Error> {
