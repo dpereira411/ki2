@@ -35,7 +35,7 @@ Strict mode is the default for parser-parity work in this repository.
 14. Do not treat the end of a turn, a clean git status, or a green test run as an implicit stopping point. Those are normal checkpoints inside execution mode, not reasons to report.
 15. If backlog remains, the default action after every successful work unit is: pick the next largest mismatch, edit, test, commit, continue. Do not wait for another user prompt to resume.
 16. If a reply is unavoidable, it must explain the blocker or state that the backlog is exhausted. Do not send celebratory, summary-only, or “latest progress” replies while executable parity work still remains.
-17. If a reply is unavoidable during strict execution mode, play a macOS sound effect first (for example with `afplay /System/Library/Sounds/Glass.aiff`) before replying.
+17. If a reply is unavoidable during strict execution mode, play `Hero.aiff` first with `afplay /System/Library/Sounds/Hero.aiff` before replying.
 
 ## Specific Learnings
 
