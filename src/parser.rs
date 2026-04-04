@@ -352,7 +352,8 @@ impl KiCadSchematicParser {
                 }
                 "title_block" => {
                     let _ = self.need_unquoted_symbol_atom("title_block")?;
-                    self.parse_title_block()?
+                    self.parse_title_block()?;
+                    section_consumed_right = true;
                 }
                 "embedded_fonts" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
@@ -486,8 +487,14 @@ impl KiCadSchematicParser {
                         }
                     }
                 }
-                "lib_symbols" => self.parse_sch_lib_symbols()?,
-                "bus_alias" => self.parse_bus_alias()?,
+                "lib_symbols" => {
+                    self.parse_sch_lib_symbols()?;
+                    section_consumed_right = true;
+                }
+                "bus_alias" => {
+                    self.parse_bus_alias()?;
+                    section_consumed_right = true;
+                }
                 "symbol" => {
                     let symbol = self.parse_schematic_symbol()?;
                     self.screen.items.push(SchItem::Symbol(symbol));
@@ -582,9 +589,18 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::Shape(shape));
                     section_consumed_right = true;
                 }
-                "sheet_instances" => self.parse_sch_sheet_instances()?,
-                "symbol_instances" => self.parse_sch_symbol_instances()?,
-                "group" => self.parse_group()?,
+                "sheet_instances" => {
+                    self.parse_sch_sheet_instances()?;
+                    section_consumed_right = true;
+                }
+                "symbol_instances" => {
+                    self.parse_sch_symbol_instances()?;
+                    section_consumed_right = true;
+                }
+                "group" => {
+                    self.parse_group()?;
+                    section_consumed_right = true;
+                }
                 _ => {
                     let _ = self.need_unquoted_symbol_atom(
                         "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
@@ -700,6 +716,7 @@ impl KiCadSchematicParser {
             self.need_right()?;
         }
         self.screen.title_block = Some(title_block);
+        self.need_right()?;
         Ok(())
     }
 
@@ -733,6 +750,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
+        self.need_right()?;
         Ok(())
     }
 
@@ -2392,6 +2410,7 @@ impl KiCadSchematicParser {
         }
         self.need_right()?;
         self.screen.bus_aliases.push(alias);
+        self.need_right()?;
         Ok(())
     }
 
@@ -4908,6 +4927,7 @@ impl KiCadSchematicParser {
                 self.screen.sheet_instances.push(instance);
             }
         }
+        self.need_right()?;
         Ok(())
     }
 
@@ -5010,6 +5030,7 @@ impl KiCadSchematicParser {
             self.need_right()?;
             self.screen.symbol_instances.push(instance);
         }
+        self.need_right()?;
         Ok(())
     }
 
@@ -5067,6 +5088,7 @@ impl KiCadSchematicParser {
         }
 
         self.pending_groups.push(group);
+        self.need_right()?;
         Ok(())
     }
 
