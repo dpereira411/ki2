@@ -2660,6 +2660,44 @@ fn canonicalizes_and_replaces_mandatory_properties() {
 }
 
 #[test]
+fn symbol_preserves_duplicate_user_properties_in_parse_order() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "UserField" "First")
+    (property "UserField" "Second"))
+)"#;
+    let path = temp_schematic("symbol_duplicate_user_properties", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .filter(|property| property.key == "UserField")
+            .map(|property| property.value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["First", "Second"]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn recovers_legacy_sheet_field_ids_during_parse() {
     let src = r#"(kicad_sch
   (version 20200310)
@@ -4983,7 +5021,7 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
 }
 
 #[test]
-fn symbol_duplicate_user_property_overwrites_by_name() {
+fn symbol_duplicate_user_properties_are_appended() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -5011,9 +5049,11 @@ fn symbol_duplicate_user_property_overwrites_by_name() {
         .iter()
         .filter(|property| property.key == "MPN")
         .collect::<Vec<_>>();
-    assert_eq!(mpn_properties.len(), 1);
-    assert_eq!(mpn_properties[0].value, "second");
-    assert_eq!(mpn_properties[0].at, Some([1.0, 2.0]));
+    assert_eq!(mpn_properties.len(), 2);
+    assert_eq!(mpn_properties[0].value, "first");
+    assert_eq!(mpn_properties[0].at, Some([0.0, 0.0]));
+    assert_eq!(mpn_properties[1].value, "second");
+    assert_eq!(mpn_properties[1].at, Some([1.0, 2.0]));
 
     let _ = fs::remove_file(path);
 }

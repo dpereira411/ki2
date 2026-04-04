@@ -582,34 +582,6 @@ impl Symbol {
             self.properties.push(Property::new(kind, value));
         }
     }
-
-    pub fn upsert_property(&mut self, property: Property) {
-        if matches!(
-            property.kind,
-            PropertyKind::SymbolReference
-                | PropertyKind::SymbolValue
-                | PropertyKind::SymbolFootprint
-                | PropertyKind::SymbolDatasheet
-        ) {
-            if let Some(existing) = self
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                self.properties.push(property);
-            }
-        } else if let Some(existing) = self
-            .properties
-            .iter_mut()
-            .find(|existing| existing.kind == property.kind && existing.key == property.key)
-        {
-            *existing = property;
-        } else {
-            self.properties.push(property);
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
