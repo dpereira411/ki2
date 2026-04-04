@@ -14,7 +14,7 @@ impl Schematic {
     pub fn sheet_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
         let base_dir = self.path.parent().unwrap_or_else(|| Path::new("."));
         self.screen.items.iter().filter_map(move |item| match item {
-            SchItem::Sheet(sheet) => sheet.filename.as_ref().map(|name| base_dir.join(name)),
+            SchItem::Sheet(sheet) => sheet.filename().map(|name| base_dir.join(name)),
             _ => None,
         })
     }
@@ -26,10 +26,10 @@ impl Schematic {
             .iter()
             .filter_map(|item| match item {
                 SchItem::Sheet(sheet) => {
-                    let filename = sheet.filename.clone()?;
+                    let filename = sheet.filename()?.to_string();
                     Some(SheetReference {
                         sheet_uuid: sheet.uuid.clone(),
-                        sheet_name: sheet.name.clone(),
+                        sheet_name: sheet.name().map(str::to_string),
                         filename: filename.clone(),
                         resolved_path: base_dir.join(filename),
                     })
@@ -450,11 +450,25 @@ pub struct Sheet {
     pub dnp: bool,
     pub fields_autoplaced: FieldAutoplacement,
     pub uuid: Option<String>,
-    pub name: Option<String>,
-    pub filename: Option<String>,
     pub properties: Vec<Property>,
     pub pins: Vec<SheetPin>,
     pub instances: Vec<SheetLocalInstance>,
+}
+
+impl Sheet {
+    pub fn name(&self) -> Option<&str> {
+        self.properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SheetName)
+            .map(|property| property.value.as_str())
+    }
+
+    pub fn filename(&self) -> Option<&str> {
+        self.properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SheetFile)
+            .map(|property| property.value.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

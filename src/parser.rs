@@ -3611,8 +3611,6 @@ impl KiCadSchematicParser {
             dnp: false,
             fields_autoplaced: FieldAutoplacement::None,
             uuid: None,
-            name: None,
-            filename: None,
             properties: Vec::new(),
             pins: Vec::new(),
             instances: Vec::new(),
@@ -3872,21 +3870,10 @@ impl KiCadSchematicParser {
             }
         }
 
-        sheet.name = sheet
-            .properties
-            .iter()
-            .find(|property| property.kind == PropertyKind::SheetName)
-            .map(|property| property.value.clone());
-        sheet.filename = sheet
-            .properties
-            .iter()
-            .find(|property| property.kind == PropertyKind::SheetFile)
-            .map(|property| property.value.clone());
-
-        if sheet.name.is_none() {
+        if sheet.name().is_none() {
             return Err(self.error_here("Missing sheet name property"));
         }
-        if sheet.filename.is_none() {
+        if sheet.filename().is_none() {
             return Err(self.error_here("Missing sheet file property"));
         }
 

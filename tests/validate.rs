@@ -2527,8 +2527,8 @@ fn canonicalizes_and_replaces_mandatory_properties() {
             _ => None,
         })
         .expect("sheet");
-    assert_eq!(sheet.name.as_deref(), Some("New Name"));
-    assert_eq!(sheet.filename.as_deref(), Some("new.kicad_sch"));
+    assert_eq!(sheet.name(), Some("New Name"));
+    assert_eq!(sheet.filename(), Some("new.kicad_sch"));
 
     let _ = fs::remove_file(path);
 }
