@@ -712,61 +712,7 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                "property" => {
-                    let mut property = self.parse_lib_property()?;
-                    match property.key.as_str() {
-                        "ki_keywords" => symbol.keywords = Some(property.value),
-                        "ki_description" => symbol.description = Some(property.value),
-                        "ki_fp_filters" => {
-                            symbol.fp_filters = property
-                                .value
-                                .split_whitespace()
-                                .map(str::to_string)
-                                .collect();
-                        }
-                        "ki_locked" => symbol.locked_units = true,
-                        _ => {
-                            if matches!(
-                                property.kind,
-                                PropertyKind::SymbolReference
-                                    | PropertyKind::SymbolValue
-                                    | PropertyKind::SymbolFootprint
-                                    | PropertyKind::SymbolDatasheet
-                            ) {
-                                if let Some(existing) =
-                                    symbol.properties.iter_mut().find(|p| p.kind == property.kind)
-                                {
-                                    *existing = property;
-                                } else {
-                                    symbol.properties.push(property);
-                                }
-                            } else if symbol
-                                .properties
-                                .iter()
-                                .any(|existing| existing.key == property.key)
-                            {
-                                let base = property.key.clone();
-
-                                for suffix in 1..10 {
-                                    let candidate = format!("{base}_{suffix}");
-
-                                    if !symbol
-                                        .properties
-                                        .iter()
-                                        .any(|existing| existing.key == candidate)
-                                    {
-                                        property.key = candidate;
-                                        symbol.properties.push(property);
-                                        break;
-                                    }
-                                }
-                            } else {
-                                symbol.properties.push(property);
-                            }
-                        }
-                    }
-                    self.need_right()?;
-                }
+                "property" => self.parse_lib_property(&mut symbol)?,
                 "extends" => {
                     symbol.extends = Some(
                         self.need_symbol_atom("parent symbol name")
@@ -1797,7 +1743,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_lib_property(&mut self) -> Result<Property, Error> {
+    fn parse_lib_property(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1903,7 +1849,69 @@ impl KiCadSchematicParser {
             }
         }
 
-        Ok(property)
+        match property.kind {
+            PropertyKind::SymbolReference
+            | PropertyKind::SymbolValue
+            | PropertyKind::SymbolFootprint
+            | PropertyKind::SymbolDatasheet => {
+                if let Some(existing) = symbol
+                    .properties
+                    .iter_mut()
+                    .find(|existing| existing.kind == property.kind)
+                {
+                    *existing = property;
+                } else {
+                    symbol.properties.push(property);
+                }
+            }
+            PropertyKind::User => match property.key.as_str() {
+                "ki_keywords" => symbol.keywords = Some(property.value),
+                "ki_description" => symbol.description = Some(property.value),
+                "ki_fp_filters" => {
+                    symbol.fp_filters = property
+                        .value
+                        .split_whitespace()
+                        .map(str::to_string)
+                        .collect();
+                }
+                "ki_locked" => symbol.locked_units = true,
+                _ => {
+                    if symbol
+                        .properties
+                        .iter()
+                        .any(|existing| existing.key == property.key)
+                    {
+                        let base = property.key.clone();
+                        let mut renamed = false;
+
+                        for suffix in 1..10 {
+                            let candidate = format!("{base}_{suffix}");
+
+                            if !symbol
+                                .properties
+                                .iter()
+                                .any(|existing| existing.key == candidate)
+                            {
+                                property.key = candidate;
+                                symbol.properties.push(property);
+                                renamed = true;
+                                break;
+                            }
+                        }
+
+                        if !renamed {
+                            return Ok(());
+                        }
+                    } else {
+                        symbol.properties.push(property);
+                    }
+                }
+            },
+            _ => symbol.properties.push(property),
+        }
+
+        self.need_right()?;
+        Ok(())
     }
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
