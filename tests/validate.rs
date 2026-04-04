@@ -433,7 +433,10 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
   (generator "eeschema")
   (uuid "root-u")
   (paper "A4")
-  (global_label "VCC" (shape input) (at 1 2 0))
+  (global_label "VCC"
+    (shape input)
+    (at 1 2 0)
+    (property "Intersheet References" "stale" (id 0) (hide yes)))
   (sheet
     (at 0 0)
     (size 10 10)
@@ -469,6 +472,13 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
                 .map(|property| property.value.as_str()),
             Some("[1,2]")
         );
+        let property = global
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+            .expect("intersheet refs");
+        assert_eq!(property.id, Some(6));
+        assert_eq!(property.key, "Intersheet References");
     }
 
     let _ = fs::remove_file(root_path);

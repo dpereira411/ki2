@@ -507,6 +507,8 @@ impl SchematicLoader {
                     .iter_mut()
                     .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
                 {
+                    property.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
+                    property.key = "Intersheet References".to_string();
                     property.value = value;
                 } else {
                     label.properties.push(Property {
