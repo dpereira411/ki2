@@ -134,6 +134,47 @@ fn rejects_true_false_boolean_tokens() {
 }
 
 #[test]
+fn rejects_quoted_number_tokens_in_numeric_fields() {
+    let quoted_comment_number = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-comment")
+  (title_block (comment "1" "note"))
+)"#;
+    let quoted_comment_number_path = temp_schematic("quoted_comment_number", quoted_comment_number);
+    let err = parse_schematic_file(Path::new(&quoted_comment_number_path))
+        .expect_err("must reject quoted comment number");
+    assert!(err.to_string().contains("missing comment"));
+
+    let quoted_symbol_angle = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-angle")
+  (symbol (lib_id "Device:R") (at 1 2 "90"))
+)"#;
+    let quoted_symbol_angle_path = temp_schematic("quoted_symbol_angle", quoted_symbol_angle);
+    let err = parse_schematic_file(Path::new(&quoted_symbol_angle_path))
+        .expect_err("must reject quoted numeric angle");
+    assert!(err.to_string().contains("missing symbol at angle"));
+
+    let quoted_text_box_size = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-textbox-size")
+  (text_box "body" (size "3" 4))
+)"#;
+    let quoted_text_box_size_path =
+        temp_schematic("quoted_text_box_size_number", quoted_text_box_size);
+    let err = parse_schematic_file(Path::new(&quoted_text_box_size_path))
+        .expect_err("must reject quoted textbox size number");
+    assert!(err.to_string().contains("missing text_box size x"));
+
+    let _ = fs::remove_file(quoted_comment_number_path);
+    let _ = fs::remove_file(quoted_symbol_angle_path);
+    let _ = fs::remove_file(quoted_text_box_size_path);
+}
+
+#[test]
 fn validates_hierarchical_tree_fixture() {
     let loaded = load_schematic_tree(&fixture("hierarchical.kicad_sch")).expect("tree must load");
     assert_eq!(loaded.schematics.len(), 2);
