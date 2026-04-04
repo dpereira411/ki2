@@ -1686,6 +1686,11 @@ fn parses_extended_top_level_sections() {
         .expect("arc");
     assert!(!arc.has_stroke);
     assert!(!arc.has_fill);
+    assert_eq!(arc.stroke.as_ref().expect("arc stroke").width, Some(0.0));
+    assert_eq!(
+        arc.fill.as_ref().expect("arc fill").fill_type,
+        FillType::None
+    );
     assert!(
         schematic
             .screen

@@ -765,6 +765,9 @@ pub struct Shape {
 
 impl Shape {
     pub fn new(kind: ShapeKind) -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             kind,
             points: Vec::new(),
@@ -772,8 +775,8 @@ impl Shape {
             corner_radius: None,
             has_stroke: false,
             has_fill: false,
-            stroke: None,
-            fill: None,
+            stroke: Some(stroke),
+            fill: Some(Fill::new()),
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
@@ -973,8 +976,8 @@ impl Sheet {
 #[cfg(test)]
 mod tests {
     use super::{
-        FieldAutoplacement, LibSymbol, PropertyKind, Sheet, SheetPin, SheetPinShape, SheetSide,
-        StrokeStyle, Symbol, Table, TableCell, TextBox,
+        FieldAutoplacement, LibSymbol, PropertyKind, Shape, ShapeKind, Sheet, SheetPin,
+        SheetPinShape, SheetSide, StrokeStyle, Symbol, Table, TableCell, TextBox,
     };
 
     #[test]
@@ -1103,6 +1106,22 @@ mod tests {
         assert!(table.separators_cols);
         assert_eq!(table.separators_stroke.width, Some(0.25));
         assert_eq!(table.separators_stroke.style, StrokeStyle::Default);
+    }
+
+    #[test]
+    fn shapes_start_with_graphic_defaults() {
+        let shape = Shape::new(ShapeKind::Arc);
+
+        assert_eq!(
+            shape.stroke.as_ref().expect("shape stroke").width,
+            Some(0.0)
+        );
+        assert_eq!(
+            shape.fill.as_ref().expect("shape fill").fill_type,
+            super::FillType::None
+        );
+        assert!(!shape.has_stroke);
+        assert!(!shape.has_fill);
     }
 }
 
