@@ -154,7 +154,7 @@ struct KiCadSchematicParser {
 
 impl KiCadSchematicParser {
     fn new(path: PathBuf, tokens: Vec<Token>) -> Self {
-        let page_info = Self::lookup_standard_page_info("A4").expect("A4 page info must exist");
+        let page_info = Self::find_standard_page_info("A4").expect("A4 page info must exist");
         let [width, height] = page_info.dimensions_mm.expect("A4 dimensions must exist");
 
         Self {
@@ -4819,7 +4819,7 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn lookup_standard_page_info(kind: &str) -> Option<StandardPageInfo> {
+    fn find_standard_page_info(kind: &str) -> Option<StandardPageInfo> {
         STANDARD_PAGE_INFOS
             .iter()
             .find(|candidate| candidate.kind.eq_ignore_ascii_case(kind))
@@ -4831,7 +4831,7 @@ impl KiCadSchematicParser {
         let raw_kind = self
             .need_symbol_atom("paper kind")
             .map_err(|_| self.error_here("missing paper kind"))?;
-        let page_info = Self::lookup_standard_page_info(&raw_kind)
+        let page_info = Self::find_standard_page_info(&raw_kind)
             .ok_or_else(|| self.validation(Some(token_span), "Invalid page type"))?;
         let [width, height] = if page_info.kind == "User" {
             let width = self
