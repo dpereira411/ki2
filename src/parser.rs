@@ -1473,7 +1473,7 @@ impl KiCadSchematicParser {
             (None, None) => return Err(self.expecting("size")),
         };
         let margins = margins.or_else(|| {
-            let margin = Self::legacy_text_box_margin(
+            let margin = Self::get_legacy_text_margin(
                 stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
                 text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
             );
@@ -2339,7 +2339,7 @@ impl KiCadSchematicParser {
             (None, None) => return Err(self.expecting("size")),
         };
         let margins = margins.or_else(|| {
-            let margin = Self::legacy_text_box_margin(
+            let margin = Self::get_legacy_text_margin(
                 stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
                 text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
             );
@@ -4444,7 +4444,7 @@ impl KiCadSchematicParser {
         normalized
     }
 
-    fn legacy_text_box_margin(stroke_width: f64, text_size_y: f64) -> f64 {
+    fn get_legacy_text_margin(stroke_width: f64, text_size_y: f64) -> f64 {
         (stroke_width / 2.0) + (text_size_y * 0.75)
     }
 
