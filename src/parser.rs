@@ -1892,6 +1892,12 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
+                    if property.kind == PropertyKind::SymbolValue
+                        && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                            < VERSION_TEXT_OVERBAR_NOTATION
+                    {
+                        property.value = self.convert_old_overbar_notation(property.value.clone());
+                    }
                     let effects = self.parse_eda_text()?;
                     property.has_effects = true;
                     if effects.hidden {
@@ -4153,6 +4159,12 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
+                    if kind == PropertyKind::SymbolValue
+                        && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                            < VERSION_TEXT_OVERBAR_NOTATION
+                    {
+                        value = self.convert_old_overbar_notation(value);
+                    }
                     let parsed_effects = self.parse_eda_text()?;
                     has_effects = true;
                     if parsed_effects.hidden {

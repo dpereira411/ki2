@@ -3552,6 +3552,55 @@ fn converts_legacy_overbar_text_and_labels() {
 }
 
 #[test]
+fn converts_legacy_overbar_value_fields_when_effects_are_parsed() {
+    let src = r#"(kicad_sch
+  (version 20210605)
+  (generator "eeschema")
+  (uuid "root-overbar-value")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Value" "~LIB~" (id 1) (at 0 0 0) (effects (font (size 1 1))))))
+  (symbol
+    (lib_id "Device:R")
+    (property "Value" "~SCH~" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (uuid "sym-1"))
+)"#;
+    let path = temp_schematic("legacy_overbar_value_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should parse");
+
+    let lib_symbol = schematic
+        .screen
+        .lib_symbols
+        .iter()
+        .find(|symbol| symbol.name == "Device:R")
+        .expect("lib symbol");
+    let lib_value = lib_symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .expect("lib value property");
+    assert_eq!(lib_value.value, "~{LIB}");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    let sch_value = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .expect("schematic value property");
+    assert_eq!(sch_value.value, "~{SCH}");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn accepts_legacy_class_label_alias() {
     let src = r#"(kicad_sch
   (version 20250114)

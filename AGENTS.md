@@ -38,6 +38,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - `private` only survives for user fields; it should not be blindly preserved on mandatory fields.
 - Legacy compatibility branches matter: `~` empty-string handling, root-path normalization, old overbar notation, pin UUID version gates, legacy `iref`, and similar cases should be ported explicitly rather than approximated.
 - Keep old-overbar conversion helpers named after their upstream role too. Once a helper exists only to convert legacy overbar notation during parse, it should not stay on a vague repo-local name.
+- In schematic and library `VALUE` field parsing, old overbar conversion also happens when the `effects` branch enters `parseEDA_TEXT()` for pre-`20210606` files. Do not leave those `VALUE` field texts unconverted on the effects path.
 - Keep the root schematic `uuid` on the shared `NeedSYMBOL()` path too. Do not leave the top-level UUID branch on the generic string parser once the rest of the UUID family has been tightened.
 - In top-level `ParseSchematic()` header handling, keep `generator` on the shared `NeedSYMBOL()` path and keep the really old `< 20200827` extra `host` version token unconditional, like upstream. Do not guard that old host-version read behind a local `at_atom()` shortcut.
 - In top-level `parse_schematic_body()` dispatch, keep the section-head token and its `Expecting(...)` text aligned with the real top-level section set. Do not leave that dispatcher on a stale copied head string from an unrelated parser family.
