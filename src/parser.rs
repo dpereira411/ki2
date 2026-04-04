@@ -383,7 +383,7 @@ impl KiCadSchematicParser {
                 }
                 "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_sch_text_box()?)),
                 "table" => parsed_item = Some(SchItem::Table(self.parse_sch_table()?)),
-                "image" => parsed_item = Some(SchItem::Image(self.parse_image()?)),
+                "image" => parsed_item = Some(SchItem::Image(self.parse_sch_image()?)),
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_arc_shape()?)),
                 "circle" => parsed_item = Some(SchItem::Shape(self.parse_circle_shape()?)),
                 "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_rectangle_shape()?)),
@@ -2491,7 +2491,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_image(&mut self) -> Result<Image, Error> {
+    fn parse_sch_image(&mut self) -> Result<Image, Error> {
         let mut at = None;
         let mut scale = 1.0;
         let mut data = None;
