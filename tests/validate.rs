@@ -3001,7 +3001,7 @@ fn rejects_quoted_junction_no_connect_and_bus_entry_heads() {
         .expect_err("must reject quoted bus_entry head");
     assert!(
         err.to_string()
-            .contains("expecting at, size, stroke or uuid")
+            .contains("expecting at, size, uuid or stroke")
     );
 
     let _ = fs::remove_file(quoted_junction_head_path);

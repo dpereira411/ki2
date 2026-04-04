@@ -1925,7 +1925,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, size, stroke or uuid")?;
+            let head = self.need_unquoted_symbol_atom("at, size, uuid or stroke")?;
             match head.as_str() {
                 "at" => {
                     at = Some(self.parse_xy2("bus_entry at")?);
@@ -1949,7 +1949,7 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("at, size, stroke or uuid")),
+                _ => return Err(self.expecting("at, size, uuid or stroke")),
             }
         }
         Ok(BusEntry {
