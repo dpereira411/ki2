@@ -2134,7 +2134,7 @@ fn parses_property_metadata_semantics() {
         })
         .expect("property");
 
-    assert_eq!(property.id, None);
+    assert_eq!(property.id, Some(0));
     assert!(property.is_private);
     assert_eq!(property.at, Some([11.0, 22.0]));
     assert_eq!(property.angle, Some(90.0));
@@ -2281,6 +2281,7 @@ fn private_only_survives_on_true_user_fields() {
         .iter()
         .find(|property| property.kind == ki2::model::PropertyKind::SheetUser)
         .expect("sheet user field");
+    assert_eq!(sheet_user.id, Some(9));
     assert!(!sheet_user.is_private);
 
     let global = schematic
@@ -5497,7 +5498,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
         .iter()
         .find(|property| property.key == "UserField")
         .expect("user field");
-    assert_eq!(property.id, None);
+    assert_eq!(property.id, Some(0));
     assert!(property.is_private);
     assert!(property.show_name);
     assert!(!property.can_autoplace);

@@ -514,6 +514,7 @@ pub enum PropertyKind {
 impl PropertyKind {
     pub fn default_field_id(self) -> Option<i32> {
         match self {
+            PropertyKind::User => Some(0),
             PropertyKind::SymbolReference => Some(1),
             PropertyKind::SymbolValue => Some(2),
             PropertyKind::SymbolFootprint => Some(3),
@@ -521,7 +522,7 @@ impl PropertyKind {
             PropertyKind::GlobalLabelIntersheetRefs => Some(6),
             PropertyKind::SheetName => Some(7),
             PropertyKind::SheetFile => Some(8),
-            PropertyKind::User | PropertyKind::SheetUser => None,
+            PropertyKind::SheetUser => Some(9),
         }
     }
 }
