@@ -145,6 +145,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - Numeric parsing should stay on the upstream `NeedNUMBER()` path too. Do not accept quoted/string atoms in places that KiCad parses through `parseInt()` / `parseDouble()`.
 - RGB color channels should stay on the upstream `parseInt()` path too: red/green/blue are integer tokens, while alpha remains `parseDouble()`.
 - In `parseSheet()`, the `<= 20200310` legacy sheet-field-ID recovery should happen at property-parse time, like upstream, not as a later post-loop rewrite over the final property list.
+- Keep the sheet routine boundary named after upstream too: once it owns schematic sheet parsing, it should not stay on a vague local `parse_sheet()` name.
 - In `parseSheet()`, mandatory sheet-name and sheet-file resolution should key off field kind/ID (`SheetName` / `SheetFile`), not canonicalized key-string lookups. That keeps the post-loop validation closer to upstream `FindField(..., FIELD_T::...)`.
 - In `parseSheet()`, mandatory sheet field overwrite behavior should stay inline in the property branch, like upstream field accumulation, rather than through a repo-local `upsert_sheet_property()` helper.
 - In `parseSheet()`, keep the nested `instances` walk inline in the sheet routine body too. The `project -> path -> page/variant` control flow should stay local to the routine instead of being hidden behind a `parse_sheet_local_instances()` helper.
