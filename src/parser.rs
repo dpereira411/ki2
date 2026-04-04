@@ -1296,41 +1296,14 @@ impl KiCadSchematicParser {
             is_private = true;
         }
 
-        let mut text = self
-            .need_symbol_atom("text string")
-            .map_err(|_| self.error_here("Invalid text string"))?;
-        let mut at = None;
-        let mut angle = None;
-        let mut visible = true;
-        let mut effects = None;
-
-        while !self.at_right() {
-            self.need_left()?;
-            match self.need_unquoted_symbol_atom("at or effects")?.as_str() {
-                "at" => {
-                    let parsed = self.parse_xy3("text at")?;
-                    at = Some([parsed[0], parsed[1]]);
-                    angle = Some(parsed[2] / 10.0);
-                    self.need_right()?;
-                }
-                "effects" => {
-                    let mut parsed = TextEffects::default();
-                    self.parse_eda_text(Some(&mut text), &mut parsed, &mut visible, true, false)?;
-                    effects = Some(parsed);
-                    self.need_right()?;
-                }
-                _ => return Err(self.expecting("at or effects")),
-            }
-        }
-
-        Ok(LibDrawItem {
-            kind: if visible { "text" } else { "field" }.to_string(),
+        let mut item = LibDrawItem {
+            kind: "text".to_string(),
             is_private,
             unit_number,
             body_style,
-            visible,
-            at,
-            angle,
+            visible: true,
+            at: None,
+            angle: None,
             points: Vec::new(),
             end: None,
             radius: None,
@@ -1338,7 +1311,10 @@ impl KiCadSchematicParser {
             arc_start_angle: None,
             arc_end_angle: None,
             length: None,
-            text: Some(text),
+            text: Some(
+                self.need_symbol_atom("text string")
+                    .map_err(|_| self.error_here("Invalid text string"))?,
+            ),
             name: None,
             number: None,
             name_effects: None,
@@ -1348,8 +1324,39 @@ impl KiCadSchematicParser {
             alternates: Vec::new(),
             stroke: None,
             fill: None,
-            effects,
-        })
+            effects: None,
+        };
+
+        while !self.at_right() {
+            self.need_left()?;
+            match self.need_unquoted_symbol_atom("at or effects")?.as_str() {
+                "at" => {
+                    let parsed = self.parse_xy3("text at")?;
+                    item.at = Some([parsed[0], parsed[1]]);
+                    item.angle = Some(parsed[2] / 10.0);
+                    self.need_right()?;
+                }
+                "effects" => {
+                    let mut parsed = TextEffects::default();
+                    self.parse_eda_text(
+                        item.text.as_mut(),
+                        &mut parsed,
+                        &mut item.visible,
+                        true,
+                        false,
+                    )?;
+                    item.effects = Some(parsed);
+                    self.need_right()?;
+                }
+                _ => return Err(self.expecting("at or effects")),
+            }
+        }
+
+        if !item.visible {
+            item.kind = "field".to_string();
+        }
+
+        Ok(item)
     }
 
     fn parse_symbol_text_box(
@@ -2503,21 +2510,25 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_image(&mut self) -> Result<Image, Error> {
-        let mut at = None;
-        let mut scale = 1.0;
-        let mut data = None;
-        let mut uuid = None;
+        let mut image = Image {
+            at: [0.0, 0.0],
+            scale: 1.0,
+            data: None,
+            uuid: None,
+        };
+        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("at, scale, uuid or data")?;
             match head.as_str() {
                 "at" => {
-                    at = Some(self.parse_xy2("image at")?);
+                    image.at = self.parse_xy2("image at")?;
+                    has_at = true;
                     self.need_right()?;
                 }
                 "scale" => {
                     let parsed_scale = self.parse_f64_atom("image scale factor")?;
-                    scale = if parsed_scale.is_normal() {
+                    image.scale = if parsed_scale.is_normal() {
                         parsed_scale
                     } else {
                         1.0
@@ -2525,7 +2536,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    image.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "data" => {
@@ -2542,21 +2553,19 @@ impl KiCadSchematicParser {
                         .map_err(|_| self.error_here("Failed to read image data."))?;
                     if self.require_known_version()? <= VERSION_IMAGE_PPI_SCALE_ADJUSTMENT {
                         if let Some(ppi) = Self::read_png_ppi(&decoded) {
-                            scale *= ppi / 300.0;
+                            image.scale *= ppi / 300.0;
                         }
                     }
-                    data = Some(encoded);
+                    image.data = Some(encoded);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, scale, uuid or data")),
             }
         }
-        Ok(Image {
-            at: at.unwrap_or([0.0, 0.0]),
-            scale,
-            data,
-            uuid,
-        })
+        if !has_at {
+            image.at = [0.0, 0.0];
+        }
+        Ok(image)
     }
 
     fn parse_sch_polyline(&mut self) -> Result<Shape, Error> {
