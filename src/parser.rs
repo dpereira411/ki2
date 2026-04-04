@@ -1661,7 +1661,9 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+            )?;
             match head.as_str() {
                 "at" => {
                     at = Some(self.parse_xy2("no_connect at")?);
@@ -1688,7 +1690,9 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+            )?;
             match head.as_str() {
                 "at" => {
                     at = Some(self.parse_xy2("bus_entry at")?);
@@ -2620,7 +2624,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+            )?;
             match head.as_str() {
                 "lib_id" => {
                     let raw = self.need_symbol_or_number_atom("symbol|number")?;
@@ -2738,13 +2744,13 @@ impl KiCadSchematicParser {
                 "instances" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_atom()? != "project" {
+                        if self.need_unquoted_symbol_atom("project")? != "project" {
                             return Err(self.expecting("project"));
                         }
                         let project = self.need_symbol_atom("project name")?;
                         while !self.at_right() {
                             self.need_left()?;
-                            if self.need_atom()? != "path" {
+                            if self.need_unquoted_symbol_atom("path")? != "path" {
                                 return Err(self.expecting("path"));
                             }
                             let path = self.need_symbol_atom("symbol instance path")?;
@@ -2755,7 +2761,12 @@ impl KiCadSchematicParser {
                             let mut variants = Vec::new();
                             while !self.at_right() {
                                 self.need_left()?;
-                                match self.need_atom()?.as_str() {
+                                match self
+                                    .need_unquoted_symbol_atom(
+                                        "reference, unit, value, footprint, or variant",
+                                    )?
+                                    .as_str()
+                                {
                                     "reference" => {
                                         reference = Some(self.need_symbol_atom("reference")?);
                                         self.need_right()?;
@@ -2795,7 +2806,12 @@ impl KiCadSchematicParser {
 
                                         while !self.at_right() {
                                             self.need_left()?;
-                                            match self.need_atom()?.as_str() {
+                                            match self
+                                                .need_unquoted_symbol_atom(
+                                                    "dnp, exclude_from_sim, field, in_bom, in_pos_files, name, or on_board",
+                                                )?
+                                                .as_str()
+                                            {
                                                 "name" => {
                                                     variant_name = self
                                                         .need_symbol_atom("name")
@@ -2839,7 +2855,12 @@ impl KiCadSchematicParser {
 
                                                     while !self.at_right() {
                                                         self.need_left()?;
-                                                        match self.need_atom()?.as_str() {
+                                                        match self
+                                                            .need_unquoted_symbol_atom(
+                                                                "name or value",
+                                                            )?
+                                                            .as_str()
+                                                        {
                                                             "name" => {
                                                                 field_name = Some(
                                                                     self.need_symbol_atom("name")
@@ -2920,7 +2941,10 @@ impl KiCadSchematicParser {
                 "default_instance" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom("reference, unit, value or footprint")?
+                            .as_str()
+                        {
                             "reference" => {
                                 default_reference = Some(self.need_symbol_atom("reference")?);
                                 self.need_right()?;
@@ -2962,7 +2986,10 @@ impl KiCadSchematicParser {
                     let mut pin_uuid = None;
                     while !self.at_right() {
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom("alternate or uuid")?
+                            .as_str()
+                        {
                             "alternate" => {
                                 alternate = Some(self.need_symbol_atom("alternate")?);
                                 self.need_right()?;
@@ -3040,7 +3067,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "at, size, stroke, background, instances, uuid, property, or pin",
+            )?;
             match head.as_str() {
                 "at" => {
                     at = Some(self.parse_xy2("sheet at")?);
@@ -3121,13 +3150,13 @@ impl KiCadSchematicParser {
                     let mut parsed_instances = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_atom()? != "project" {
+                        if self.need_unquoted_symbol_atom("project")? != "project" {
                             return Err(self.expecting("project"));
                         }
                         let project = self.need_symbol_atom("project name")?;
                         while !self.at_right() {
                             self.need_left()?;
-                            if self.need_atom()? != "path" {
+                            if self.need_unquoted_symbol_atom("path")? != "path" {
                                 return Err(self.expecting("path"));
                             }
                             let path = self.need_symbol_atom("sheet instance path")?;
@@ -3135,7 +3164,7 @@ impl KiCadSchematicParser {
                             let mut variants = Vec::new();
                             while !self.at_right() {
                                 self.need_left()?;
-                                match self.need_atom()?.as_str() {
+                                match self.need_unquoted_symbol_atom("page or variant")?.as_str() {
                                     "page" => {
                                         let raw_page = self.need_symbol_atom("page")?;
                                         page = Some(self.normalize_page_number(raw_page));
@@ -3152,7 +3181,12 @@ impl KiCadSchematicParser {
 
                                         while !self.at_right() {
                                             self.need_left()?;
-                                            match self.need_atom()?.as_str() {
+                                            match self
+                                                .need_unquoted_symbol_atom(
+                                                    "dnp, exclude_from_sim, field, in_bom, in_pos_files, name, or on_board",
+                                                )?
+                                                .as_str()
+                                            {
                                                 "name" => {
                                                     variant_name = self
                                                         .need_symbol_atom("name")
@@ -3196,7 +3230,12 @@ impl KiCadSchematicParser {
 
                                                     while !self.at_right() {
                                                         self.need_left()?;
-                                                        match self.need_atom()?.as_str() {
+                                                        match self
+                                                            .need_unquoted_symbol_atom(
+                                                                "name or value",
+                                                            )?
+                                                            .as_str()
+                                                        {
                                                             "name" => {
                                                                 field_name = Some(
                                                                     self.need_symbol_atom("name")

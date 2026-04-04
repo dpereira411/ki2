@@ -2212,6 +2212,77 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
 }
 
 #[test]
+fn rejects_quoted_symbol_and_sheet_keyword_heads() {
+    let quoted_symbol_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-symbol-head")
+  (symbol
+    (lib_id "Device:R")
+    ("at" 1 2 0))
+)"#;
+    let quoted_symbol_head_path = temp_schematic("quoted_symbol_head", quoted_symbol_head);
+    let err = parse_schematic_file(Path::new(&quoted_symbol_head_path))
+        .expect_err("must reject quoted top-level symbol head token");
+    assert!(err.to_string().contains(
+        "expecting lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances"
+    ));
+
+    let quoted_symbol_project = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-symbol-project")
+  (symbol
+    (lib_id "Device:R")
+    (instances
+      ("project" "Demo"))))
+"#;
+    let quoted_symbol_project_path =
+        temp_schematic("quoted_symbol_instance_project", quoted_symbol_project);
+    let err = parse_schematic_file(Path::new(&quoted_symbol_project_path))
+        .expect_err("must reject quoted symbol instances project head");
+    assert!(err.to_string().contains("expecting project"));
+
+    let quoted_sheet_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-sheet-head")
+  (sheet
+    ("at" 0 0)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+)"#;
+    let quoted_sheet_head_path = temp_schematic("quoted_sheet_head", quoted_sheet_head);
+    let err = parse_schematic_file(Path::new(&quoted_sheet_head_path))
+        .expect_err("must reject quoted top-level sheet head token");
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, stroke, background, instances, uuid, property, or pin")
+    );
+
+    let quoted_sheet_project = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-sheet-project")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      ("project" "Demo"))))
+"#;
+    let quoted_sheet_project_path =
+        temp_schematic("quoted_sheet_instance_project", quoted_sheet_project);
+    let err = parse_schematic_file(Path::new(&quoted_sheet_project_path))
+        .expect_err("must reject quoted sheet instances project head");
+    assert!(err.to_string().contains("expecting project"));
+
+    let _ = fs::remove_file(quoted_symbol_head_path);
+    let _ = fs::remove_file(quoted_symbol_project_path);
+    let _ = fs::remove_file(quoted_sheet_head_path);
+    let _ = fs::remove_file(quoted_sheet_project_path);
+}
+
+#[test]
 fn rejects_quoted_effects_keyword_tokens() {
     let quoted_justify = r#"(kicad_sch
   (version 20260306)
