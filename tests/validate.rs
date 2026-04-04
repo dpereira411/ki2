@@ -2759,6 +2759,43 @@ fn lib_property_skips_user_field_after_nine_suffix_attempts() {
 }
 
 #[test]
+fn schematic_text_box_outline_fill_uses_stroke_color() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text_box "TB"
+    (at 1 2 0)
+    (size 3 4)
+    (stroke (width 0.1) (color 10 20 30 0.5))
+    (fill (type outline))))"#;
+    let path = temp_schematic("textbox_outline_fill", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let text_box = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::TextBox(text_box) => Some(text_box),
+            _ => None,
+        })
+        .expect("text box");
+
+    assert_eq!(
+        text_box.fill.as_ref().map(|fill| fill.fill_type.clone()),
+        Some(FillType::Color)
+    );
+    assert_eq!(
+        text_box.fill.as_ref().and_then(|fill| fill.color),
+        Some([10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 0.5])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn recovers_legacy_sheet_field_ids_during_parse() {
     let src = r#"(kicad_sch
   (version 20200310)

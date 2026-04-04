@@ -1453,34 +1453,37 @@ impl KiCadSchematicParser {
             fill: None,
             effects: None,
         };
-        let mut has_at = false;
+        let mut pos = None;
         let mut end = None;
         let mut size = None;
         let mut stroke_width = None;
         let mut text_size_y = None;
+        let mut found_end = false;
+        let mut found_size = false;
+        let mut found_margins = false;
 
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("at, size, stroke, fill or effects")?;
             match head.as_str() {
                 "start" => {
-                    item.at = Some(self.parse_xy2("text_box start")?);
-                    has_at = true;
+                    pos = Some(self.parse_xy2("text_box start")?);
                     self.need_right()?;
                 }
                 "end" => {
                     end = Some(self.parse_xy2("text_box end")?);
+                    found_end = true;
                     self.need_right()?;
                 }
                 "at" => {
                     let parsed = self.parse_xy3("text_box at")?;
-                    item.at = Some([parsed[0], parsed[1]]);
+                    pos = Some([parsed[0], parsed[1]]);
                     item.angle = Some(parsed[2]);
-                    has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
                     size = Some(self.parse_xy2("text_box size")?);
+                    found_size = true;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -1507,6 +1510,7 @@ impl KiCadSchematicParser {
                         self.parse_f64_atom("margin right")?,
                         self.parse_f64_atom("margin bottom")?,
                     ];
+                    found_margins = true;
                     self.need_right()?;
                 }
                 _ => {
@@ -1515,23 +1519,25 @@ impl KiCadSchematicParser {
             }
         }
 
-        if !has_at {
-            item.at = Some([0.0, 0.0]);
+        let pos = pos.unwrap_or([0.0, 0.0]);
+        item.at = Some(pos);
+        item.end = Some(if found_end {
+            end.unwrap_or([0.0, 0.0])
+        } else if found_size {
+            let size = size.unwrap_or([0.0, 0.0]);
+            [pos[0] + size[0], pos[1] + size[1]]
+        } else {
+            return Err(self.expecting("size"));
+        });
+        if !found_margins {
+            let _margins = Some({
+                let margin = Self::get_legacy_text_margin(
+                    stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
+                    text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
+                );
+                [margin, margin, margin, margin]
+            });
         }
-
-        let at = item.at.unwrap_or([0.0, 0.0]);
-        item.end = Some(match (end, size) {
-            (Some(end), _) => end,
-            (None, Some(size)) => [at[0] + size[0], at[1] + size[1]],
-            (None, None) => return Err(self.expecting("size")),
-        });
-        let _margins = Some({
-            let margin = Self::get_legacy_text_margin(
-                stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
-                text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
-            );
-            [margin, margin, margin, margin]
-        });
 
         Ok(item)
     }
@@ -2374,11 +2380,14 @@ impl KiCadSchematicParser {
             margins: None,
             uuid: None,
         };
-        let mut has_at = false;
+        let mut pos = None;
         let mut end = None;
         let mut size = None;
         let mut stroke_width = None;
         let mut text_size_y = None;
+        let mut found_end = false;
+        let mut found_size = false;
+        let mut found_margins = false;
 
         while !self.at_right() {
             self.need_left()?;
@@ -2393,23 +2402,23 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "start" => {
-                    text_box.at = self.parse_xy2("text_box start")?;
-                    has_at = true;
+                    pos = Some(self.parse_xy2("text_box start")?);
                     self.need_right()?;
                 }
                 "end" => {
                     end = Some(self.parse_xy2("text_box end")?);
+                    found_end = true;
                     self.need_right()?;
                 }
                 "at" => {
                     let parsed = self.parse_xy3("text_box at")?;
-                    text_box.at = [parsed[0], parsed[1]];
+                    pos = Some([parsed[0], parsed[1]]);
                     text_box.angle = parsed[2];
-                    has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
                     size = Some(self.parse_xy2("text_box size")?);
+                    found_size = true;
                     self.need_right()?;
                 }
                 "span" if table_cell => {
@@ -2426,6 +2435,7 @@ impl KiCadSchematicParser {
                 }
                 "fill" => {
                     text_box.fill = Some(self.parse_fill()?);
+                    Self::fixup_sch_fill_mode(&mut text_box.fill, &text_box.stroke);
                 }
                 "effects" => {
                     let mut parsed_effects = TextEffects::default();
@@ -2449,6 +2459,7 @@ impl KiCadSchematicParser {
                         self.parse_f64_atom("margin right")?,
                         self.parse_f64_atom("margin bottom")?,
                     ]);
+                    found_margins = true;
                     self.need_right()?;
                 }
                 "uuid" => {
@@ -2465,22 +2476,24 @@ impl KiCadSchematicParser {
             }
         }
 
-        if !has_at {
-            text_box.at = [0.0, 0.0];
-        }
-
-        text_box.end = match (end, size) {
-            (Some(end), _) => end,
-            (None, Some(size)) => [text_box.at[0] + size[0], text_box.at[1] + size[1]],
-            (None, None) => return Err(self.expecting("size")),
+        text_box.at = pos.unwrap_or([0.0, 0.0]);
+        text_box.end = if found_end {
+            end.unwrap_or([0.0, 0.0])
+        } else if found_size {
+            let size = size.unwrap_or([0.0, 0.0]);
+            [text_box.at[0] + size[0], text_box.at[1] + size[1]]
+        } else {
+            return Err(self.expecting("size"));
         };
-        text_box.margins = text_box.margins.or_else(|| {
-            let margin = Self::get_legacy_text_margin(
-                stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
-                text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
-            );
-            Some([margin, margin, margin, margin])
-        });
+        if !found_margins {
+            text_box.margins = Some({
+                let margin = Self::get_legacy_text_margin(
+                    stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
+                    text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
+                );
+                [margin, margin, margin, margin]
+            });
+        }
 
         Ok(text_box)
     }
