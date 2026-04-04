@@ -2447,6 +2447,49 @@ fn canonicalizes_and_replaces_mandatory_properties() {
 }
 
 #[test]
+fn recovers_legacy_sheet_field_ids_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20200310)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (property "UserField" "Child" (id 0))
+    (property "AnotherField" "child.kicad_sch" (id 0)))
+)"#;
+    let path = temp_schematic("legacy_sheet_field_ids", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    let name = sheet
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SheetName)
+        .expect("sheet name");
+    assert_eq!(name.key, "Sheetname");
+    assert_eq!(name.id, Some(7));
+
+    let file = sheet
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SheetFile)
+        .expect("sheet file");
+    assert_eq!(file.key, "Sheetfile");
+    assert_eq!(file.id, Some(8));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_symbol_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)

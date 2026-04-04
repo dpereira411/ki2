@@ -3680,9 +3680,11 @@ impl KiCadSchematicParser {
                         if sheet.properties.is_empty() {
                             property.key = "Sheetname".to_string();
                             property.kind = PropertyKind::SheetName;
+                            property.id = PropertyKind::SheetName.default_field_id();
                         } else if sheet.properties.len() == 1 {
                             property.key = "Sheetfile".to_string();
                             property.kind = PropertyKind::SheetFile;
+                            property.id = PropertyKind::SheetFile.default_field_id();
                         }
                     }
                     if matches!(
