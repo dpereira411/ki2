@@ -1784,7 +1784,7 @@ impl KiCadSchematicParser {
             },
             value: String::new(),
             kind: field_id,
-            is_private: matches!(field_id, PropertyKind::User) && is_private,
+            is_private,
             at: None,
             angle: None,
             visible: true,

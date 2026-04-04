@@ -6601,7 +6601,7 @@ fn lib_symbol_duplicate_user_properties_follow_upstream_renaming() {
 }
 
 #[test]
-fn lib_symbol_private_only_survives_on_user_fields() {
+fn lib_symbol_private_is_preserved_on_mandatory_and_user_fields() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
@@ -6617,7 +6617,7 @@ fn lib_symbol_private_only_survives_on_user_fields() {
 
     assert_eq!(lib_symbol.properties.len(), 2);
     assert_eq!(lib_symbol.properties[0].key, "Reference");
-    assert!(!lib_symbol.properties[0].is_private);
+    assert!(lib_symbol.properties[0].is_private);
     assert_eq!(lib_symbol.properties[1].key, "UserField");
     assert!(lib_symbol.properties[1].is_private);
 
