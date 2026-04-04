@@ -532,6 +532,7 @@ impl KiCadSchematicParser {
                     } else {
                         self.screen.items.push(SchItem::Shape(shape));
                     }
+                    section_consumed_right = true;
                 }
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
                 | "class_label" | "netclass_flag" | "text" => {
@@ -541,34 +542,42 @@ impl KiCadSchematicParser {
                 "text_box" => {
                     let text_box = self.parse_sch_text_box()?;
                     self.screen.items.push(SchItem::TextBox(text_box));
+                    section_consumed_right = true;
                 }
                 "table" => {
                     let table = self.parse_sch_table()?;
                     self.screen.items.push(SchItem::Table(table));
+                    section_consumed_right = true;
                 }
                 "image" => {
                     let image = self.parse_sch_image()?;
                     self.screen.items.push(SchItem::Image(image));
+                    section_consumed_right = true;
                 }
                 "arc" => {
                     let shape = self.parse_sch_arc()?;
                     self.screen.items.push(SchItem::Shape(shape));
+                    section_consumed_right = true;
                 }
                 "circle" => {
                     let shape = self.parse_sch_circle()?;
                     self.screen.items.push(SchItem::Shape(shape));
+                    section_consumed_right = true;
                 }
                 "rectangle" => {
                     let shape = self.parse_sch_rectangle()?;
                     self.screen.items.push(SchItem::Shape(shape));
+                    section_consumed_right = true;
                 }
                 "bezier" => {
                     let shape = self.parse_sch_bezier()?;
                     self.screen.items.push(SchItem::Shape(shape));
+                    section_consumed_right = true;
                 }
                 "rule_area" => {
                     let shape = self.parse_sch_rule_area()?;
                     self.screen.items.push(SchItem::Shape(shape));
+                    section_consumed_right = true;
                 }
                 "sheet_instances" => self.parse_sch_sheet_instances()?,
                 "symbol_instances" => self.parse_sch_symbol_instances()?,
@@ -3152,6 +3161,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(())
     }
 
@@ -3220,7 +3230,6 @@ impl KiCadSchematicParser {
                     while !self.at_right() {
                         self.need_left()?;
                         let cell = self.parse_sch_table_cell()?;
-                        self.need_right()?;
                         table.add_cell(cell);
                     }
                     self.need_right()?;
@@ -3304,6 +3313,7 @@ impl KiCadSchematicParser {
         if table.first_cell().is_none() {
             return Err(self.error_here("Invalid table: no cells defined"));
         }
+        self.need_right()?;
         Ok(table)
     }
 
@@ -3375,6 +3385,7 @@ impl KiCadSchematicParser {
         if !has_at {
             image.at = [0.0, 0.0];
         }
+        self.need_right()?;
         Ok(image)
     }
 
@@ -3456,6 +3467,7 @@ impl KiCadSchematicParser {
             }
         }
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        self.need_right()?;
         Ok(shape)
     }
 
@@ -3521,6 +3533,7 @@ impl KiCadSchematicParser {
             }
         }
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        self.need_right()?;
         Ok(shape)
     }
 
@@ -3581,6 +3594,7 @@ impl KiCadSchematicParser {
             }
         }
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        self.need_right()?;
         Ok(shape)
     }
 
@@ -3646,6 +3660,7 @@ impl KiCadSchematicParser {
             }
         }
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        self.need_right()?;
         Ok(shape)
     }
 
@@ -3722,6 +3737,7 @@ impl KiCadSchematicParser {
             }
         }
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        self.need_right()?;
         Ok(shape)
     }
 
@@ -3771,7 +3787,6 @@ impl KiCadSchematicParser {
                     shape.stroke = polyline.stroke;
                     shape.fill = polyline.fill;
                     shape.uuid = polyline.uuid;
-                    self.need_right()?;
                 }
                 "exclude_from_sim" => {
                     let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
@@ -3800,6 +3815,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
+        self.need_right()?;
         Ok(shape)
     }
 
