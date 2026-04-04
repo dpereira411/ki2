@@ -37,6 +37,72 @@ Strict mode is the default for parser-parity work in this repository.
 16. If a reply is unavoidable, it must explain the blocker or state that the backlog is exhausted. Do not send celebratory, summary-only, or “latest progress” replies while executable parity work still remains.
 17. If a reply is unavoidable during strict execution mode, play `Hero.aiff` first with `afplay /System/Library/Sounds/Hero.aiff` before replying.
 
+## Parser-Only Parity Strategy
+
+When the target is exact pre-hierarchy parser parity, use a bottom-up dependency strategy instead
+of opportunistic branch chasing.
+
+1. Treat the parser-only boundary as:
+   - `src/token.rs`
+   - `src/model.rs`
+   - `src/error.rs`
+   - `src/diagnostic.rs`
+   - `src/parser.rs`
+2. Treat hierarchy loading and post-load stages as out of scope until the parser-only map is
+   exhausted.
+3. Prefer a function-tree/parity-map workflow:
+   - build or maintain a parser-only function map
+   - mark each routine as `done`, `partial`, or `blocked`
+   - drive work from dependency order, not from whatever mismatch is easiest to notice
+4. Port bottom-up in this order:
+   - token/lexer rules
+   - primitive parser helpers
+   - shared leaf subparsers
+   - owner-sensitive mid-level routines
+   - big owning parser routines
+   - top-level parser entry/dispatch
+5. Do not treat top-level routine coverage as proof of parity. A matching dispatch tree is only
+   evidence that corresponding entrypoints exist, not that ownership, timing, token flow, or error
+   behavior are 1:1.
+6. The preferred completion criteria for a routine are:
+   - upstream function boundary is recognizable
+   - token consumption order is close to upstream
+   - owner/timing of state mutation is close to upstream
+   - default/fallback/error branches are close to upstream
+   - direct tests cover the routine’s explicit upstream branches
+
+### Bottom-Up Priority
+
+1. True leaves first:
+   - tokenization and token classes
+   - numeric/symbol/bool helpers
+   - `parseStroke`
+   - `parseFill`
+   - `parseEDA_TEXT`
+   - `parseSchField`
+   - lib `parseProperty`
+2. Then owner-sensitive mid-level routines:
+   - textbox/table-cell cluster
+   - library draw-item cluster
+   - `parseSchSheetPin`
+3. Then large owner routines:
+   - `parseSchText`
+   - `parseSchematicSymbol`
+   - `parseSheet`
+   - `parseLibSymbol`
+4. Then top-level parser flow:
+   - `parse_schematic`
+   - `parse_schematic_body`
+
+### Working Heuristics
+
+1. If a parent routine depends on a leaf that is still structurally wrong, fix the leaf first.
+2. If a model limitation blocks a literal routine port, expand the model before forcing the parent
+   routine into a repo-local shortcut.
+3. Prefer tests that lock upstream syntax and branch structure, not only end-state behavior.
+4. Prefer routine-cluster commits that eliminate a dependency bottleneck over cosmetic progress on
+   higher-level routines.
+
 ## Specific Learnings
 
 - `bus_alias` must follow the KiCad form: `(<bus_alias> <name> (members ...))`, including old overbar conversion before `20210621`.

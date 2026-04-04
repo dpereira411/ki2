@@ -1087,7 +1087,6 @@ impl KiCadSchematicParser {
                             self.need_right()?;
                         } else {
                             let item = self.parse_symbol_draw_item(unit_number, body_style)?;
-                            self.need_right()?;
                             symbol.units[unit_index].draw_item_kinds.push(item.kind.clone());
                             symbol.units[unit_index].draw_items.push(item);
                         }
@@ -1097,7 +1096,6 @@ impl KiCadSchematicParser {
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
                     let item = self.parse_symbol_draw_item(1, 1)?;
-                    self.need_right()?;
                     symbol.units[0].draw_item_kinds.push(item.kind.clone());
                     symbol.units[0].draw_items.push(item);
                 }
@@ -1351,6 +1349,7 @@ impl KiCadSchematicParser {
             // keep defaults when an explicit midpoint path only partially specifies endpoints
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -1442,6 +1441,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -1517,6 +1517,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -1605,6 +1606,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -1685,6 +1687,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -1768,6 +1771,7 @@ impl KiCadSchematicParser {
             item.kind = "field".to_string();
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -1909,6 +1913,7 @@ impl KiCadSchematicParser {
             item.margins = Some([margin, margin, margin, margin]);
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
@@ -2155,6 +2160,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(item)
     }
 
