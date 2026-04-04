@@ -2593,7 +2593,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
+        Self::fixup_sch_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Polyline,
             points,
@@ -2651,7 +2651,7 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("start, mid, end, stroke, fill or uuid")),
             }
         }
-        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
+        Self::fixup_sch_fill_mode(&mut fill, &stroke);
         let mut geometry = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         for (slot, point) in points.into_iter().take(3).enumerate() {
             geometry[slot] = point;
@@ -2710,7 +2710,7 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("center, radius, stroke, fill or uuid")),
             }
         }
-        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
+        Self::fixup_sch_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Circle,
             points: vec![center.unwrap_or([0.0, 0.0])],
@@ -2770,7 +2770,7 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
             }
         }
-        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
+        Self::fixup_sch_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Rectangle,
             points: vec![start, end],
@@ -2832,7 +2832,7 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("pts, stroke, fill or uuid")),
             }
         }
-        Self::fixup_schematic_fill_mode(&mut fill, &stroke);
+        Self::fixup_sch_fill_mode(&mut fill, &stroke);
         Ok(Shape {
             kind: ShapeKind::Bezier,
             points,
@@ -4222,7 +4222,7 @@ impl KiCadSchematicParser {
         Ok(fill)
     }
 
-    fn fixup_schematic_fill_mode(fill: &mut Option<Fill>, stroke: &Option<Stroke>) {
+    fn fixup_sch_fill_mode(fill: &mut Option<Fill>, stroke: &Option<Stroke>) {
         if let Some(fill) = fill.as_mut() {
             if fill.fill_type == FillType::Outline {
                 fill.fill_type = FillType::Color;

@@ -30,6 +30,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - `rule_area` grammar is specialized and wraps a nested `polyline`; it is not just another generic point-list shape.
 - Keep schematic shape routine boundaries named after their upstream roles too. Once a routine owns schematic `arc` / `circle` / `rectangle` / `bezier` parsing, it should not stay on a generic `*_shape` local helper name.
 - In `parseSchRuleArea()`, keep KiCad's literal fallback `Expecting(...)` text: `exclude_from_sim, on_board, in_bom, dnp, or polyline`.
+- Keep the schematic fill-mode fixup helper named after upstream too: once it owns the `outline -> color` post-parse adjustment, it should not stay on a verbose repo-local helper name.
 - `text`, `label`, `global_label`, `hierarchical_label`, `directive_label`, and `netclass_flag` should be treated as one shared parser family with type-specific branches, like upstream `parseSchText()`.
 - `property` parsing is parent-sensitive. Symbol, sheet, and global-label mandatory fields are not just arbitrary user properties.
 - `private` only survives for user fields; it should not be blindly preserved on mandatory fields.
