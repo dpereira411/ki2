@@ -194,12 +194,19 @@ impl KiCadSchematicParser {
             return Err(self.expecting("kicad_sch"));
         }
 
-        if self.current_is_list_named("version") {
+        if matches!(self.current().kind, TokKind::Left)
+            && matches!(
+                self.tokens.get(self.idx + 1).map(|token| &token.kind),
+                Some(TokKind::Atom(value)) if value == "version"
+            )
+        {
             self.need_left()?;
             if self.need_unquoted_symbol_atom("version")? != "version" {
                 return Err(self.expecting("version"));
             }
-            self.reject_duplicate(self.version.is_some(), "version")?;
+            if self.version.is_some() {
+                return Err(self.error_here("duplicate version section"));
+            }
             self.version = Some(self.parse_i32_atom("version")?);
             self.need_right()?;
         } else {
@@ -409,7 +416,12 @@ impl KiCadSchematicParser {
                     self.screen.symbol_instances = self.parse_sch_symbol_instances()?
                 }
                 "group" => self.parse_group()?,
-                _ => return Err(self.expecting_known_section(&head)),
+                _ => {
+                    return Err(self.validation(
+                        Some(self.current_span()),
+                        format!("unsupported schematic section `{head}`"),
+                    ));
+                }
             }
             if let Some(item) = parsed_item {
                 self.screen.items.push(item);
@@ -4577,13 +4589,6 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn reject_duplicate(&self, duplicate: bool, field: &str) -> Result<(), Error> {
-        if duplicate {
-            return Err(self.error_here(format!("duplicate {field} section")));
-        }
-        Ok(())
-    }
-
     fn require_known_version(&self) -> Result<i32, Error> {
         self.version
             .ok_or_else(|| self.error_here("version must appear before this section"))
@@ -4734,14 +4739,6 @@ impl KiCadSchematicParser {
         )
     }
 
-    fn current_is_list_named(&self, expected: &str) -> bool {
-        matches!(self.current().kind, TokKind::Left)
-            && matches!(
-                self.tokens.get(self.idx + 1).map(|token| &token.kind),
-                Some(TokKind::Atom(value)) if value == expected
-            )
-    }
-
     fn current_nesting_depth(&self) -> usize {
         let mut depth = 0usize;
 
@@ -4794,13 +4791,6 @@ impl KiCadSchematicParser {
 
     fn unexpected(&self, found: &str) -> Error {
         self.error_here(format!("unexpected {found}"))
-    }
-
-    fn expecting_known_section(&self, found: &str) -> Error {
-        self.validation(
-            Some(self.current_span()),
-            format!("unsupported schematic section `{found}`"),
-        )
     }
 
     fn error_here(&self, message: impl Into<String>) -> Error {
