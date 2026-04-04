@@ -666,29 +666,34 @@ pub struct Table {
     pub column_widths: Vec<f64>,
     pub row_heights: Vec<f64>,
     pub cells: Vec<TableCell>,
-    pub border_external: Option<bool>,
-    pub border_header: Option<bool>,
-    pub border_stroke: Option<Stroke>,
-    pub separators_rows: Option<bool>,
-    pub separators_cols: Option<bool>,
-    pub separators_stroke: Option<Stroke>,
+    pub border_external: bool,
+    pub border_header: bool,
+    pub border_stroke: Stroke,
+    pub separators_rows: bool,
+    pub separators_cols: bool,
+    pub separators_stroke: Stroke,
     pub uuid: Option<String>,
 }
 
 impl Table {
     pub fn new(default_line_width: f64) -> Self {
+        let mut border_stroke = Stroke::new();
+        border_stroke.width = Some(default_line_width);
+        let mut separators_stroke = Stroke::new();
+        separators_stroke.width = Some(default_line_width);
+
         Self {
             default_line_width,
             column_count: None,
             column_widths: Vec::new(),
             row_heights: Vec::new(),
             cells: Vec::new(),
-            border_external: None,
-            border_header: None,
-            border_stroke: None,
-            separators_rows: None,
-            separators_cols: None,
-            separators_stroke: None,
+            border_external: true,
+            border_header: true,
+            border_stroke,
+            separators_rows: true,
+            separators_cols: true,
+            separators_stroke,
             uuid: None,
         }
     }
@@ -966,7 +971,7 @@ impl Sheet {
 mod tests {
     use super::{
         FieldAutoplacement, LibSymbol, PropertyKind, Sheet, SheetPin, SheetPinShape, SheetSide,
-        Symbol, TableCell, TextBox,
+        StrokeStyle, Symbol, Table, TableCell, TextBox,
     };
 
     #[test]
@@ -1073,6 +1078,20 @@ mod tests {
                 (PropertyKind::SymbolDescription, false),
             ]
         );
+    }
+
+    #[test]
+    fn tables_start_with_border_and_separator_defaults() {
+        let table = Table::new(0.25);
+
+        assert!(table.border_external);
+        assert!(table.border_header);
+        assert_eq!(table.border_stroke.width, Some(0.25));
+        assert_eq!(table.border_stroke.style, StrokeStyle::Default);
+        assert!(table.separators_rows);
+        assert!(table.separators_cols);
+        assert_eq!(table.separators_stroke.width, Some(0.25));
+        assert_eq!(table.separators_stroke.style, StrokeStyle::Default);
     }
 }
 

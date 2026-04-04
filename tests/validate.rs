@@ -617,6 +617,44 @@ fn text_box_and_table_cell_preserve_hidden_effects_state() {
 }
 
 #[test]
+fn table_without_border_or_separators_keeps_constructor_defaults() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-table-defaults")
+  (table
+    (column_count 1)
+    (column_widths 5)
+    (row_heights 5)
+    (cells
+      (table_cell "c1" (at 0 0 0) (size 5 5))))
+)"#;
+    let path = temp_schematic("table_constructor_defaults", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let table = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Table(table) => Some(table),
+            _ => None,
+        })
+        .expect("table");
+
+    assert!(table.border_external);
+    assert!(table.border_header);
+    assert_eq!(table.border_stroke.width, Some(0.1524));
+    assert_eq!(table.border_stroke.style, StrokeStyle::Default);
+    assert!(table.separators_rows);
+    assert!(table.separators_cols);
+    assert_eq!(table.separators_stroke.width, Some(0.1524));
+    assert_eq!(table.separators_stroke.style, StrokeStyle::Default);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sorts_loaded_sheet_pages_numerically() {
     let dir = env::temp_dir().join(format!(
         "ki2_sheet_page_sort_{}",
@@ -1613,17 +1651,12 @@ fn parses_extended_top_level_sections() {
     assert_eq!(table.column_count, Some(2));
     assert_eq!(table.cells.len(), 2);
     assert_eq!(table.cells[1].span, Some([2, 1]));
-    assert_eq!(
-        table.border_stroke.as_ref().and_then(|stroke| stroke.width),
-        Some(0.3)
-    );
-    assert_eq!(
-        table
-            .separators_stroke
-            .as_ref()
-            .map(|stroke| stroke.style.clone()),
-        Some(StrokeStyle::Dash)
-    );
+    assert!(table.border_external);
+    assert!(!table.border_header);
+    assert_eq!(table.border_stroke.width, Some(0.3));
+    assert!(table.separators_rows);
+    assert!(!table.separators_cols);
+    assert_eq!(table.separators_stroke.style, StrokeStyle::Dash);
     assert!(
         schematic
             .screen

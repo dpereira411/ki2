@@ -2859,17 +2859,17 @@ impl KiCadSchematicParser {
                         match border_head.as_str() {
                             "external" => {
                                 let _ = self.need_unquoted_symbol_atom("external")?;
-                                table.border_external = Some(self.parse_bool_atom("external")?);
+                                table.border_external = self.parse_bool_atom("external")?;
                                 self.need_right()?;
                             }
                             "header" => {
                                 let _ = self.need_unquoted_symbol_atom("header")?;
-                                table.border_header = Some(self.parse_bool_atom("header")?);
+                                table.border_header = self.parse_bool_atom("header")?;
                                 self.need_right()?;
                             }
                             "stroke" => {
                                 let _ = self.need_unquoted_symbol_atom("stroke")?;
-                                table.border_stroke = Some(self.parse_stroke()?);
+                                table.border_stroke = self.parse_stroke()?;
                             }
                             _ => return Err(self.expecting("external, header or stroke")),
                         }
@@ -2891,17 +2891,17 @@ impl KiCadSchematicParser {
                         match separators_head.as_str() {
                             "rows" => {
                                 let _ = self.need_unquoted_symbol_atom("rows")?;
-                                table.separators_rows = Some(self.parse_bool_atom("rows")?);
+                                table.separators_rows = self.parse_bool_atom("rows")?;
                                 self.need_right()?;
                             }
                             "cols" => {
                                 let _ = self.need_unquoted_symbol_atom("cols")?;
-                                table.separators_cols = Some(self.parse_bool_atom("cols")?);
+                                table.separators_cols = self.parse_bool_atom("cols")?;
                                 self.need_right()?;
                             }
                             "stroke" => {
                                 let _ = self.need_unquoted_symbol_atom("stroke")?;
-                                table.separators_stroke = Some(self.parse_stroke()?);
+                                table.separators_stroke = self.parse_stroke()?;
                             }
                             _ => return Err(self.expecting("rows, cols, or stroke")),
                         }
