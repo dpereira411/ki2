@@ -1873,24 +1873,28 @@ impl KiCadSchematicParser {
     }
 
     fn parse_junction(&mut self) -> Result<Junction, Error> {
-        let mut at = None;
-        let mut diameter = None;
-        let mut color = None;
-        let mut uuid = None;
+        let mut junction = Junction {
+            at: [0.0, 0.0],
+            diameter: None,
+            color: None,
+            uuid: None,
+        };
+        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("at, diameter, color or uuid")?;
             match head.as_str() {
                 "at" => {
-                    at = Some(self.parse_xy2("junction at")?);
+                    junction.at = self.parse_xy2("junction at")?;
+                    has_at = true;
                     self.need_right()?;
                 }
                 "diameter" => {
-                    diameter = Some(self.parse_f64_atom("junction diameter")?);
+                    junction.diameter = Some(self.parse_f64_atom("junction diameter")?);
                     self.need_right()?;
                 }
                 "color" => {
-                    color = Some([
+                    junction.color = Some([
                         f64::from(self.parse_i32_atom("red")?) / 255.0,
                         f64::from(self.parse_i32_atom("green")?) / 255.0,
                         f64::from(self.parse_i32_atom("blue")?) / 255.0,
@@ -1899,93 +1903,105 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    junction.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, diameter, color or uuid")),
             }
         }
-        Ok(Junction {
-            at: at.unwrap_or([0.0, 0.0]),
-            diameter,
-            color,
-            uuid,
-        })
+        if !has_at {
+            junction.at = [0.0, 0.0];
+        }
+        Ok(junction)
     }
 
     fn parse_no_connect(&mut self) -> Result<NoConnect, Error> {
-        let mut at = None;
-        let mut uuid = None;
+        let mut no_connect = NoConnect {
+            at: [0.0, 0.0],
+            uuid: None,
+        };
+        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("at or uuid")?;
             match head.as_str() {
                 "at" => {
-                    at = Some(self.parse_xy2("no_connect at")?);
+                    no_connect.at = self.parse_xy2("no_connect at")?;
+                    has_at = true;
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    no_connect.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at or uuid")),
             }
         }
-        Ok(NoConnect {
-            at: at.unwrap_or([0.0, 0.0]),
-            uuid,
-        })
+        if !has_at {
+            no_connect.at = [0.0, 0.0];
+        }
+        Ok(no_connect)
     }
 
     fn parse_bus_entry(&mut self) -> Result<BusEntry, Error> {
-        let mut at = None;
-        let mut size = None;
-        let mut has_stroke = false;
-        let mut stroke = None;
-        let mut uuid = None;
+        let mut bus_entry = BusEntry {
+            at: [0.0, 0.0],
+            size: [0.0, 0.0],
+            has_stroke: false,
+            stroke: None,
+            uuid: None,
+        };
+        let mut has_at = false;
+        let mut has_size = false;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("at, size, uuid or stroke")?;
             match head.as_str() {
                 "at" => {
-                    at = Some(self.parse_xy2("bus_entry at")?);
+                    bus_entry.at = self.parse_xy2("bus_entry at")?;
+                    has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
-                    size = Some(self.parse_xy2("bus_entry size")?);
+                    bus_entry.size = self.parse_xy2("bus_entry size")?;
+                    has_size = true;
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
+                    bus_entry.has_stroke = true;
                     let mut parsed_stroke = self.parse_stroke()?;
                     if self.require_known_version()? <= 20211123
                         && parsed_stroke.style == StrokeStyle::Default
                     {
                         parsed_stroke.style = StrokeStyle::Dash;
                     }
-                    stroke = Some(parsed_stroke);
+                    bus_entry.stroke = Some(parsed_stroke);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    bus_entry.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, size, uuid or stroke")),
             }
         }
-        Ok(BusEntry {
-            at: at.unwrap_or([0.0, 0.0]),
-            size: size.unwrap_or([0.0, 0.0]),
-            has_stroke,
-            stroke,
-            uuid,
-        })
+        if !has_at {
+            bus_entry.at = [0.0, 0.0];
+        }
+        if !has_size {
+            bus_entry.size = [0.0, 0.0];
+        }
+        Ok(bus_entry)
     }
 
     fn parse_sch_line(&mut self, kind: LineKind) -> Result<Line, Error> {
-        let mut points = Vec::new();
-        let mut has_stroke = false;
-        let mut stroke = None;
-        let mut uuid = None;
+        let mut line = Line {
+            kind,
+            points: vec![[0.0, 0.0], [0.0, 0.0]],
+            has_stroke: false,
+            stroke: None,
+            uuid: None,
+        };
+        let mut has_pts = false;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("at, uuid or stroke")?;
@@ -2004,36 +2020,30 @@ impl KiCadSchematicParser {
                     let end = self.parse_xy2("xy")?;
                     self.need_right()?;
                     self.need_right()?;
-                    points = vec![start, end];
+                    line.points = vec![start, end];
+                    has_pts = true;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    line.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
+                    line.has_stroke = true;
                     let mut parsed_stroke = self.parse_stroke()?;
                     if self.require_known_version()? <= 20211123
                         && parsed_stroke.style == StrokeStyle::Default
                     {
                         parsed_stroke.style = StrokeStyle::Dash;
                     }
-                    stroke = Some(parsed_stroke);
+                    line.stroke = Some(parsed_stroke);
                 }
                 _ => return Err(self.expecting("at, uuid or stroke")),
             }
         }
-        Ok(Line {
-            kind,
-            points: if points.is_empty() {
-                vec![[0.0, 0.0], [0.0, 0.0]]
-            } else {
-                points
-            },
-            has_stroke,
-            stroke,
-            uuid,
-        })
+        if !has_pts {
+            line.points = vec![[0.0, 0.0], [0.0, 0.0]];
+        }
+        Ok(line)
     }
 
     fn parse_sch_text(&mut self, kind: &str) -> Result<SchItem, Error> {
