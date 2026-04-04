@@ -32,7 +32,6 @@ const VERSION_TEXT_OVERBAR_NOTATION: i32 = 20210606;
 const VERSION_IMAGE_PPI_SCALE_ADJUSTMENT: i32 = 20230121;
 const VERSION_VARIANT_IN_BOM_FIX: i32 = 20260306;
 const VERSION_SYMBOL_PIN_UUID: i32 = 20210126;
-const VERSION_SET_LEGACY_SYMBOL_INSTANCE_DATA: i32 = 20200828;
 const VERSION_CUSTOM_BODY_STYLES: i32 = 20250827;
 const VERSION_WRONG_SHEET_FIELD_IDS: i32 = 20200310;
 const DEFAULT_LINE_WIDTH_MM: f64 = 0.1524;
@@ -221,10 +220,6 @@ impl KiCadSchematicParser {
         self.update_local_lib_symbol_links();
         self.fixup_legacy_lib_symbol_alternate_body_styles();
         self.fixup_embedded_data();
-
-        if version < VERSION_SET_LEGACY_SYMBOL_INSTANCE_DATA {
-            self.set_legacy_symbol_instance_data();
-        }
 
         self.resolve_groups();
         self.need_right()?;
@@ -5008,13 +5003,6 @@ impl KiCadSchematicParser {
                 }
             }
         }
-    }
-
-    fn set_legacy_symbol_instance_data(&mut self) {
-        // Upstream: SCH_SCREEN::SetLegacySymbolInstanceData()
-        // For files < 20200828, KiCad rebuilds per-symbol instance data with only
-        // path/reference/unit. The local model no longer stores value/footprint on
-        // SymbolLocalInstance, so there is nothing left to clear here.
     }
 
     fn resolve_groups(&mut self) {
