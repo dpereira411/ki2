@@ -2831,7 +2831,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
         .expect_err("must reject quoted polyline head");
     assert!(
         err.to_string()
-            .contains("expecting pts, uuid, stroke, or fill")
+            .contains("expecting pts, start, mid, end, center, uuid, stroke, or fill")
     );
 
     let quoted_arc_head = r#"(kicad_sch
@@ -2862,6 +2862,21 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
             .contains("expecting center, radius, stroke, fill or uuid")
     );
 
+    let quoted_rectangle_radius_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-rectangle-radius-head")
+  (rectangle (start 0 0) (end 1 1) ("radius" 0.5))
+)"#;
+    let quoted_rectangle_radius_head_path =
+        temp_schematic("quoted_rectangle_radius_head", quoted_rectangle_radius_head);
+    let err = parse_schematic_file(Path::new(&quoted_rectangle_radius_head_path))
+        .expect_err("must reject quoted rectangle radius head");
+    assert!(
+        err.to_string()
+            .contains("expecting start, end, radius, stroke, fill or uuid")
+    );
+
     let quoted_rule_area_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -2879,6 +2894,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
     let _ = fs::remove_file(quoted_polyline_head_path);
     let _ = fs::remove_file(quoted_arc_head_path);
     let _ = fs::remove_file(quoted_circle_head_path);
+    let _ = fs::remove_file(quoted_rectangle_radius_head_path);
     let _ = fs::remove_file(quoted_rule_area_head_path);
 }
 
@@ -3566,7 +3582,7 @@ fn line_and_polyline_keep_upstream_error_text() {
         .expect_err("must reject bad polyline child");
     assert!(
         err.to_string()
-            .contains("expecting pts, uuid, stroke, or fill")
+            .contains("expecting pts, start, mid, end, center, uuid, stroke, or fill")
     );
     let _ = fs::remove_file(bad_polyline_path);
 }

@@ -91,7 +91,8 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same `parseLine()` `pts` branch, keep the explicit two-point control flow inline like upstream instead of routing through the generic point-list parser. Missing or extra points should fail through the same `NeedLEFT` / `NeedRIGHT` sequence as KiCad.
 - In top-level schematic `polyline` handling, keep the too-few-points failure text capitalized exactly like upstream: `Schematic polyline has too few points`.
 - In `parseSchPolyLine()`, keep the old-version stroke-style fix too: for file versions `<= 20211123`, a `stroke` with `default` style must be rewritten to `dash`.
-- In that same schematic polyline branch, keep KiCad's literal fallback `Expecting(...)` text too: `pts, uuid, stroke, or fill`.
+- In that same schematic polyline branch, keep the branch-head token and fallback `Expecting(...)` text aligned with the full routine body too. This parser branch also owns the legacy `start/mid/end/center` geometry tokens, so do not leave those out of the local head/fallback text.
+- In `parseRectangleShape()`, keep the branch-head token and fallback `Expecting(...)` text aligned with the full routine body too. The rectangle parser owns `radius` as well as `start/end/stroke/fill/uuid`, so do not leave `radius` out of the local head/fallback text.
 - In `parseSchField()`, keep the header checks distinct the way KiCad does: `Invalid property name`, `Empty property name`, and `Invalid property value` are separate branches before field classification begins.
 - In `parseSchField()`, `private` survives only for true user fields (`FIELD_T::USER`-equivalent). Do not preserve it for `SheetUser` fields just because they are user-defined at the schematic level.
 - In `parseSchField()`, `show_name` and `do_not_autoplace` should continue to accept the bare-token form as `true` through `parseMaybeAbsentBool(true)`, not only explicit `yes` / `no` payloads.

@@ -1741,7 +1741,8 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?;
+            let head = self
+                .need_unquoted_symbol_atom("pts, start, mid, end, center, uuid, stroke, or fill")?;
             match head.as_str() {
                 "pts" => {
                     self.need_left()?;
@@ -2288,7 +2289,8 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?;
+            let head = self
+                .need_unquoted_symbol_atom("pts, start, mid, end, center, uuid, stroke, or fill")?;
             match head.as_str() {
                 "pts" => {
                     points = self.parse_pts()?;
@@ -2328,7 +2330,11 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("pts, uuid, stroke, or fill")),
+                _ => {
+                    return Err(
+                        self.expecting("pts, start, mid, end, center, uuid, stroke, or fill")
+                    );
+                }
             }
         }
         Self::fixup_schematic_fill_mode(&mut fill, &stroke);
@@ -2478,7 +2484,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("start, end, stroke, fill or uuid")?
+                .need_unquoted_symbol_atom("start, end, radius, stroke, fill or uuid")?
                 .as_str()
             {
                 "start" => {
@@ -2505,7 +2511,7 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
+                _ => return Err(self.expecting("start, end, radius, stroke, fill or uuid")),
             }
         }
         Self::fixup_schematic_fill_mode(&mut fill, &stroke);
