@@ -4255,8 +4255,99 @@ impl KiCadSchematicParser {
                 .need_unquoted_symbol_atom("font, justify, hide or href")?
                 .as_str()
             {
-                "font" => self.parse_effects_font(&mut effects)?,
-                "justify" => self.parse_effects_justify(&mut effects)?,
+                "font" => {
+                    while !self.at_right() {
+                        if self.at_atom() {
+                            match self
+                                .need_unquoted_symbol_atom(
+                                    "face, size, thickness, color, line_spacing, bold, or italic",
+                                )?
+                                .as_str()
+                            {
+                                "bold" => effects.bold = self.parse_inline_optional_bool(true)?,
+                                "italic" => {
+                                    effects.italic = self.parse_inline_optional_bool(true)?
+                                }
+                                _ => {
+                                    return Err(self.expecting(
+                                        "face, size, thickness, color, line_spacing, bold, or italic",
+                                    ));
+                                }
+                            }
+
+                            continue;
+                        }
+
+                        self.need_left()?;
+                        match self
+                            .need_unquoted_symbol_atom(
+                                "face, size, thickness, color, line_spacing, bold, or italic",
+                            )?
+                            .as_str()
+                        {
+                            "face" => {
+                                effects.font_face = Some(self.parse_string_atom("font face")?);
+                                self.need_right()?;
+                            }
+                            "size" => {
+                                effects.font_size = Some([
+                                    self.parse_f64_atom("font width")?,
+                                    self.parse_f64_atom("font height")?,
+                                ]);
+                                self.need_right()?;
+                            }
+                            "thickness" => {
+                                effects.thickness = Some(self.parse_f64_atom("text thickness")?);
+                                self.need_right()?;
+                            }
+                            "color" => {
+                                effects.color = Some([
+                                    f64::from(self.parse_i32_atom("red")?) / 255.0,
+                                    f64::from(self.parse_i32_atom("green")?) / 255.0,
+                                    f64::from(self.parse_i32_atom("blue")?) / 255.0,
+                                    self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
+                                ]);
+                                self.need_right()?;
+                            }
+                            "line_spacing" => {
+                                effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
+                                self.need_right()?;
+                            }
+                            "bold" => {
+                                effects.bold = self.parse_maybe_absent_bool(true)?;
+                                self.need_right()?;
+                            }
+                            "italic" => {
+                                effects.italic = self.parse_maybe_absent_bool(true)?;
+                                self.need_right()?;
+                            }
+                            _ => {
+                                return Err(self.expecting(
+                                    "face, size, thickness, color, line_spacing, bold, or italic",
+                                ));
+                            }
+                        }
+                    }
+
+                    self.need_right()?;
+                }
+                "justify" => {
+                    while !self.at_right() {
+                        match self
+                            .need_unquoted_symbol_atom("left, right, top, bottom, or mirror")?
+                            .as_str()
+                        {
+                            "left" => effects.h_justify = TextHJustify::Left,
+                            "right" => effects.h_justify = TextHJustify::Right,
+                            "top" => effects.v_justify = TextVJustify::Top,
+                            "bottom" => effects.v_justify = TextVJustify::Bottom,
+                            "mirror" => {}
+                            _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
+                        }
+                    }
+
+                    self.need_right()?;
+                }
                 "href" => {
                     let href = self.parse_string_atom("hyperlink url")?;
                     if !Self::is_valid_hyperlink(&href) {
@@ -4274,103 +4365,6 @@ impl KiCadSchematicParser {
         }
 
         Ok(effects)
-    }
-
-    fn parse_effects_font(&mut self, effects: &mut TextEffects) -> Result<(), Error> {
-        while !self.at_right() {
-            if self.at_atom() {
-                match self
-                    .need_unquoted_symbol_atom(
-                        "face, size, thickness, color, line_spacing, bold, or italic",
-                    )?
-                    .as_str()
-                {
-                    "bold" => effects.bold = self.parse_inline_optional_bool(true)?,
-                    "italic" => effects.italic = self.parse_inline_optional_bool(true)?,
-                    _ => {
-                        return Err(self.expecting(
-                            "face, size, thickness, color, line_spacing, bold, or italic",
-                        ));
-                    }
-                }
-
-                continue;
-            }
-
-            self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom(
-                    "face, size, thickness, color, line_spacing, bold, or italic",
-                )?
-                .as_str()
-            {
-                "face" => {
-                    effects.font_face = Some(self.parse_string_atom("font face")?);
-                    self.need_right()?;
-                }
-                "size" => {
-                    effects.font_size = Some([
-                        self.parse_f64_atom("font width")?,
-                        self.parse_f64_atom("font height")?,
-                    ]);
-                    self.need_right()?;
-                }
-                "thickness" => {
-                    effects.thickness = Some(self.parse_f64_atom("text thickness")?);
-                    self.need_right()?;
-                }
-                "color" => {
-                    effects.color = Some([
-                        f64::from(self.parse_i32_atom("red")?) / 255.0,
-                        f64::from(self.parse_i32_atom("green")?) / 255.0,
-                        f64::from(self.parse_i32_atom("blue")?) / 255.0,
-                        self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
-                    ]);
-                    self.need_right()?;
-                }
-                "line_spacing" => {
-                    effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
-                    self.need_right()?;
-                }
-                // Upstream: parseMaybeAbsentBool checks PrevTok()==T_LEFT.
-                // When bold/italic are inside parens like (bold yes), the
-                // sub-expression branch handles them and consumes the closing ).
-                "bold" => {
-                    effects.bold = self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
-                }
-                "italic" => {
-                    effects.italic = self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
-                }
-                _ => {
-                    return Err(self
-                        .expecting("face, size, thickness, color, line_spacing, bold, or italic"));
-                }
-            }
-        }
-
-        self.need_right()?;
-        Ok(())
-    }
-
-    fn parse_effects_justify(&mut self, effects: &mut TextEffects) -> Result<(), Error> {
-        while !self.at_right() {
-            match self
-                .need_unquoted_symbol_atom("left, right, top, bottom, or mirror")?
-                .as_str()
-            {
-                "left" => effects.h_justify = TextHJustify::Left,
-                "right" => effects.h_justify = TextHJustify::Right,
-                "top" => effects.v_justify = TextVJustify::Top,
-                "bottom" => effects.v_justify = TextVJustify::Bottom,
-                "mirror" => {}
-                _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
-            }
-        }
-
-        self.need_right()?;
-        Ok(())
     }
 
     fn is_valid_hyperlink(href: &str) -> bool {
