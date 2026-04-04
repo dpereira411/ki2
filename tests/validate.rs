@@ -1519,6 +1519,12 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
     assert_eq!(item.kind, "text_box");
     assert_eq!(item.at, Some([1.0, 2.0]));
     assert_eq!(item.end, Some([4.0, 6.0]));
+    let margins = item.margins.expect("default lib text_box margins");
+    let expected = 0.1524 / 2.0 + 1.0 * 0.75;
+    assert!((margins[0] - expected).abs() < 1e-9);
+    assert!((margins[1] - expected).abs() < 1e-9);
+    assert!((margins[2] - expected).abs() < 1e-9);
+    assert!((margins[3] - expected).abs() < 1e-9);
     let _ = fs::remove_file(legacy_path);
 
     let bad_src = r#"(kicad_sch

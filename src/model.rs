@@ -150,6 +150,7 @@ pub struct LibDrawItem {
     pub stroke: Option<Stroke>,
     pub fill: Option<Fill>,
     pub effects: Option<TextEffects>,
+    pub margins: Option<[f64; 4]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1271,6 +1271,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
         let mut saw_start = false;
         let mut saw_mid = false;
@@ -1389,6 +1390,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
 
         while !self.at_right() {
@@ -1479,6 +1481,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
 
         while !self.at_right() {
@@ -1553,6 +1556,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
 
         while !self.at_right() {
@@ -1640,6 +1644,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
 
         while !self.at_right() {
@@ -1723,6 +1728,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
 
         while !self.at_right() {
@@ -1804,6 +1810,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
         let mut pos = None;
         let mut end = None;
@@ -1869,12 +1876,12 @@ impl KiCadSchematicParser {
                 }
                 "margins" => {
                     let _ = self.need_unquoted_symbol_atom("margins")?;
-                    let _margins = [
+                    item.margins = Some([
                         self.parse_f64_atom("margin left")?,
                         self.parse_f64_atom("margin top")?,
                         self.parse_f64_atom("margin right")?,
                         self.parse_f64_atom("margin bottom")?,
-                    ];
+                    ]);
                     found_margins = true;
                     self.need_right()?;
                 }
@@ -1895,13 +1902,11 @@ impl KiCadSchematicParser {
             return Err(self.expecting("size"));
         });
         if !found_margins {
-            let _margins = Some({
-                let margin = Self::get_legacy_text_margin(
-                    stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
-                    text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
-                );
-                [margin, margin, margin, margin]
-            });
+            let margin = Self::get_legacy_text_margin(
+                stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
+                text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
+            );
+            item.margins = Some([margin, margin, margin, margin]);
         }
 
         Ok(item)
@@ -1980,6 +1985,7 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
+            margins: None,
         };
 
         while !self.at_right() {
