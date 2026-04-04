@@ -852,7 +852,7 @@ impl KiCadSchematicParser {
 
     fn parse_lib_shape_prefix(&mut self) -> Result<bool, Error> {
         let mut is_private = false;
-        if self.at_atom_with("private") {
+        if self.at_unquoted_symbol_with("private") {
             self.need_atom()?;
             is_private = true;
         }
@@ -1095,7 +1095,7 @@ impl KiCadSchematicParser {
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
         let mut is_private = false;
-        if self.at_atom_with("private") {
+        if self.at_unquoted_symbol_with("private") {
             self.need_atom()?;
             is_private = true;
         }
@@ -1166,7 +1166,7 @@ impl KiCadSchematicParser {
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
         let mut is_private = false;
-        if self.at_atom_with("private") {
+        if self.at_unquoted_symbol_with("private") {
             self.need_atom()?;
             is_private = true;
         }
@@ -1323,7 +1323,7 @@ impl KiCadSchematicParser {
         let mut alternates = Vec::new();
 
         while !self.at_right() {
-            if self.at_atom_with("hide") {
+            if self.at_unquoted_symbol_with("hide") {
                 self.need_atom()?;
                 visible = false;
                 continue;
@@ -1467,7 +1467,7 @@ impl KiCadSchematicParser {
 
     fn parse_lib_property(&mut self) -> Result<Property, Error> {
         let mut is_private = false;
-        if self.at_atom_with("private") {
+        if self.at_unquoted_symbol_with("private") {
             self.need_atom()?;
             is_private = true;
         }
@@ -3435,7 +3435,7 @@ impl KiCadSchematicParser {
         let mut name = None;
 
         while self.at_atom() {
-            if self.at_atom_with("locked") {
+            if self.at_unquoted_symbol_with("locked") {
                 let _ = self.need_atom()?;
                 continue;
             }
@@ -3492,7 +3492,7 @@ impl KiCadSchematicParser {
 
     fn parse_property_body(&mut self, parent: FieldParent) -> Result<Property, Error> {
         let mut is_private = false;
-        if self.at_atom_with("private") {
+        if self.at_unquoted_symbol_with("private") {
             self.need_atom()?;
             is_private = true;
         }
@@ -4284,10 +4284,6 @@ impl KiCadSchematicParser {
 
     fn at_atom(&self) -> bool {
         matches!(self.current().kind, TokKind::Atom(_))
-    }
-
-    fn at_atom_with(&self, expected: &str) -> bool {
-        matches!(&self.current().kind, TokKind::Atom(value) if value == expected)
     }
 
     fn at_unquoted_symbol_with(&self, expected: &str) -> bool {

@@ -2421,6 +2421,76 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
 }
 
 #[test]
+fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
+    let quoted_group_locked = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-locked")
+  (group "locked" (uuid "g-1") (members))
+)"#;
+    let quoted_group_locked_path = temp_schematic("quoted_group_locked", quoted_group_locked);
+    let schematic = parse_schematic_file(Path::new(&quoted_group_locked_path)).expect("must parse");
+    assert!(schematic
+        .screen
+        .items
+        .iter()
+        .any(|item| matches!(item, SchItem::Group(Group { name, uuid, .. }) if name.as_deref() == Some("locked") && uuid.as_deref() == Some("g-1"))));
+
+    let quoted_property_private = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-private")
+  (symbol
+    (lib_id "Device:R")
+    (property "private" "x"))
+)"#;
+    let quoted_property_private_path =
+        temp_schematic("quoted_property_private", quoted_property_private);
+    let schematic =
+        parse_schematic_file(Path::new(&quoted_property_private_path)).expect("must parse");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    let property = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "private")
+        .expect("property");
+    assert_eq!(property.value, "x");
+    assert!(!property.is_private);
+
+    let quoted_lib_pin_hide = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-pin-hide")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin input line "hide" (at 0 0 0) (length 2.54) (name "PIN") (number "1"))))
+)"#;
+    let quoted_lib_pin_hide_path = temp_schematic("quoted_lib_pin_hide", quoted_lib_pin_hide);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_hide_path))
+        .expect("quoted bare lib pin hide should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting ("))
+    );
+
+    let _ = fs::remove_file(quoted_group_locked_path);
+    let _ = fs::remove_file(quoted_property_private_path);
+    let _ = fs::remove_file(quoted_lib_pin_hide_path);
+}
+
+#[test]
 fn labels_do_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)
