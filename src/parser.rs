@@ -889,15 +889,6 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_lib_shape_prefix(&mut self) -> Result<bool, Error> {
-        let mut is_private = false;
-        if self.at_unquoted_symbol_with("private") {
-            let _ = self.need_unquoted_symbol_atom("private")?;
-            is_private = true;
-        }
-        Ok(is_private)
-    }
-
     fn empty_lib_draw_item(
         &self,
         kind: &str,
@@ -940,7 +931,11 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        let is_private = self.parse_lib_shape_prefix()?;
+        let mut is_private = false;
+        if self.at_unquoted_symbol_with("private") {
+            let _ = self.need_unquoted_symbol_atom("private")?;
+            is_private = true;
+        }
         let mut item = self.empty_lib_draw_item("arc", is_private, unit_number, body_style);
         item.points = vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
         item.arc_center = Some([0.0, 0.0]);
@@ -1017,7 +1012,11 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        let is_private = self.parse_lib_shape_prefix()?;
+        let mut is_private = false;
+        if self.at_unquoted_symbol_with("private") {
+            let _ = self.need_unquoted_symbol_atom("private")?;
+            is_private = true;
+        }
         let mut item = self.empty_lib_draw_item("bezier", is_private, unit_number, body_style);
 
         while !self.at_right() {
@@ -1056,7 +1055,11 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        let is_private = self.parse_lib_shape_prefix()?;
+        let mut is_private = false;
+        if self.at_unquoted_symbol_with("private") {
+            let _ = self.need_unquoted_symbol_atom("private")?;
+            is_private = true;
+        }
         let mut item = self.empty_lib_draw_item("circle", is_private, unit_number, body_style);
         item.points = vec![[0.0, 0.0]];
         item.radius = Some(1.0);
@@ -1089,7 +1092,11 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        let is_private = self.parse_lib_shape_prefix()?;
+        let mut is_private = false;
+        if self.at_unquoted_symbol_with("private") {
+            let _ = self.need_unquoted_symbol_atom("private")?;
+            is_private = true;
+        }
         let mut item = self.empty_lib_draw_item("polyline", is_private, unit_number, body_style);
 
         while !self.at_right() {
@@ -1116,7 +1123,11 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        let is_private = self.parse_lib_shape_prefix()?;
+        let mut is_private = false;
+        if self.at_unquoted_symbol_with("private") {
+            let _ = self.need_unquoted_symbol_atom("private")?;
+            is_private = true;
+        }
         let mut item = self.empty_lib_draw_item("rectangle", is_private, unit_number, body_style);
 
         while !self.at_right() {
