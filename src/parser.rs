@@ -766,18 +766,51 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
-        match self
-            .need_unquoted_symbol_atom("arc, bezier, circle, pin, polyline, rectangle, or text")?
-            .as_str()
-        {
-            "arc" => self.parse_symbol_arc(unit_number, body_style),
-            "bezier" => self.parse_symbol_bezier(unit_number, body_style),
-            "circle" => self.parse_symbol_circle(unit_number, body_style),
-            "pin" => self.parse_symbol_pin(unit_number, body_style),
-            "polyline" => self.parse_symbol_polyline(unit_number, body_style),
-            "rectangle" => self.parse_symbol_rectangle(unit_number, body_style),
-            "text" => self.parse_symbol_text(unit_number, body_style),
-            "text_box" => self.parse_symbol_text_box(unit_number, body_style),
+        let head = match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+            {
+                value.clone()
+            }
+            _ => {
+                return Err(
+                    self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")
+                );
+            }
+        };
+        match head.as_str() {
+            "arc" => {
+                let _ = self.need_unquoted_symbol_atom("arc")?;
+                self.parse_symbol_arc(unit_number, body_style)
+            }
+            "bezier" => {
+                let _ = self.need_unquoted_symbol_atom("bezier")?;
+                self.parse_symbol_bezier(unit_number, body_style)
+            }
+            "circle" => {
+                let _ = self.need_unquoted_symbol_atom("circle")?;
+                self.parse_symbol_circle(unit_number, body_style)
+            }
+            "pin" => {
+                let _ = self.need_unquoted_symbol_atom("pin")?;
+                self.parse_symbol_pin(unit_number, body_style)
+            }
+            "polyline" => {
+                let _ = self.need_unquoted_symbol_atom("polyline")?;
+                self.parse_symbol_polyline(unit_number, body_style)
+            }
+            "rectangle" => {
+                let _ = self.need_unquoted_symbol_atom("rectangle")?;
+                self.parse_symbol_rectangle(unit_number, body_style)
+            }
+            "text" => {
+                let _ = self.need_unquoted_symbol_atom("text")?;
+                self.parse_symbol_text(unit_number, body_style)
+            }
+            "text_box" => {
+                let _ = self.need_unquoted_symbol_atom("text_box")?;
+                self.parse_symbol_text_box(unit_number, body_style)
+            }
             _ => Err(self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")),
         }
     }
@@ -1034,10 +1067,18 @@ impl KiCadSchematicParser {
 
                         while !self.at_right() {
                             self.need_left()?;
-                            let head = self.need_unquoted_symbol_atom("file")?;
+                            let head = match &self.current().kind {
+                                TokKind::Atom(value)
+                                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                                {
+                                    value.clone()
+                                }
+                                _ => return Err(self.expecting("file")),
+                            };
                             if head != "file" {
                                 return Err(self.expecting("file"));
                             }
+                            let _ = self.need_unquoted_symbol_atom("file")?;
                             let mut file = EmbeddedFile {
                                 name: None,
                                 checksum: None,
@@ -1047,13 +1088,24 @@ impl KiCadSchematicParser {
 
                             while !self.at_right() {
                                 self.need_left()?;
-                                let head =
-                                    self.need_unquoted_symbol_atom("checksum, data or name")?;
+                                let head = match &self.current().kind {
+                                    TokKind::Atom(value)
+                                        if matches!(
+                                            self.current().atom_class,
+                                            Some(AtomClass::Symbol)
+                                        ) =>
+                                    {
+                                        value.clone()
+                                    }
+                                    _ => return Err(self.expecting("checksum, data or name")),
+                                };
                                 match head.as_str() {
                                     "name" => {
+                                        let _ = self.need_unquoted_symbol_atom("name")?;
                                         file.name = Some(self.need_symbol_or_number_atom("name")?);
                                     }
                                     "checksum" => {
+                                        let _ = self.need_unquoted_symbol_atom("checksum")?;
                                         if file.name.is_none() {
                                             return Err(self.expecting("name"));
                                         }
@@ -1061,6 +1113,7 @@ impl KiCadSchematicParser {
                                             Some(self.need_symbol_or_number_atom("checksum data")?);
                                     }
                                     "type" => {
+                                        let _ = self.need_unquoted_symbol_atom("type")?;
                                         if file.name.is_none() {
                                             return Err(self.expecting("name"));
                                         }
@@ -1083,6 +1136,7 @@ impl KiCadSchematicParser {
                                             });
                                     }
                                     "data" => {
+                                        let _ = self.need_unquoted_symbol_atom("data")?;
                                         if file.name.is_none() {
                                             return Err(self.expecting("name"));
                                         }
