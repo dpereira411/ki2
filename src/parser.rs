@@ -491,10 +491,12 @@ impl KiCadSchematicParser {
                 "symbol" => {
                     let symbol = self.parse_schematic_symbol()?;
                     self.screen.items.push(SchItem::Symbol(symbol));
+                    section_consumed_right = true;
                 }
                 "sheet" => {
                     let sheet = self.parse_sch_sheet()?;
                     self.screen.items.push(SchItem::Sheet(sheet));
+                    section_consumed_right = true;
                 }
                 "junction" => {
                     let junction = self.parse_junction()?;
@@ -537,7 +539,8 @@ impl KiCadSchematicParser {
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
                 | "class_label" | "netclass_flag" | "text" => {
                     let item = self.parse_sch_text()?;
-                    self.screen.items.push(item)
+                    self.screen.items.push(item);
+                    section_consumed_right = true;
                 }
                 "text_box" => {
                     let text_box = self.parse_sch_text_box()?;
@@ -2889,6 +2892,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(match item {
             ParsedSchText::Text(text) => SchItem::Text(text),
             ParsedSchText::Label(mut label) => {
@@ -4367,6 +4371,7 @@ impl KiCadSchematicParser {
         }
 
         symbol.lib_name = symbol.lib_name.take().filter(|name| name != &symbol.lib_id);
+        self.need_right()?;
         Ok(symbol)
     }
 
@@ -4738,6 +4743,7 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Missing sheet file property"));
         }
 
+        self.need_right()?;
         Ok(sheet)
     }
 
