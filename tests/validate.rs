@@ -8104,11 +8104,27 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
     assert_eq!(arc.arc_center, Some([0.0, 0.0]));
     assert_eq!(arc.arc_start_angle, Some(0.0));
     assert_eq!(arc.arc_end_angle, Some(90.0));
+    assert_eq!(
+        arc.stroke.as_ref().expect("lib arc stroke").width,
+        Some(0.0)
+    );
+    assert_eq!(
+        arc.fill.as_ref().expect("lib arc fill").fill_type,
+        FillType::None
+    );
 
     let circle = &unit.draw_items[1];
     assert_eq!(circle.kind, "circle");
     assert_eq!(circle.points, vec![[0.0, 0.0]]);
     assert_eq!(circle.radius, Some(1.0));
+    assert_eq!(
+        circle.stroke.as_ref().expect("lib circle stroke").width,
+        Some(0.0)
+    );
+    assert_eq!(
+        circle.fill.as_ref().expect("lib circle fill").fill_type,
+        FillType::None
+    );
 
     let _ = fs::remove_file(path);
 }

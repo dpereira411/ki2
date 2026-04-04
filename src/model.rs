@@ -255,6 +255,9 @@ pub struct LibDrawItem {
 
 impl LibDrawItem {
     pub fn new(kind: &str, unit_number: i32, body_style: i32) -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             kind: kind.to_string(),
             is_private: false,
@@ -278,8 +281,8 @@ impl LibDrawItem {
             electrical_type: None,
             graphic_shape: None,
             alternates: Vec::new(),
-            stroke: None,
-            fill: None,
+            stroke: Some(stroke),
+            fill: Some(Fill::new()),
             effects: None,
             margins: None,
         }
@@ -984,9 +987,9 @@ impl Sheet {
 #[cfg(test)]
 mod tests {
     use super::{
-        BusEntry, FieldAutoplacement, LibSymbol, Line, LineKind, NoConnect, PropertyKind, Shape,
-        ShapeKind, Sheet, SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol, Table,
-        TableCell, TextBox,
+        BusEntry, FieldAutoplacement, LibDrawItem, LibSymbol, Line, LineKind, NoConnect,
+        PropertyKind, Shape, ShapeKind, Sheet, SheetPin, SheetPinShape, SheetSide, StrokeStyle,
+        Symbol, Table, TableCell, TextBox,
     };
 
     #[test]
@@ -1148,6 +1151,20 @@ mod tests {
         assert_eq!(line.stroke.as_ref().expect("line stroke").width, Some(0.0));
         assert!(!bus_entry.has_stroke);
         assert!(!line.has_stroke);
+    }
+
+    #[test]
+    fn library_draw_items_start_with_graphic_defaults() {
+        let item = LibDrawItem::new("circle", 1, 1);
+
+        assert_eq!(
+            item.stroke.as_ref().expect("lib draw stroke").width,
+            Some(0.0)
+        );
+        assert_eq!(
+            item.fill.as_ref().expect("lib draw fill").fill_type,
+            super::FillType::None
+        );
     }
 }
 
