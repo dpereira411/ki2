@@ -309,7 +309,23 @@ impl KiCadSchematicParser {
                 "bus_entry" => parsed_item = Some(SchItem::BusEntry(self.parse_bus_entry()?)),
                 "wire" => parsed_item = Some(SchItem::Wire(self.parse_line(LineKind::Wire)?)),
                 "bus" => parsed_item = Some(SchItem::Bus(self.parse_line(LineKind::Bus)?)),
-                "polyline" => parsed_item = Some(self.parse_polyline_item()?),
+                "polyline" => {
+                    let shape = self.parse_polyline_shape()?;
+                    if shape.points.len() < 2 {
+                        return Err(self.error_here("Schematic polyline has too few points"));
+                    }
+                    if shape.points.len() == 2 {
+                        parsed_item = Some(SchItem::Polyline(Line {
+                            kind: LineKind::Polyline,
+                            points: shape.points,
+                            has_stroke: shape.has_stroke,
+                            stroke: shape.stroke,
+                            uuid: shape.uuid,
+                        }));
+                    } else {
+                        parsed_item = Some(SchItem::Shape(shape));
+                    }
+                }
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
                 | "class_label" | "netclass_flag" | "text" => {
                     parsed_item = Some(self.parse_sch_text_item(effective_head)?)
@@ -1906,23 +1922,6 @@ impl KiCadSchematicParser {
             stroke,
             uuid,
         })
-    }
-
-    fn parse_polyline_item(&mut self) -> Result<SchItem, Error> {
-        let shape = self.parse_polyline_shape()?;
-        if shape.points.len() < 2 {
-            return Err(self.error_here("Schematic polyline has too few points"));
-        }
-        if shape.points.len() == 2 {
-            return Ok(SchItem::Polyline(Line {
-                kind: LineKind::Polyline,
-                points: shape.points,
-                has_stroke: shape.has_stroke,
-                stroke: shape.stroke,
-                uuid: shape.uuid,
-            }));
-        }
-        Ok(SchItem::Shape(shape))
     }
 
     fn parse_sch_text_item(&mut self, kind: &str) -> Result<SchItem, Error> {
