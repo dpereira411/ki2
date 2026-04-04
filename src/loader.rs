@@ -660,8 +660,16 @@ impl SchematicLoader {
                 };
 
                 let iref_at = label.iref_at;
-                let intersheet_refs = label.ensure_global_intersheet_refs_property();
+                let intersheet_refs = label
+                    .properties
+                    .iter_mut()
+                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                    .expect("global labels start with intersheet refs property");
                 intersheet_refs.value = value;
+                intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
+                intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
+                    .canonical_key()
+                    .to_string();
                 intersheet_refs.at = iref_at;
                 intersheet_refs.visible = false;
             }

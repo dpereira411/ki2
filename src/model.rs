@@ -235,31 +235,6 @@ pub struct Label {
     pub properties: Vec<Property>,
 }
 
-impl Label {
-    pub fn ensure_global_intersheet_refs_property(&mut self) -> &mut Property {
-        let index = if let Some(index) = self
-            .properties
-            .iter()
-            .position(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-        {
-            index
-        } else {
-            self.properties.push(Property::new(
-                PropertyKind::GlobalLabelIntersheetRefs,
-                "${INTERSHEET_REFS}".to_string(),
-            ));
-            self.properties.len() - 1
-        };
-
-        let property = &mut self.properties[index];
-        property.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
-        property.key = PropertyKind::GlobalLabelIntersheetRefs
-            .canonical_key()
-            .to_string();
-        property
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LabelKind {
     Local,
