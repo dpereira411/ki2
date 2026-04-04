@@ -122,11 +122,6 @@ enum FieldParent {
     OtherLabel,
 }
 
-#[derive(Debug, Clone, Default)]
-struct EffectsSummary {
-    effects: TextEffects,
-}
-
 #[derive(Clone, Copy)]
 enum SchTextTarget {
     Text,
@@ -1301,8 +1296,8 @@ impl KiCadSchematicParser {
                 }
                 "effects" => {
                     let parsed = self.parse_effects_summary()?;
-                    visible = !parsed.effects.hidden;
-                    effects = Some(parsed.effects);
+                    visible = !parsed.hidden;
+                    effects = Some(parsed);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at or effects")),
@@ -1399,8 +1394,8 @@ impl KiCadSchematicParser {
                 "effects" => {
                     let parsed_effects = self.parse_effects_summary()?;
                     has_effects = true;
-                    text_size_y = parsed_effects.effects.font_size.map(|size| size[1]);
-                    effects = Some(parsed_effects.effects);
+                    text_size_y = parsed_effects.font_size.map(|size| size[1]);
+                    effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 "margins" => {
@@ -1577,7 +1572,7 @@ impl KiCadSchematicParser {
                         return Err(self.expecting("effects"));
                     }
                     let parsed = self.parse_effects_summary()?;
-                    name_effects = Some(parsed.effects);
+                    name_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
                 }
@@ -1605,7 +1600,7 @@ impl KiCadSchematicParser {
                         return Err(self.expecting("effects"));
                     }
                     let parsed = self.parse_effects_summary()?;
-                    number_effects = Some(parsed.effects);
+                    number_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
                 }
@@ -1792,10 +1787,10 @@ impl KiCadSchematicParser {
                 "effects" => {
                     let effects = self.parse_effects_summary()?;
                     property.has_effects = true;
-                    if effects.effects.hidden {
+                    if effects.hidden {
                         property.visible = false;
                     }
-                    property.effects = Some(effects.effects);
+                    property.effects = Some(effects);
                     self.need_right()?;
                 }
                 _ => {
@@ -2086,7 +2081,7 @@ impl KiCadSchematicParser {
                     let parsed_effects = self.parse_effects_summary()?;
                     has_effects = true;
                     self.need_right()?;
-                    effects = Some(parsed_effects.effects);
+                    effects = Some(parsed_effects);
                     visible = true;
                 }
                 "iref" => {
@@ -2243,8 +2238,8 @@ impl KiCadSchematicParser {
                 "effects" => {
                     let parsed_effects = self.parse_effects_summary()?;
                     has_effects = true;
-                    text_size_y = parsed_effects.effects.font_size.map(|size| size[1]);
-                    effects = Some(parsed_effects.effects);
+                    text_size_y = parsed_effects.font_size.map(|size| size[1]);
+                    effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 "margins" => {
@@ -2363,8 +2358,8 @@ impl KiCadSchematicParser {
                 "effects" => {
                     let parsed_effects = self.parse_effects_summary()?;
                     has_effects = true;
-                    text_size_y = parsed_effects.effects.font_size.map(|size| size[1]);
-                    effects = Some(parsed_effects.effects);
+                    text_size_y = parsed_effects.font_size.map(|size| size[1]);
+                    effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 "margins" => {
@@ -3826,9 +3821,9 @@ impl KiCadSchematicParser {
                 }
                 "effects" => {
                     let parsed_effects = self.parse_effects_summary()?;
-                    visible = !parsed_effects.effects.hidden;
+                    visible = !parsed_effects.hidden;
                     has_effects = true;
-                    effects = Some(parsed_effects.effects);
+                    effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, uuid or effects")),
@@ -4073,10 +4068,10 @@ impl KiCadSchematicParser {
                 "effects" => {
                     let parsed_effects = self.parse_effects_summary()?;
                     has_effects = true;
-                    if parsed_effects.effects.hidden {
+                    if parsed_effects.hidden {
                         visible = false;
                     }
-                    effects = Some(parsed_effects.effects);
+                    effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 _ => {
@@ -4254,8 +4249,8 @@ impl KiCadSchematicParser {
         None
     }
 
-    fn parse_effects_summary(&mut self) -> Result<EffectsSummary, Error> {
-        let mut summary = EffectsSummary::default();
+    fn parse_effects_summary(&mut self) -> Result<TextEffects, Error> {
+        let mut effects = TextEffects::default();
 
         while !self.at_right() {
             if self.at_atom() {
@@ -4264,7 +4259,7 @@ impl KiCadSchematicParser {
                     .as_str()
                 {
                     "hide" => {
-                        summary.effects.hidden = self.parse_maybe_absent_bool(true)?;
+                        effects.hidden = self.parse_maybe_absent_bool(true)?;
                     }
                     _ => return Err(self.expecting("font, justify, hide or href")),
                 }
@@ -4277,25 +4272,25 @@ impl KiCadSchematicParser {
                 .need_unquoted_symbol_atom("font, justify, hide or href")?
                 .as_str()
             {
-                "font" => self.parse_effects_font(&mut summary.effects)?,
-                "justify" => self.parse_effects_justify(&mut summary.effects)?,
+                "font" => self.parse_effects_font(&mut effects)?,
+                "justify" => self.parse_effects_justify(&mut effects)?,
                 "href" => {
                     let href = self.parse_string_atom("hyperlink url")?;
                     if !Self::is_valid_hyperlink(&href) {
                         return Err(self.error_here(format!("invalid hyperlink url `{href}`")));
                     }
-                    summary.effects.hyperlink = Some(href);
+                    effects.hyperlink = Some(href);
                     self.need_right()?;
                 }
                 "hide" => {
-                    summary.effects.hidden = self.parse_maybe_absent_bool(true)?;
+                    effects.hidden = self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("font, justify, hide or href")),
             }
         }
 
-        Ok(summary)
+        Ok(effects)
     }
 
     fn parse_effects_font(&mut self, effects: &mut TextEffects) -> Result<(), Error> {
