@@ -388,7 +388,7 @@ impl KiCadSchematicParser {
                 "circle" => parsed_item = Some(SchItem::Shape(self.parse_sch_circle()?)),
                 "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_sch_rectangle()?)),
                 "bezier" => parsed_item = Some(SchItem::Shape(self.parse_sch_bezier()?)),
-                "rule_area" => parsed_item = Some(SchItem::Shape(self.parse_rule_area_shape()?)),
+                "rule_area" => parsed_item = Some(SchItem::Shape(self.parse_sch_rule_area()?)),
                 "sheet_instances" => {
                     self.screen.sheet_instances = self.parse_sch_sheet_instances()?
                 }
@@ -2853,7 +2853,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_rule_area_shape(&mut self) -> Result<Shape, Error> {
+    fn parse_sch_rule_area(&mut self) -> Result<Shape, Error> {
         self.require_version(VERSION_RULE_AREAS, "rule_area")?;
         let mut shape = Shape {
             kind: ShapeKind::RuleArea,
