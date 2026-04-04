@@ -789,9 +789,7 @@ impl KiCadSchematicParser {
                                 let item = match head.as_str() {
                                     "arc" => self.parse_symbol_arc(unit_number, body_style),
                                     "bezier" => self.parse_symbol_bezier(unit_number, body_style),
-                                    "circle" => {
-                                        self.parse_lib_circle_draw_item(unit_number, body_style)
-                                    }
+                                    "circle" => self.parse_symbol_circle(unit_number, body_style),
                                     "polyline" => {
                                         self.parse_lib_polyline_draw_item(unit_number, body_style)
                                     }
@@ -833,7 +831,7 @@ impl KiCadSchematicParser {
                     let item = match kind {
                         "arc" => self.parse_symbol_arc(1, 1),
                         "bezier" => self.parse_symbol_bezier(1, 1),
-                        "circle" => self.parse_lib_circle_draw_item(1, 1),
+                        "circle" => self.parse_symbol_circle(1, 1),
                         "polyline" => self.parse_lib_polyline_draw_item(1, 1),
                         "rectangle" => self.parse_lib_rectangle_draw_item(1, 1),
                         "text" => self.parse_lib_text_draw_item(1, 1),
@@ -1123,7 +1121,7 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_lib_circle_draw_item(
+    fn parse_symbol_circle(
         &mut self,
         unit_number: i32,
         body_style: i32,
