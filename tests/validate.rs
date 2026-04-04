@@ -2254,9 +2254,28 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
         .expect_err("must reject quoted shared sch text head token");
     assert!(
         err.to_string()
-            .contains("expecting at, shape, iref, uuid or effects")
+            .contains("expecting exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property")
     );
     let _ = fs::remove_file(quoted_text_head_path);
+
+    let quoted_text_fields_autoplaced_head_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text "hello" ("fields_autoplaced"))
+)"#;
+    let quoted_text_fields_autoplaced_head_path = temp_schematic(
+        "quoted_sch_text_fields_autoplaced_head",
+        quoted_text_fields_autoplaced_head_src,
+    );
+    let err = parse_schematic_file(Path::new(&quoted_text_fields_autoplaced_head_path))
+        .expect_err("must reject quoted fields_autoplaced head in shared sch text parser");
+    assert!(
+        err.to_string()
+            .contains("expecting exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property")
+    );
+    let _ = fs::remove_file(quoted_text_fields_autoplaced_head_path);
 }
 
 #[test]

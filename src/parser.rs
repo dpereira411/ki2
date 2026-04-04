@@ -766,7 +766,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
+            let head = self.need_unquoted_symbol_atom(
+                "arc, bezier, circle, pin, polyline, rectangle, or text",
+            )?;
             match head.as_str() {
                 "unit_name" => {
                     if matches!(
@@ -1836,7 +1838,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
+            let head = self.need_unquoted_symbol_atom(
+                "exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property",
+            )?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -1917,7 +1921,11 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
+                _ => {
+                    return Err(self.expecting(
+                        "exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property",
+                    ))
+                }
             }
         }
 
