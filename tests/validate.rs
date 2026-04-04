@@ -263,7 +263,7 @@ fn parses_extended_top_level_sections() {
   (uuid "u-1")
   (paper "A4")
   (title_block (title "Demo") (date "2026-02-25") (rev "A") (company "Acme") (comment 1 "c1"))
-  (bus_alias "ADDR" (members A0 A1 A2))
+  (bus_alias "ADDR" (members "A0" "A1" "A2"))
   (embedded_fonts no)
   (embedded_files (file "A.bin" "abc") (file (name "B.bin") (data "def")))
   (lib_symbols
@@ -2788,7 +2788,7 @@ fn rejects_invalid_bus_alias_name_token() {
   (version 20260306)
   (generator "eeschema")
   (uuid "root-bus-alias")
-  (bus_alias (bogus) (members A0 A1))
+  (bus_alias (bogus) (members "A0" "A1"))
 )"#;
     let path = temp_schematic("bad_bus_alias_name", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad bus alias name");

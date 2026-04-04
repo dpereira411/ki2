@@ -1598,9 +1598,7 @@ impl KiCadSchematicParser {
 
         let mut members = Vec::new();
         while !self.at_right() {
-            let mut member = self
-                .need_symbol_atom("quoted string")
-                .map_err(|_| self.expecting("quoted string"))?;
+            let mut member = self.need_quoted_atom("quoted string")?;
             if version < VERSION_NEW_OVERBAR_NOTATION {
                 member = self.convert_to_new_overbar_notation(member);
             }

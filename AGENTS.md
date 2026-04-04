@@ -18,6 +18,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 ## Specific Learnings
 
 - `bus_alias` must follow the KiCad form: `(<bus_alias> <name> (members ...))`, including old overbar conversion before `20210621`.
+- In `bus_alias`, `members` entries must stay on the quoted-string path like upstream `Expecting( "quoted string" )` handling. Unquoted members are not valid there.
 - In `parseBusAlias()`, keep the alias name itself on the shared `NeedSYMBOL()` path, like upstream. The members loop can still report `quoted string`, but the leading alias token should not go through the generic string parser.
 - In `parseBusAlias()`, do not add a repo-local non-empty-members validation. Upstream accepts an empty `(members)` list and still adds the alias.
 - In `parseBusAlias()`, invalid member tokens should fail as `Expecting( "quoted string" )`, not through the generic missing-atom path.
