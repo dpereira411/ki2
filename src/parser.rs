@@ -2379,6 +2379,7 @@ impl KiCadSchematicParser {
                             )?;
                             label.has_effects = true;
                             label.effects = Some(parsed_effects);
+                            label.visible = true;
                             self.need_right()?;
                         }
                         "iref" => {
