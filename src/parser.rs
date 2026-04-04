@@ -1353,7 +1353,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let parsed = self.parse_effects_summary()?;
+                    let parsed = self.parse_eda_text()?;
                     visible = !parsed.hidden;
                     effects = Some(parsed);
                     self.need_right()?;
@@ -1448,7 +1448,7 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_effects_summary()?;
+                    let parsed_effects = self.parse_eda_text()?;
                     has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
                     effects = Some(parsed_effects);
@@ -1629,7 +1629,7 @@ impl KiCadSchematicParser {
                     if self.need_unquoted_symbol_atom("effects")? != "effects" {
                         return Err(self.expecting("effects"));
                     }
-                    let parsed = self.parse_effects_summary()?;
+                    let parsed = self.parse_eda_text()?;
                     name_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
@@ -1657,7 +1657,7 @@ impl KiCadSchematicParser {
                     if self.need_unquoted_symbol_atom("effects")? != "effects" {
                         return Err(self.expecting("effects"));
                     }
-                    let parsed = self.parse_effects_summary()?;
+                    let parsed = self.parse_eda_text()?;
                     number_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
@@ -1843,7 +1843,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let effects = self.parse_effects_summary()?;
+                    let effects = self.parse_eda_text()?;
                     property.has_effects = true;
                     if effects.hidden {
                         property.visible = false;
@@ -2134,7 +2134,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_effects_summary()?;
+                    let parsed_effects = self.parse_eda_text()?;
                     has_effects = true;
                     self.need_right()?;
                     effects = Some(parsed_effects);
@@ -2306,7 +2306,7 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_effects_summary()?;
+                    let parsed_effects = self.parse_eda_text()?;
                     has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
                     effects = Some(parsed_effects);
@@ -3819,7 +3819,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_effects_summary()?;
+                    let parsed_effects = self.parse_eda_text()?;
                     visible = !parsed_effects.hidden;
                     has_effects = true;
                     effects = Some(parsed_effects);
@@ -4094,7 +4094,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_effects_summary()?;
+                    let parsed_effects = self.parse_eda_text()?;
                     has_effects = true;
                     if parsed_effects.hidden {
                         visible = false;
@@ -4268,7 +4268,7 @@ impl KiCadSchematicParser {
         None
     }
 
-    fn parse_effects_summary(&mut self) -> Result<TextEffects, Error> {
+    fn parse_eda_text(&mut self) -> Result<TextEffects, Error> {
         let mut effects = TextEffects::default();
 
         while !self.at_right() {
