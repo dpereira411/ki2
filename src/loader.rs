@@ -354,6 +354,28 @@ impl SchematicLoader {
                         );
                     }
                 }
+
+                if let Some(existing) = symbol
+                    .instances
+                    .iter_mut()
+                    .find(|existing| existing.path == sheet_path.instance_path)
+                {
+                    existing.project.clear();
+                    existing.reference = instance.reference.clone();
+                    existing.unit = instance.unit;
+                    existing.value = instance.value.clone();
+                    existing.footprint = instance.footprint.clone();
+                } else {
+                    symbol.instances.push(crate::model::SymbolLocalInstance {
+                        project: String::new(),
+                        path: sheet_path.instance_path.clone(),
+                        reference: instance.reference.clone(),
+                        unit: instance.unit,
+                        value: instance.value.clone(),
+                        footprint: instance.footprint.clone(),
+                        variants: Vec::new(),
+                    });
+                }
             }
         }
     }
