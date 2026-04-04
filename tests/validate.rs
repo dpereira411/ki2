@@ -3571,6 +3571,23 @@ fn records_warning_for_invalid_top_level_embedded_files() {
 }
 
 #[test]
+fn records_warning_for_invalid_embedded_files_file_head() {
+    let src = r#"(kicad_sch
+  (version 20240620)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (embedded_files ("file" "A.bin" "aaa"))
+)"#;
+    let path = temp_schematic("bad_embedded_file_head", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
+    assert!(schematic.screen.embedded_files.is_empty());
+    assert_eq!(schematic.screen.parse_warnings.len(), 1);
+    assert!(schematic.screen.parse_warnings[0].contains("expecting file"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn repeated_embedded_and_lib_symbol_sections_follow_upstream_accumulation_rules() {
     let src = r#"(kicad_sch
   (version 20240620)
@@ -4441,6 +4458,25 @@ fn rejects_invalid_title_block_value_token() {
     let err =
         parse_schematic_file(Path::new(&path)).expect_err("must reject bad title block value");
     assert!(err.to_string().contains("missing title"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_unexpected_title_block_child_with_upstream_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-title")
+  (title_block
+    (bogus "x"))
+)"#;
+    let path = temp_schematic("bad_title_block_child", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad title block child");
+    assert!(
+        err.to_string()
+            .contains("expecting title, date, rev, company, or comment")
+    );
     let _ = fs::remove_file(path);
 }
 
