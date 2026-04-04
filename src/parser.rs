@@ -881,27 +881,30 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn empty_lib_draw_item(
-        &self,
-        kind: &str,
-        is_private: bool,
+    fn parse_lib_arc_draw_item(
+        &mut self,
         unit_number: i32,
         body_style: i32,
-    ) -> LibDrawItem {
-        LibDrawItem {
-            kind: kind.to_string(),
+    ) -> Result<LibDrawItem, Error> {
+        let mut is_private = false;
+        if self.at_unquoted_symbol_with("private") {
+            let _ = self.need_unquoted_symbol_atom("private")?;
+            is_private = true;
+        }
+        let mut item = LibDrawItem {
+            kind: "arc".to_string(),
             is_private,
             unit_number,
             body_style,
             visible: true,
             at: None,
             angle: None,
-            points: Vec::new(),
+            points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
             end: None,
             radius: None,
-            arc_center: None,
-            arc_start_angle: None,
-            arc_end_angle: None,
+            arc_center: Some([0.0, 0.0]),
+            arc_start_angle: Some(0.0),
+            arc_end_angle: Some(90.0),
             length: None,
             text: None,
             name: None,
@@ -915,24 +918,7 @@ impl KiCadSchematicParser {
             fill: None,
             effects: None,
             converted_to_field: false,
-        }
-    }
-
-    fn parse_lib_arc_draw_item(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
-        let mut is_private = false;
-        if self.at_unquoted_symbol_with("private") {
-            let _ = self.need_unquoted_symbol_atom("private")?;
-            is_private = true;
-        }
-        let mut item = self.empty_lib_draw_item("arc", is_private, unit_number, body_style);
-        item.points = vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
-        item.arc_center = Some([0.0, 0.0]);
-        item.arc_start_angle = Some(0.0);
-        item.arc_end_angle = Some(90.0);
+        };
         let mut saw_start = false;
         let mut saw_mid = false;
         let mut saw_end = false;
@@ -1009,7 +995,34 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = self.empty_lib_draw_item("bezier", is_private, unit_number, body_style);
+        let mut item = LibDrawItem {
+            kind: "bezier".to_string(),
+            is_private,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: None,
+            points: Vec::new(),
+            end: None,
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: None,
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+            converted_to_field: false,
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -1052,9 +1065,34 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = self.empty_lib_draw_item("circle", is_private, unit_number, body_style);
-        item.points = vec![[0.0, 0.0]];
-        item.radius = Some(1.0);
+        let mut item = LibDrawItem {
+            kind: "circle".to_string(),
+            is_private,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: None,
+            points: vec![[0.0, 0.0]],
+            end: None,
+            radius: Some(1.0),
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: None,
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+            converted_to_field: false,
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -1089,7 +1127,34 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = self.empty_lib_draw_item("polyline", is_private, unit_number, body_style);
+        let mut item = LibDrawItem {
+            kind: "polyline".to_string(),
+            is_private,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: None,
+            points: Vec::new(),
+            end: None,
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: None,
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+            converted_to_field: false,
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -1120,7 +1185,34 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = self.empty_lib_draw_item("rectangle", is_private, unit_number, body_style);
+        let mut item = LibDrawItem {
+            kind: "rectangle".to_string(),
+            is_private,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: None,
+            points: Vec::new(),
+            end: None,
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: None,
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+            converted_to_field: false,
+        };
 
         while !self.at_right() {
             self.need_left()?;
