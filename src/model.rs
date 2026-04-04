@@ -186,65 +186,6 @@ impl LibSymbol {
     pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
         self.units[0].push_draw_item(item);
     }
-
-    pub fn insert_property(&mut self, raw_name: &str, mut property: Property) {
-        if matches!(
-            property.kind,
-            PropertyKind::SymbolReference
-                | PropertyKind::SymbolValue
-                | PropertyKind::SymbolFootprint
-                | PropertyKind::SymbolDatasheet
-        ) {
-            if let Some(existing) = self
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                self.properties.push(property);
-            }
-        } else if raw_name == "ki_keywords" {
-            self.keywords = Some(property.value);
-        } else if raw_name == "ki_description" {
-            self.description = Some(property.value);
-        } else if raw_name == "ki_fp_filters" {
-            self.fp_filters = property
-                .value
-                .split_whitespace()
-                .map(str::to_string)
-                .collect();
-        } else if raw_name == "ki_locked" {
-            self.locked_units = true;
-        } else {
-            let mut existing = self
-                .properties
-                .iter()
-                .any(|existing| existing.key == property.key);
-
-            if existing {
-                let base = property.key.clone();
-
-                for suffix in 1..10 {
-                    let candidate = format!("{base}_{suffix}");
-
-                    if !self
-                        .properties
-                        .iter()
-                        .any(|existing| existing.key == candidate)
-                    {
-                        property.key = candidate;
-                        existing = false;
-                        break;
-                    }
-                }
-            }
-
-            if !existing {
-                self.properties.push(property);
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -868,34 +809,6 @@ impl Symbol {
             properties: Vec::new(),
             instances: Vec::new(),
             pins: Vec::new(),
-        }
-    }
-
-    pub fn insert_property(&mut self, property: Property) {
-        if matches!(
-            property.kind,
-            PropertyKind::SymbolReference
-                | PropertyKind::SymbolValue
-                | PropertyKind::SymbolFootprint
-                | PropertyKind::SymbolDatasheet
-        ) {
-            if let Some(existing) = self
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                self.properties.push(property);
-            }
-        } else if let Some(existing) = self
-            .properties
-            .iter_mut()
-            .find(|existing| existing.key == property.key)
-        {
-            *existing = property;
-        } else {
-            self.properties.push(property);
         }
     }
 
