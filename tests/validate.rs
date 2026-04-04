@@ -2352,6 +2352,75 @@ fn quoted_demorgan_in_body_styles_is_not_the_keyword_token() {
 }
 
 #[test]
+fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
+    let quoted_pin_names_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-pin-names-head")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin_names ("hide" yes))))
+)"#;
+    let quoted_pin_names_head_path = temp_schematic("quoted_pin_names_head", quoted_pin_names_head);
+    let schematic = parse_schematic_file(Path::new(&quoted_pin_names_head_path))
+        .expect("quoted pin_names list head should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting offset or hide"))
+    );
+
+    let quoted_pin_numbers_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-pin-numbers-head")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin_numbers ("hide" yes))))
+)"#;
+    let quoted_pin_numbers_head_path =
+        temp_schematic("quoted_pin_numbers_head", quoted_pin_numbers_head);
+    let schematic = parse_schematic_file(Path::new(&quoted_pin_numbers_head_path))
+        .expect("quoted pin_numbers list head should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting hide"))
+    );
+
+    let quoted_pin_names_offset = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-pin-names-offset")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin_names ("offset" 0.5))))
+)"#;
+    let quoted_pin_names_offset_path =
+        temp_schematic("quoted_pin_names_offset", quoted_pin_names_offset);
+    let schematic = parse_schematic_file(Path::new(&quoted_pin_names_offset_path))
+        .expect("quoted pin_names offset head should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting offset or hide"))
+    );
+
+    let _ = fs::remove_file(quoted_pin_names_head_path);
+    let _ = fs::remove_file(quoted_pin_numbers_head_path);
+    let _ = fs::remove_file(quoted_pin_names_offset_path);
+}
+
+#[test]
 fn labels_do_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)

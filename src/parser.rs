@@ -575,7 +575,7 @@ impl KiCadSchematicParser {
                         }
 
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self.need_unquoted_symbol_atom("offset or hide")?.as_str() {
                             "offset" => {
                                 pin_name_offset = Some(self.parse_f64_atom("pin name offset")?);
                                 self.need_right()?;
@@ -598,7 +598,7 @@ impl KiCadSchematicParser {
                         }
 
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self.need_unquoted_symbol_atom("hide")?.as_str() {
                             "hide" => {
                                 show_pin_numbers = !self.parse_bool_atom("hide")?;
                                 self.need_right()?;
