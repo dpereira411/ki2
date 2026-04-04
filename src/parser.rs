@@ -379,7 +379,7 @@ impl KiCadSchematicParser {
                 }
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
                 | "class_label" | "netclass_flag" | "text" => {
-                    parsed_item = Some(self.parse_sch_text_item(effective_head)?)
+                    parsed_item = Some(self.parse_sch_text(effective_head)?)
                 }
                 "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_text_box()?)),
                 "table" => parsed_item = Some(SchItem::Table(self.parse_table()?)),
@@ -2033,7 +2033,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_sch_text_item(&mut self, kind: &str) -> Result<SchItem, Error> {
+    fn parse_sch_text(&mut self, kind: &str) -> Result<SchItem, Error> {
         let target = match kind {
             "text" => SchTextTarget::Text,
             "label" => SchTextTarget::Label(LabelKind::Local),
@@ -2158,7 +2158,7 @@ impl KiCadSchematicParser {
                         return Err(self.unexpected("property"));
                     };
                     if matches!(label_kind, LabelKind::Global) {
-                        let property = self.parse_property_body(FieldParent::GlobalLabel)?;
+                        let property = self.parse_sch_field(FieldParent::GlobalLabel)?;
                         if let Some(existing) =
                             properties.iter_mut().find(|p| p.kind == property.kind)
                         {
@@ -2167,7 +2167,7 @@ impl KiCadSchematicParser {
                             properties.push(property);
                         }
                     } else {
-                        let property = self.parse_property_body(FieldParent::OtherLabel)?;
+                        let property = self.parse_sch_field(FieldParent::OtherLabel)?;
                         properties.push(property);
                     }
                     self.need_right()?;
@@ -3002,7 +3002,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "property" => {
-                    let property = self.parse_property_body(FieldParent::Symbol)?;
+                    let property = self.parse_sch_field(FieldParent::Symbol)?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
                         excluded_from_sim = property.value == "0";
                         self.need_right()?;
@@ -3516,7 +3516,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "property" => {
-                    let mut property = self.parse_property_body(FieldParent::Sheet)?;
+                    let mut property = self.parse_sch_field(FieldParent::Sheet)?;
                     if self
                         .require_known_version()
                         .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -3989,7 +3989,7 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_property_body(&mut self, parent: FieldParent) -> Result<Property, Error> {
+    fn parse_sch_field(&mut self, parent: FieldParent) -> Result<Property, Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
