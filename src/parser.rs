@@ -880,7 +880,8 @@ impl KiCadSchematicParser {
                     }
 
                     let unit_name = unit_full_name;
-                    let _ = symbol.ensure_unit(unit_name.clone(), unit_number, body_style);
+                    let unit_index =
+                        symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
 
                     while !self.at_right() {
                         self.need_left()?;
@@ -893,10 +894,8 @@ impl KiCadSchematicParser {
                                     self.current().atom_class,
                                     Some(AtomClass::Symbol | AtomClass::Quoted)
                                 ) {
-                                    let parsed = self.need_symbol_atom("unit_name")?;
-                                    symbol
-                                        .ensure_unit(unit_name.clone(), unit_number, body_style)
-                                        .unit_name = Some(parsed);
+                                    symbol.units[unit_index].unit_name =
+                                        Some(self.need_symbol_atom("unit_name")?);
                                 }
                                 self.need_right()?;
                             }
@@ -905,9 +904,7 @@ impl KiCadSchematicParser {
                                 let item =
                                     self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
                                 self.need_right()?;
-                                symbol
-                                    .ensure_unit(unit_name.clone(), unit_number, body_style)
-                                    .push_draw_item(item);
+                                symbol.units[unit_index].push_draw_item(item);
                             }
                             _ => {
                                 return Err(self.expecting(
