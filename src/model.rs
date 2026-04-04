@@ -956,6 +956,10 @@ impl Sheet {
     pub fn add_pin(&mut self, pin: SheetPin) {
         self.pins.push(pin);
     }
+
+    pub fn is_vertical_orientation(&self) -> bool {
+        self.size[1] > self.size[0]
+    }
 }
 
 #[cfg(test)]
@@ -1033,11 +1037,19 @@ mod tests {
 
     #[test]
     fn sheet_pins_start_with_default_geometry() {
-        let pin = SheetPin::new("IN".to_string(), SheetPinShape::Input);
+        let pin = SheetPin::new("IN".to_string(), SheetPinShape::Input, false);
 
         assert_eq!(pin.at, [0.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Left);
         assert!(pin.visible);
+    }
+
+    #[test]
+    fn vertical_sheet_pins_start_on_top_side() {
+        let pin = SheetPin::new("IN".to_string(), SheetPinShape::Input, true);
+
+        assert_eq!(pin.at, [0.0, 0.0]);
+        assert_eq!(pin.side, SheetSide::Top);
     }
 
     #[test]
@@ -1199,12 +1211,16 @@ pub struct SheetPin {
 }
 
 impl SheetPin {
-    pub fn new(name: String, shape: SheetPinShape) -> Self {
+    pub fn new(name: String, shape: SheetPinShape, vertical_sheet: bool) -> Self {
         Self {
             name,
             shape,
             at: [0.0, 0.0],
-            side: SheetSide::Left,
+            side: if vertical_sheet {
+                SheetSide::Top
+            } else {
+                SheetSide::Left
+            },
             visible: true,
             has_effects: false,
             effects: None,

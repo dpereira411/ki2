@@ -2710,6 +2710,69 @@ fn sheet_pin_without_at_keeps_default_geometry() {
 }
 
 #[test]
+fn sheet_pin_without_at_uses_current_sheet_orientation() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (size 5 20)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input))
+)"#;
+    let path = temp_schematic("sheet_pin_without_at_vertical_sheet", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.pins.len(), 1);
+    assert_eq!(sheet.pins[0].at, [0.0, 0.0]);
+    assert_eq!(sheet.pins[0].side, SheetSide::Top);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn sheet_pin_before_size_keeps_pre_size_default_side() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input)
+    (size 5 20))
+)"#;
+    let path = temp_schematic("sheet_pin_before_size_default_side", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.pins.len(), 1);
+    assert_eq!(sheet.pins[0].side, SheetSide::Left);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_sheet_pin_name() {
     let src = r#"(kicad_sch
   (version 20250114)

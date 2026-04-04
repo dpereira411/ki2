@@ -3962,7 +3962,7 @@ impl KiCadSchematicParser {
                     properties.push(property);
                 }
                 "pin" => {
-                    sheet.add_pin(self.parse_sch_sheet_pin()?);
+                    sheet.add_pin(self.parse_sch_sheet_pin(&sheet)?);
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
@@ -4221,7 +4221,7 @@ impl KiCadSchematicParser {
         Ok(sheet)
     }
 
-    fn parse_sch_sheet_pin(&mut self) -> Result<SheetPin, Error> {
+    fn parse_sch_sheet_pin(&mut self, sheet: &Sheet) -> Result<SheetPin, Error> {
         let _ = self.need_unquoted_symbol_atom("pin")?;
         let name = self
             .need_symbol_atom("sheet pin name")
@@ -4241,7 +4241,7 @@ impl KiCadSchematicParser {
             }
         };
 
-        let mut sheet_pin = SheetPin::new(name, shape);
+        let mut sheet_pin = SheetPin::new(name, shape, sheet.is_vertical_orientation());
 
         while !self.at_right() {
             self.need_left()?;
