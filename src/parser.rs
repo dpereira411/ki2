@@ -786,7 +786,7 @@ impl KiCadSchematicParser {
             match branch.as_str() {
                 "power" => {
                     symbol.power = true;
-                    if self.at_atom() {
+                    if matches!(self.current().kind, TokKind::Atom(_)) {
                         match self.need_unquoted_symbol_atom("global or local")?.as_str() {
                             "local" => symbol.local_power = true,
                             "global" => symbol.local_power = false,
@@ -4137,7 +4137,7 @@ impl KiCadSchematicParser {
             members: Vec::new(),
         };
 
-        while self.at_atom() {
+        while matches!(self.current().kind, TokKind::Atom(_)) {
             if self.at_unquoted_symbol_with("locked") {
                 let _ = self.need_unquoted_symbol_atom("locked")?;
                 continue;
@@ -4474,7 +4474,7 @@ impl KiCadSchematicParser {
         effects.v_justify = TextVJustify::Center;
 
         while !self.at_right() {
-            if self.at_atom() {
+            if matches!(self.current().kind, TokKind::Atom(_)) {
                 match self
                     .need_unquoted_symbol_atom("font, justify, hide or href")?
                     .as_str()
@@ -4496,7 +4496,7 @@ impl KiCadSchematicParser {
             {
                 "font" => {
                     while !self.at_right() {
-                        if self.at_atom() {
+                        if matches!(self.current().kind, TokKind::Atom(_)) {
                             match self
                                 .need_unquoted_symbol_atom(
                                     "face, size, thickness, line_spacing, bold, or italic",
@@ -4873,10 +4873,6 @@ impl KiCadSchematicParser {
 
     fn at_right(&self) -> bool {
         matches!(self.current().kind, TokKind::Right)
-    }
-
-    fn at_atom(&self) -> bool {
-        matches!(self.current().kind, TokKind::Atom(_))
     }
 
     fn at_unquoted_symbol_with(&self, expected: &str) -> bool {
