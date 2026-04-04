@@ -29,6 +29,69 @@ fn temp_schematic(name: &str, src: &str) -> PathBuf {
 }
 
 #[test]
+fn rejects_quoted_core_grammar_keyword_heads() {
+    let quoted_root = r#"("kicad_sch"
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root"))
+"#;
+    let quoted_root_path = temp_schematic("quoted_root_keyword", quoted_root);
+    let err = parse_schematic_file(Path::new(&quoted_root_path))
+        .expect_err("must reject quoted root keyword");
+    assert!(err.to_string().contains("expecting kicad_sch"));
+
+    let quoted_version = r#"(kicad_sch
+  ("version" 20260306)
+  (generator "eeschema")
+  (uuid "root"))
+"#;
+    let quoted_version_path = temp_schematic("quoted_version_keyword", quoted_version);
+    let err = parse_schematic_file(Path::new(&quoted_version_path))
+        .expect_err("must reject quoted version keyword");
+    assert!(err.to_string().contains("expecting version"));
+
+    let quoted_bus_alias_members = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root")
+  (bus_alias "ADDR" ("members" "A0"))
+)"#;
+    let quoted_bus_alias_members_path =
+        temp_schematic("quoted_bus_alias_members", quoted_bus_alias_members);
+    let err = parse_schematic_file(Path::new(&quoted_bus_alias_members_path))
+        .expect_err("must reject quoted bus_alias members keyword");
+    assert!(err.to_string().contains("expecting members"));
+
+    let quoted_wire_xy = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root")
+  (wire (pts ("xy" 0 0) (xy 1 1)))
+)"#;
+    let quoted_wire_xy_path = temp_schematic("quoted_wire_xy", quoted_wire_xy);
+    let err = parse_schematic_file(Path::new(&quoted_wire_xy_path))
+        .expect_err("must reject quoted wire xy keyword");
+    assert!(err.to_string().contains("expecting xy"));
+
+    let quoted_bezier_xy = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root")
+  (bezier (pts ("xy" 0 0) (xy 1 1) (xy 2 2) (xy 3 3)))
+)"#;
+    let quoted_bezier_xy_path = temp_schematic("quoted_bezier_xy", quoted_bezier_xy);
+    let err = parse_schematic_file(Path::new(&quoted_bezier_xy_path))
+        .expect_err("must reject quoted bezier xy keyword");
+    assert!(err.to_string().contains("expecting xy"));
+
+    let _ = fs::remove_file(quoted_root_path);
+    let _ = fs::remove_file(quoted_version_path);
+    let _ = fs::remove_file(quoted_bus_alias_members_path);
+    let _ = fs::remove_file(quoted_wire_xy_path);
+    let _ = fs::remove_file(quoted_bezier_xy_path);
+}
+
+#[test]
 fn validates_hierarchical_tree_fixture() {
     let loaded = load_schematic_tree(&fixture("hierarchical.kicad_sch")).expect("tree must load");
     assert_eq!(loaded.schematics.len(), 2);

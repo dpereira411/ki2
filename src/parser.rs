@@ -187,7 +187,7 @@ impl KiCadSchematicParser {
 
     fn parse_schematic(mut self) -> Result<Schematic, Error> {
         self.need_left()?;
-        if self.need_atom()? != "kicad_sch" {
+        if self.need_unquoted_symbol_atom("kicad_sch")? != "kicad_sch" {
             return Err(self.expecting("kicad_sch"));
         }
 
@@ -238,7 +238,7 @@ impl KiCadSchematicParser {
     fn parse_header(&mut self) -> Result<(), Error> {
         if self.current_is_list_named("version") {
             self.need_left()?;
-            if self.need_atom()? != "version" {
+            if self.need_unquoted_symbol_atom("version")? != "version" {
                 return Err(self.expecting("version"));
             }
             self.parse_version()?;
@@ -1600,7 +1600,7 @@ impl KiCadSchematicParser {
         }
 
         self.need_left()?;
-        if self.need_atom()? != "members" {
+        if self.need_unquoted_symbol_atom("members")? != "members" {
             return Err(self.expecting("members"));
         }
 
@@ -1743,13 +1743,13 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "pts" => {
                     self.need_left()?;
-                    if self.need_atom()? != "xy" {
+                    if self.need_unquoted_symbol_atom("xy")? != "xy" {
                         return Err(self.expecting("xy"));
                     }
                     let start = self.parse_xy2("xy")?;
                     self.need_right()?;
                     self.need_left()?;
-                    if self.need_atom()? != "xy" {
+                    if self.need_unquoted_symbol_atom("xy")? != "xy" {
                         return Err(self.expecting("xy"));
                     }
                     let end = self.parse_xy2("xy")?;
@@ -2527,7 +2527,7 @@ impl KiCadSchematicParser {
                     let mut ii = 0;
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_atom()? != "xy" {
+                        if self.need_unquoted_symbol_atom("xy")? != "xy" {
                             return Err(self.expecting("xy"));
                         }
                         match ii {
