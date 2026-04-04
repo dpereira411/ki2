@@ -53,6 +53,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
+    loader.update_all_screen_references(&sheet_paths);
     Ok(LoadResult {
         root_path,
         schematics: loader.schematics,
@@ -465,6 +466,59 @@ impl SchematicLoader {
                         has_effects: false,
                         effects: None,
                     });
+                }
+            }
+        }
+    }
+
+    fn update_all_screen_references(&mut self, sheet_paths: &[LoadedSheetPath]) {
+        for sheet_path in sheet_paths {
+            let Some(schematic_index) = self
+                .loaded_by_canonical
+                .get(&sheet_path.schematic_path)
+                .copied()
+            else {
+                continue;
+            };
+
+            for item in &mut self.schematics[schematic_index].screen.items {
+                let SchItem::Symbol(symbol) = item else {
+                    continue;
+                };
+
+                let Some(instance) = symbol
+                    .instances
+                    .iter()
+                    .find(|instance| instance.path == sheet_path.instance_path)
+                    .cloned()
+                else {
+                    continue;
+                };
+
+                if let Some(reference) = instance.reference {
+                    upsert_symbol_property(
+                        symbol,
+                        "Reference",
+                        reference,
+                        PropertyKind::SymbolReference,
+                    );
+                }
+
+                if let Some(unit) = instance.unit {
+                    symbol.unit = Some(unit);
+                }
+
+                if let Some(value) = instance.value {
+                    upsert_symbol_property(symbol, "Value", value, PropertyKind::SymbolValue);
+                }
+
+                if let Some(footprint) = instance.footprint {
+                    upsert_symbol_property(
+                        symbol,
+                        "Footprint",
+                        footprint,
+                        PropertyKind::SymbolFootprint,
+                    );
                 }
             }
         }

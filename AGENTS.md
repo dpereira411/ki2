@@ -270,6 +270,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - For legacy `< 20221002` files, apply root-screen `symbol_instances` across the loaded hierarchy using those sheet paths rather than leaving `SetLegacySymbolInstanceData()` as a dead partial fixup. The effective symbol update belongs in the post-load flow, not in per-file parsing.
 - Once that loaded sheet-path list is sorted by page data, keep sheet-number/count assignment on the same loader-side hierarchy object. That is the base state later cross-file stages such as intersheet-reference recomputation should consume, not a parser-local approximation.
 - Recompute intersheet references from that loader-side sheet list too. Global-label `Intersheet References` state should be derived from the full loaded hierarchy’s sheet-number/page map, not left as whatever the per-file parser happened to see.
+- Use that same loader-side sheet list to drive symbol reference/unit/value/footprint refresh from hierarchical local `instances` too. The first `UpdateAllScreenReferences()`-style state belongs in post-load hierarchy flow, not only in per-file parser state or legacy root `symbol_instances`.
 
 ## Expected Workflow
 
