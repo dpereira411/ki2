@@ -253,7 +253,9 @@ impl KiCadSchematicParser {
     fn parse_schematic_body(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
+            let head = self.need_unquoted_symbol_atom(
+                "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
+            )?;
             let mut effective_head = head.as_str();
 
             if effective_head == "page"

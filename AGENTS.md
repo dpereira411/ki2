@@ -33,6 +33,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - Legacy compatibility branches matter: `~` empty-string handling, root-path normalization, old overbar notation, pin UUID version gates, legacy `iref`, and similar cases should be ported explicitly rather than approximated.
 - Keep the root schematic `uuid` on the shared `NeedSYMBOL()` path too. Do not leave the top-level UUID branch on the generic string parser once the rest of the UUID family has been tightened.
 - In top-level `ParseSchematic()` header handling, keep `generator` on the shared `NeedSYMBOL()` path and keep the really old `< 20200827` extra `host` version token unconditional, like upstream. Do not guard that old host-version read behind a local `at_atom()` shortcut.
+- In top-level `parse_schematic_body()` dispatch, keep the section-head token and its `Expecting(...)` text aligned with the real top-level section set. Do not leave that dispatcher on a stale copied head string from an unrelated parser family.
 - Tests should be updated toward upstream syntax, not the other way around.
 - `paper` / `page` parsing should stay split the way KiCad uses it: `parsePAGE_INFO()` for `paper` and legacy `page <= 20200506`, and a separate modern top-level `page` sniff path using `SYMBOL or NUMBER` tokens.
 - Legacy top-level `page <= 20200506` should be normalized to the `paper` branch before the main schematic-section dispatch, like upstream `token = T_paper`, rather than handled as a nested special case inside the modern `page` branch.

@@ -2691,6 +2691,23 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
 }
 
 #[test]
+fn rejects_quoted_top_level_section_head_with_dispatch_expect_list() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-top-level-head")
+  ("group" "G" (uuid "g-1") (members))
+)"#;
+    let path = temp_schematic("quoted_top_level_section_head", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject quoted top-level section head");
+    assert!(err.to_string().contains(
+        "expecting generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group"
+    ));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_effects_keyword_tokens() {
     let quoted_justify = r#"(kicad_sch
   (version 20260306)
