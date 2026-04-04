@@ -2842,6 +2842,22 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
         .expect_err("must reject quoted table_cell head");
     assert!(err.to_string().contains("expecting table_cell"));
 
+    let quoted_table_cell_span_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-table-cell-span-head")
+  (table
+    (column_count 1)
+    (cells (table_cell "c" ("span" 1 1) (at 0 0 0) (size 5 5))))
+)"#;
+    let quoted_table_cell_span_head_path =
+        temp_schematic("quoted_table_cell_span_head", quoted_table_cell_span_head);
+    let err = parse_schematic_file(Path::new(&quoted_table_cell_span_head_path))
+        .expect_err("must reject quoted table_cell span head");
+    assert!(err.to_string().contains(
+        "expecting exclude_from_sim, start, end, at, size, span, stroke, fill, effects, margins or uuid"
+    ));
+
     let quoted_image_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -2860,6 +2876,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let _ = fs::remove_file(quoted_text_box_margins_head_path);
     let _ = fs::remove_file(quoted_table_head_path);
     let _ = fs::remove_file(quoted_table_cell_head_path);
+    let _ = fs::remove_file(quoted_table_cell_span_head_path);
     let _ = fs::remove_file(quoted_image_head_path);
 }
 

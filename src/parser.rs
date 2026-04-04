@@ -2316,7 +2316,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "exclude_from_sim, start, end, at, size, stroke, fill, effects, margins, span or uuid",
+                "exclude_from_sim, start, end, at, size, span, stroke, fill, effects, margins or uuid",
             )?;
             match head.as_str() {
                 "exclude_from_sim" => {
@@ -2378,7 +2378,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "exclude_from_sim, start, end, at, size, stroke, fill, effects, margins, span or uuid",
+                        "exclude_from_sim, start, end, at, size, span, stroke, fill, effects, margins or uuid",
                     ))
                 }
             }
