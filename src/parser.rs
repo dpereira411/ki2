@@ -159,6 +159,9 @@ struct KiCadSchematicParser {
 
 impl KiCadSchematicParser {
     fn new(path: PathBuf, tokens: Vec<Token>) -> Self {
+        let page_info = Self::lookup_standard_page_info("A4").expect("A4 page info must exist");
+        let [width, height] = page_info.dimensions_mm.expect("A4 dimensions must exist");
+
         Self {
             path,
             tokens,
@@ -169,7 +172,12 @@ impl KiCadSchematicParser {
             root_uuid: None,
             screen: Screen {
                 uuid: None,
-                paper: Some(Self::default_page_info()),
+                paper: Some(Self::build_page_info(
+                    page_info.kind.to_string(),
+                    width,
+                    height,
+                    false,
+                )),
                 page: None,
                 title_block: None,
                 embedded_fonts: None,
@@ -4710,12 +4718,6 @@ impl KiCadSchematicParser {
             .iter()
             .find(|candidate| candidate.kind.eq_ignore_ascii_case(kind))
             .copied()
-    }
-
-    fn default_page_info() -> Paper {
-        let page_info = Self::lookup_standard_page_info("A4").expect("A4 page info must exist");
-        let [width, height] = page_info.dimensions_mm.expect("A4 dimensions must exist");
-        Self::build_page_info(page_info.kind.to_string(), width, height, false)
     }
 
     fn parse_page_info(&mut self) -> Result<Paper, Error> {

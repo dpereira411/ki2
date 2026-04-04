@@ -44,6 +44,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - Modern top-level `page` sniff should call the shared `NeedSYMBOLorNUMBER`-style path directly for both consumed tokens, with only local missing-field mapping layered on top. Do not add page-specific parse aliases around that branch.
 - A missing raw closing `)` inside top-level `paper` / modern `page` can surface as a shared-token-stream parser error after the wrong `)` is consumed, not necessarily as a local branch-specific `expecting )` diagnostic. Treat that as a parser control-flow consequence of malformed s-expressions, not an unchecked local branch.
 - The default schematic screen page settings come from `SCH_SCREEN` construction and should start as `A4`, not `A3`.
+- Keep that default `A4` page setup inline at parser/screen construction time too. Do not hide the initial screen page state behind a dedicated `default_page_info()` helper if the goal is structural parity with upstream `SCH_SCREEN` construction.
 - `PAGE_INFO::SetType()` is case-insensitive. Mixed-case page kinds like `usletter` or `gerber` should canonicalize to KiCad's enum spelling instead of being rejected or preserved raw.
 - That case-insensitive `SetType()` rule also applies to `user`; lower-case `user` must still enter the custom-width/custom-height branch rather than being treated as an invalid page type.
 - The optional `portrait` tail in `parsePAGE_INFO()` is still a real keyword token, not a case-insensitive page-type string. `PORTRAIT` should fail where `portrait` succeeds.
