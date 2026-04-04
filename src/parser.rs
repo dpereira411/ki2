@@ -3873,13 +3873,13 @@ impl KiCadSchematicParser {
             let mut page = None;
             while !self.at_right() {
                 self.need_left()?;
-                let child = self.need_unquoted_symbol_atom("path or page")?;
+                let child = self.need_unquoted_symbol_atom("page")?;
                 match child.as_str() {
                     "page" => {
                         let raw_page = self.need_symbol_atom("page")?;
                         page = Some(self.normalize_page_number(raw_page));
                     }
-                    _ => return Err(self.expecting("path or page")),
+                    _ => return Err(self.expecting("page")),
                 }
                 self.need_right()?;
             }
@@ -3910,7 +3910,8 @@ impl KiCadSchematicParser {
             let mut footprint = None;
             while !self.at_right() {
                 self.need_left()?;
-                let child = self.need_unquoted_symbol_atom("path, unit, value or footprint")?;
+                let child =
+                    self.need_unquoted_symbol_atom("reference, unit, value or footprint")?;
                 match child.as_str() {
                     "reference" => reference = Some(self.need_symbol_atom("reference")?),
                     "unit" => unit = Some(self.parse_i32_atom("unit")?),
