@@ -1265,6 +1265,17 @@ pub struct EmbeddedFile {
     pub data: Option<String>,
 }
 
+impl EmbeddedFile {
+    pub fn new() -> Self {
+        Self {
+            name: None,
+            checksum: None,
+            file_type: None,
+            data: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbeddedFileType {
     Datasheet,
