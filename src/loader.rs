@@ -243,7 +243,7 @@ impl SchematicLoader {
         self.build_child_sheet_paths(root_path, &format!("/{root_uuid}"), &mut sheet_paths);
         sheet_paths.sort_by(|a, b| {
             let page_cmp = match (&a.page, &b.page) {
-                (Some(a_page), Some(b_page)) => a_page.cmp(b_page),
+                (Some(a_page), Some(b_page)) => compare_page_numbers(a_page, b_page),
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (None, Some(_)) => std::cmp::Ordering::Greater,
                 (None, None) => std::cmp::Ordering::Equal,
@@ -397,7 +397,7 @@ impl SchematicLoader {
 
         sheet_paths.sort_by(|a, b| {
             let page_cmp = match (&a.page, &b.page) {
-                (Some(a_page), Some(b_page)) => a_page.cmp(b_page),
+                (Some(a_page), Some(b_page)) => compare_page_numbers(a_page, b_page),
                 (Some(_), None) => std::cmp::Ordering::Less,
                 (None, Some(_)) => std::cmp::Ordering::Greater,
                 (None, None) => std::cmp::Ordering::Equal,
@@ -737,5 +737,71 @@ fn upsert_symbol_property(symbol: &mut Symbol, key: &str, value: String, kind: P
             has_effects: false,
             effects: None,
         });
+    }
+}
+
+fn compare_page_numbers(a: &str, b: &str) -> std::cmp::Ordering {
+    if a == b {
+        return std::cmp::Ordering::Equal;
+    }
+
+    match (a.parse::<i64>(), b.parse::<i64>()) {
+        (Ok(a_num), Ok(b_num)) => return a_num.cmp(&b_num),
+        (Ok(_), Err(_)) => return std::cmp::Ordering::Less,
+        (Err(_), Ok(_)) => return std::cmp::Ordering::Greater,
+        (Err(_), Err(_)) => {}
+    }
+
+    let mut a_chars = a.chars().peekable();
+    let mut b_chars = b.chars().peekable();
+
+    loop {
+        match (a_chars.peek().copied(), b_chars.peek().copied()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(a_ch), Some(b_ch)) if a_ch.is_ascii_digit() && b_ch.is_ascii_digit() => {
+                let mut a_digits = String::new();
+                let mut b_digits = String::new();
+
+                while let Some(ch) = a_chars.peek().copied() {
+                    if !ch.is_ascii_digit() {
+                        break;
+                    }
+                    a_digits.push(ch);
+                    a_chars.next();
+                }
+
+                while let Some(ch) = b_chars.peek().copied() {
+                    if !ch.is_ascii_digit() {
+                        break;
+                    }
+                    b_digits.push(ch);
+                    b_chars.next();
+                }
+
+                let a_trimmed = a_digits.trim_start_matches('0');
+                let b_trimmed = b_digits.trim_start_matches('0');
+                let a_cmp_digits = if a_trimmed.is_empty() { "0" } else { a_trimmed };
+                let b_cmp_digits = if b_trimmed.is_empty() { "0" } else { b_trimmed };
+
+                match a_cmp_digits.len().cmp(&b_cmp_digits.len()) {
+                    std::cmp::Ordering::Equal => match a_cmp_digits.cmp(b_cmp_digits) {
+                        std::cmp::Ordering::Equal => {}
+                        ordering => return ordering,
+                    },
+                    ordering => return ordering,
+                }
+            }
+            (Some(a_ch), Some(b_ch)) => {
+                a_chars.next();
+                b_chars.next();
+
+                match a_ch.cmp(&b_ch) {
+                    std::cmp::Ordering::Equal => {}
+                    ordering => return ordering,
+                }
+            }
+        }
     }
 }
