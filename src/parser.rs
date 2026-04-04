@@ -3061,8 +3061,6 @@ impl KiCadSchematicParser {
             uuid: None,
             properties: Vec::new(),
             instances: Vec::new(),
-            default_value: None,
-            default_footprint: None,
             pins: Vec::new(),
         };
 
@@ -3506,7 +3504,6 @@ impl KiCadSchematicParser {
                                 } else {
                                     symbol.properties.push(property);
                                 }
-                                symbol.default_value = Some(parsed);
                                 self.need_right()?;
                             }
                             "footprint" => {
@@ -3548,7 +3545,6 @@ impl KiCadSchematicParser {
                                 } else {
                                     symbol.properties.push(property);
                                 }
-                                symbol.default_footprint = Some(parsed);
                                 self.need_right()?;
                             }
                             _ => {

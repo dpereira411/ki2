@@ -4688,7 +4688,6 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
         .expect("symbol");
     assert_eq!(symbol.instances.len(), 1);
     assert_eq!(symbol.lib_name, None);
-    assert_eq!(symbol.default_value.as_deref(), Some("10k"));
     assert_eq!(
         symbol
             .properties
@@ -4765,11 +4764,6 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
         })
         .expect("symbol");
 
-    assert_eq!(symbol.default_value.as_deref(), Some("default-value"));
-    assert_eq!(
-        symbol.default_footprint.as_deref(),
-        Some("default-footprint")
-    );
     assert_eq!(symbol.instances[0].value.as_deref(), Some("instance-value"));
     assert_eq!(
         symbol.instances[0].footprint.as_deref(),
