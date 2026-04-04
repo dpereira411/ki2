@@ -63,6 +63,20 @@ pub struct Screen {
     pub symbol_instances: Vec<SymbolInstance>,
 }
 
+impl Screen {
+    pub fn add_bus_alias(&mut self, alias: BusAlias) {
+        self.bus_aliases.push(alias);
+    }
+
+    pub fn add_sheet_instance(&mut self, instance: SheetInstance) {
+        self.sheet_instances.push(instance);
+    }
+
+    pub fn add_symbol_instance(&mut self, instance: SymbolInstance) {
+        self.symbol_instances.push(instance);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Paper {
     pub kind: String,
@@ -898,6 +912,14 @@ impl Symbol {
             self.properties.push(Property::new(kind, value));
         }
     }
+
+    pub fn add_instance(&mut self, instance: SymbolLocalInstance) {
+        self.instances.push(instance);
+    }
+
+    pub fn add_pin(&mut self, pin: SymbolPin) {
+        self.pins.push(pin);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -962,6 +984,14 @@ impl Sheet {
             .iter()
             .find(|property| property.kind == PropertyKind::SheetFile)
             .map(|property| property.value.as_str())
+    }
+
+    pub fn add_pin(&mut self, pin: SheetPin) {
+        self.pins.push(pin);
+    }
+
+    pub fn set_instances(&mut self, instances: Vec<SheetLocalInstance>) {
+        self.instances = instances;
     }
 }
 
@@ -1152,12 +1182,43 @@ pub struct ItemVariant {
     pub fields: BTreeMap<String, String>,
 }
 
+impl ItemVariant {
+    pub fn new(
+        dnp: bool,
+        excluded_from_sim: bool,
+        in_bom: bool,
+        on_board: bool,
+        in_pos_files: bool,
+    ) -> Self {
+        Self {
+            name: String::new(),
+            dnp,
+            excluded_from_sim,
+            in_bom,
+            on_board,
+            in_pos_files,
+            fields: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SheetLocalInstance {
     pub project: String,
     pub path: String,
     pub page: Option<String>,
     pub variants: BTreeMap<String, ItemVariant>,
+}
+
+impl SheetLocalInstance {
+    pub fn new(project: String, path: String) -> Self {
+        Self {
+            project,
+            path,
+            page: None,
+            variants: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1169,10 +1230,31 @@ pub struct SymbolLocalInstance {
     pub variants: BTreeMap<String, ItemVariant>,
 }
 
+impl SymbolLocalInstance {
+    pub fn new(project: String, path: String) -> Self {
+        Self {
+            project,
+            path,
+            reference: None,
+            unit: None,
+            variants: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BusAlias {
     pub name: String,
     pub members: Vec<String>,
+}
+
+impl BusAlias {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            members: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1198,6 +1280,17 @@ pub struct Group {
     pub uuid: Option<String>,
     pub lib_id: Option<String>,
     pub members: Vec<String>,
+}
+
+impl Group {
+    pub fn new() -> Self {
+        Self {
+            name: None,
+            uuid: None,
+            lib_id: None,
+            members: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

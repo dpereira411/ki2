@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -2074,10 +2073,7 @@ impl KiCadSchematicParser {
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("bus_alias")?;
-        let mut alias = BusAlias {
-            name: self.need_symbol_atom("bus alias name")?,
-            members: Vec::new(),
-        };
+        let mut alias = BusAlias::new(self.need_symbol_atom("bus alias name")?);
         let version = self.require_known_version()?;
         if version < VERSION_NEW_OVERBAR_NOTATION {
             alias.name = self.convert_old_overbar_notation(alias.name);
@@ -2105,7 +2101,7 @@ impl KiCadSchematicParser {
             alias.members.push(member);
         }
         self.need_right()?;
-        self.screen.bus_aliases.push(alias);
+        self.screen.add_bus_alias(alias);
         self.need_right()?;
         Ok(())
     }
@@ -3532,13 +3528,7 @@ impl KiCadSchematicParser {
                             }
                             let _ = self.need_unquoted_symbol_atom("path")?;
                             let path = self.need_symbol_atom("symbol instance path")?;
-                            let mut instance = SymbolLocalInstance {
-                                project: project.clone(),
-                                path,
-                                reference: None,
-                                unit: None,
-                                variants: BTreeMap::new(),
-                            };
+                            let mut instance = SymbolLocalInstance::new(project.clone(), path);
                             while !self.at_right() {
                                 self.need_left()?;
                                 let child = match &self.current().kind {
@@ -3607,15 +3597,13 @@ impl KiCadSchematicParser {
                                     }
                                     "variant" => {
                                         let _ = self.need_unquoted_symbol_atom("variant")?;
-                                        let mut variant = ItemVariant {
-                                            name: String::new(),
-                                            dnp: symbol.dnp,
-                                            excluded_from_sim: symbol.excluded_from_sim,
-                                            in_bom: symbol.in_bom,
-                                            on_board: symbol.on_board,
-                                            in_pos_files: symbol.in_pos_files,
-                                            fields: BTreeMap::new(),
-                                        };
+                                        let mut variant = ItemVariant::new(
+                                            symbol.dnp,
+                                            symbol.excluded_from_sim,
+                                            symbol.in_bom,
+                                            symbol.on_board,
+                                            symbol.in_pos_files,
+                                        );
 
                                         while !self.at_right() {
                                             self.need_left()?;
@@ -3769,7 +3757,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.instances.push(instance);
+                            symbol.add_instance(instance);
                         }
                         self.need_right()?;
                     }
@@ -3858,7 +3846,7 @@ impl KiCadSchematicParser {
                         }
                     }
                     self.need_right()?;
-                    symbol.pins.push(SymbolPin {
+                    symbol.add_pin(SymbolPin {
                         number,
                         alternate,
                         uuid: pin_uuid,
@@ -3967,7 +3955,7 @@ impl KiCadSchematicParser {
                     properties.push(property);
                 }
                 "pin" => {
-                    sheet.pins.push(self.parse_sch_sheet_pin()?);
+                    sheet.add_pin(self.parse_sch_sheet_pin()?);
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
@@ -4006,12 +3994,7 @@ impl KiCadSchematicParser {
                             }
                             let _ = self.need_unquoted_symbol_atom("path")?;
                             let path = self.need_symbol_atom("sheet instance path")?;
-                            let mut instance = SheetLocalInstance {
-                                project: project.clone(),
-                                path,
-                                page: None,
-                                variants: BTreeMap::new(),
-                            };
+                            let mut instance = SheetLocalInstance::new(project.clone(), path);
                             while !self.at_right() {
                                 self.need_left()?;
                                 let child = match &self.current().kind {
@@ -4047,15 +4030,13 @@ impl KiCadSchematicParser {
                                     }
                                     "variant" => {
                                         let _ = self.need_unquoted_symbol_atom("variant")?;
-                                        let mut variant = ItemVariant {
-                                            name: String::new(),
-                                            dnp: sheet.dnp,
-                                            excluded_from_sim: sheet.excluded_from_sim,
-                                            in_bom: sheet.in_bom,
-                                            on_board: sheet.on_board,
-                                            in_pos_files: false,
-                                            fields: BTreeMap::new(),
-                                        };
+                                        let mut variant = ItemVariant::new(
+                                            sheet.dnp,
+                                            sheet.excluded_from_sim,
+                                            sheet.in_bom,
+                                            sheet.on_board,
+                                            false,
+                                        );
 
                                         while !self.at_right() {
                                             self.need_left()?;
@@ -4209,7 +4190,7 @@ impl KiCadSchematicParser {
                         }
                         self.need_right()?;
                     }
-                    sheet.instances = instances;
+                    sheet.set_instances(instances);
                     self.need_right()?;
                 }
                 _ => {
@@ -4379,7 +4360,7 @@ impl KiCadSchematicParser {
             {
                 self.screen.root_sheet_page = instance.page;
             } else {
-                self.screen.sheet_instances.push(instance);
+                self.screen.add_sheet_instance(instance);
             }
         }
         self.need_right()?;
@@ -4477,7 +4458,7 @@ impl KiCadSchematicParser {
                 self.need_right()?;
             }
             self.need_right()?;
-            self.screen.symbol_instances.push(instance);
+            self.screen.add_symbol_instance(instance);
         }
         self.need_right()?;
         Ok(())
@@ -4485,12 +4466,7 @@ impl KiCadSchematicParser {
 
     fn parse_group(&mut self) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("group")?;
-        let mut group = Group {
-            name: None,
-            uuid: None,
-            lib_id: None,
-            members: Vec::new(),
-        };
+        let mut group = Group::new();
 
         while matches!(self.current().kind, TokKind::Atom(_)) {
             if self.at_unquoted_symbol_with("locked") {
