@@ -84,6 +84,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 let start = i;
                 i += 1;
                 let mut out = Vec::<u8>::new();
+                let mut closed = false;
                 while i < bytes.len() {
                     match bytes[i] {
                         b'\\' => {
@@ -103,6 +104,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                                 atom_class: Some(AtomClass::Quoted),
                                 span: Span { start, end: i },
                             });
+                            closed = true;
                             break;
                         }
                         other => {
@@ -111,7 +113,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                         }
                     }
                 }
-                if i > bytes.len() {
+                if !closed {
                     return Err(kiutils_sexpr::ParseError::UnexpectedEof);
                 }
             }

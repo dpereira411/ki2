@@ -147,6 +147,19 @@ fn rejects_true_false_boolean_tokens() {
 }
 
 #[test]
+fn rejects_unterminated_quoted_atoms_in_lexer() {
+    let unterminated = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema
+"#;
+    let path = temp_schematic("unterminated_quoted_atom", unterminated);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject unterminated quote");
+    assert!(matches!(err, Error::SExpr { .. }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_comment_number = r#"(kicad_sch
   (version 20260306)
