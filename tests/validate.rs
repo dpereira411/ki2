@@ -2747,7 +2747,7 @@ fn rejects_quoted_effects_keyword_tokens() {
         .expect_err("must reject quoted font keyword");
     assert!(
         err.to_string()
-            .contains("expecting face, size, thickness, color, line_spacing, bold, or italic")
+            .contains("expecting face, size, thickness, line_spacing, bold, or italic")
     );
 
     let quoted_font_color = r#"(kicad_sch
@@ -2761,7 +2761,7 @@ fn rejects_quoted_effects_keyword_tokens() {
         .expect_err("must reject quoted font color keyword");
     assert!(
         err.to_string()
-            .contains("expecting face, size, thickness, color, line_spacing, bold, or italic")
+            .contains("expecting face, size, thickness, line_spacing, bold, or italic")
     );
 
     let quoted_hide = r#"(kicad_sch
