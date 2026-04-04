@@ -3549,7 +3549,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "pin" => {
-                    pins.push(self.parse_sheet_pin()?);
+                    pins.push(self.parse_sch_sheet_pin()?);
                     self.need_right()?;
                 }
                 "instances" => {
@@ -3758,7 +3758,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_sheet_pin(&mut self) -> Result<SheetPin, Error> {
+    fn parse_sch_sheet_pin(&mut self) -> Result<SheetPin, Error> {
         let name = self
             .need_symbol_atom("sheet pin name")
             .map_err(|_| self.error_here("Invalid sheet pin name"))?;

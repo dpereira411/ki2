@@ -149,6 +149,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseSchSheetPin()`, keep `Invalid sheet pin name` and `Empty sheet pin name` as distinct header branches, like upstream, instead of collapsing them into a generic atom parse failure.
 - In `parseSchSheetPin()`, the leading shape token should also be a real unquoted symbol/keyword token. Quoted strings like `"input"` are not upstream shape tokens and must be rejected.
 - In `parseSchSheetPin()`, keep `uuid` on the shared `NeedSYMBOL()` path too. Do not accept nested non-symbol tokens there through the generic string parser.
+- Keep the sheet-pin routine boundary named after upstream too: `parseSchSheetPin()` should not stay on a repo-local helper name once it is the real owning branch.
 - In `parseSchematicSymbol()`, mandatory symbol field overwrite behavior should stay inline in the `property` branch and key off parsed field kind/ID, not a repo-local `upsert_symbol_property()` helper or key-string-only matching.
 - In `parseSchematicSymbol()`, do not add repo-local post-loop requirements that `lib_id` or `(at ...)` must be present. Upstream leaves the placed symbol at its default library ID / position / orientation when those tokens are absent.
 - In `parseSchematicSymbol()`, do not run a second local canonicalization pass over field names after `parseSchField()`-equivalent parsing. Mandatory symbol field naming should already be settled by the property parser.
