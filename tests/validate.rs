@@ -7260,6 +7260,36 @@ fn mandatory_properties_keep_default_kicad_field_ids() {
 }
 
 #[test]
+fn sheetfile_properties_normalize_to_forward_slashes() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (sheet
+    (at 10 20)
+    (size 30 40)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "dir\\child.kicad_sch")))"#;
+    let path = temp_schematic("sheetfile_forward_slashes", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    assert_eq!(sheet.filename(), Some("dir/child.kicad_sch"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn global_label_iref_preserves_existing_intersheet_property_text() {
     let src = r#"(kicad_sch
   (version 20260306)

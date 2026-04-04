@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
-use crate::model::{Property, PropertyKind, SchItem, Schematic, SheetReference, Symbol};
+use crate::model::{PropertyKind, SchItem, Schematic, SheetReference};
 use crate::parser::parse_schematic_file;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -321,12 +321,7 @@ impl SchematicLoader {
                 };
 
                 if let Some(reference) = instance.reference.as_ref() {
-                    upsert_symbol_property(
-                        symbol,
-                        "Reference",
-                        reference.clone(),
-                        PropertyKind::SymbolReference,
-                    );
+                    symbol.set_field_text(PropertyKind::SymbolReference, reference.clone());
                 }
 
                 if let Some(unit) = instance.unit {
@@ -335,23 +330,13 @@ impl SchematicLoader {
 
                 if let Some(value) = instance.value.as_ref() {
                     if !value.is_empty() {
-                        upsert_symbol_property(
-                            symbol,
-                            "Value",
-                            value.clone(),
-                            PropertyKind::SymbolValue,
-                        );
+                        symbol.set_field_text(PropertyKind::SymbolValue, value.clone());
                     }
                 }
 
                 if let Some(footprint) = instance.footprint.as_ref() {
                     if !footprint.is_empty() {
-                        upsert_symbol_property(
-                            symbol,
-                            "Footprint",
-                            footprint.clone(),
-                            PropertyKind::SymbolFootprint,
-                        );
+                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint.clone());
                     }
                 }
 
@@ -449,7 +434,7 @@ impl SchematicLoader {
                     continue;
                 };
 
-                upsert_symbol_property(symbol, "Value", pin_name, PropertyKind::SymbolValue);
+                symbol.set_field_text(PropertyKind::SymbolValue, pin_name);
             }
         }
     }
@@ -525,12 +510,7 @@ impl SchematicLoader {
                 continue;
             };
 
-            upsert_symbol_property(
-                symbol,
-                "Reference",
-                normalized,
-                PropertyKind::SymbolReference,
-            );
+            symbol.set_field_text(PropertyKind::SymbolReference, normalized);
         }
     }
 
@@ -631,30 +611,11 @@ impl SchematicLoader {
                     "[?]".to_string()
                 };
 
-                if let Some(property) = label
-                    .properties
-                    .iter_mut()
-                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-                {
-                    property.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
-                    property.key = "Intersheet References".to_string();
-                    property.value = value;
-                } else {
-                    label.properties.push(Property {
-                        id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
-                        key: "Intersheet References".to_string(),
-                        value,
-                        kind: PropertyKind::GlobalLabelIntersheetRefs,
-                        is_private: false,
-                        at: label.iref_at,
-                        angle: None,
-                        visible: false,
-                        show_name: true,
-                        can_autoplace: true,
-                        has_effects: false,
-                        effects: None,
-                    });
-                }
+                let iref_at = label.iref_at;
+                let intersheet_refs = label.ensure_global_intersheet_refs_property();
+                intersheet_refs.value = value;
+                intersheet_refs.at = iref_at;
+                intersheet_refs.visible = false;
             }
         }
     }
@@ -684,12 +645,7 @@ impl SchematicLoader {
                 };
 
                 if let Some(reference) = instance.reference {
-                    upsert_symbol_property(
-                        symbol,
-                        "Reference",
-                        reference,
-                        PropertyKind::SymbolReference,
-                    );
+                    symbol.set_field_text(PropertyKind::SymbolReference, reference);
                 }
 
                 if let Some(unit) = instance.unit {
@@ -697,16 +653,11 @@ impl SchematicLoader {
                 }
 
                 if let Some(value) = instance.value {
-                    upsert_symbol_property(symbol, "Value", value, PropertyKind::SymbolValue);
+                    symbol.set_field_text(PropertyKind::SymbolValue, value);
                 }
 
                 if let Some(footprint) = instance.footprint {
-                    upsert_symbol_property(
-                        symbol,
-                        "Footprint",
-                        footprint,
-                        PropertyKind::SymbolFootprint,
-                    );
+                    symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
                 }
             }
 
@@ -734,33 +685,6 @@ impl SchematicLoader {
                 }
             }
         }
-    }
-}
-
-fn upsert_symbol_property(symbol: &mut Symbol, key: &str, value: String, kind: PropertyKind) {
-    if let Some(existing) = symbol
-        .properties
-        .iter_mut()
-        .find(|property| property.kind == kind)
-    {
-        existing.id = kind.default_field_id().or(existing.id);
-        existing.key = key.to_string();
-        existing.value = value;
-    } else {
-        symbol.properties.push(Property {
-            id: kind.default_field_id(),
-            key: key.to_string(),
-            value,
-            kind,
-            is_private: false,
-            at: None,
-            angle: None,
-            visible: true,
-            show_name: true,
-            can_autoplace: true,
-            has_effects: false,
-            effects: None,
-        });
     }
 }
 

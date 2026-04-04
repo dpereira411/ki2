@@ -2190,24 +2190,6 @@ impl KiCadSchematicParser {
                 Ok(SchItem::Text(text))
             }
             SchTextTarget::Label(kind) => {
-                let properties = if matches!(kind, LabelKind::Global) {
-                    vec![Property {
-                        id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
-                        key: "Intersheet References".to_string(),
-                        value: "${INTERSHEET_REFS}".to_string(),
-                        kind: PropertyKind::GlobalLabelIntersheetRefs,
-                        is_private: false,
-                        at: Some([0.0, 0.0]),
-                        angle: None,
-                        visible: false,
-                        show_name: true,
-                        can_autoplace: true,
-                        has_effects: false,
-                        effects: None,
-                    }]
-                } else {
-                    Vec::new()
-                };
                 let mut label = Label {
                     kind,
                     text,
@@ -2223,8 +2205,14 @@ impl KiCadSchematicParser {
                     has_effects: false,
                     effects: None,
                     uuid: None,
-                    properties,
+                    properties: Vec::new(),
                 };
+
+                if matches!(label.kind, LabelKind::Global) {
+                    let intersheet_refs = label.ensure_global_intersheet_refs_property();
+                    intersheet_refs.at = Some([0.0, 0.0]);
+                    intersheet_refs.visible = false;
+                }
 
                 while !self.at_right() {
                     self.need_left()?;
@@ -2296,33 +2284,11 @@ impl KiCadSchematicParser {
                             if matches!(label.kind, LabelKind::Global) {
                                 label.iref_at = Some(self.parse_xy2("iref")?);
                                 self.need_right()?;
-                                if let Some(existing) = label
-                                    .properties
-                                    .iter_mut()
-                                    .find(|p| p.kind == PropertyKind::GlobalLabelIntersheetRefs)
-                                {
-                                    existing.id =
-                                        PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
-                                    existing.key = "Intersheet References".to_string();
-                                    existing.at = label.iref_at;
-                                    existing.visible = true;
-                                } else {
-                                    label.properties.push(Property {
-                                        id: PropertyKind::GlobalLabelIntersheetRefs
-                                            .default_field_id(),
-                                        key: "Intersheet References".to_string(),
-                                        value: String::new(),
-                                        kind: PropertyKind::GlobalLabelIntersheetRefs,
-                                        is_private: false,
-                                        at: label.iref_at,
-                                        angle: None,
-                                        visible: true,
-                                        show_name: true,
-                                        can_autoplace: true,
-                                        has_effects: false,
-                                        effects: None,
-                                    });
-                                }
+                                let iref_at = label.iref_at;
+                                let intersheet_refs =
+                                    label.ensure_global_intersheet_refs_property();
+                                intersheet_refs.at = iref_at;
+                                intersheet_refs.visible = true;
                             }
                         }
                         "uuid" => {
@@ -2335,22 +2301,7 @@ impl KiCadSchematicParser {
                             } else {
                                 self.parse_sch_field(FieldParent::OtherLabel)?
                             };
-                            if matches!(
-                                (label.kind, property.kind),
-                                (LabelKind::Global, PropertyKind::GlobalLabelIntersheetRefs)
-                            ) {
-                                if let Some(existing) = label
-                                    .properties
-                                    .iter_mut()
-                                    .find(|p| p.kind == property.kind)
-                                {
-                                    *existing = property;
-                                } else {
-                                    label.properties.push(property);
-                                }
-                            } else {
-                                label.properties.push(property);
-                            }
+                            label.upsert_property(property);
                             self.need_right()?;
                         }
                         _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
@@ -3188,31 +3139,7 @@ impl KiCadSchematicParser {
                         continue;
                     }
 
-                    if matches!(
-                        property.kind,
-                        PropertyKind::SymbolReference
-                            | PropertyKind::SymbolValue
-                            | PropertyKind::SymbolFootprint
-                            | PropertyKind::SymbolDatasheet
-                    ) {
-                        if let Some(existing) = symbol
-                            .properties
-                            .iter_mut()
-                            .find(|p| p.kind == property.kind)
-                        {
-                            *existing = property;
-                        } else {
-                            symbol.properties.push(property);
-                        }
-                    } else if let Some(existing) = symbol
-                        .properties
-                        .iter_mut()
-                        .find(|p| p.kind == property.kind && p.key == property.key)
-                    {
-                        *existing = property;
-                    } else {
-                        symbol.properties.push(property);
-                    }
+                    symbol.upsert_property(property);
                     self.need_right()?;
                 }
                 "instances" => {
@@ -3263,31 +3190,10 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        let property = Property {
-                                            id: PropertyKind::SymbolValue.default_field_id(),
-                                            key: "Value".to_string(),
-                                            value: parsed.clone(),
-                                            kind: PropertyKind::SymbolValue,
-                                            is_private: false,
-                                            at: None,
-                                            angle: None,
-                                            visible: true,
-                                            show_name: true,
-                                            can_autoplace: true,
-                                            has_effects: false,
-                                            effects: None,
-                                        };
-                                        if let Some(existing) = symbol
-                                            .properties
-                                            .iter_mut()
-                                            .find(|p| p.kind == PropertyKind::SymbolValue)
-                                        {
-                                            existing.id = property.id;
-                                            existing.key = property.key;
-                                            existing.value = property.value;
-                                        } else {
-                                            symbol.properties.push(property);
-                                        }
+                                        symbol.set_field_text(
+                                            PropertyKind::SymbolValue,
+                                            parsed.clone(),
+                                        );
                                         value = Some(parsed);
                                         self.need_right()?;
                                     }
@@ -3305,31 +3211,10 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        let property = Property {
-                                            id: PropertyKind::SymbolFootprint.default_field_id(),
-                                            key: "Footprint".to_string(),
-                                            value: parsed.clone(),
-                                            kind: PropertyKind::SymbolFootprint,
-                                            is_private: false,
-                                            at: None,
-                                            angle: None,
-                                            visible: true,
-                                            show_name: true,
-                                            can_autoplace: true,
-                                            has_effects: false,
-                                            effects: None,
-                                        };
-                                        if let Some(existing) = symbol
-                                            .properties
-                                            .iter_mut()
-                                            .find(|p| p.kind == PropertyKind::SymbolFootprint)
-                                        {
-                                            existing.id = property.id;
-                                            existing.key = property.key;
-                                            existing.value = property.value;
-                                        } else {
-                                            symbol.properties.push(property);
-                                        }
+                                        symbol.set_field_text(
+                                            PropertyKind::SymbolFootprint,
+                                            parsed.clone(),
+                                        );
                                         footprint = Some(parsed);
                                         self.need_right()?;
                                     }
@@ -3506,31 +3391,7 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                let property = Property {
-                                    id: PropertyKind::SymbolValue.default_field_id(),
-                                    key: "Value".to_string(),
-                                    value: parsed.clone(),
-                                    kind: PropertyKind::SymbolValue,
-                                    is_private: false,
-                                    at: None,
-                                    angle: None,
-                                    visible: true,
-                                    show_name: true,
-                                    can_autoplace: true,
-                                    has_effects: false,
-                                    effects: None,
-                                };
-                                if let Some(existing) = symbol
-                                    .properties
-                                    .iter_mut()
-                                    .find(|p| p.kind == PropertyKind::SymbolValue)
-                                {
-                                    existing.id = property.id;
-                                    existing.key = property.key;
-                                    existing.value = property.value;
-                                } else {
-                                    symbol.properties.push(property);
-                                }
+                                symbol.set_field_text(PropertyKind::SymbolValue, parsed);
                                 self.need_right()?;
                             }
                             "footprint" => {
@@ -3547,31 +3408,7 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                let property = Property {
-                                    id: PropertyKind::SymbolFootprint.default_field_id(),
-                                    key: "Footprint".to_string(),
-                                    value: parsed.clone(),
-                                    kind: PropertyKind::SymbolFootprint,
-                                    is_private: false,
-                                    at: None,
-                                    angle: None,
-                                    visible: true,
-                                    show_name: true,
-                                    can_autoplace: true,
-                                    has_effects: false,
-                                    effects: None,
-                                };
-                                if let Some(existing) = symbol
-                                    .properties
-                                    .iter_mut()
-                                    .find(|p| p.kind == PropertyKind::SymbolFootprint)
-                                {
-                                    existing.id = property.id;
-                                    existing.key = property.key;
-                                    existing.value = property.value;
-                                } else {
-                                    symbol.properties.push(property);
-                                }
+                                symbol.set_field_text(PropertyKind::SymbolFootprint, parsed);
                                 self.need_right()?;
                             }
                             _ => {
@@ -3708,22 +3545,7 @@ impl KiCadSchematicParser {
                             property.id = PropertyKind::SheetFile.default_field_id();
                         }
                     }
-                    if matches!(
-                        property.kind,
-                        PropertyKind::SheetName | PropertyKind::SheetFile
-                    ) {
-                        if let Some(existing) = sheet
-                            .properties
-                            .iter_mut()
-                            .find(|p| p.kind == property.kind)
-                        {
-                            *existing = property;
-                        } else {
-                            sheet.properties.push(property);
-                        }
-                    } else {
-                        sheet.properties.push(property);
-                    }
+                    sheet.upsert_property(property);
                     self.need_right()?;
                 }
                 "pin" => {

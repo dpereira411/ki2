@@ -234,6 +234,47 @@ pub struct Label {
     pub properties: Vec<Property>,
 }
 
+impl Label {
+    pub fn ensure_global_intersheet_refs_property(&mut self) -> &mut Property {
+        let index = if let Some(index) = self
+            .properties
+            .iter()
+            .position(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        {
+            index
+        } else {
+            self.properties.push(Property::new(
+                PropertyKind::GlobalLabelIntersheetRefs,
+                "${INTERSHEET_REFS}".to_string(),
+            ));
+            self.properties.len() - 1
+        };
+
+        let property = &mut self.properties[index];
+        property.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
+        property.key = PropertyKind::GlobalLabelIntersheetRefs
+            .canonical_key()
+            .to_string();
+        property
+    }
+
+    pub fn upsert_property(&mut self, property: Property) {
+        if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+            if let Some(existing) = self
+                .properties
+                .iter_mut()
+                .find(|existing| existing.kind == property.kind)
+            {
+                *existing = property;
+            } else {
+                self.properties.push(property);
+            }
+        } else {
+            self.properties.push(property);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LabelKind {
     Local,
@@ -436,6 +477,52 @@ pub struct Symbol {
     pub pins: Vec<SymbolPin>,
 }
 
+impl Symbol {
+    pub fn set_field_text(&mut self, kind: PropertyKind, value: String) {
+        let key = kind.canonical_key();
+
+        if let Some(existing) = self
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == kind)
+        {
+            existing.id = kind.default_field_id().or(existing.id);
+            existing.key = key.to_string();
+            existing.value = value;
+        } else {
+            self.properties.push(Property::new(kind, value));
+        }
+    }
+
+    pub fn upsert_property(&mut self, property: Property) {
+        if matches!(
+            property.kind,
+            PropertyKind::SymbolReference
+                | PropertyKind::SymbolValue
+                | PropertyKind::SymbolFootprint
+                | PropertyKind::SymbolDatasheet
+        ) {
+            if let Some(existing) = self
+                .properties
+                .iter_mut()
+                .find(|existing| existing.kind == property.kind)
+            {
+                *existing = property;
+            } else {
+                self.properties.push(property);
+            }
+        } else if let Some(existing) = self
+            .properties
+            .iter_mut()
+            .find(|existing| existing.kind == property.kind && existing.key == property.key)
+        {
+            *existing = property;
+        } else {
+            self.properties.push(property);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sheet {
     pub at: [f64; 2],
@@ -456,6 +543,29 @@ pub struct Sheet {
 }
 
 impl Sheet {
+    pub fn upsert_property(&mut self, mut property: Property) {
+        if property.kind == PropertyKind::SheetFile {
+            property.value = property.value.replace('\\', "/");
+        }
+
+        if matches!(
+            property.kind,
+            PropertyKind::SheetName | PropertyKind::SheetFile
+        ) {
+            if let Some(existing) = self
+                .properties
+                .iter_mut()
+                .find(|existing| existing.kind == property.kind)
+            {
+                *existing = property;
+            } else {
+                self.properties.push(property);
+            }
+        } else {
+            self.properties.push(property);
+        }
+    }
+
     pub fn name(&self) -> Option<&str> {
         self.properties
             .iter()
@@ -508,6 +618,25 @@ pub struct Property {
     pub effects: Option<TextEffects>,
 }
 
+impl Property {
+    pub fn new(kind: PropertyKind, value: String) -> Self {
+        Self {
+            id: kind.default_field_id(),
+            key: kind.canonical_key().to_string(),
+            value,
+            kind,
+            is_private: false,
+            at: None,
+            angle: None,
+            visible: true,
+            show_name: true,
+            can_autoplace: true,
+            has_effects: false,
+            effects: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyKind {
     User,
@@ -522,6 +651,20 @@ pub enum PropertyKind {
 }
 
 impl PropertyKind {
+    pub fn canonical_key(self) -> &'static str {
+        match self {
+            PropertyKind::User => "",
+            PropertyKind::SymbolReference => "Reference",
+            PropertyKind::SymbolValue => "Value",
+            PropertyKind::SymbolFootprint => "Footprint",
+            PropertyKind::SymbolDatasheet => "Datasheet",
+            PropertyKind::SheetName => "Sheetname",
+            PropertyKind::SheetFile => "Sheetfile",
+            PropertyKind::SheetUser => "",
+            PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References",
+        }
+    }
+
     pub fn default_field_id(self) -> Option<i32> {
         match self {
             PropertyKind::User => Some(0),

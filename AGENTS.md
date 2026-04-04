@@ -311,6 +311,10 @@ Strict mode is the default for parser-parity work in this repository.
 - Use that same loader-side sheet list to drive symbol reference/unit/value/footprint refresh from hierarchical local `instances` too. The first `UpdateAllScreenReferences()`-style state belongs in post-load hierarchy flow, not only in per-file parser state or legacy root `symbol_instances`.
 - The legacy loader-side `UpdateSymbolInstanceData()` pass should also materialize hierarchical symbol-instance state on the symbol itself, not only refresh live fields/unit. Upstream adds hierarchical reference data as well as updating `Reference` / `Value` / `Footprint`.
 - In the loader-side post-load flow, keep the pre-`20230221` legacy global-power fix too: if a placed symbol resolves to a global power lib symbol whose first lib pin is hidden `power_in`, its value field must be corrected to that pin name after load.
+- Keep owning-object field mutation on the model too. Symbol, sheet, and global-label field updates should go through object-owned mutation paths instead of repeated parser/loader-side vector surgery.
+- In `parseSchematicSymbol()` and loader-side symbol refresh, `Reference` / `Value` / `Footprint` updates should use the symbol’s owning field-mutation path so existing field metadata survives and canonical field identity stays local to the symbol object.
+- In `parseSheet()`, `Sheetname` / `Sheetfile` insertion should use the sheet’s owning field-mutation path too. That path should also normalize `Sheetfile` text to forward slashes like upstream `SCH_SHEET::SetFields()`.
+- In `parseSchText()` and loader-side intersheet-ref recompute, global-label `Intersheet References` mutation should use the label’s owning mandatory-field path rather than open-coding mandatory-field construction/replacement at each call site.
 
 ## Expected Workflow
 
