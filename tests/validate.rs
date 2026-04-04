@@ -2637,8 +2637,24 @@ fn canonicalizes_and_replaces_mandatory_properties() {
             _ => None,
         })
         .expect("sheet");
-    assert_eq!(sheet.name(), Some("New Name"));
-    assert_eq!(sheet.filename(), Some("new.kicad_sch"));
+    assert_eq!(sheet.name(), Some("Legacy Name"));
+    assert_eq!(sheet.filename(), Some("legacy.kicad_sch"));
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .filter(|property| property.kind == PropertyKind::SheetName)
+            .count(),
+        2
+    );
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .filter(|property| property.kind == PropertyKind::SheetFile)
+            .count(),
+        2
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -7316,6 +7332,55 @@ fn sheetfile_properties_normalize_to_forward_slashes() {
         .expect("sheet");
 
     assert_eq!(sheet.filename(), Some("dir/child.kicad_sch"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn sheet_preserves_duplicate_mandatory_properties_in_parse_order() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (sheet
+    (at 10 20)
+    (size 30 40)
+    (property "Sheetname" "First")
+    (property "Sheetfile" "first.kicad_sch")
+    (property "Sheetname" "Second")
+    (property "Sheetfile" "second.kicad_sch")))"#;
+    let path = temp_schematic("sheet_duplicate_mandatory_properties", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    assert_eq!(sheet.name(), Some("First"));
+    assert_eq!(sheet.filename(), Some("first.kicad_sch"));
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .filter(|property| property.kind == PropertyKind::SheetName)
+            .count(),
+        2
+    );
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .filter(|property| property.kind == PropertyKind::SheetFile)
+            .count(),
+        2
+    );
 
     let _ = fs::remove_file(path);
 }

@@ -3381,6 +3381,7 @@ impl KiCadSchematicParser {
             pins: Vec::new(),
             instances: Vec::new(),
         };
+        let mut properties = Vec::new();
 
         while !self.at_right() {
             self.need_left()?;
@@ -3437,17 +3438,20 @@ impl KiCadSchematicParser {
                         .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         <= VERSION_WRONG_SHEET_FIELD_IDS
                     {
-                        if sheet.properties.is_empty() {
+                        if properties.is_empty() {
                             property.key = "Sheetname".to_string();
                             property.kind = PropertyKind::SheetName;
                             property.id = PropertyKind::SheetName.default_field_id();
-                        } else if sheet.properties.len() == 1 {
+                        } else if properties.len() == 1 {
                             property.key = "Sheetfile".to_string();
                             property.kind = PropertyKind::SheetFile;
                             property.id = PropertyKind::SheetFile.default_field_id();
                         }
                     }
-                    sheet.upsert_property(property);
+                    if property.kind == PropertyKind::SheetFile {
+                        property.value = property.value.replace('\\', "/");
+                    }
+                    properties.push(property);
                     self.need_right()?;
                 }
                 "pin" => {
@@ -3622,6 +3626,8 @@ impl KiCadSchematicParser {
                 }
             }
         }
+
+        sheet.properties = properties;
 
         if sheet.name().is_none() {
             return Err(self.error_here("Missing sheet name property"));
