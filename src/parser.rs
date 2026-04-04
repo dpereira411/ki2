@@ -451,14 +451,8 @@ impl KiCadSchematicParser {
                         }
                     }
                 }
-                "lib_symbols" => {
-                    let _ = self.need_unquoted_symbol_atom("lib_symbols")?;
-                    self.parse_sch_lib_symbols()?
-                }
-                "bus_alias" => {
-                    let _ = self.need_unquoted_symbol_atom("bus_alias")?;
-                    self.parse_bus_alias()?
-                }
+                "lib_symbols" => self.parse_sch_lib_symbols()?,
+                "bus_alias" => self.parse_bus_alias()?,
                 "symbol" => {
                     let symbol = self.parse_schematic_symbol()?;
                     self.screen.items.push(SchItem::Symbol(symbol));
@@ -541,18 +535,9 @@ impl KiCadSchematicParser {
                     let shape = self.parse_sch_rule_area()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
-                "sheet_instances" => {
-                    let _ = self.need_unquoted_symbol_atom("sheet_instances")?;
-                    self.parse_sch_sheet_instances()?
-                }
-                "symbol_instances" => {
-                    let _ = self.need_unquoted_symbol_atom("symbol_instances")?;
-                    self.parse_sch_symbol_instances()?
-                }
-                "group" => {
-                    let _ = self.need_unquoted_symbol_atom("group")?;
-                    self.parse_group()?
-                }
+                "sheet_instances" => self.parse_sch_sheet_instances()?,
+                "symbol_instances" => self.parse_sch_symbol_instances()?,
+                "group" => self.parse_group()?,
                 _ => {
                     let _ = self.need_unquoted_symbol_atom(
                         "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
@@ -660,6 +645,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_lib_symbols(&mut self) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("lib_symbols")?;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("symbol")?;
@@ -2091,6 +2077,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("bus_alias")?;
         let mut alias = BusAlias {
             name: self.need_symbol_atom("bus alias name")?,
             members: Vec::new(),
@@ -4082,6 +4069,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_sheet_instances(&mut self) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("sheet_instances")?;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("path")?;
@@ -4148,6 +4136,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_symbol_instances(&mut self) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("symbol_instances")?;
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("path")?;
@@ -4226,6 +4215,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_group(&mut self) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("group")?;
         let mut group = Group {
             name: None,
             uuid: None,
