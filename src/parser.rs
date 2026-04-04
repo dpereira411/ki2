@@ -194,7 +194,18 @@ impl KiCadSchematicParser {
             return Err(self.expecting("kicad_sch"));
         }
 
-        self.parse_header()?;
+        if self.current_is_list_named("version") {
+            self.need_left()?;
+            if self.need_unquoted_symbol_atom("version")? != "version" {
+                return Err(self.expecting("version"));
+            }
+            self.reject_duplicate(self.version.is_some(), "version")?;
+            self.version = Some(self.parse_i32_atom("version")?);
+            self.need_right()?;
+        } else {
+            self.version = Some(SEXPR_SCHEMATIC_FILE_VERSION);
+        }
+
         self.parse_schematic_body()?;
         let version = self
             .version
@@ -236,22 +247,6 @@ impl KiCadSchematicParser {
             },
             screen: self.screen,
         })
-    }
-
-    fn parse_header(&mut self) -> Result<(), Error> {
-        if self.current_is_list_named("version") {
-            self.need_left()?;
-            if self.need_unquoted_symbol_atom("version")? != "version" {
-                return Err(self.expecting("version"));
-            }
-            self.reject_duplicate(self.version.is_some(), "version")?;
-            self.version = Some(self.parse_i32_atom("version")?);
-            self.need_right()?;
-        } else {
-            self.version = Some(SEXPR_SCHEMATIC_FILE_VERSION);
-        }
-
-        Ok(())
     }
 
     fn parse_schematic_body(&mut self) -> Result<(), Error> {
