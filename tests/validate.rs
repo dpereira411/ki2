@@ -2829,7 +2829,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_table_head_path))
         .expect_err("must reject quoted table head");
     assert!(err.to_string().contains(
-        "expecting column_count, column_widths, row_heights, cells, border, separators, or uuid"
+        "expecting columns, col_widths, row_heights, border, separators, uuid, header or cells"
     ));
 
     let quoted_table_cell_head = r#"(kicad_sch
@@ -3920,7 +3920,7 @@ fn rejects_unexpected_table_child_with_upstream_expect_list() {
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad table child");
     let msg = err.to_string();
     assert!(msg.contains(
-        "expecting column_count, column_widths, row_heights, cells, border, separators, or uuid"
+        "expecting columns, col_widths, row_heights, border, separators, uuid, header or cells"
     ));
     let _ = fs::remove_file(path);
 }
