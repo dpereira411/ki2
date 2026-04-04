@@ -2453,9 +2453,23 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_line(&mut self) -> Result<Line, Error> {
-        let kind = match self.need_unquoted_symbol_atom("wire or bus")?.as_str() {
-            "wire" => LineKind::Wire,
-            "bus" => LineKind::Bus,
+        let head = match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+            {
+                value.clone()
+            }
+            _ => return Err(self.expecting("wire or bus")),
+        };
+        let kind = match head.as_str() {
+            "wire" => {
+                let _ = self.need_unquoted_symbol_atom("wire")?;
+                LineKind::Wire
+            }
+            "bus" => {
+                let _ = self.need_unquoted_symbol_atom("bus")?;
+                LineKind::Bus
+            }
             _ => return Err(self.error_here("invalid schematic line kind")),
         };
         let mut line = Line {
@@ -3658,13 +3672,12 @@ impl KiCadSchematicParser {
                 }
                 "mirror" => {
                     let _ = self.need_unquoted_symbol_atom("mirror")?;
-                    symbol.mirror = Some(
-                        match self.need_unquoted_symbol_atom("mirror axis")?.as_str() {
-                            "x" => MirrorAxis::X,
-                            "y" => MirrorAxis::Y,
-                            _ => return Err(self.expecting("x or y")),
-                        },
-                    );
+                    let axis = self.need_unquoted_symbol_atom("mirror axis")?;
+                    symbol.mirror = Some(match axis.as_str() {
+                        "x" => MirrorAxis::X,
+                        "y" => MirrorAxis::Y,
+                        _ => return Err(self.expecting("x or y")),
+                    });
                     self.need_right()?;
                 }
                 "convert" | "body_style" => {
@@ -4521,7 +4534,8 @@ impl KiCadSchematicParser {
         if name.is_empty() {
             return Err(self.error_here("Empty sheet pin name"));
         }
-        let shape = match self.need_unquoted_symbol_atom("sheet pin shape")?.as_str() {
+        let shape_head = self.need_unquoted_symbol_atom("sheet pin shape")?;
+        let shape = match shape_head.as_str() {
             "input" => SheetPinShape::Input,
             "output" => SheetPinShape::Output,
             "bidirectional" => SheetPinShape::Bidirectional,
@@ -5441,9 +5455,23 @@ impl KiCadSchematicParser {
 
     fn parse_bool_atom(&mut self, field: &str) -> Result<bool, Error> {
         let _ = field;
-        match self.need_unquoted_symbol_atom("yes or no")?.as_str() {
-            "yes" => Ok(true),
-            "no" => Ok(false),
+        let head = match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+            {
+                value.clone()
+            }
+            _ => return Err(self.expecting("yes or no")),
+        };
+        match head.as_str() {
+            "yes" => {
+                let _ = self.need_unquoted_symbol_atom("yes")?;
+                Ok(true)
+            }
+            "no" => {
+                let _ = self.need_unquoted_symbol_atom("no")?;
+                Ok(false)
+            }
             _ => Err(self.expecting("yes or no")),
         }
     }
