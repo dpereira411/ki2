@@ -114,6 +114,41 @@ pub struct LibSymbol {
 }
 
 impl LibSymbol {
+    pub fn new(name: String) -> Self {
+        Self {
+            units: vec![LibSymbolUnit {
+                name: format!("{name}_1_1"),
+                unit_number: 1,
+                body_style: 1,
+                unit_name: None,
+                draw_item_kinds: Vec::new(),
+                draw_items: Vec::new(),
+            }],
+            name,
+            extends: None,
+            power: false,
+            local_power: false,
+            body_style_names: Vec::new(),
+            has_demorgan: false,
+            pin_name_offset: None,
+            show_pin_names: true,
+            show_pin_numbers: true,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            in_pos_files: true,
+            duplicate_pin_numbers_are_jumpers: false,
+            jumper_pin_groups: Vec::new(),
+            keywords: None,
+            description: None,
+            fp_filters: Vec::new(),
+            locked_units: false,
+            properties: Vec::new(),
+            embedded_fonts: None,
+            embedded_files: Vec::new(),
+        }
+    }
+
     pub fn ensure_unit_index(&mut self, name: String, unit_number: i32, body_style: i32) -> usize {
         if let Some(index) = self.units.iter().position(|existing| {
             existing.unit_number == unit_number
@@ -579,6 +614,29 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    pub fn new() -> Self {
+        Self {
+            lib_id: String::new(),
+            lib_name: None,
+            linked_lib_symbol_name: None,
+            at: [0.0, 0.0],
+            angle: 0.0,
+            mirror: None,
+            unit: None,
+            body_style: None,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            in_pos_files: true,
+            dnp: false,
+            fields_autoplaced: FieldAutoplacement::None,
+            uuid: None,
+            properties: Vec::new(),
+            instances: Vec::new(),
+            pins: Vec::new(),
+        }
+    }
+
     pub fn insert_property(&mut self, property: Property) {
         if matches!(
             property.kind,
@@ -642,6 +700,26 @@ pub struct Sheet {
 }
 
 impl Sheet {
+    pub fn new() -> Self {
+        Self {
+            at: [0.0, 0.0],
+            size: [0.0, 0.0],
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            dnp: false,
+            fields_autoplaced: FieldAutoplacement::None,
+            uuid: None,
+            properties: Vec::new(),
+            pins: Vec::new(),
+            instances: Vec::new(),
+        }
+    }
+
     pub fn set_properties(&mut self, mut properties: Vec<Property>) {
         for property in &mut properties {
             if property.kind == PropertyKind::SheetFile {

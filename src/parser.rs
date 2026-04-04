@@ -906,38 +906,7 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Invalid library identifier"));
         }
 
-        let mut symbol = LibSymbol {
-            name: name.clone(),
-            extends: None,
-            power: false,
-            local_power: false,
-            body_style_names: Vec::new(),
-            has_demorgan: false,
-            pin_name_offset: None,
-            show_pin_names: true,
-            show_pin_numbers: true,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            in_pos_files: true,
-            duplicate_pin_numbers_are_jumpers: false,
-            jumper_pin_groups: Vec::new(),
-            keywords: None,
-            description: None,
-            fp_filters: Vec::new(),
-            locked_units: false,
-            properties: Vec::new(),
-            units: vec![crate::model::LibSymbolUnit {
-                name: format!("{name}_1_1"),
-                unit_number: 1,
-                body_style: 1,
-                unit_name: None,
-                draw_item_kinds: Vec::new(),
-                draw_items: Vec::new(),
-            }],
-            embedded_fonts: None,
-            embedded_files: Vec::new(),
-        };
+        let mut symbol = LibSymbol::new(name.clone());
 
         while !self.at_right() {
             self.need_left()?;
@@ -3770,26 +3739,7 @@ impl KiCadSchematicParser {
 
     fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
         let _ = self.need_unquoted_symbol_atom("symbol")?;
-        let mut symbol = Symbol {
-            lib_id: String::new(),
-            lib_name: None,
-            linked_lib_symbol_name: None,
-            at: [0.0, 0.0],
-            angle: 0.0,
-            mirror: None,
-            unit: None,
-            body_style: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            in_pos_files: true,
-            dnp: false,
-            fields_autoplaced: FieldAutoplacement::None,
-            uuid: None,
-            properties: Vec::new(),
-            instances: Vec::new(),
-            pins: Vec::new(),
-        };
+        let mut symbol = Symbol::new();
 
         while !self.at_right() {
             self.need_left()?;
@@ -4296,23 +4246,7 @@ impl KiCadSchematicParser {
 
     fn parse_sch_sheet(&mut self) -> Result<Sheet, Error> {
         let _ = self.need_unquoted_symbol_atom("sheet")?;
-        let mut sheet = Sheet {
-            at: [0.0, 0.0],
-            size: [0.0, 0.0],
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            fields_autoplaced: FieldAutoplacement::None,
-            uuid: None,
-            properties: Vec::new(),
-            pins: Vec::new(),
-            instances: Vec::new(),
-        };
+        let mut sheet = Sheet::new();
         let mut properties = Vec::new();
         while !self.at_right() {
             self.need_left()?;
