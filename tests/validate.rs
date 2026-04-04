@@ -1120,65 +1120,60 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.extends.as_deref(), Some("Device:Base"));
     assert_eq!(lib_symbol.properties.len(), 1);
     assert!(!lib_symbol.properties[0].visible);
-    assert_eq!(lib_symbol.units.len(), 2);
+    assert_eq!(lib_symbol.units.len(), 1);
     assert_eq!(lib_symbol.units[0].unit_number, 1);
     assert_eq!(lib_symbol.units[0].body_style, 1);
-    assert_eq!(lib_symbol.units[0].unit_name, None);
-    assert_eq!(lib_symbol.units[0].draw_item_kinds, vec!["circle"]);
-    assert_eq!(lib_symbol.units[0].draw_items.len(), 1);
-    assert_eq!(lib_symbol.units[0].draw_items[0].kind, "circle");
-    assert_eq!(lib_symbol.units[1].unit_number, 1);
-    assert_eq!(lib_symbol.units[1].body_style, 1);
-    assert_eq!(lib_symbol.units[1].unit_name.as_deref(), Some("Amplifier"));
+    assert_eq!(lib_symbol.units[0].unit_name.as_deref(), Some("Amplifier"));
     assert_eq!(
-        lib_symbol.units[1].draw_item_kinds,
-        vec!["arc", "field", "text_box", "pin"]
+        lib_symbol.units[0].draw_item_kinds,
+        vec!["circle", "arc", "field", "text_box", "pin"]
     );
-    assert_eq!(lib_symbol.units[1].draw_items.len(), 4);
-    assert_eq!(lib_symbol.units[1].draw_items[0].points.len(), 3);
+    assert_eq!(lib_symbol.units[0].draw_items.len(), 5);
+    assert_eq!(lib_symbol.units[0].draw_items[0].kind, "circle");
+    assert_eq!(lib_symbol.units[0].draw_items[1].points.len(), 3);
     assert_eq!(
-        lib_symbol.units[1].draw_items[0]
+        lib_symbol.units[0].draw_items[1]
             .stroke
             .as_ref()
             .and_then(|stroke| stroke.width),
         Some(0.1)
     );
     assert_eq!(
-        lib_symbol.units[1].draw_items[1].text.as_deref(),
+        lib_symbol.units[0].draw_items[2].text.as_deref(),
         Some("AMP")
     );
-    assert_eq!(lib_symbol.units[1].draw_items[1].at, Some([3.0, 4.0]));
-    assert_eq!(lib_symbol.units[1].draw_items[1].angle, Some(9.0));
-    assert_eq!(lib_symbol.units[1].draw_items[1].kind, "field");
-    assert!(lib_symbol.units[1].draw_items[2].is_private);
+    assert_eq!(lib_symbol.units[0].draw_items[2].at, Some([3.0, 4.0]));
+    assert_eq!(lib_symbol.units[0].draw_items[2].angle, Some(9.0));
+    assert_eq!(lib_symbol.units[0].draw_items[2].kind, "field");
+    assert!(lib_symbol.units[0].draw_items[3].is_private);
     assert_eq!(
-        lib_symbol.units[1].draw_items[2].text.as_deref(),
+        lib_symbol.units[0].draw_items[3].text.as_deref(),
         Some("TB")
     );
     assert_eq!(
-        lib_symbol.units[1].draw_items[3].name.as_deref(),
+        lib_symbol.units[0].draw_items[4].name.as_deref(),
         Some("IN")
     );
     assert_eq!(
-        lib_symbol.units[1].draw_items[3].number.as_deref(),
+        lib_symbol.units[0].draw_items[4].number.as_deref(),
         Some("1")
     );
-    assert_eq!(lib_symbol.units[1].draw_items[3].length, Some(2.5));
+    assert_eq!(lib_symbol.units[0].draw_items[4].length, Some(2.5));
     assert_eq!(
-        lib_symbol.units[1].draw_items[3]
+        lib_symbol.units[0].draw_items[4]
             .name_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
         Some([0.8, 0.9])
     );
     assert_eq!(
-        lib_symbol.units[1].draw_items[3]
+        lib_symbol.units[0].draw_items[4]
             .number_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
         Some([1.1, 1.2])
     );
-    assert_eq!(lib_symbol.units[1].draw_items[3].alternates.len(), 1);
+    assert_eq!(lib_symbol.units[0].draw_items[4].alternates.len(), 1);
     assert_eq!(lib_symbol.embedded_fonts, Some(true));
     assert_eq!(lib_symbol.embedded_files.len(), 1);
     assert!(
@@ -2693,6 +2688,32 @@ fn symbol_preserves_duplicate_user_properties_in_parse_order() {
             .collect::<Vec<_>>(),
         vec!["First", "Second"]
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_2_1"
+        (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
+)"#;
+    let path = temp_schematic("lib_symbol_default_root_unit", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    assert_eq!(lib_symbol.units.len(), 2);
+    assert_eq!(lib_symbol.units[0].name, "Device:R_1_1");
+    assert_eq!(lib_symbol.units[0].unit_number, 1);
+    assert_eq!(lib_symbol.units[0].body_style, 1);
+    assert!(lib_symbol.units[0].draw_items.is_empty());
+    assert_eq!(lib_symbol.units[1].name, "Device:R_2_1");
 
     let _ = fs::remove_file(path);
 }

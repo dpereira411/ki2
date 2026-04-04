@@ -725,7 +725,14 @@ impl KiCadSchematicParser {
             fp_filters: Vec::new(),
             locked_units: false,
             properties: Vec::new(),
-            units: Vec::new(),
+            units: vec![crate::model::LibSymbolUnit {
+                name: format!("{name}_1_1"),
+                unit_number: 1,
+                body_style: 1,
+                unit_name: None,
+                draw_item_kinds: Vec::new(),
+                draw_items: Vec::new(),
+            }],
             embedded_fonts: None,
             embedded_files: Vec::new(),
         };
@@ -836,7 +843,6 @@ impl KiCadSchematicParser {
                         );
                     }
 
-                    let mut unit_name = None;
                     let mut unit = crate::model::LibSymbolUnit {
                         name: unit_full_name,
                         unit_number,
@@ -857,7 +863,7 @@ impl KiCadSchematicParser {
                                     self.current().atom_class,
                                     Some(AtomClass::Symbol | AtomClass::Quoted)
                                 ) {
-                                    unit_name = Some(self.need_symbol_atom("unit_name")?);
+                                    unit.unit_name = Some(self.need_symbol_atom("unit_name")?);
                                 }
                                 self.need_right()?;
                             }
@@ -876,15 +882,25 @@ impl KiCadSchematicParser {
                         }
                     }
 
-                    unit.unit_name = unit_name;
-                    symbol.units.push(unit);
+                    if let Some(existing) = symbol.units.iter_mut().find(|existing| {
+                        existing.unit_number == unit.unit_number
+                            && existing.body_style == unit.body_style
+                            && existing.name == unit.name
+                    }) {
+                        existing.unit_name = unit.unit_name;
+                        for item in unit.draw_items {
+                            existing.push_draw_item(item);
+                        }
+                    } else {
+                        symbol.units.push(unit);
+                    }
                     self.need_right()?;
                 }
                 kind @ ("arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
                 | "text" | "text_box") => {
                     let item = self.parse_symbol_draw_item(kind, 1, 1)?;
                     self.need_right()?;
-                    symbol.push_root_draw_item(item);
+                    symbol.units[0].push_draw_item(item);
                 }
                 "embedded_fonts" => {
                     symbol.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);

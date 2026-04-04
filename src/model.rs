@@ -168,29 +168,6 @@ impl LibSymbol {
             _ => self.properties.push(property),
         }
     }
-
-    pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
-        let unit_name = format!("{}_{}_{}", self.name, 1, 1);
-
-        if let Some(unit) = self
-            .units
-            .iter_mut()
-            .find(|unit| unit.unit_number == 1 && unit.body_style == 1 && unit.name == unit_name)
-        {
-            unit.push_draw_item(item);
-        } else {
-            let mut unit = LibSymbolUnit {
-                name: unit_name,
-                unit_number: 1,
-                body_style: 1,
-                unit_name: None,
-                draw_item_kinds: Vec::new(),
-                draw_items: Vec::new(),
-            };
-            unit.push_draw_item(item);
-            self.units.push(unit);
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
