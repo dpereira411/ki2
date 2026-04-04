@@ -304,7 +304,53 @@ impl KiCadSchematicParser {
                 "embedded_fonts" => {
                     self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                 }
-                "embedded_files" => self.parse_embedded_files()?,
+                "embedded_files" => {
+                    self.require_version(VERSION_EMBEDDED_FILES, "embedded_files")?;
+                    let block_depth = self.current_nesting_depth();
+                    match (|| -> Result<Vec<EmbeddedFile>, Error> {
+                        let mut files = Vec::new();
+
+                        while !self.at_right() {
+                            self.need_left()?;
+                            let head = self.need_unquoted_symbol_atom("file")?;
+                            if head != "file" {
+                                return Err(self.expecting("file"));
+                            }
+                            let mut name = None;
+                            let mut data = None;
+
+                            if self.at_atom() {
+                                name = Some(self.need_atom()?);
+                            }
+                            if self.at_atom() {
+                                data = Some(self.need_atom()?);
+                            }
+
+                            while !self.at_right() {
+                                self.need_left()?;
+                                let head = self.need_unquoted_symbol_atom("name or data")?;
+                                match head.as_str() {
+                                    "name" => name = Some(self.parse_string_atom("name")?),
+                                    "data" => data = Some(self.parse_string_atom("data")?),
+                                    _ => return Err(self.expecting("name or data")),
+                                }
+                                self.need_right()?;
+                            }
+
+                            let file = EmbeddedFile { name, data };
+                            self.need_right()?;
+                            files.push(file);
+                        }
+
+                        Ok(files)
+                    })() {
+                        Ok(files) => self.screen.embedded_files.extend(files),
+                        Err(err) => {
+                            self.screen.parse_warnings.push(err.to_string());
+                            self.skip_to_block_right(block_depth);
+                        }
+                    }
+                }
                 "lib_symbols" => self.parse_lib_symbols()?,
                 "bus_alias" => self.parse_bus_alias()?,
                 "symbol" => parsed_item = Some(SchItem::Symbol(self.parse_symbol()?)),
@@ -403,55 +449,6 @@ impl KiCadSchematicParser {
             self.need_right()?;
         }
         self.screen.title_block = Some(title_block);
-        Ok(())
-    }
-
-    fn parse_embedded_files(&mut self) -> Result<(), Error> {
-        self.require_version(VERSION_EMBEDDED_FILES, "embedded_files")?;
-        let block_depth = self.current_nesting_depth();
-        match (|| -> Result<Vec<EmbeddedFile>, Error> {
-            let mut files = Vec::new();
-
-            while !self.at_right() {
-                self.need_left()?;
-                let head = self.need_unquoted_symbol_atom("file")?;
-                if head != "file" {
-                    return Err(self.expecting("file"));
-                }
-                let mut name = None;
-                let mut data = None;
-
-                if self.at_atom() {
-                    name = Some(self.need_atom()?);
-                }
-                if self.at_atom() {
-                    data = Some(self.need_atom()?);
-                }
-
-                while !self.at_right() {
-                    self.need_left()?;
-                    let head = self.need_unquoted_symbol_atom("name or data")?;
-                    match head.as_str() {
-                        "name" => name = Some(self.parse_string_atom("name")?),
-                        "data" => data = Some(self.parse_string_atom("data")?),
-                        _ => return Err(self.expecting("name or data")),
-                    }
-                    self.need_right()?;
-                }
-
-                let file = EmbeddedFile { name, data };
-                self.need_right()?;
-                files.push(file);
-            }
-
-            Ok(files)
-        })() {
-            Ok(files) => self.screen.embedded_files.extend(files),
-            Err(err) => {
-                self.screen.parse_warnings.push(err.to_string());
-                self.skip_to_block_right(block_depth);
-            }
-        }
         Ok(())
     }
 
