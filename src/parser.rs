@@ -382,7 +382,7 @@ impl KiCadSchematicParser {
                     parsed_item = Some(self.parse_sch_text(effective_head)?)
                 }
                 "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_sch_text_box()?)),
-                "table" => parsed_item = Some(SchItem::Table(self.parse_table()?)),
+                "table" => parsed_item = Some(SchItem::Table(self.parse_sch_table()?)),
                 "image" => parsed_item = Some(SchItem::Image(self.parse_image()?)),
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_arc_shape()?)),
                 "circle" => parsed_item = Some(SchItem::Shape(self.parse_circle_shape()?)),
@@ -2365,7 +2365,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_table(&mut self) -> Result<Table, Error> {
+    fn parse_sch_table(&mut self) -> Result<Table, Error> {
         self.require_version(VERSION_TABLES, "table")?;
         let mut column_count = None;
         let mut column_widths = Vec::new();

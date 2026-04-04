@@ -167,6 +167,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseSchematicSymbol()`, keep KiCad's literal default `Expecting(...)` text: `lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances`, even though the local routine also handles `convert`, `body_style`, `unit`, `in_pos_files`, and `fields_autoplaced`.
 - In `parseSchTable()`, keep KiCad's literal fallback `Expecting(...)` text even where it uses historical token names like `columns` and `col_widths`. Do not silently "improve" those strings to local token spellings if the goal is structural/error parity.
 - In `parseSchTable()`, keep the no-cells failure text capitalized exactly like upstream: `Invalid table: no cells defined`.
+- Keep the table routine boundary named after upstream too: once it owns the schematic table grammar, it should not stay on a vague local `parse_table()` name.
 - In that inline placed-symbol `pin` branch, keep the pin `number` on the shared `NeedSYMBOL()` path, like upstream, instead of accepting it through the generic string parser.
 - In that same inline placed-symbol `pin` branch, keep `alternate` on the shared `NeedSYMBOL()` path too. Do not accept nested non-symbol tokens there through the generic string parser.
 - In that same inline placed-symbol `pin` branch, keep `uuid` on the shared `NeedSYMBOL()` path too before applying the `20210126` version gate.
