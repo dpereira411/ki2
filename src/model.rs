@@ -133,16 +133,6 @@ impl LibSymbol {
 
         self.units.len() - 1
     }
-
-    pub fn ensure_unit(
-        &mut self,
-        name: String,
-        unit_number: i32,
-        body_style: i32,
-    ) -> &mut LibSymbolUnit {
-        let index = self.ensure_unit_index(name, unit_number, body_style);
-        &mut self.units[index]
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -153,13 +143,6 @@ pub struct LibSymbolUnit {
     pub unit_name: Option<String>,
     pub draw_item_kinds: Vec<String>,
     pub draw_items: Vec<LibDrawItem>,
-}
-
-impl LibSymbolUnit {
-    pub fn push_draw_item(&mut self, item: LibDrawItem) {
-        self.draw_item_kinds.push(item.kind.clone());
-        self.draw_items.push(item);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

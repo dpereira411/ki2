@@ -905,7 +905,8 @@ impl KiCadSchematicParser {
                                 let item =
                                     self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
                                 self.need_right()?;
-                                symbol.units[unit_index].push_draw_item(item);
+                                symbol.units[unit_index].draw_item_kinds.push(item.kind.clone());
+                                symbol.units[unit_index].draw_items.push(item);
                             }
                             _ => {
                                 return Err(self.expecting(
@@ -920,7 +921,8 @@ impl KiCadSchematicParser {
                 | "text" | "text_box") => {
                     let item = self.parse_symbol_draw_item(kind, 1, 1)?;
                     self.need_right()?;
-                    symbol.units[0].push_draw_item(item);
+                    symbol.units[0].draw_item_kinds.push(item.kind.clone());
+                    symbol.units[0].draw_items.push(item);
                 }
                 "embedded_fonts" => {
                     symbol.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
