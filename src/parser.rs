@@ -1737,8 +1737,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self
-                .need_unquoted_symbol_atom("pts, start, mid, end, center, uuid, stroke, or fill")?;
+            let head = self.need_unquoted_symbol_atom("at, uuid or stroke")?;
             match head.as_str() {
                 "pts" => {
                     self.need_left()?;

@@ -73,6 +73,17 @@ fn rejects_quoted_core_grammar_keyword_heads() {
         .expect_err("must reject quoted wire xy keyword");
     assert!(err.to_string().contains("expecting xy"));
 
+    let quoted_wire_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root")
+  (wire ("pts" (xy 0 0) (xy 1 1)))
+)"#;
+    let quoted_wire_head_path = temp_schematic("quoted_wire_head", quoted_wire_head);
+    let err = parse_schematic_file(Path::new(&quoted_wire_head_path))
+        .expect_err("must reject quoted wire head keyword");
+    assert!(err.to_string().contains("expecting at, uuid or stroke"));
+
     let quoted_bezier_xy = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -88,6 +99,7 @@ fn rejects_quoted_core_grammar_keyword_heads() {
     let _ = fs::remove_file(quoted_version_path);
     let _ = fs::remove_file(quoted_bus_alias_members_path);
     let _ = fs::remove_file(quoted_wire_xy_path);
+    let _ = fs::remove_file(quoted_wire_head_path);
     let _ = fs::remove_file(quoted_bezier_xy_path);
 }
 
