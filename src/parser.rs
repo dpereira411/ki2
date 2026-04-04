@@ -351,7 +351,7 @@ impl KiCadSchematicParser {
                         }
                     }
                 }
-                "lib_symbols" => self.parse_lib_symbols()?,
+                "lib_symbols" => self.parse_sch_lib_symbols()?,
                 "bus_alias" => self.parse_bus_alias()?,
                 "symbol" => parsed_item = Some(SchItem::Symbol(self.parse_symbol()?)),
                 "sheet" => parsed_item = Some(SchItem::Sheet(self.parse_sheet()?)),
@@ -497,7 +497,7 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_lib_symbols(&mut self) -> Result<(), Error> {
+    fn parse_sch_lib_symbols(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("symbol")?;
