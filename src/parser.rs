@@ -2314,63 +2314,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        if matches!(
-            property.kind,
-            PropertyKind::SymbolReference
-                | PropertyKind::SymbolValue
-                | PropertyKind::SymbolFootprint
-                | PropertyKind::SymbolDatasheet
-        ) {
-            if let Some(existing) = symbol
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                symbol.properties.push(property);
-            }
-        } else if name == "ki_keywords" {
-            symbol.keywords = Some(property.value);
-        } else if name == "ki_description" {
-            symbol.description = Some(property.value);
-        } else if name == "ki_fp_filters" {
-            symbol.fp_filters = property
-                .value
-                .split_whitespace()
-                .map(str::to_string)
-                .collect();
-        } else if name == "ki_locked" {
-            symbol.locked_units = true;
-        } else {
-            let mut property = property;
-            let mut existing = symbol
-                .properties
-                .iter()
-                .any(|existing| existing.key == property.key);
-
-            if existing {
-                let base = property.key.clone();
-
-                for suffix in 1..10 {
-                    let candidate = format!("{base}_{suffix}");
-
-                    if !symbol
-                        .properties
-                        .iter()
-                        .any(|existing| existing.key == candidate)
-                    {
-                        property.key = candidate;
-                        existing = false;
-                        break;
-                    }
-                }
-            }
-
-            if !existing {
-                symbol.properties.push(property);
-            }
-        }
+        symbol.insert_property(&name, property);
 
         self.need_right()?;
         Ok(())
@@ -3986,33 +3930,7 @@ impl KiCadSchematicParser {
                         continue;
                     }
 
-                    if matches!(
-                        property.kind,
-                        PropertyKind::SymbolReference
-                            | PropertyKind::SymbolValue
-                            | PropertyKind::SymbolFootprint
-                            | PropertyKind::SymbolDatasheet
-                    ) {
-                        if let Some(existing) = symbol
-                            .properties
-                            .iter_mut()
-                            .find(|existing| existing.kind == property.kind)
-                        {
-                            *existing = property;
-                        } else {
-                            symbol.properties.push(property);
-                        }
-                    } else {
-                        if let Some(existing) = symbol
-                            .properties
-                            .iter_mut()
-                            .find(|existing| existing.key == property.key)
-                        {
-                            *existing = property;
-                        } else {
-                            symbol.properties.push(property);
-                        }
-                    }
+                    symbol.insert_property(property);
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
