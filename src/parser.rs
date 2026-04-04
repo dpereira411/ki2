@@ -265,9 +265,16 @@ impl KiCadSchematicParser {
     fn parse_schematic_body(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
-            )?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value) if matches!(self.current().atom_class, Some(AtomClass::Symbol)) => {
+                    value.clone()
+                }
+                _ => {
+                    return Err(self.expecting(
+                        "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
+                    ))
+                }
+            };
             let mut effective_head = head.as_str();
 
             if effective_head == "page"
@@ -281,14 +288,19 @@ impl KiCadSchematicParser {
             let mut section_consumed_right = false;
 
             match effective_head {
-                "generator" => self.generator = Some(self.need_symbol_atom("generator")?),
+                "generator" => {
+                    let _ = self.need_unquoted_symbol_atom("generator")?;
+                    self.generator = Some(self.need_symbol_atom("generator")?)
+                }
                 "host" => {
+                    let _ = self.need_unquoted_symbol_atom("host")?;
                     self.generator = Some(self.need_symbol_atom("host")?);
                     if self.require_known_version()? < 20200827 {
                         let _ = self.need_symbol_atom("host version")?;
                     }
                 }
                 "generator_version" => {
+                    let _ = self.need_unquoted_symbol_atom("generator_version")?;
                     let version = self.require_known_version()?;
                     if version < VERSION_GENERATOR_VERSION {
                         return Err(self.error_here(format!(
@@ -305,15 +317,18 @@ impl KiCadSchematicParser {
                     });
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     let uuid = self.need_symbol_atom("uuid")?;
                     self.screen.uuid = Some(uuid.clone());
                     self.root_uuid = Some(uuid);
                 }
                 "paper" => {
+                    let _ = self.need_unquoted_symbol_atom("paper")?;
                     self.screen.paper = Some(self.parse_page_info()?);
                     section_consumed_right = true;
                 }
                 "page" => {
+                    let _ = self.need_unquoted_symbol_atom("page")?;
                     let page = self
                         .need_symbol_or_number_atom("page number")
                         .map_err(|_| self.error_here("missing page number"))?;
@@ -324,11 +339,16 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                     section_consumed_right = true;
                 }
-                "title_block" => self.parse_title_block()?,
+                "title_block" => {
+                    let _ = self.need_unquoted_symbol_atom("title_block")?;
+                    self.parse_title_block()?
+                }
                 "embedded_fonts" => {
+                    let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
                     self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                 }
                 "embedded_files" => {
+                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let version = self.require_known_version()?;
                     if version < VERSION_EMBEDDED_FILES {
                         return Err(self.error_here(format!(
@@ -431,25 +451,36 @@ impl KiCadSchematicParser {
                         }
                     }
                 }
-                "lib_symbols" => self.parse_sch_lib_symbols()?,
-                "bus_alias" => self.parse_bus_alias()?,
+                "lib_symbols" => {
+                    let _ = self.need_unquoted_symbol_atom("lib_symbols")?;
+                    self.parse_sch_lib_symbols()?
+                }
+                "bus_alias" => {
+                    let _ = self.need_unquoted_symbol_atom("bus_alias")?;
+                    self.parse_bus_alias()?
+                }
                 "symbol" => {
+                    let _ = self.need_unquoted_symbol_atom("symbol")?;
                     let symbol = self.parse_schematic_symbol()?;
                     self.screen.items.push(SchItem::Symbol(symbol));
                 }
                 "sheet" => {
+                    let _ = self.need_unquoted_symbol_atom("sheet")?;
                     let sheet = self.parse_sch_sheet()?;
                     self.screen.items.push(SchItem::Sheet(sheet));
                 }
                 "junction" => {
+                    let _ = self.need_unquoted_symbol_atom("junction")?;
                     let junction = self.parse_junction()?;
                     self.screen.items.push(SchItem::Junction(junction));
                 }
                 "no_connect" => {
+                    let _ = self.need_unquoted_symbol_atom("no_connect")?;
                     let no_connect = self.parse_no_connect()?;
                     self.screen.items.push(SchItem::NoConnect(no_connect));
                 }
                 "bus_entry" => {
+                    let _ = self.need_unquoted_symbol_atom("bus_entry")?;
                     let bus_entry = self.parse_bus_entry()?;
                     self.screen.items.push(SchItem::BusEntry(bus_entry));
                 }
@@ -462,6 +493,7 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::Bus(bus));
                 }
                 "polyline" => {
+                    let _ = self.need_unquoted_symbol_atom("polyline")?;
                     let shape = self.parse_sch_polyline()?;
                     if shape.points.len() < 2 {
                         return Err(self.error_here("Schematic polyline has too few points"));
@@ -484,41 +516,61 @@ impl KiCadSchematicParser {
                     self.screen.items.push(item)
                 }
                 "text_box" => {
+                    let _ = self.need_unquoted_symbol_atom("text_box")?;
                     let text_box = self.parse_sch_text_box()?;
                     self.screen.items.push(SchItem::TextBox(text_box));
                 }
                 "table" => {
+                    let _ = self.need_unquoted_symbol_atom("table")?;
                     let table = self.parse_sch_table()?;
                     self.screen.items.push(SchItem::Table(table));
                 }
                 "image" => {
+                    let _ = self.need_unquoted_symbol_atom("image")?;
                     let image = self.parse_sch_image()?;
                     self.screen.items.push(SchItem::Image(image));
                 }
                 "arc" => {
+                    let _ = self.need_unquoted_symbol_atom("arc")?;
                     let shape = self.parse_sch_arc()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "circle" => {
+                    let _ = self.need_unquoted_symbol_atom("circle")?;
                     let shape = self.parse_sch_circle()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "rectangle" => {
+                    let _ = self.need_unquoted_symbol_atom("rectangle")?;
                     let shape = self.parse_sch_rectangle()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "bezier" => {
+                    let _ = self.need_unquoted_symbol_atom("bezier")?;
                     let shape = self.parse_sch_bezier()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
                 "rule_area" => {
+                    let _ = self.need_unquoted_symbol_atom("rule_area")?;
                     let shape = self.parse_sch_rule_area()?;
                     self.screen.items.push(SchItem::Shape(shape));
                 }
-                "sheet_instances" => self.parse_sch_sheet_instances()?,
-                "symbol_instances" => self.parse_sch_symbol_instances()?,
-                "group" => self.parse_group()?,
+                "sheet_instances" => {
+                    let _ = self.need_unquoted_symbol_atom("sheet_instances")?;
+                    self.parse_sch_sheet_instances()?
+                }
+                "symbol_instances" => {
+                    let _ = self.need_unquoted_symbol_atom("symbol_instances")?;
+                    self.parse_sch_symbol_instances()?
+                }
+                "group" => {
+                    let _ = self.need_unquoted_symbol_atom("group")?;
+                    self.parse_group()?
+                }
                 _ => {
+                    let _ = self.need_unquoted_symbol_atom(
+                        "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
+                    )?;
                     return Err(self.validation(
                         Some(self.current_span()),
                         format!("unsupported schematic section `{head}`"),
@@ -2201,13 +2253,9 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_line(&mut self) -> Result<Line, Error> {
-        let kind = match &self
-            .tokens
-            .get(self.idx.saturating_sub(1))
-            .map(|token| &token.kind)
-        {
-            Some(TokKind::Atom(value)) if value == "wire" => LineKind::Wire,
-            Some(TokKind::Atom(value)) if value == "bus" => LineKind::Bus,
+        let kind = match self.need_unquoted_symbol_atom("wire or bus")?.as_str() {
+            "wire" => LineKind::Wire,
+            "bus" => LineKind::Bus,
             _ => return Err(self.error_here("invalid schematic line kind")),
         };
         let mut line = Line {
@@ -2263,22 +2311,19 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_text(&mut self) -> Result<SchItem, Error> {
-        let kind = match &self
-            .tokens
-            .get(self.idx.saturating_sub(1))
-            .map(|token| &token.kind)
+        let target = match self
+            .need_unquoted_symbol_atom(
+                "text, label, global_label, hierarchical_label, directive_label, class_label, or netclass_flag",
+            )?
+            .as_str()
         {
-            Some(TokKind::Atom(value)) => value.as_str(),
-            _ => return Err(self.error_here("invalid schematic text kind")),
-        };
-        let target = match kind {
             "text" => SchTextTarget::Text,
             "label" => SchTextTarget::Label(LabelKind::Local),
             "global_label" => SchTextTarget::Label(LabelKind::Global),
             "hierarchical_label" => SchTextTarget::Label(LabelKind::Hierarchical),
             "directive_label" => SchTextTarget::Label(LabelKind::Directive),
             "class_label" | "netclass_flag" => SchTextTarget::Label(LabelKind::NetclassFlag),
-            _ => return Err(self.error_here(format!("invalid schematic text kind `{kind}`"))),
+            _ => return Err(self.error_here("invalid schematic text kind")),
         };
 
         let text = self
