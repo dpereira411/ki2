@@ -2750,10 +2750,23 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_text_box_head_path = temp_schematic("quoted_text_box_head", quoted_text_box_head);
     let err = parse_schematic_file(Path::new(&quoted_text_box_head_path))
         .expect_err("must reject quoted schematic text_box head");
-    assert!(
-        err.to_string()
-            .contains("expecting at, size, stroke, fill, effects or uuid")
-    );
+    assert!(err.to_string().contains(
+        "expecting exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid"
+    ));
+
+    let quoted_text_box_margins_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-text-box-margins-head")
+  (text_box "body" ("margins" 1 2 3 4) (size 3 4))
+)"#;
+    let quoted_text_box_margins_head_path =
+        temp_schematic("quoted_text_box_margins_head", quoted_text_box_margins_head);
+    let err = parse_schematic_file(Path::new(&quoted_text_box_margins_head_path))
+        .expect_err("must reject quoted schematic text_box margins head");
+    assert!(err.to_string().contains(
+        "expecting exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid"
+    ));
 
     let quoted_table_head = r#"(kicad_sch
   (version 20260306)
@@ -2799,6 +2812,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     );
 
     let _ = fs::remove_file(quoted_text_box_head_path);
+    let _ = fs::remove_file(quoted_text_box_margins_head_path);
     let _ = fs::remove_file(quoted_table_head_path);
     let _ = fs::remove_file(quoted_table_cell_head_path);
     let _ = fs::remove_file(quoted_image_head_path);
