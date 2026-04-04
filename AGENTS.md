@@ -46,6 +46,7 @@ Strict mode is the default for parser-parity work in this repository.
 - In `parseBusAlias()`, invalid member tokens should fail as `Expecting( "quoted string" )`, not through the generic missing-atom path.
 - In `parseBusAlias()`, keep the nested `members` child head on the same local token-owned path too: peek `members`, then consume that exact token inside the branch instead of flattening it through a one-shot equality check.
 - `group` declarations are parsed first and resolved after the rest of the file. Do not eagerly fold them into generic item parsing.
+- Keep the `group` routine split close to upstream too: member UUID collection should live in a dedicated `parseGroupMembers()`-equivalent helper instead of being flattened permanently into `parseGroup()` once the goal is structural parity with KiCad’s group parser.
 - In `parseGroup()`, the optional pre-list group name should only accept a quoted string, with bare `locked` as the only non-string token allowed before the first nested list. Do not accept an unquoted group name there.
 - In `parseGroup()`, keep the `lib_id` branch separate from the symbol/library helper. Upstream uses the same parse rules but a group-specific invalid-character diagnostic: `Group library link ... contains invalid character ...`.
 - Keep the shared library-ID character validator named after its upstream role too. Once it exists only to support library-ID parsing branches, it should not stay on an overlong repo-local helper name.

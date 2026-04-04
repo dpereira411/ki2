@@ -5030,11 +5030,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "members" => {
-                    while !self.at_right() {
-                        group
-                            .members
-                            .push(self.need_symbol_atom("group member uuid")?);
-                    }
+                    self.parse_group_members(&mut group)?;
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("uuid, lib_id, members")),
@@ -5042,6 +5038,16 @@ impl KiCadSchematicParser {
         }
 
         self.pending_groups.push(group);
+        Ok(())
+    }
+
+    fn parse_group_members(&mut self, group: &mut Group) -> Result<(), Error> {
+        while !self.at_right() {
+            group
+                .members
+                .push(self.need_symbol_atom("group member uuid")?);
+        }
+
         Ok(())
     }
 
