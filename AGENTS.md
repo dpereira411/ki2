@@ -112,7 +112,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same top-level schematic `polyline` path, keep the two-point-collapse / too-few-points decision inline in the owning dispatch branch rather than behind a trivial `parse_polyline_item()` wrapper.
 - In `parseSchPolyLine()`, keep the old-version stroke-style fix too: for file versions `<= 20211123`, a `stroke` with `default` style must be rewritten to `dash`.
 - In `parseSchPolyLine()`, keep KiCad's literal child set and fallback `Expecting(...)` text: `pts, uuid, stroke, or fill`. Do not accept repo-local `start` / `mid` / `end` / `center` geometry tokens there.
-- In `parseRectangleShape()`, keep the branch-head token and fallback `Expecting(...)` text aligned with the full routine body too. The rectangle parser owns `radius` as well as `start/end/stroke/fill/uuid`, so do not leave `radius` out of the local head/fallback text.
+- In `parseSchRectangle()`, keep KiCad's literal fallback `Expecting(...)` text: `start, end, stroke, fill or uuid`, even though the rectangle routine also handles `radius`.
 - In `parseSchField()`, keep the header checks distinct the way KiCad does: `Invalid property name`, `Empty property name`, and `Invalid property value` are separate branches before field classification begins.
 - In `parseSchField()`, keep KiCad's literal fallback `Expecting(...)` text: `id, at, hide, show_name, do_not_autoplace or effects`. Do not introduce an extra comma before `or effects`.
 - In the lib-symbol `parseProperty()` path, keep KiCad's separate literal fallback `Expecting(...)` text: `id, at, hide, show_name, do_not_autoplace, or effects`. The library-property parser does include that comma even though `parseSchField()` does not.

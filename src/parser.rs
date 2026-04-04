@@ -2797,7 +2797,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("start, end, radius, stroke, fill or uuid")?
+                .need_unquoted_symbol_atom("start, end, stroke, fill or uuid")?
                 .as_str()
             {
                 "start" => {
@@ -2824,7 +2824,7 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("start, end, radius, stroke, fill or uuid")),
+                _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
             }
         }
         Self::fixup_schematic_fill_mode(&mut fill, &stroke);

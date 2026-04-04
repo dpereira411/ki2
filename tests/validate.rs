@@ -2939,7 +2939,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
         .expect_err("must reject quoted rectangle radius head");
     assert!(
         err.to_string()
-            .contains("expecting start, end, radius, stroke, fill or uuid")
+            .contains("expecting start, end, stroke, fill or uuid")
     );
 
     let quoted_rule_area_head = r#"(kicad_sch
