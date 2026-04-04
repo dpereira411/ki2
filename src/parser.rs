@@ -353,7 +353,7 @@ impl KiCadSchematicParser {
                 }
                 "lib_symbols" => self.parse_sch_lib_symbols()?,
                 "bus_alias" => self.parse_bus_alias()?,
-                "symbol" => parsed_item = Some(SchItem::Symbol(self.parse_symbol()?)),
+                "symbol" => parsed_item = Some(SchItem::Symbol(self.parse_schematic_symbol()?)),
                 "sheet" => parsed_item = Some(SchItem::Sheet(self.parse_sheet()?)),
                 "junction" => parsed_item = Some(SchItem::Junction(self.parse_junction()?)),
                 "no_connect" => parsed_item = Some(SchItem::NoConnect(self.parse_no_connect()?)),
@@ -2909,7 +2909,7 @@ impl KiCadSchematicParser {
         Ok(shape)
     }
 
-    fn parse_symbol(&mut self) -> Result<Symbol, Error> {
+    fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
         let mut lib_id = None;
         let mut lib_name = None;
         let mut at = None;
