@@ -865,6 +865,72 @@ fn fixes_legacy_global_power_symbol_value_after_load() {
 }
 
 #[test]
+fn preserves_power_symbol_reference_metadata_during_annotation() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_power_annotation_metadata_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-u")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:VCC"
+      (power global)
+      (symbol "power:VCC_1_1"
+        (pin power_in line
+          hide
+          (at 0 0 0)
+          (length 0)
+          (name "VCC")
+          (number "1")))))
+  (symbol
+    (lib_id "power:VCC")
+    (property "Reference" "PWR" (at 1 2 90) (hide yes))
+    (at 10 10 0)
+    (uuid "sym-u"))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let symbol = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    let reference = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolReference)
+        .expect("reference");
+    assert_eq!(reference.value, "#PWR");
+    assert_eq!(reference.at, Some([1.0, 2.0]));
+    assert_eq!(reference.angle, Some(90.0));
+    assert!(!reference.visible);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn fixes_legacy_global_label_intersheet_ref_position_after_load() {
     let dir = env::temp_dir().join(format!(
         "ki2_global_label_iref_fixup_{}",

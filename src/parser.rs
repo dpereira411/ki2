@@ -3513,24 +3513,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        if let Some(existing) =
-                                            symbol.properties.iter_mut().find(|property| {
-                                                property.kind == PropertyKind::SymbolValue
-                                            })
-                                        {
-                                            existing.id = PropertyKind::SymbolValue
-                                                .default_field_id()
-                                                .or(existing.id);
-                                            existing.key = PropertyKind::SymbolValue
-                                                .canonical_key()
-                                                .to_string();
-                                            existing.value = parsed.clone();
-                                        } else {
-                                            symbol.properties.push(Property::new(
-                                                PropertyKind::SymbolValue,
-                                                parsed.clone(),
-                                            ));
-                                        }
+                                        symbol.set_field_text(PropertyKind::SymbolValue, parsed);
                                         self.need_right()?;
                                     }
                                     "footprint" => {
@@ -3547,24 +3530,8 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        if let Some(existing) =
-                                            symbol.properties.iter_mut().find(|property| {
-                                                property.kind == PropertyKind::SymbolFootprint
-                                            })
-                                        {
-                                            existing.id = PropertyKind::SymbolFootprint
-                                                .default_field_id()
-                                                .or(existing.id);
-                                            existing.key = PropertyKind::SymbolFootprint
-                                                .canonical_key()
-                                                .to_string();
-                                            existing.value = parsed.clone();
-                                        } else {
-                                            symbol.properties.push(Property::new(
-                                                PropertyKind::SymbolFootprint,
-                                                parsed.clone(),
-                                            ));
-                                        }
+                                        symbol
+                                            .set_field_text(PropertyKind::SymbolFootprint, parsed);
                                         self.need_right()?;
                                     }
                                     "variant" => {
@@ -3722,22 +3689,7 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                if let Some(existing) = symbol
-                                    .properties
-                                    .iter_mut()
-                                    .find(|property| property.kind == PropertyKind::SymbolValue)
-                                {
-                                    existing.id = PropertyKind::SymbolValue
-                                        .default_field_id()
-                                        .or(existing.id);
-                                    existing.key =
-                                        PropertyKind::SymbolValue.canonical_key().to_string();
-                                    existing.value = parsed;
-                                } else {
-                                    symbol
-                                        .properties
-                                        .push(Property::new(PropertyKind::SymbolValue, parsed));
-                                }
+                                symbol.set_field_text(PropertyKind::SymbolValue, parsed);
                                 self.need_right()?;
                             }
                             "footprint" => {
@@ -3754,22 +3706,7 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                if let Some(existing) = symbol
-                                    .properties
-                                    .iter_mut()
-                                    .find(|property| property.kind == PropertyKind::SymbolFootprint)
-                                {
-                                    existing.id = PropertyKind::SymbolFootprint
-                                        .default_field_id()
-                                        .or(existing.id);
-                                    existing.key =
-                                        PropertyKind::SymbolFootprint.canonical_key().to_string();
-                                    existing.value = parsed;
-                                } else {
-                                    symbol
-                                        .properties
-                                        .push(Property::new(PropertyKind::SymbolFootprint, parsed));
-                                }
+                                symbol.set_field_text(PropertyKind::SymbolFootprint, parsed);
                                 self.need_right()?;
                             }
                             _ => {

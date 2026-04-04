@@ -437,6 +437,22 @@ pub struct Symbol {
     pub pins: Vec<SymbolPin>,
 }
 
+impl Symbol {
+    pub fn set_field_text(&mut self, kind: PropertyKind, value: String) {
+        if let Some(existing) = self
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == kind)
+        {
+            existing.id = kind.default_field_id().or(existing.id);
+            existing.key = kind.canonical_key().to_string();
+            existing.value = value;
+        } else {
+            self.properties.push(Property::new(kind, value));
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sheet {
     pub at: [f64; 2],
