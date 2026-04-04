@@ -470,17 +470,14 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::Sheet(sheet));
                 }
                 "junction" => {
-                    let _ = self.need_unquoted_symbol_atom("junction")?;
                     let junction = self.parse_junction()?;
                     self.screen.items.push(SchItem::Junction(junction));
                 }
                 "no_connect" => {
-                    let _ = self.need_unquoted_symbol_atom("no_connect")?;
                     let no_connect = self.parse_no_connect()?;
                     self.screen.items.push(SchItem::NoConnect(no_connect));
                 }
                 "bus_entry" => {
-                    let _ = self.need_unquoted_symbol_atom("bus_entry")?;
                     let bus_entry = self.parse_bus_entry()?;
                     self.screen.items.push(SchItem::BusEntry(bus_entry));
                 }
@@ -526,7 +523,6 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::Table(table));
                 }
                 "image" => {
-                    let _ = self.need_unquoted_symbol_atom("image")?;
                     let image = self.parse_sch_image()?;
                     self.screen.items.push(SchItem::Image(image));
                 }
@@ -2132,6 +2128,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_junction(&mut self) -> Result<Junction, Error> {
+        let _ = self.need_unquoted_symbol_atom("junction")?;
         let mut junction = Junction {
             at: [0.0, 0.0],
             diameter: None,
@@ -2175,6 +2172,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_no_connect(&mut self) -> Result<NoConnect, Error> {
+        let _ = self.need_unquoted_symbol_atom("no_connect")?;
         let mut no_connect = NoConnect {
             at: [0.0, 0.0],
             uuid: None,
@@ -2203,6 +2201,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_bus_entry(&mut self) -> Result<BusEntry, Error> {
+        let _ = self.need_unquoted_symbol_atom("bus_entry")?;
         let mut bus_entry = BusEntry {
             at: [0.0, 0.0],
             size: [0.0, 0.0],
@@ -2815,6 +2814,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_image(&mut self) -> Result<Image, Error> {
+        let _ = self.need_unquoted_symbol_atom("image")?;
         let mut image = Image {
             at: [0.0, 0.0],
             scale: 1.0,
