@@ -314,7 +314,9 @@ impl KiCadSchematicParser {
                 | "class_label" | "netclass_flag" | "text" => {
                     parsed_item = Some(self.parse_sch_text_item(effective_head)?)
                 }
-                "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_text_box()?)),
+                "text_box" => {
+                    parsed_item = Some(SchItem::TextBox(self.parse_text_box_content(false)?))
+                }
                 "table" => parsed_item = Some(SchItem::Table(self.parse_table()?)),
                 "image" => parsed_item = Some(SchItem::Image(self.parse_image()?)),
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_arc_shape()?)),
@@ -2112,10 +2114,6 @@ impl KiCadSchematicParser {
                 }))
             }
         }
-    }
-
-    fn parse_text_box(&mut self) -> Result<TextBox, Error> {
-        self.parse_text_box_content(false)
     }
 
     fn parse_text_box_content(&mut self, table_cell: bool) -> Result<TextBox, Error> {
