@@ -172,12 +172,12 @@ impl KiCadSchematicParser {
             root_uuid: None,
             screen: Screen {
                 uuid: None,
-                paper: Some(Self::build_page_info(
-                    page_info.kind.to_string(),
-                    width,
-                    height,
-                    false,
-                )),
+                paper: Some(Paper {
+                    kind: page_info.kind.to_string(),
+                    width: Some(width),
+                    height: Some(height),
+                    portrait: false,
+                }),
                 page: None,
                 title_block: None,
                 embedded_fonts: None,
@@ -4743,33 +4743,22 @@ impl KiCadSchematicParser {
             _ => return Err(self.validation(Some(token.span), "expecting portrait")),
         };
 
-        Ok(Self::build_page_info(
-            page_info.kind.to_string(),
-            width,
-            height,
-            portrait,
-        ))
-    }
+        let kind = page_info.kind.to_string();
+        let mut width = width;
+        let mut height = height;
+        let mut portrait_state = kind == "User" && height > width;
 
-    fn build_page_info(
-        kind: String,
-        mut width: f64,
-        mut height: f64,
-        portrait_requested: bool,
-    ) -> Paper {
-        let mut portrait = kind == "User" && height > width;
-
-        if portrait_requested && !portrait {
+        if portrait && !portrait_state {
             std::mem::swap(&mut width, &mut height);
-            portrait = true;
+            portrait_state = true;
         }
 
-        Paper {
+        Ok(Paper {
             kind,
             width: Some(width),
             height: Some(height),
-            portrait,
-        }
+            portrait: portrait_state,
+        })
     }
 
     fn normalize_instance_path(&self, path: String, prepend_root_uuid: bool) -> String {
