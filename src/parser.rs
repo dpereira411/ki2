@@ -4411,7 +4411,7 @@ impl KiCadSchematicParser {
                         {
                             "face" => {
                                 effects.font_face = Some(
-                                    self.need_atom()
+                                    self.need_symbol_atom("font face")
                                         .map_err(|_| self.error_here("missing font face"))?,
                                 );
                                 self.need_right()?;
@@ -4477,7 +4477,7 @@ impl KiCadSchematicParser {
                 }
                 "href" => {
                     let href = self
-                        .need_atom()
+                        .need_symbol_atom("hyperlink url")
                         .map_err(|_| self.error_here("missing hyperlink url"))?;
                     if !Self::validate_hyperlink(&href) {
                         return Err(self.error_here(format!("invalid hyperlink url `{href}`")));

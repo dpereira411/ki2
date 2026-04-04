@@ -3732,6 +3732,34 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
+fn rejects_non_symbol_effects_face_and_href_payloads() {
+    let numeric_face = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-numeric-font-face")
+  (text "note" (effects (font (face 123))))
+)"#;
+    let numeric_face_path = temp_schematic("numeric_effects_font_face", numeric_face);
+    let err = parse_schematic_file(Path::new(&numeric_face_path))
+        .expect_err("must reject numeric font face");
+    assert!(err.to_string().contains("missing font face"));
+
+    let numeric_href = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-numeric-href")
+  (text "note" (effects (href 123)))
+)"#;
+    let numeric_href_path = temp_schematic("numeric_effects_href", numeric_href);
+    let err = parse_schematic_file(Path::new(&numeric_href_path))
+        .expect_err("must reject numeric hyperlink");
+    assert!(err.to_string().contains("missing hyperlink url"));
+
+    let _ = fs::remove_file(numeric_face_path);
+    let _ = fs::remove_file(numeric_href_path);
+}
+
+#[test]
 fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_text_box_head = r#"(kicad_sch
   (version 20260306)
