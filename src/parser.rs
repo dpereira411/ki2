@@ -1333,7 +1333,7 @@ impl KiCadSchematicParser {
             .need_symbol_atom("text string")
             .map_err(|_| self.error_here("Invalid text string"))?;
         if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
-            text = self.convert_to_new_overbar_notation(text);
+            text = self.convert_old_overbar_notation(text);
         }
         let mut at = None;
         let mut angle = None;
@@ -1615,7 +1615,7 @@ impl KiCadSchematicParser {
                     } else if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         < VERSION_TEXT_OVERBAR_NOTATION
                     {
-                        parsed = self.convert_to_new_overbar_notation(parsed);
+                        parsed = self.convert_old_overbar_notation(parsed);
                     }
                     name = Some(parsed);
                     if self.at_right() {
@@ -1643,7 +1643,7 @@ impl KiCadSchematicParser {
                     } else if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         < VERSION_TEXT_OVERBAR_NOTATION
                     {
-                        parsed = self.convert_to_new_overbar_notation(parsed);
+                        parsed = self.convert_old_overbar_notation(parsed);
                     }
                     number = Some(parsed);
                     if self.at_right() {
@@ -1671,7 +1671,7 @@ impl KiCadSchematicParser {
                     } else if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         < VERSION_TEXT_OVERBAR_NOTATION
                     {
-                        alt_name = self.convert_to_new_overbar_notation(alt_name);
+                        alt_name = self.convert_old_overbar_notation(alt_name);
                     }
 
                     let alt_type_token = self.need_unquoted_symbol_atom("alternate pin type")?;
@@ -1863,7 +1863,7 @@ impl KiCadSchematicParser {
         let mut name = self.need_symbol_atom("bus alias name")?;
         let version = self.require_known_version()?;
         if version < VERSION_NEW_OVERBAR_NOTATION {
-            name = self.convert_to_new_overbar_notation(name);
+            name = self.convert_old_overbar_notation(name);
         }
 
         self.need_left()?;
@@ -1875,7 +1875,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             let mut member = self.need_quoted_atom("quoted string")?;
             if version < VERSION_NEW_OVERBAR_NOTATION {
-                member = self.convert_to_new_overbar_notation(member);
+                member = self.convert_old_overbar_notation(member);
             }
             members.push(member);
         }
@@ -2063,7 +2063,7 @@ impl KiCadSchematicParser {
             .need_symbol_atom("text value")
             .map_err(|_| self.error_here("Invalid text string"))?;
         if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
-            text = self.convert_to_new_overbar_notation(text);
+            text = self.convert_old_overbar_notation(text);
         }
 
         let mut at = None;
@@ -4875,7 +4875,7 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn convert_to_new_overbar_notation(&self, old: String) -> String {
+    fn convert_old_overbar_notation(&self, old: String) -> String {
         if old == "~" {
             return old;
         }
