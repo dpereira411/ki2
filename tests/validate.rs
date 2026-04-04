@@ -1480,7 +1480,8 @@ fn parses_extended_top_level_sections() {
     );
     assert_eq!(schematic.screen.lib_symbols.len(), 1);
     let lib_symbol = &schematic.screen.lib_symbols[0];
-    assert_eq!(lib_symbol.name, "Device:R");
+    assert_eq!(lib_symbol.lib_id, "Device:R");
+    assert_eq!(lib_symbol.name, "R");
     assert!(lib_symbol.power);
     assert!(lib_symbol.local_power);
     assert_eq!(lib_symbol.body_style_names, vec!["N", "P"]);
@@ -4934,7 +4935,7 @@ fn converts_legacy_overbar_value_fields_when_effects_are_parsed() {
         .screen
         .lib_symbols
         .iter()
-        .find(|symbol| symbol.name == "Device:R")
+        .find(|symbol| symbol.lib_id == "Device:R")
         .expect("lib symbol");
     let lib_value = lib_symbol
         .properties
@@ -4980,7 +4981,7 @@ fn converts_legacy_overbar_library_text_when_effects_are_parsed() {
         .screen
         .lib_symbols
         .iter()
-        .find(|symbol| symbol.name == "Device:R")
+        .find(|symbol| symbol.lib_id == "Device:R")
         .expect("lib symbol");
     let lib_text = lib_symbol
         .units
@@ -5014,7 +5015,7 @@ fn keeps_legacy_overbar_value_raw_without_effects_path() {
         .screen
         .lib_symbols
         .iter()
-        .find(|symbol| symbol.name == "Device:R")
+        .find(|symbol| symbol.lib_id == "Device:R")
         .expect("lib symbol");
     let lib_value = lib_symbol
         .properties
@@ -5358,8 +5359,10 @@ fn repeated_embedded_and_lib_symbol_sections_follow_upstream_accumulation_rules(
         vec![Some("A.bin"), Some("B.bin")]
     );
     assert_eq!(schematic.screen.lib_symbols.len(), 2);
-    assert_eq!(schematic.screen.lib_symbols[0].name, "First:R");
-    assert_eq!(schematic.screen.lib_symbols[1].name, "Second:R");
+    assert_eq!(schematic.screen.lib_symbols[0].lib_id, "First:R");
+    assert_eq!(schematic.screen.lib_symbols[0].name, "R");
+    assert_eq!(schematic.screen.lib_symbols[1].lib_id, "Second:R");
+    assert_eq!(schematic.screen.lib_symbols[1].name, "R");
     let _ = fs::remove_file(path);
 }
 
@@ -7660,7 +7663,8 @@ fn records_warning_and_skips_invalid_lib_symbol_block() {
     assert_eq!(schematic.screen.parse_warnings.len(), 1);
     assert!(schematic.screen.parse_warnings[0].contains("Skipping symbol and continuing"));
     assert_eq!(schematic.screen.lib_symbols.len(), 1);
-    assert_eq!(schematic.screen.lib_symbols[0].name, "Good:R");
+    assert_eq!(schematic.screen.lib_symbols[0].lib_id, "Good:R");
+    assert_eq!(schematic.screen.lib_symbols[0].name, "R");
     let _ = fs::remove_file(path);
 }
 

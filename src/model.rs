@@ -102,6 +102,7 @@ pub struct TitleBlock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibSymbol {
+    pub lib_id: String,
     pub name: String,
     pub extends: Option<String>,
     pub power: bool,
@@ -128,7 +129,12 @@ pub struct LibSymbol {
 }
 
 impl LibSymbol {
-    pub fn new(name: String) -> Self {
+    pub fn new(lib_id: String) -> Self {
+        let name = lib_id
+            .rsplit(':')
+            .next()
+            .unwrap_or(lib_id.as_str())
+            .to_string();
         let mut properties = vec![
             Property::new(PropertyKind::SymbolReference, String::new()),
             Property::new(PropertyKind::SymbolValue, String::new()),
@@ -142,13 +148,14 @@ impl LibSymbol {
 
         Self {
             units: vec![LibSymbolUnit {
-                name: format!("{name}_1_1"),
+                name: format!("{lib_id}_1_1"),
                 unit_number: 1,
                 body_style: 1,
                 unit_name: None,
                 draw_item_kinds: Vec::new(),
                 draw_items: Vec::new(),
             }],
+            lib_id,
             name,
             extends: None,
             power: false,
@@ -1025,6 +1032,8 @@ mod tests {
     fn lib_symbols_start_with_mandatory_fields() {
         let symbol = LibSymbol::new("Device:R".to_string());
 
+        assert_eq!(symbol.lib_id, "Device:R");
+        assert_eq!(symbol.name, "R");
         assert_eq!(symbol.pin_name_offset, Some(0.508));
         assert_eq!(
             symbol

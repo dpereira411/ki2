@@ -868,17 +868,19 @@ impl KiCadSchematicParser {
         let raw_name = self
             .need_symbol_atom("lib symbol name")
             .map_err(|_| self.error_here("Invalid symbol name"))?;
-        let name = raw_name.replace("{slash}", "/");
+        let lib_id = raw_name.replace("{slash}", "/");
 
-        if let Some(ch) = Self::find_invalid_lib_id_char(&name) {
-            return Err(self.error_here(format!("Symbol {name} contains invalid character '{ch}'")));
+        if let Some(ch) = Self::find_invalid_lib_id_char(&lib_id) {
+            return Err(
+                self.error_here(format!("Symbol {lib_id} contains invalid character '{ch}'"))
+            );
         }
 
-        if name.is_empty() {
+        if lib_id.is_empty() {
             return Err(self.error_here("Invalid library identifier"));
         }
 
-        let mut symbol = LibSymbol::new(name.clone());
+        let mut symbol = LibSymbol::new(lib_id.clone());
 
         while !self.at_right() {
             self.need_left()?;
@@ -986,14 +988,14 @@ impl KiCadSchematicParser {
                         .map_err(|_| self.error_here("Invalid symbol unit name"))?;
                     let unit_full_name = unit_name_raw.replace("{slash}", "/");
 
-                    if !unit_full_name.starts_with(&name) {
+                    if !unit_full_name.starts_with(&symbol.lib_id) {
                         return Err(self.error_here(format!(
                             "invalid symbol unit name prefix {unit_full_name}"
                         )));
                     }
 
                     let suffix = unit_full_name
-                        .strip_prefix(&name)
+                        .strip_prefix(&symbol.lib_id)
                         .and_then(|rest| rest.strip_prefix('_'))
                         .ok_or_else(|| {
                             self.error_here(format!(
@@ -5389,7 +5391,7 @@ impl KiCadSchematicParser {
             .screen
             .lib_symbols
             .iter()
-            .map(|symbol| symbol.name.clone())
+            .map(|symbol| symbol.lib_id.clone())
             .collect();
 
         for item in &mut self.screen.items {
@@ -5420,7 +5422,7 @@ impl KiCadSchematicParser {
             .lib_symbols
             .iter()
             .enumerate()
-            .map(|(idx, symbol)| (symbol.name.clone(), idx))
+            .map(|(idx, symbol)| (symbol.lib_id.clone(), idx))
             .collect();
 
         let mut cache = std::collections::HashMap::new();

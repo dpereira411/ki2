@@ -508,7 +508,7 @@ impl SchematicLoader {
                     .find(|draw_item| draw_item.kind == "pin");
 
                 (
-                    lib_symbol.name.clone(),
+                    lib_symbol.lib_id.clone(),
                     PowerLibSymbolInfo {
                         power: lib_symbol.power,
                         local_power: lib_symbol.local_power,
