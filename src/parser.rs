@@ -1867,26 +1867,8 @@ impl KiCadSchematicParser {
                 }
             })?;
 
-        let mut property = Property {
-            id: field_id.default_field_id(),
-            key: match field_id {
-                PropertyKind::SymbolReference => "Reference".to_string(),
-                PropertyKind::SymbolValue => "Value".to_string(),
-                PropertyKind::SymbolFootprint => "Footprint".to_string(),
-                PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
-                _ => name.clone(),
-            },
-            value: std::mem::take(&mut value),
-            kind: field_id,
-            is_private,
-            at: None,
-            angle: None,
-            visible: true,
-            show_name: true,
-            can_autoplace: true,
-            has_effects: false,
-            effects: None,
-        };
+        let mut property =
+            Property::new_named(field_id, &name, std::mem::take(&mut value), is_private);
 
         while !self.at_right() {
             self.need_left()?;
@@ -4457,29 +4439,12 @@ impl KiCadSchematicParser {
             FieldParent::OtherLabel => PropertyKind::User,
         };
 
-        let mut property = Property {
-            id: field_id.default_field_id(),
-            key: match field_id {
-                PropertyKind::SymbolReference => "Reference".to_string(),
-                PropertyKind::SymbolValue => "Value".to_string(),
-                PropertyKind::SymbolFootprint => "Footprint".to_string(),
-                PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
-                PropertyKind::SheetName => "Sheetname".to_string(),
-                PropertyKind::SheetFile => "Sheetfile".to_string(),
-                PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References".to_string(),
-                _ => name.clone(),
-            },
-            value: std::mem::take(&mut value),
-            kind: field_id,
-            is_private: matches!(field_id, PropertyKind::User) && is_private,
-            at: None,
-            angle: None,
-            visible: true,
-            show_name: true,
-            can_autoplace: true,
-            has_effects: false,
-            effects: None,
-        };
+        let mut property = Property::new_named(
+            field_id,
+            &name,
+            std::mem::take(&mut value),
+            matches!(field_id, PropertyKind::User) && is_private,
+        );
 
         while !self.at_right() {
             self.need_left()?;

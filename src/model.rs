@@ -1049,6 +1049,26 @@ impl Property {
             effects: None,
         }
     }
+
+    pub fn new_named(kind: PropertyKind, name: &str, value: String, is_private: bool) -> Self {
+        Self {
+            id: kind.default_field_id(),
+            key: match kind {
+                PropertyKind::User | PropertyKind::SheetUser => name.to_string(),
+                _ => kind.canonical_key().to_string(),
+            },
+            value,
+            kind,
+            is_private,
+            at: None,
+            angle: None,
+            visible: true,
+            show_name: true,
+            can_autoplace: true,
+            has_effects: false,
+            effects: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
