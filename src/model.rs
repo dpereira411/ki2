@@ -865,9 +865,12 @@ impl Sheet {
             in_bom: true,
             on_board: true,
             dnp: false,
-            fields_autoplaced: FieldAutoplacement::None,
+            fields_autoplaced: FieldAutoplacement::Auto,
             uuid: None,
-            properties: Vec::new(),
+            properties: vec![
+                Property::new(PropertyKind::SheetName, String::new()),
+                Property::new(PropertyKind::SheetFile, String::new()),
+            ],
             pins: Vec::new(),
             instances: Vec::new(),
         }
@@ -899,6 +902,45 @@ impl Sheet {
 
     pub fn add_pin(&mut self, pin: SheetPin) {
         self.pins.push(pin);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FieldAutoplacement, PropertyKind, Sheet, Symbol};
+
+    #[test]
+    fn placed_symbols_start_with_mandatory_fields() {
+        let symbol = Symbol::new();
+
+        assert_eq!(
+            symbol
+                .properties
+                .iter()
+                .map(|property| property.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                PropertyKind::SymbolReference,
+                PropertyKind::SymbolValue,
+                PropertyKind::SymbolFootprint,
+                PropertyKind::SymbolDatasheet,
+            ]
+        );
+    }
+
+    #[test]
+    fn placed_sheets_start_with_mandatory_fields() {
+        let sheet = Sheet::new();
+
+        assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::Auto);
+        assert_eq!(
+            sheet
+                .properties
+                .iter()
+                .map(|property| property.kind)
+                .collect::<Vec<_>>(),
+            vec![PropertyKind::SheetName, PropertyKind::SheetFile]
+        );
     }
 }
 

@@ -3865,6 +3865,7 @@ impl KiCadSchematicParser {
     fn parse_sch_sheet(&mut self) -> Result<Sheet, Error> {
         let _ = self.need_unquoted_symbol_atom("sheet")?;
         let mut sheet = Sheet::new();
+        sheet.fields_autoplaced = FieldAutoplacement::None;
         let mut properties = Vec::new();
         while !self.at_right() {
             self.need_left()?;

@@ -476,6 +476,33 @@ fn placed_symbols_start_with_mandatory_fields() {
 }
 
 #[test]
+fn parser_resets_sheet_fields_autoplaced_before_branch_walk() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-autoplace")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+)"#;
+    let path = temp_schematic("sheet_fields_autoplaced_reset", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::None);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sorts_loaded_sheet_pages_numerically() {
     let dir = env::temp_dir().join(format!(
         "ki2_sheet_page_sort_{}",
