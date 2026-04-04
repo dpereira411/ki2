@@ -6,9 +6,9 @@ use ki2::core::SchematicProject;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
-    FieldAutoplacement, FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis,
-    PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle, TextHJustify,
-    TextKind, TextVJustify,
+    FieldAutoplacement, FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis, PropertyKind,
+    SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle, TextHJustify, TextKind,
+    TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 

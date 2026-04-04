@@ -3566,21 +3566,25 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_sheet(&mut self) -> Result<Sheet, Error> {
-        let mut at = None;
-        let mut size = None;
-        let mut has_stroke = false;
-        let mut has_fill = false;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut excluded_from_sim = false;
-        let mut in_bom = true;
-        let mut on_board = true;
-        let mut dnp = false;
-        let mut fields_autoplaced = FieldAutoplacement::None;
-        let mut uuid = None;
-        let mut properties: Vec<Property> = Vec::new();
-        let mut pins = Vec::new();
-        let mut instances = Vec::new();
+        let mut sheet = Sheet {
+            at: [0.0, 0.0],
+            size: [0.0, 0.0],
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            dnp: false,
+            fields_autoplaced: FieldAutoplacement::None,
+            uuid: None,
+            name: None,
+            filename: None,
+            properties: Vec::new(),
+            pins: Vec::new(),
+            instances: Vec::new(),
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -3589,45 +3593,45 @@ impl KiCadSchematicParser {
             )?;
             match head.as_str() {
                 "at" => {
-                    at = Some(self.parse_xy2("sheet at")?);
+                    sheet.at = self.parse_xy2("sheet at")?;
                     self.need_right()?;
                 }
                 "size" => {
-                    size = Some(self.parse_xy2("sheet size")?);
+                    sheet.size = self.parse_xy2("sheet size")?;
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
-                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    sheet.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "in_bom" => {
-                    in_bom = self.parse_bool_atom("in_bom")?;
+                    sheet.in_bom = self.parse_bool_atom("in_bom")?;
                     self.need_right()?;
                 }
                 "on_board" => {
-                    on_board = self.parse_bool_atom("on_board")?;
+                    sheet.on_board = self.parse_bool_atom("on_board")?;
                     self.need_right()?;
                 }
                 "dnp" => {
-                    dnp = self.parse_bool_atom("dnp")?;
+                    sheet.dnp = self.parse_bool_atom("dnp")?;
                     self.need_right()?;
                 }
                 "fields_autoplaced" => {
                     if self.parse_maybe_absent_bool(true)? {
-                        fields_autoplaced = FieldAutoplacement::Auto;
+                        sheet.fields_autoplaced = FieldAutoplacement::Auto;
                     }
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    sheet.has_stroke = true;
+                    sheet.stroke = Some(self.parse_stroke()?);
                 }
                 "fill" => {
-                    has_fill = true;
-                    fill = Some(self.parse_fill()?);
+                    sheet.has_fill = true;
+                    sheet.fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    sheet.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "property" => {
@@ -3637,10 +3641,10 @@ impl KiCadSchematicParser {
                         .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         <= VERSION_WRONG_SHEET_FIELD_IDS
                     {
-                        if properties.is_empty() {
+                        if sheet.properties.is_empty() {
                             property.key = "Sheetname".to_string();
                             property.kind = PropertyKind::SheetName;
-                        } else if properties.len() == 1 {
+                        } else if sheet.properties.len() == 1 {
                             property.key = "Sheetfile".to_string();
                             property.kind = PropertyKind::SheetFile;
                         }
@@ -3649,24 +3653,25 @@ impl KiCadSchematicParser {
                         property.kind,
                         PropertyKind::SheetName | PropertyKind::SheetFile
                     ) {
-                        if let Some(existing) =
-                            properties.iter_mut().find(|p| p.kind == property.kind)
+                        if let Some(existing) = sheet
+                            .properties
+                            .iter_mut()
+                            .find(|p| p.kind == property.kind)
                         {
                             *existing = property;
                         } else {
-                            properties.push(property);
+                            sheet.properties.push(property);
                         }
                     } else {
-                        properties.push(property);
+                        sheet.properties.push(property);
                     }
                     self.need_right()?;
                 }
                 "pin" => {
-                    pins.push(self.parse_sch_sheet_pin()?);
+                    sheet.pins.push(self.parse_sch_sheet_pin()?);
                     self.need_right()?;
                 }
                 "instances" => {
-                    let mut parsed_instances = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
                         if self.need_unquoted_symbol_atom("project")? != "project" {
@@ -3691,10 +3696,10 @@ impl KiCadSchematicParser {
                                     }
                                     "variant" => {
                                         let mut variant_name = String::new();
-                                        let mut variant_dnp = dnp;
-                                        let mut variant_excluded_from_sim = excluded_from_sim;
-                                        let mut variant_in_bom = in_bom;
-                                        let mut variant_on_board = on_board;
+                                        let mut variant_dnp = sheet.dnp;
+                                        let mut variant_excluded_from_sim = sheet.excluded_from_sim;
+                                        let mut variant_in_bom = sheet.in_bom;
+                                        let mut variant_on_board = sheet.on_board;
                                         let mut variant_in_pos_files = false;
                                         let mut variant_fields = Vec::new();
 
@@ -3814,7 +3819,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            parsed_instances.push(SheetLocalInstance {
+                            sheet.instances.push(SheetLocalInstance {
                                 project: project.clone(),
                                 path,
                                 page,
@@ -3823,7 +3828,6 @@ impl KiCadSchematicParser {
                         }
                         self.need_right()?;
                     }
-                    instances = parsed_instances;
                     self.need_right()?;
                 }
                 _ => {
@@ -3834,41 +3838,25 @@ impl KiCadSchematicParser {
             }
         }
 
-        let name = properties
+        sheet.name = sheet
+            .properties
             .iter()
             .find(|property| property.kind == PropertyKind::SheetName)
             .map(|property| property.value.clone());
-        let filename = properties
+        sheet.filename = sheet
+            .properties
             .iter()
             .find(|property| property.kind == PropertyKind::SheetFile)
             .map(|property| property.value.clone());
 
-        if name.is_none() {
+        if sheet.name.is_none() {
             return Err(self.error_here("Missing sheet name property"));
         }
-        if filename.is_none() {
+        if sheet.filename.is_none() {
             return Err(self.error_here("Missing sheet file property"));
         }
 
-        Ok(Sheet {
-            at: at.unwrap_or([0.0, 0.0]),
-            size: size.unwrap_or([0.0, 0.0]),
-            has_stroke,
-            has_fill,
-            stroke,
-            fill,
-            excluded_from_sim,
-            in_bom,
-            on_board,
-            dnp,
-            fields_autoplaced,
-            uuid,
-            name,
-            filename,
-            properties,
-            pins,
-            instances,
-        })
+        Ok(sheet)
     }
 
     fn parse_sch_sheet_pin(&mut self) -> Result<SheetPin, Error> {
