@@ -566,6 +566,92 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
+    fn parse_body_styles(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        while !self.at_right() {
+            if self.at_unquoted_symbol_with("demorgan") {
+                let _ = self.need_unquoted_symbol_atom("demorgan")?;
+                symbol.has_demorgan = true;
+            } else {
+                symbol
+                    .body_style_names
+                    .push(self.need_symbol_atom("property value")?);
+            }
+        }
+
+        self.need_right()?;
+        Ok(())
+    }
+
+    fn parse_pin_names(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        while !self.at_right() {
+            if self.at_unquoted_symbol_with("hide") {
+                let _ = self.need_unquoted_symbol_atom("hide")?;
+                symbol.show_pin_names = false;
+                continue;
+            }
+
+            self.need_left()?;
+            match self.need_unquoted_symbol_atom("offset or hide")?.as_str() {
+                "offset" => {
+                    symbol.pin_name_offset = Some(self.parse_f64_atom("pin name offset")?);
+                    self.need_right()?;
+                }
+                "hide" => {
+                    symbol.show_pin_names = !self.parse_bool_atom("hide")?;
+                    self.need_right()?;
+                }
+                _ => return Err(self.expecting("offset or hide")),
+            }
+        }
+
+        self.need_right()?;
+        Ok(())
+    }
+
+    fn parse_pin_numbers(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        while !self.at_right() {
+            if self.at_unquoted_symbol_with("hide") {
+                let _ = self.need_unquoted_symbol_atom("hide")?;
+                symbol.show_pin_numbers = false;
+                continue;
+            }
+
+            self.need_left()?;
+            match self.need_unquoted_symbol_atom("hide")?.as_str() {
+                "hide" => {
+                    symbol.show_pin_numbers = !self.parse_bool_atom("hide")?;
+                    self.need_right()?;
+                }
+                _ => return Err(self.expecting("hide")),
+            }
+        }
+
+        self.need_right()?;
+        Ok(())
+    }
+
+    fn parse_symbol_draw_item(
+        &mut self,
+        kind: &str,
+        unit_number: i32,
+        body_style: i32,
+    ) -> Result<LibDrawItem, Error> {
+        match kind {
+            "arc" => self.parse_symbol_arc(unit_number, body_style),
+            "bezier" => self.parse_symbol_bezier(unit_number, body_style),
+            "circle" => self.parse_symbol_circle(unit_number, body_style),
+            "pin" => self.parse_symbol_pin(unit_number, body_style),
+            "polyline" => self.parse_symbol_polyline(unit_number, body_style),
+            "rectangle" => self.parse_symbol_rectangle(unit_number, body_style),
+            "text" => self.parse_symbol_text(unit_number, body_style),
+            "text_box" => self.parse_symbol_text_box(unit_number, body_style),
+            _ => {
+                Err(self
+                    .expecting("arc, bezier, circle, pin, polyline, rectangle, text, or text_box"))
+            }
+        }
+    }
+
     fn parse_lib_symbol(&mut self) -> Result<LibSymbol, Error> {
         let raw_name = self
             .need_symbol_atom("lib symbol name")
@@ -623,62 +709,9 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                "body_styles" => {
-                    while !self.at_right() {
-                        if self.at_unquoted_symbol_with("demorgan") {
-                            let _ = self.need_unquoted_symbol_atom("demorgan")?;
-                            symbol.has_demorgan = true;
-                        } else {
-                            symbol
-                                .body_style_names
-                                .push(self.need_symbol_atom("property value")?);
-                        }
-                    }
-                    self.need_right()?;
-                }
-                "pin_names" => {
-                    while !self.at_right() {
-                        if self.at_unquoted_symbol_with("hide") {
-                            let _ = self.need_unquoted_symbol_atom("hide")?;
-                            symbol.show_pin_names = false;
-                            continue;
-                        }
-
-                        self.need_left()?;
-                        match self.need_unquoted_symbol_atom("offset or hide")?.as_str() {
-                            "offset" => {
-                                symbol.pin_name_offset =
-                                    Some(self.parse_f64_atom("pin name offset")?);
-                                self.need_right()?;
-                            }
-                            "hide" => {
-                                symbol.show_pin_names = !self.parse_bool_atom("hide")?;
-                                self.need_right()?;
-                            }
-                            _ => return Err(self.expecting("offset or hide")),
-                        }
-                    }
-                    self.need_right()?;
-                }
-                "pin_numbers" => {
-                    while !self.at_right() {
-                        if self.at_unquoted_symbol_with("hide") {
-                            let _ = self.need_unquoted_symbol_atom("hide")?;
-                            symbol.show_pin_numbers = false;
-                            continue;
-                        }
-
-                        self.need_left()?;
-                        match self.need_unquoted_symbol_atom("hide")?.as_str() {
-                            "hide" => {
-                                symbol.show_pin_numbers = !self.parse_bool_atom("hide")?;
-                                self.need_right()?;
-                            }
-                            _ => return Err(self.expecting("hide")),
-                        }
-                    }
-                    self.need_right()?;
-                }
+                "body_styles" => self.parse_body_styles(&mut symbol)?,
+                "pin_names" => self.parse_pin_names(&mut symbol)?,
+                "pin_numbers" => self.parse_pin_numbers(&mut symbol)?,
                 "exclude_from_sim" => {
                     symbol.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
@@ -786,25 +819,8 @@ impl KiCadSchematicParser {
                             }
                             "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
                             | "text" | "text_box" => {
-                                let item = match head.as_str() {
-                                    "arc" => self.parse_symbol_arc(unit_number, body_style),
-                                    "bezier" => self.parse_symbol_bezier(unit_number, body_style),
-                                    "circle" => self.parse_symbol_circle(unit_number, body_style),
-                                    "polyline" => {
-                                        self.parse_symbol_polyline(unit_number, body_style)
-                                    }
-                                    "rectangle" => {
-                                        self.parse_symbol_rectangle(unit_number, body_style)
-                                    }
-                                    "text" => self.parse_symbol_text(unit_number, body_style),
-                                    "text_box" => {
-                                        self.parse_symbol_text_box(unit_number, body_style)
-                                    }
-                                    "pin" => self.parse_symbol_pin(unit_number, body_style),
-                                    _ => Err(self.expecting(
-                                        "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
-                                    )),
-                                }?;
+                                let item =
+                                    self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
                                 self.need_right()?;
                                 draw_item_kinds.push(head.to_string());
                                 draw_items.push(item);
@@ -829,19 +845,7 @@ impl KiCadSchematicParser {
                 }
                 kind @ ("arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
                 | "text" | "text_box") => {
-                    let item = match kind {
-                        "arc" => self.parse_symbol_arc(1, 1),
-                        "bezier" => self.parse_symbol_bezier(1, 1),
-                        "circle" => self.parse_symbol_circle(1, 1),
-                        "polyline" => self.parse_symbol_polyline(1, 1),
-                        "rectangle" => self.parse_symbol_rectangle(1, 1),
-                        "text" => self.parse_symbol_text(1, 1),
-                        "text_box" => self.parse_symbol_text_box(1, 1),
-                        "pin" => self.parse_symbol_pin(1, 1),
-                        _ => Err(self.expecting(
-                            "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
-                        )),
-                    }?;
+                    let item = self.parse_symbol_draw_item(kind, 1, 1)?;
                     self.need_right()?;
 
                     if let Some(unit) = symbol.units.iter_mut().find(|unit| {
