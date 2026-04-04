@@ -2756,7 +2756,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "property" => {
-                    let mut property = self.parse_property_body(FieldParent::Symbol)?;
+                    let property = self.parse_property_body(FieldParent::Symbol)?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
                         excluded_from_sim = property.value == "0";
                         self.need_right()?;
@@ -2767,8 +2767,6 @@ impl KiCadSchematicParser {
                         self.need_right()?;
                         continue;
                     }
-
-                    property.key = Self::canonical_symbol_property_name(&property.key);
 
                     if matches!(
                         property.kind,
