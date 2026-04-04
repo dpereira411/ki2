@@ -2941,7 +2941,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("exclude_from_sim, on_board, in_bom, dnp, or polyline")?
+                .need_unquoted_symbol_atom("polyline, exclude_from_sim, in_bom, on_board, or dnp")?
                 .as_str()
             {
                 "polyline" => {
@@ -2972,7 +2972,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(
-                        self.expecting("exclude_from_sim, on_board, in_bom, dnp, or polyline")
+                        self.expecting("polyline, exclude_from_sim, in_bom, on_board, or dnp")
                     );
                 }
             }
