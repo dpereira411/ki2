@@ -3924,13 +3924,14 @@ impl KiCadSchematicParser {
                 }
                 "stroke" => {
                     let _ = self.need_unquoted_symbol_atom("stroke")?;
-                    sheet.has_stroke = true;
-                    sheet.stroke = Some(self.parse_stroke()?);
+                    let stroke = self.parse_stroke()?;
+                    sheet.border_width = stroke.width.unwrap_or(0.0);
+                    sheet.border_color = stroke.color;
                 }
                 "fill" => {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
-                    sheet.has_fill = true;
-                    sheet.fill = Some(self.parse_fill()?);
+                    let fill = self.parse_fill()?;
+                    sheet.background_color = fill.color;
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;

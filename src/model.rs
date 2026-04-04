@@ -915,10 +915,9 @@ impl Symbol {
 pub struct Sheet {
     pub at: [f64; 2],
     pub size: [f64; 2],
-    pub has_stroke: bool,
-    pub has_fill: bool,
-    pub stroke: Option<Stroke>,
-    pub fill: Option<Fill>,
+    pub border_width: f64,
+    pub border_color: Option<[f64; 4]>,
+    pub background_color: Option<[f64; 4]>,
     pub excluded_from_sim: bool,
     pub in_bom: bool,
     pub on_board: bool,
@@ -932,16 +931,12 @@ pub struct Sheet {
 
 impl Sheet {
     pub fn new() -> Self {
-        let mut stroke = Stroke::new();
-        stroke.width = Some(0.0);
-
         Self {
             at: [0.0, 0.0],
             size: [0.0, 0.0],
-            has_stroke: false,
-            has_fill: false,
-            stroke: Some(stroke),
-            fill: Some(Fill::new()),
+            border_width: 0.0,
+            border_color: None,
+            background_color: None,
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
@@ -1048,14 +1043,9 @@ mod tests {
         let sheet = Sheet::new();
 
         assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::Auto);
-        assert_eq!(
-            sheet.stroke.as_ref().expect("sheet stroke").width,
-            Some(0.0)
-        );
-        assert_eq!(
-            sheet.fill.as_ref().expect("sheet fill").fill_type,
-            super::FillType::None
-        );
+        assert_eq!(sheet.border_width, 0.0);
+        assert_eq!(sheet.border_color, None);
+        assert_eq!(sheet.background_color, None);
         assert_eq!(
             sheet
                 .properties

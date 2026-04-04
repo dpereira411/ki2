@@ -3136,14 +3136,9 @@ fn sheet_does_not_require_at_or_size() {
         .expect("sheet");
     assert_eq!(sheet.at, [0.0, 0.0]);
     assert_eq!(sheet.size, [0.0, 0.0]);
-    assert_eq!(
-        sheet.stroke.as_ref().expect("default sheet stroke").width,
-        Some(0.0)
-    );
-    assert_eq!(
-        sheet.fill.as_ref().expect("default sheet fill").fill_type,
-        FillType::None
-    );
+    assert_eq!(sheet.border_width, 0.0);
+    assert_eq!(sheet.border_color, None);
+    assert_eq!(sheet.background_color, None);
     let _ = fs::remove_file(path);
 }
 
@@ -7315,16 +7310,8 @@ fn parses_explicit_sheet_line_and_bus_entry_stroke_tokens() {
             _ => None,
         })
         .expect("sheet");
-    assert!(sheet.has_stroke);
-    assert!(sheet.has_fill);
-    assert_eq!(
-        sheet.stroke.as_ref().and_then(|stroke| stroke.width),
-        Some(0.1)
-    );
-    assert_eq!(
-        sheet.fill.as_ref().and_then(|fill| fill.color),
-        Some([0.0, 0.0, 0.0, 0.0])
-    );
+    assert_eq!(sheet.border_width, 0.1);
+    assert_eq!(sheet.background_color, Some([0.0, 0.0, 0.0, 0.0]));
 
     let _ = fs::remove_file(path);
 }
