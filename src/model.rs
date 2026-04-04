@@ -266,6 +266,15 @@ impl Label {
             .to_string();
         property
     }
+
+    pub fn insert_property(&mut self, property: Property) {
+        if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+            let existing = self.ensure_global_intersheet_refs_property();
+            *existing = property;
+        } else {
+            self.properties.push(property);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -471,6 +480,28 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    pub fn insert_property(&mut self, property: Property) {
+        if matches!(
+            property.kind,
+            PropertyKind::SymbolReference
+                | PropertyKind::SymbolValue
+                | PropertyKind::SymbolFootprint
+                | PropertyKind::SymbolDatasheet
+        ) {
+            if let Some(existing) = self
+                .properties
+                .iter_mut()
+                .find(|existing| existing.kind == property.kind)
+            {
+                *existing = property;
+            } else {
+                self.properties.push(property);
+            }
+        } else {
+            self.properties.push(property);
+        }
+    }
+
     pub fn set_field_text(&mut self, kind: PropertyKind, value: String) {
         let key = kind.canonical_key();
 
@@ -508,29 +539,6 @@ pub struct Sheet {
 }
 
 impl Sheet {
-    pub fn upsert_property(&mut self, mut property: Property) {
-        if property.kind == PropertyKind::SheetFile {
-            property.value = property.value.replace('\\', "/");
-        }
-
-        if matches!(
-            property.kind,
-            PropertyKind::SheetName | PropertyKind::SheetFile
-        ) {
-            if let Some(existing) = self
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                self.properties.push(property);
-            }
-        } else {
-            self.properties.push(property);
-        }
-    }
-
     pub fn name(&self) -> Option<&str> {
         self.properties
             .iter()

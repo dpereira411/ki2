@@ -2335,19 +2335,7 @@ impl KiCadSchematicParser {
                                 self.parse_sch_field(FieldParent::OtherLabel)?
                             };
 
-                            if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
-                                if let Some(existing) =
-                                    label.properties.iter_mut().find(|existing| {
-                                        existing.kind == PropertyKind::GlobalLabelIntersheetRefs
-                                    })
-                                {
-                                    *existing = property;
-                                } else {
-                                    label.properties.push(property);
-                                }
-                            } else {
-                                label.properties.push(property);
-                            }
+                            label.insert_property(property);
                             self.need_right()?;
                         }
                         _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
@@ -3148,25 +3136,7 @@ impl KiCadSchematicParser {
                         continue;
                     }
 
-                    if matches!(
-                        property.kind,
-                        PropertyKind::SymbolReference
-                            | PropertyKind::SymbolValue
-                            | PropertyKind::SymbolFootprint
-                            | PropertyKind::SymbolDatasheet
-                    ) {
-                        if let Some(existing) = symbol
-                            .properties
-                            .iter_mut()
-                            .find(|existing| existing.kind == property.kind)
-                        {
-                            *existing = property;
-                        } else {
-                            symbol.properties.push(property);
-                        }
-                    } else {
-                        symbol.properties.push(property);
-                    }
+                    symbol.insert_property(property);
                     self.need_right()?;
                 }
                 "instances" => {
@@ -3489,7 +3459,6 @@ impl KiCadSchematicParser {
             instances: Vec::new(),
         };
         let mut properties = Vec::new();
-
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
