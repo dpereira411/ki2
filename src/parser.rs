@@ -330,9 +330,7 @@ impl KiCadSchematicParser {
                 | "class_label" | "netclass_flag" | "text" => {
                     parsed_item = Some(self.parse_sch_text_item(effective_head)?)
                 }
-                "text_box" => {
-                    parsed_item = Some(SchItem::TextBox(self.parse_text_box_content(false)?))
-                }
+                "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_text_box_content()?)),
                 "table" => parsed_item = Some(SchItem::Table(self.parse_table()?)),
                 "image" => parsed_item = Some(SchItem::Image(self.parse_image()?)),
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_arc_shape()?)),
@@ -2097,7 +2095,119 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn parse_text_box_content(&mut self, table_cell: bool) -> Result<TextBox, Error> {
+    fn parse_text_box_content(&mut self) -> Result<TextBox, Error> {
+        let text = self
+            .need_symbol_atom("text box text")
+            .map_err(|_| self.error_here("Invalid text string"))?;
+        let mut at = None;
+        let mut angle = 0.0;
+        let mut end = None;
+        let mut size = None;
+        let mut excluded_from_sim = false;
+        let mut has_effects = false;
+        let mut effects = None;
+        let mut stroke = None;
+        let mut fill = None;
+        let mut margins = None;
+        let mut uuid = None;
+        let mut stroke_width = None;
+        let mut text_size_y = None;
+
+        while !self.at_right() {
+            self.need_left()?;
+            let head = self.need_unquoted_symbol_atom(
+                "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid",
+            )?;
+            match head.as_str() {
+                "exclude_from_sim" => {
+                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    self.need_right()?;
+                }
+                "start" => {
+                    at = Some(self.parse_xy2("text_box start")?);
+                    self.need_right()?;
+                }
+                "end" => {
+                    end = Some(self.parse_xy2("text_box end")?);
+                    self.need_right()?;
+                }
+                "at" => {
+                    let parsed = self.parse_xy3("text_box at")?;
+                    at = Some([parsed[0], parsed[1]]);
+                    angle = parsed[2];
+                    self.need_right()?;
+                }
+                "size" => {
+                    size = Some(self.parse_xy2("text_box size")?);
+                    self.need_right()?;
+                }
+                "stroke" => {
+                    let parsed_stroke = self.parse_stroke()?;
+                    stroke_width = parsed_stroke.width;
+                    stroke = Some(parsed_stroke);
+                }
+                "fill" => {
+                    fill = Some(self.parse_fill()?);
+                }
+                "effects" => {
+                    let parsed_effects = self.parse_effects_summary()?;
+                    has_effects = true;
+                    text_size_y = parsed_effects.effects.font_size.map(|size| size[1]);
+                    effects = Some(parsed_effects.effects);
+                    self.need_right()?;
+                }
+                "margins" => {
+                    margins = Some([
+                        self.parse_f64_atom("margin left")?,
+                        self.parse_f64_atom("margin top")?,
+                        self.parse_f64_atom("margin right")?,
+                        self.parse_f64_atom("margin bottom")?,
+                    ]);
+                    self.need_right()?;
+                }
+                "uuid" => {
+                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    self.need_right()?;
+                }
+                _ => {
+                    return Err(self.expecting(
+                        "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid",
+                    ))
+                }
+            }
+        }
+
+        let at = at.unwrap_or([0.0, 0.0]);
+        let end = match (end, size) {
+            (Some(end), _) => end,
+            (None, Some(size)) => [at[0] + size[0], at[1] + size[1]],
+            (None, None) => return Err(self.expecting("size")),
+        };
+        let margins = margins.or_else(|| {
+            let margin = Self::legacy_text_box_margin(
+                stroke_width.unwrap_or(DEFAULT_LINE_WIDTH_MM),
+                text_size_y.unwrap_or(DEFAULT_TEXT_SIZE_MM),
+            );
+            Some([margin, margin, margin, margin])
+        });
+
+        Ok(TextBox {
+            text,
+            at,
+            angle,
+            end,
+            excluded_from_sim,
+            has_effects,
+            effects,
+            stroke,
+            fill,
+            span: None,
+            margins,
+            uuid,
+        })
+    }
+
+    fn parse_table_cell_content(&mut self) -> Result<TextBox, Error> {
         let text = self
             .need_symbol_atom("text box text")
             .map_err(|_| self.error_here("Invalid text string"))?;
@@ -2118,11 +2228,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(if table_cell {
-                "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects, span or uuid"
-            } else {
-                "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid"
-            })?;
+            let head = self.need_unquoted_symbol_atom(
+                "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects, span or uuid",
+            )?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -2147,11 +2255,6 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "span" => {
-                    if !table_cell {
-                        return Err(self.expecting(
-                            "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid",
-                        ));
-                    }
                     span = Some([
                         self.parse_i32_atom("column span")?,
                         self.parse_i32_atom("row span")?,
@@ -2186,14 +2289,9 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ if table_cell => {
-                    return Err(self.expecting(
-                        "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects, span or uuid",
-                    ));
-                }
                 _ => {
                     return Err(self.expecting(
-                        "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid",
+                        "exclude_from_sim, start, end, at, size, stroke, fill, margins, effects, span or uuid",
                     ))
                 }
             }
@@ -2266,7 +2364,7 @@ impl KiCadSchematicParser {
                         if self.need_unquoted_symbol_atom("table_cell")? != "table_cell" {
                             return Err(self.expecting("table_cell"));
                         }
-                        let cell = self.parse_text_box_content(true)?;
+                        let cell = self.parse_table_cell_content()?;
                         self.need_right()?;
                         cells.push(cell);
                     }

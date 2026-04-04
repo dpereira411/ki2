@@ -77,6 +77,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same shared `parseSchText()` path, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep the text payload on the same strict `Invalid text string` symbol-token path as upstream before any textbox body parsing runs.
 - For top-level schematic `text_box`, do not keep a trivial `parse_text_box()` wrapper around the real body parser. Dispatch straight to `parseSchTextBoxContent()`-equivalent logic from the owning switch branch.
+- Do not collapse top-level schematic `text_box` and table-cell parsing behind one boolean-gated body routine either. Keep those entrypoints separate so the table-cell-only `span` grammar and `Expecting(...)` path stay local to the table parser.
 - In `parseSchTextBoxContent()`, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep the branch-head token and fallback `Expecting(...)` text aligned with the full routine body too. This parser branch also owns `exclude_from_sim`, legacy `start/end`, and `margins`, so do not leave those out of the local head/fallback text.
 - In `parseSchTextBoxContent()`, do not add a repo-local post-loop requirement that `(at ...)` or legacy `(start ...)` must be present. Upstream leaves the text box at its default position if neither token appears, while still requiring `size` unless `end` was provided.
