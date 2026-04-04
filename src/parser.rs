@@ -1818,7 +1818,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(
-                        self.expecting("id, at, hide, show_name, do_not_autoplace, or effects")
+                        self.expecting("id, at, hide, show_name, do_not_autoplace or effects")
                     );
                 }
             }

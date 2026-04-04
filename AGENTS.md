@@ -114,6 +114,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseSchPolyLine()`, keep KiCad's literal child set and fallback `Expecting(...)` text: `pts, uuid, stroke, or fill`. Do not accept repo-local `start` / `mid` / `end` / `center` geometry tokens there.
 - In `parseRectangleShape()`, keep the branch-head token and fallback `Expecting(...)` text aligned with the full routine body too. The rectangle parser owns `radius` as well as `start/end/stroke/fill/uuid`, so do not leave `radius` out of the local head/fallback text.
 - In `parseSchField()`, keep the header checks distinct the way KiCad does: `Invalid property name`, `Empty property name`, and `Invalid property value` are separate branches before field classification begins.
+- In `parseSchField()`, keep KiCad's literal fallback `Expecting(...)` text: `id, at, hide, show_name, do_not_autoplace or effects`. Do not introduce an extra comma before `or effects`.
 - In `parseSchField()`, `private` survives only for true user fields (`FIELD_T::USER`-equivalent). Do not preserve it for `SheetUser` fields just because they are user-defined at the schematic level.
 - In `parseSchField()`, `show_name` and `do_not_autoplace` should continue to accept the bare-token form as `true` through `parseMaybeAbsentBool(true)`, not only explicit `yes` / `no` payloads.
 - In `parseSchField()`, keep parent-sensitive field-ID classification and canonical-name mapping inline in the routine body, like upstream, instead of routing them through separate local helpers.
