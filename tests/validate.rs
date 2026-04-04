@@ -3131,6 +3131,14 @@ fn sheet_does_not_require_at_or_size() {
         .expect("sheet");
     assert_eq!(sheet.at, [0.0, 0.0]);
     assert_eq!(sheet.size, [0.0, 0.0]);
+    assert_eq!(
+        sheet.stroke.as_ref().expect("default sheet stroke").width,
+        Some(0.0)
+    );
+    assert_eq!(
+        sheet.fill.as_ref().expect("default sheet fill").fill_type,
+        FillType::None
+    );
     let _ = fs::remove_file(path);
 }
 

@@ -912,13 +912,16 @@ pub struct Sheet {
 
 impl Sheet {
     pub fn new() -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             at: [0.0, 0.0],
             size: [0.0, 0.0],
             has_stroke: false,
             has_fill: false,
-            stroke: None,
-            fill: None,
+            stroke: Some(stroke),
+            fill: Some(Fill::new()),
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
@@ -1024,6 +1027,14 @@ mod tests {
         let sheet = Sheet::new();
 
         assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::Auto);
+        assert_eq!(
+            sheet.stroke.as_ref().expect("sheet stroke").width,
+            Some(0.0)
+        );
+        assert_eq!(
+            sheet.fill.as_ref().expect("sheet fill").fill_type,
+            super::FillType::None
+        );
         assert_eq!(
             sheet
                 .properties
