@@ -2719,6 +2719,46 @@ fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
 }
 
 #[test]
+fn lib_property_skips_user_field_after_nine_suffix_attempts() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "MPN" "0")
+      (property "MPN" "1")
+      (property "MPN" "2")
+      (property "MPN" "3")
+      (property "MPN" "4")
+      (property "MPN" "5")
+      (property "MPN" "6")
+      (property "MPN" "7")
+      (property "MPN" "8")
+      (property "MPN" "9")
+      (property "MPN" "10")))
+)"#;
+    let path = temp_schematic("lib_property_suffix_limit", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    assert_eq!(
+        lib_symbol
+            .properties
+            .iter()
+            .filter(|property| property.key.starts_with("MPN"))
+            .map(|property| property.key.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "MPN", "MPN_1", "MPN_2", "MPN_3", "MPN_4", "MPN_5", "MPN_6", "MPN_7", "MPN_8", "MPN_9"
+        ]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn recovers_legacy_sheet_field_ids_during_parse() {
     let src = r#"(kicad_sch
   (version 20200310)

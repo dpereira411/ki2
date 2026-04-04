@@ -111,64 +111,7 @@ pub struct LibSymbol {
     pub embedded_files: Vec<EmbeddedFile>,
 }
 
-impl LibSymbol {
-    pub fn upsert_property(&mut self, mut property: Property) {
-        match property.kind {
-            PropertyKind::SymbolReference
-            | PropertyKind::SymbolValue
-            | PropertyKind::SymbolFootprint
-            | PropertyKind::SymbolDatasheet => {
-                if let Some(existing) = self
-                    .properties
-                    .iter_mut()
-                    .find(|existing| existing.kind == property.kind)
-                {
-                    *existing = property;
-                } else {
-                    self.properties.push(property);
-                }
-            }
-            PropertyKind::User => match property.key.as_str() {
-                "ki_keywords" => self.keywords = Some(property.value),
-                "ki_description" => self.description = Some(property.value),
-                "ki_fp_filters" => {
-                    self.fp_filters = property
-                        .value
-                        .split_whitespace()
-                        .map(str::to_string)
-                        .collect();
-                }
-                "ki_locked" => self.locked_units = true,
-                _ => {
-                    if self
-                        .properties
-                        .iter()
-                        .any(|existing| existing.key == property.key)
-                    {
-                        let base = property.key.clone();
-
-                        for suffix in 1..10 {
-                            let candidate = format!("{base}_{suffix}");
-
-                            if !self
-                                .properties
-                                .iter()
-                                .any(|existing| existing.key == candidate)
-                            {
-                                property.key = candidate;
-                                self.properties.push(property);
-                                return;
-                            }
-                        }
-                    } else {
-                        self.properties.push(property);
-                    }
-                }
-            },
-            _ => self.properties.push(property),
-        }
-    }
-}
+impl LibSymbol {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibSymbolUnit {
