@@ -130,6 +130,36 @@ impl LibSymbolUnit {
     }
 }
 
+impl LibSymbol {
+    pub fn ensure_unit(
+        &mut self,
+        name: String,
+        unit_number: i32,
+        body_style: i32,
+    ) -> &mut LibSymbolUnit {
+        if let Some(index) = self.units.iter().position(|existing| {
+            existing.unit_number == unit_number
+                && existing.body_style == body_style
+                && existing.name == name
+        }) {
+            return &mut self.units[index];
+        }
+
+        self.units.push(LibSymbolUnit {
+            name,
+            unit_number,
+            body_style,
+            unit_name: None,
+            draw_item_kinds: Vec::new(),
+            draw_items: Vec::new(),
+        });
+
+        self.units
+            .last_mut()
+            .expect("newly pushed lib symbol unit must exist")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibDrawItem {
     pub kind: String,

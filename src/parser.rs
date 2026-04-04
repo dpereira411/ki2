@@ -838,14 +838,8 @@ impl KiCadSchematicParser {
                         );
                     }
 
-                    let mut unit = crate::model::LibSymbolUnit {
-                        name: unit_full_name,
-                        unit_number,
-                        body_style,
-                        unit_name: None,
-                        draw_item_kinds: Vec::new(),
-                        draw_items: Vec::new(),
-                    };
+                    let unit_name = unit_full_name;
+                    let _ = symbol.ensure_unit(unit_name.clone(), unit_number, body_style);
 
                     while !self.at_right() {
                         self.need_left()?;
@@ -858,7 +852,10 @@ impl KiCadSchematicParser {
                                     self.current().atom_class,
                                     Some(AtomClass::Symbol | AtomClass::Quoted)
                                 ) {
-                                    unit.unit_name = Some(self.need_symbol_atom("unit_name")?);
+                                    let parsed = self.need_symbol_atom("unit_name")?;
+                                    symbol
+                                        .ensure_unit(unit_name.clone(), unit_number, body_style)
+                                        .unit_name = Some(parsed);
                                 }
                                 self.need_right()?;
                             }
@@ -867,7 +864,9 @@ impl KiCadSchematicParser {
                                 let item =
                                     self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
                                 self.need_right()?;
-                                unit.push_draw_item(item);
+                                symbol
+                                    .ensure_unit(unit_name.clone(), unit_number, body_style)
+                                    .push_draw_item(item);
                             }
                             _ => {
                                 return Err(self.expecting(
@@ -875,19 +874,6 @@ impl KiCadSchematicParser {
                                 ));
                             }
                         }
-                    }
-
-                    if let Some(existing) = symbol.units.iter_mut().find(|existing| {
-                        existing.unit_number == unit.unit_number
-                            && existing.body_style == unit.body_style
-                            && existing.name == unit.name
-                    }) {
-                        existing.unit_name = unit.unit_name;
-                        for item in unit.draw_items {
-                            existing.push_draw_item(item);
-                        }
-                    } else {
-                        symbol.units.push(unit);
                     }
                     self.need_right()?;
                 }
