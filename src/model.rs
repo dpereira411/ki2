@@ -114,6 +114,30 @@ pub struct LibSymbol {
 }
 
 impl LibSymbol {
+    pub fn ensure_unit_index(&mut self, name: String, unit_number: i32, body_style: i32) -> usize {
+        if let Some(index) = self.units.iter().position(|existing| {
+            existing.unit_number == unit_number
+                && existing.body_style == body_style
+                && existing.name == name
+        }) {
+            index
+        } else {
+            self.units.push(LibSymbolUnit {
+                name,
+                unit_number,
+                body_style,
+                unit_name: None,
+                draw_item_kinds: Vec::new(),
+                draw_items: Vec::new(),
+            });
+            self.units.len() - 1
+        }
+    }
+
+    pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
+        self.units[0].push_draw_item(item);
+    }
+
     pub fn insert_property(&mut self, raw_name: &str, mut property: Property) {
         if matches!(
             property.kind,
@@ -182,6 +206,13 @@ pub struct LibSymbolUnit {
     pub unit_name: Option<String>,
     pub draw_item_kinds: Vec<String>,
     pub draw_items: Vec<LibDrawItem>,
+}
+
+impl LibSymbolUnit {
+    pub fn push_draw_item(&mut self, item: LibDrawItem) {
+        self.draw_item_kinds.push(item.kind.clone());
+        self.draw_items.push(item);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

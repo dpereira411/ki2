@@ -10,11 +10,11 @@ use crate::error::Error;
 use crate::model::{
     BusAlias, BusEntry, EmbeddedFile, EmbeddedFileType, FieldAutoplacement, Fill, FillType, Group,
     Image, ItemVariant, Junction, Label, LabelKind, LabelShape, LabelSpin, LibDrawItem,
-    LibPinAlternate, LibSymbol, LibSymbolUnit, Line, LineKind, MirrorAxis, NoConnect, Page, Paper,
-    Property, PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet,
-    SheetInstance, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle,
-    Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox,
-    TextEffects, TextHJustify, TextKind, TextVJustify, TitleBlock,
+    LibPinAlternate, LibSymbol, Line, LineKind, MirrorAxis, NoConnect, Page, Paper, Property,
+    PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet, SheetInstance,
+    SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle, Symbol,
+    SymbolInstance, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextEffects,
+    TextHJustify, TextKind, TextVJustify, TitleBlock,
 };
 use crate::token::{AtomClass, TokKind, Token, lex};
 
@@ -1084,23 +1084,7 @@ impl KiCadSchematicParser {
                     }
 
                     let unit_name = unit_full_name;
-                    let unit_index = if let Some(index) = symbol.units.iter().position(|existing| {
-                        existing.unit_number == unit_number
-                            && existing.body_style == body_style
-                            && existing.name == unit_name
-                    }) {
-                        index
-                    } else {
-                        symbol.units.push(LibSymbolUnit {
-                            name: unit_name.clone(),
-                            unit_number,
-                            body_style,
-                            unit_name: None,
-                            draw_item_kinds: Vec::new(),
-                            draw_items: Vec::new(),
-                        });
-                        symbol.units.len() - 1
-                    };
+                    let unit_index = symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
 
                     while !self.at_right() {
                         self.need_left()?;
@@ -1116,8 +1100,7 @@ impl KiCadSchematicParser {
                             self.need_right()?;
                         } else {
                             let item = self.parse_symbol_draw_item(unit_number, body_style)?;
-                            symbol.units[unit_index].draw_item_kinds.push(item.kind.clone());
-                            symbol.units[unit_index].draw_items.push(item);
+                            symbol.units[unit_index].push_draw_item(item);
                         }
                     }
                     self.need_right()?;
@@ -1125,8 +1108,7 @@ impl KiCadSchematicParser {
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
                     let item = self.parse_symbol_draw_item(1, 1)?;
-                    symbol.units[0].draw_item_kinds.push(item.kind.clone());
-                    symbol.units[0].draw_items.push(item);
+                    symbol.push_root_draw_item(item);
                 }
                 "embedded_fonts" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
