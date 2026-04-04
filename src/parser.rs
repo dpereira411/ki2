@@ -2088,7 +2088,7 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let parsed = self.parse_xy3("text at")?;
-                    at = Some([parsed[0], parsed[1], Self::keep_upright_angle(parsed[2])]);
+                    at = Some([parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])]);
                     self.need_right()?;
                 }
                 "shape" => {
@@ -4431,7 +4431,7 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn keep_upright_angle(angle: f64) -> f64 {
+    fn normalize_text_angle(angle: f64) -> f64 {
         let mut normalized = angle.rem_euclid(360.0);
 
         if normalized <= 45.0 || normalized >= 315.0 || (normalized > 135.0 && normalized <= 225.0)
