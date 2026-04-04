@@ -355,8 +355,12 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     assert_eq!(loaded.sheet_paths.len(), 2);
     assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
     assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
+    assert_eq!(loaded.sheet_paths[0].sheet_number, 1);
+    assert_eq!(loaded.sheet_paths[0].sheet_count, 2);
     assert_eq!(loaded.sheet_paths[1].instance_path, "");
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("2"));
+    assert_eq!(loaded.sheet_paths[1].sheet_number, 2);
+    assert_eq!(loaded.sheet_paths[1].sheet_count, 2);
 
     let child = loaded
         .schematics

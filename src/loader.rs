@@ -22,6 +22,8 @@ pub struct LoadedSheetPath {
     pub instance_path: String,
     pub symbol_path: String,
     pub page: Option<String>,
+    pub sheet_number: usize,
+    pub sheet_count: usize,
 }
 
 #[derive(Debug)]
@@ -49,6 +51,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
     loader.update_symbol_instance_data(&root_path, &sheet_paths);
     loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
+    loader.set_sheet_number_and_count(&mut sheet_paths);
     Ok(LoadResult {
         root_path,
         schematics: loader.schematics,
@@ -220,6 +223,8 @@ impl SchematicLoader {
                 .iter()
                 .find(|instance| instance.path.is_empty())
                 .and_then(|instance| instance.page.clone()),
+            sheet_number: 0,
+            sheet_count: 0,
         }];
 
         self.build_child_sheet_paths(root_path, &format!("/{root_uuid}"), &mut sheet_paths);
@@ -259,6 +264,8 @@ impl SchematicLoader {
                 instance_path: instance_path.clone(),
                 symbol_path: instance_path.clone(),
                 page: None,
+                sheet_number: 0,
+                sheet_count: 0,
             });
             self.build_child_sheet_paths(&link.child_path, &instance_path, out);
         }
@@ -365,6 +372,14 @@ impl SchematicLoader {
                 .then_with(|| a.instance_path.cmp(&b.instance_path))
                 .then_with(|| a.schematic_path.cmp(&b.schematic_path))
         });
+    }
+
+    fn set_sheet_number_and_count(&self, sheet_paths: &mut [LoadedSheetPath]) {
+        let sheet_count = sheet_paths.len();
+        for (index, sheet_path) in sheet_paths.iter_mut().enumerate() {
+            sheet_path.sheet_number = index + 1;
+            sheet_path.sheet_count = sheet_count;
+        }
     }
 }
 
