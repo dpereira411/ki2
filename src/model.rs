@@ -806,7 +806,12 @@ impl Symbol {
             dnp: false,
             fields_autoplaced: FieldAutoplacement::None,
             uuid: None,
-            properties: Vec::new(),
+            properties: vec![
+                Property::new(PropertyKind::SymbolReference, String::new()),
+                Property::new(PropertyKind::SymbolValue, String::new()),
+                Property::new(PropertyKind::SymbolFootprint, String::new()),
+                Property::new(PropertyKind::SymbolDatasheet, String::new()),
+            ],
             instances: Vec::new(),
             pins: Vec::new(),
         }

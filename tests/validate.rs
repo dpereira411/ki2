@@ -431,6 +431,50 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
 }
 
 #[test]
+fn placed_symbols_start_with_mandatory_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-fields")
+  (symbol
+    (lib_id "Device:R"))
+)"#;
+    let path = temp_schematic("placed_symbol_mandatory_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .map(|property| property.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            PropertyKind::SymbolReference,
+            PropertyKind::SymbolValue,
+            PropertyKind::SymbolFootprint,
+            PropertyKind::SymbolDatasheet,
+        ]
+    );
+    assert!(
+        symbol
+            .properties
+            .iter()
+            .all(|property| property.value.is_empty())
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sorts_loaded_sheet_pages_numerically() {
     let dir = env::temp_dir().join(format!(
         "ki2_sheet_page_sort_{}",
@@ -2405,8 +2449,20 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
     assert_eq!(symbols.len(), 2);
     assert!(symbols[0].excluded_from_sim);
     assert!(symbols[1].excluded_from_sim);
-    assert!(symbols[0].properties.is_empty());
-    assert!(symbols[1].properties.is_empty());
+    assert_eq!(symbols[0].properties.len(), 4);
+    assert_eq!(symbols[1].properties.len(), 4);
+    assert!(
+        symbols[0]
+            .properties
+            .iter()
+            .all(|property| property.value.is_empty())
+    );
+    assert!(
+        symbols[1]
+            .properties
+            .iter()
+            .all(|property| property.value.is_empty())
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -2536,7 +2592,10 @@ fn parses_property_metadata_semantics() {
         .items
         .iter()
         .find_map(|item| match item {
-            SchItem::Symbol(symbol) => symbol.properties.first(),
+            SchItem::Symbol(symbol) => symbol
+                .properties
+                .iter()
+                .find(|property| property.key == "UserField"),
             _ => None,
         })
         .expect("property");
@@ -2573,7 +2632,10 @@ fn parses_property_metadata_semantics() {
         .items
         .iter()
         .find_map(|item| match item {
-            SchItem::Symbol(symbol) => symbol.properties.first(),
+            SchItem::Symbol(symbol) => symbol
+                .properties
+                .iter()
+                .find(|property| property.key == "UserField"),
             _ => None,
         })
         .expect("property");
@@ -2672,7 +2734,12 @@ fn private_only_survives_on_true_user_fields() {
             _ => None,
         })
         .expect("symbol");
-    assert!(symbol.properties[0].is_private);
+    let symbol_user = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "UserField")
+        .expect("symbol user field");
+    assert!(symbol_user.is_private);
 
     let sheet = schematic
         .screen
@@ -2731,7 +2798,10 @@ fn respects_hide_inside_property_effects() {
         .items
         .iter()
         .find_map(|item| match item {
-            SchItem::Symbol(symbol) => symbol.properties.first(),
+            SchItem::Symbol(symbol) => symbol
+                .properties
+                .iter()
+                .find(|property| property.key == "UserField"),
             _ => None,
         })
         .expect("property");
