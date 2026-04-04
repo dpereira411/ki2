@@ -1834,10 +1834,13 @@ impl KiCadSchematicParser {
     }
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
-        let mut name = self.need_symbol_atom("bus alias name")?;
+        let mut alias = BusAlias {
+            name: self.need_symbol_atom("bus alias name")?,
+            members: Vec::new(),
+        };
         let version = self.require_known_version()?;
         if version < VERSION_NEW_OVERBAR_NOTATION {
-            name = self.convert_old_overbar_notation(name);
+            alias.name = self.convert_old_overbar_notation(alias.name);
         }
 
         self.need_left()?;
@@ -1845,16 +1848,15 @@ impl KiCadSchematicParser {
             return Err(self.expecting("members"));
         }
 
-        let mut members = Vec::new();
         while !self.at_right() {
             let mut member = self.need_quoted_atom("quoted string")?;
             if version < VERSION_NEW_OVERBAR_NOTATION {
                 member = self.convert_old_overbar_notation(member);
             }
-            members.push(member);
+            alias.members.push(member);
         }
         self.need_right()?;
-        self.screen.bus_aliases.push(BusAlias { name, members });
+        self.screen.bus_aliases.push(alias);
         Ok(())
     }
 
@@ -3835,20 +3837,21 @@ impl KiCadSchematicParser {
     }
 
     fn parse_group(&mut self) -> Result<(), Error> {
-        let mut name = None;
+        let mut group = Group {
+            name: None,
+            uuid: None,
+            lib_id: None,
+            members: Vec::new(),
+        };
 
         while self.at_atom() {
             if self.at_unquoted_symbol_with("locked") {
                 let _ = self.need_unquoted_symbol_atom("locked")?;
                 continue;
             }
-            name = Some(self.need_quoted_atom("group name or locked")?);
+            group.name = Some(self.need_quoted_atom("group name or locked")?);
             break;
         }
-
-        let mut uuid = None;
-        let mut lib_id = None;
-        let mut members = Vec::new();
 
         while !self.at_right() {
             self.need_left()?;
@@ -3857,7 +3860,7 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    group.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "lib_id" => {
@@ -3874,12 +3877,14 @@ impl KiCadSchematicParser {
                         return Err(self.error_here("Invalid library ID"));
                     }
 
-                    lib_id = Some(normalized);
+                    group.lib_id = Some(normalized);
                     self.need_right()?;
                 }
                 "members" => {
                     while !self.at_right() {
-                        members.push(self.need_symbol_atom("group member uuid")?);
+                        group
+                            .members
+                            .push(self.need_symbol_atom("group member uuid")?);
                     }
                     self.need_right()?;
                 }
@@ -3887,12 +3892,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        self.pending_groups.push(Group {
-            name,
-            uuid,
-            lib_id,
-            members,
-        });
+        self.pending_groups.push(group);
         Ok(())
     }
 
