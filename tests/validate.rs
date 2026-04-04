@@ -82,7 +82,7 @@ fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_wire_head_path = temp_schematic("quoted_wire_head", quoted_wire_head);
     let err = parse_schematic_file(Path::new(&quoted_wire_head_path))
         .expect_err("must reject quoted wire head keyword");
-    assert!(err.to_string().contains("expecting at, uuid or stroke"));
+    assert!(err.to_string().contains("expecting pts, uuid or stroke"));
 
     let quoted_bezier_xy = r#"(kicad_sch
   (version 20260306)
@@ -3662,7 +3662,7 @@ fn line_and_polyline_keep_upstream_error_text() {
     let bad_wire_path = temp_schematic("bad_wire_child", bad_wire_src);
     let err =
         parse_schematic_file(Path::new(&bad_wire_path)).expect_err("must reject bad wire child");
-    assert!(err.to_string().contains("expecting at, uuid or stroke"));
+    assert!(err.to_string().contains("expecting pts, uuid or stroke"));
     let _ = fs::remove_file(bad_wire_path);
 
     let short_wire_pts_src = r#"(kicad_sch
