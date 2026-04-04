@@ -2875,19 +2875,8 @@ impl KiCadSchematicParser {
 
     fn parse_sch_text_box(&mut self) -> Result<TextBox, Error> {
         let _ = self.need_unquoted_symbol_atom("text_box")?;
-        self.parse_sch_text_box_content(false)
-    }
-
-    fn parse_sch_table_cell(&mut self) -> Result<TextBox, Error> {
-        let _ = self.need_unquoted_symbol_atom("table_cell")?;
-        self.parse_sch_text_box_content(true)
-    }
-
-    fn parse_sch_text_box_content(&mut self, table_cell: bool) -> Result<TextBox, Error> {
         let mut text_box = TextBox {
-            text: self
-                .need_symbol_atom("text box text")
-                .map_err(|_| self.error_here("Invalid text string"))?,
+            text: String::new(),
             at: [0.0, 0.0],
             angle: 0.0,
             end: [0.0, 0.0],
@@ -2900,6 +2889,38 @@ impl KiCadSchematicParser {
             margins: None,
             uuid: None,
         };
+        self.parse_sch_text_box_content(&mut text_box, false)?;
+        Ok(text_box)
+    }
+
+    fn parse_sch_table_cell(&mut self) -> Result<TextBox, Error> {
+        let _ = self.need_unquoted_symbol_atom("table_cell")?;
+        let mut text_box = TextBox {
+            text: String::new(),
+            at: [0.0, 0.0],
+            angle: 0.0,
+            end: [0.0, 0.0],
+            excluded_from_sim: false,
+            has_effects: false,
+            effects: None,
+            stroke: None,
+            fill: None,
+            span: None,
+            margins: None,
+            uuid: None,
+        };
+        self.parse_sch_text_box_content(&mut text_box, true)?;
+        Ok(text_box)
+    }
+
+    fn parse_sch_text_box_content(
+        &mut self,
+        text_box: &mut TextBox,
+        table_cell: bool,
+    ) -> Result<(), Error> {
+        text_box.text = self
+            .need_symbol_atom("text box text")
+            .map_err(|_| self.error_here("Invalid text string"))?;
         let mut pos = None;
         let mut end = None;
         let mut size = None;
@@ -3033,7 +3054,7 @@ impl KiCadSchematicParser {
             });
         }
 
-        Ok(text_box)
+        Ok(())
     }
 
     fn parse_sch_table(&mut self) -> Result<Table, Error> {
