@@ -2461,7 +2461,7 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
         .expect("quoted lib property head should be skipped with a warning");
     assert!(schematic.screen.lib_symbols.is_empty());
     assert!(schematic.screen.parse_warnings.iter().any(|warning| {
-        warning.contains("expecting id, at, hide, show_name, do_not_autoplace or effects")
+        warning.contains("expecting id, at, hide, show_name, do_not_autoplace, or effects")
     }));
 
     let quoted_stroke_width = r#"(kicad_sch

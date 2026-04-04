@@ -1782,7 +1782,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("id, at, hide, show_name, do_not_autoplace or effects")?
+                .need_unquoted_symbol_atom("id, at, hide, show_name, do_not_autoplace, or effects")?
                 .as_str()
             {
                 "id" => {
@@ -1818,7 +1818,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(
-                        self.expecting("id, at, hide, show_name, do_not_autoplace or effects")
+                        self.expecting("id, at, hide, show_name, do_not_autoplace, or effects")
                     );
                 }
             }
