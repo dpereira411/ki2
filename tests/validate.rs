@@ -3228,6 +3228,29 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
     assert_eq!(property.value, "x");
     assert!(!property.is_private);
 
+    let quoted_lib_text_private = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-text-private")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (symbol "MyLib:U_1_1"
+        (text "private" (at 0 0 0) (effects (font (size 1 1)))))))
+)"#;
+    let quoted_lib_text_private_path =
+        temp_schematic("quoted_lib_text_private", quoted_lib_text_private);
+    let schematic =
+        parse_schematic_file(Path::new(&quoted_lib_text_private_path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    let text = lib_symbol
+        .units
+        .iter()
+        .flat_map(|unit| unit.draw_items.iter())
+        .find(|item| item.kind == "text")
+        .expect("text draw item");
+    assert_eq!(text.text.as_deref(), Some("private"));
+    assert!(!text.is_private);
+
     let quoted_lib_pin_hide = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -3250,6 +3273,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
 
     let _ = fs::remove_file(quoted_group_locked_path);
     let _ = fs::remove_file(quoted_property_private_path);
+    let _ = fs::remove_file(quoted_lib_text_private_path);
     let _ = fs::remove_file(quoted_lib_pin_hide_path);
 }
 

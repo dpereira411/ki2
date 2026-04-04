@@ -562,7 +562,7 @@ impl KiCadSchematicParser {
                 "body_styles" => {
                     while !self.at_right() {
                         if self.at_unquoted_symbol_with("demorgan") {
-                            let _ = self.need_atom()?;
+                            let _ = self.need_unquoted_symbol_atom("demorgan")?;
                             has_demorgan = true;
                         } else {
                             body_style_names.push(self.need_symbol_atom("property value")?);
@@ -573,7 +573,7 @@ impl KiCadSchematicParser {
                 "pin_names" => {
                     while !self.at_right() {
                         if self.at_unquoted_symbol_with("hide") {
-                            self.need_atom()?;
+                            let _ = self.need_unquoted_symbol_atom("hide")?;
                             show_pin_names = false;
                             continue;
                         }
@@ -596,7 +596,7 @@ impl KiCadSchematicParser {
                 "pin_numbers" => {
                     while !self.at_right() {
                         if self.at_unquoted_symbol_with("hide") {
-                            self.need_atom()?;
+                            let _ = self.need_unquoted_symbol_atom("hide")?;
                             show_pin_numbers = false;
                             continue;
                         }
@@ -859,7 +859,7 @@ impl KiCadSchematicParser {
     fn parse_lib_shape_prefix(&mut self) -> Result<bool, Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
-            self.need_atom()?;
+            let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
         Ok(is_private)
@@ -1120,7 +1120,7 @@ impl KiCadSchematicParser {
     ) -> Result<LibDrawItem, Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
-            self.need_atom()?;
+            let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
 
@@ -1191,7 +1191,7 @@ impl KiCadSchematicParser {
     ) -> Result<LibDrawItem, Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
-            self.need_atom()?;
+            let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
         let mut text_box = self.parse_lib_text_box_content()?;
@@ -1350,7 +1350,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             if self.at_unquoted_symbol_with("hide") {
-                self.need_atom()?;
+                let _ = self.need_unquoted_symbol_atom("hide")?;
                 visible = false;
                 continue;
             }
@@ -1497,7 +1497,7 @@ impl KiCadSchematicParser {
     fn parse_lib_property(&mut self) -> Result<Property, Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
-            self.need_atom()?;
+            let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
         let key = self
@@ -3545,7 +3545,7 @@ impl KiCadSchematicParser {
 
         while self.at_atom() {
             if self.at_unquoted_symbol_with("locked") {
-                let _ = self.need_atom()?;
+                let _ = self.need_unquoted_symbol_atom("locked")?;
                 continue;
             }
             name = Some(self.need_quoted_atom("group name or locked")?);
@@ -3605,7 +3605,7 @@ impl KiCadSchematicParser {
     fn parse_property_body(&mut self, parent: FieldParent) -> Result<Property, Error> {
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
-            self.need_atom()?;
+            let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
         let key = self
