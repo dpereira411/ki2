@@ -445,7 +445,28 @@ impl KiCadSchematicParser {
                 if head != "file" {
                     return Err(self.expecting("file"));
                 }
-                let file = self.parse_embedded_file_body()?;
+                let mut name = None;
+                let mut data = None;
+
+                if self.at_atom() {
+                    name = Some(self.need_atom()?);
+                }
+                if self.at_atom() {
+                    data = Some(self.need_atom()?);
+                }
+
+                while !self.at_right() {
+                    self.need_left()?;
+                    let head = self.need_unquoted_symbol_atom("name or data")?;
+                    match head.as_str() {
+                        "name" => name = Some(self.parse_string_atom("name")?),
+                        "data" => data = Some(self.parse_string_atom("data")?),
+                        _ => return Err(self.expecting("name or data")),
+                    }
+                    self.need_right()?;
+                }
+
+                let file = EmbeddedFile { name, data };
                 self.need_right()?;
                 files.push(file);
             }
@@ -459,31 +480,6 @@ impl KiCadSchematicParser {
             }
         }
         Ok(())
-    }
-
-    fn parse_embedded_file_body(&mut self) -> Result<EmbeddedFile, Error> {
-        let mut name = None;
-        let mut data = None;
-
-        if self.at_atom() {
-            name = Some(self.need_atom()?);
-        }
-        if self.at_atom() {
-            data = Some(self.need_atom()?);
-        }
-
-        while !self.at_right() {
-            self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("name or data")?;
-            match head.as_str() {
-                "name" => name = Some(self.parse_string_atom("name")?),
-                "data" => data = Some(self.parse_string_atom("data")?),
-                _ => return Err(self.expecting("name or data")),
-            }
-            self.need_right()?;
-        }
-
-        Ok(EmbeddedFile { name, data })
     }
 
     fn parse_lib_symbols(&mut self) -> Result<(), Error> {
@@ -764,7 +760,28 @@ impl KiCadSchematicParser {
                             if head != "file" {
                                 return Err(self.expecting("file"));
                             }
-                            let file = self.parse_embedded_file_body()?;
+                            let mut name = None;
+                            let mut data = None;
+
+                            if self.at_atom() {
+                                name = Some(self.need_atom()?);
+                            }
+                            if self.at_atom() {
+                                data = Some(self.need_atom()?);
+                            }
+
+                            while !self.at_right() {
+                                self.need_left()?;
+                                let head = self.need_unquoted_symbol_atom("name or data")?;
+                                match head.as_str() {
+                                    "name" => name = Some(self.parse_string_atom("name")?),
+                                    "data" => data = Some(self.parse_string_atom("data")?),
+                                    _ => return Err(self.expecting("name or data")),
+                                }
+                                self.need_right()?;
+                            }
+
+                            let file = EmbeddedFile { name, data };
                             self.need_right()?;
                             files.push(file);
                         }
