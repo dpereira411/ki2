@@ -4332,9 +4332,27 @@ impl KiCadSchematicParser {
                                 )?
                                 .as_str()
                             {
-                                "bold" => effects.bold = self.parse_inline_optional_bool(true)?,
+                                "bold" => {
+                                    effects.bold = match &self.current().kind {
+                                        TokKind::Right | TokKind::Left | TokKind::Eof => true,
+                                        TokKind::Atom(value)
+                                            if matches!(value.as_str(), "yes" | "no") =>
+                                        {
+                                            self.parse_bool_atom("boolean")?
+                                        }
+                                        TokKind::Atom(_) => true,
+                                    }
+                                }
                                 "italic" => {
-                                    effects.italic = self.parse_inline_optional_bool(true)?
+                                    effects.italic = match &self.current().kind {
+                                        TokKind::Right | TokKind::Left | TokKind::Eof => true,
+                                        TokKind::Atom(value)
+                                            if matches!(value.as_str(), "yes" | "no") =>
+                                        {
+                                            self.parse_bool_atom("boolean")?
+                                        }
+                                        TokKind::Atom(_) => true,
+                                    }
                                 }
                                 _ => {
                                     return Err(self.expecting(
@@ -4576,16 +4594,6 @@ impl KiCadSchematicParser {
             Ok(default)
         } else {
             self.parse_bool_atom("boolean")
-        }
-    }
-
-    fn parse_inline_optional_bool(&mut self, default: bool) -> Result<bool, Error> {
-        match &self.current().kind {
-            TokKind::Right | TokKind::Left | TokKind::Eof => Ok(default),
-            TokKind::Atom(value) if matches!(value.as_str(), "yes" | "no") => {
-                self.parse_bool_atom("boolean")
-            }
-            TokKind::Atom(_) => Ok(default),
         }
     }
 
