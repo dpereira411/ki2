@@ -4519,14 +4519,6 @@ impl KiCadSchematicParser {
             .map_err(|_| self.error_here(format!("missing {field}")))
     }
 
-    fn parse_f64_number_atom(&mut self, field: impl Into<String>) -> Result<f64, Error> {
-        let field = field.into();
-        let value = self.parse_number_atom(field.clone())?;
-        value
-            .parse::<f64>()
-            .map_err(|_| self.error_here(format!("missing {field}")))
-    }
-
     fn parse_bool_atom(&mut self, field: &str) -> Result<bool, Error> {
         let _ = field;
         match self.need_unquoted_symbol_atom("yes or no")?.as_str() {
@@ -4826,10 +4818,10 @@ impl KiCadSchematicParser {
             .ok_or_else(|| self.validation(Some(token_span), "Invalid page type"))?;
         let [width, height] = if page_info.kind == "User" {
             let width = self
-                .parse_f64_number_atom("width")?
+                .parse_f64_atom("width")?
                 .clamp(MIN_PAGE_SIZE_MM, MAX_PAGE_SIZE_EESCHEMA_MM);
             let height = self
-                .parse_f64_number_atom("height")?
+                .parse_f64_atom("height")?
                 .clamp(MIN_PAGE_SIZE_MM, MAX_PAGE_SIZE_EESCHEMA_MM);
             [width, height]
         } else {
