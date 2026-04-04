@@ -4831,7 +4831,7 @@ fn parses_shared_effects_payload_and_text_hide_override() {
 }
 
 #[test]
-fn preserves_label_hide_from_shared_effects() {
+fn shared_text_family_forces_visible_after_effects_hide() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
@@ -4855,7 +4855,7 @@ fn preserves_label_hide_from_shared_effects() {
         })
         .expect("global label");
 
-    assert!(!label.visible);
+    assert!(label.visible);
     assert!(label.effects.as_ref().expect("effects").hidden);
 
     let _ = fs::remove_file(path);

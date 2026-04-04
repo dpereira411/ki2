@@ -2482,6 +2482,7 @@ impl KiCadSchematicParser {
                     }
                     ParsedSchText::Label(label) => {
                         self.parse_eda_text(ParsedEdaTextOwner::label(label), true, true)?;
+                        label.visible = true;
                     }
                 },
                 "iref" => {
