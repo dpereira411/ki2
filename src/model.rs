@@ -280,6 +280,39 @@ pub struct LibDrawItem {
     pub margins: Option<[f64; 4]>,
 }
 
+impl LibDrawItem {
+    pub fn new(kind: &str, unit_number: i32, body_style: i32) -> Self {
+        Self {
+            kind: kind.to_string(),
+            is_private: false,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: None,
+            points: Vec::new(),
+            end: None,
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: None,
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: None,
+            graphic_shape: None,
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+            margins: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibPinAlternate {
     pub name: String,
