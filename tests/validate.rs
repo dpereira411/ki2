@@ -5893,6 +5893,23 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     assert!(schematic.screen.parse_warnings[0].contains("unexpected control point"));
     assert!(schematic.screen.lib_symbols.is_empty());
     let _ = fs::remove_file(bad_bezier_path);
+
+    let quoted_bezier_xy_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (bezier (pts ("xy" 0 0) (xy 1 1) (xy 2 2) (xy 3 3))))))
+)"#;
+    let quoted_bezier_xy_path = temp_schematic("lib_bezier_quoted_xy", quoted_bezier_xy_src);
+    let schematic = parse_schematic_file(Path::new(&quoted_bezier_xy_path))
+        .expect("must warn and skip malformed lib symbol");
+    assert!(schematic.screen.parse_warnings[0].contains("expecting xy"));
+    assert!(schematic.screen.lib_symbols.is_empty());
+    let _ = fs::remove_file(quoted_bezier_xy_path);
 }
 
 #[test]

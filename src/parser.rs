@@ -995,7 +995,7 @@ impl KiCadSchematicParser {
                     let mut points = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_atom()? != "xy" {
+                        if self.need_unquoted_symbol_atom("xy")? != "xy" {
                             return Err(self.expecting("xy"));
                         }
                         if points.len() >= 4 {
