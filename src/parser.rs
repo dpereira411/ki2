@@ -454,11 +454,11 @@ impl KiCadSchematicParser {
                     self.screen.items.push(SchItem::BusEntry(bus_entry));
                 }
                 "wire" => {
-                    let wire = self.parse_sch_line(LineKind::Wire)?;
+                    let wire = self.parse_sch_line()?;
                     self.screen.items.push(SchItem::Wire(wire));
                 }
                 "bus" => {
-                    let bus = self.parse_sch_line(LineKind::Bus)?;
+                    let bus = self.parse_sch_line()?;
                     self.screen.items.push(SchItem::Bus(bus));
                 }
                 "polyline" => {
@@ -480,7 +480,7 @@ impl KiCadSchematicParser {
                 }
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
                 | "class_label" | "netclass_flag" | "text" => {
-                    let item = self.parse_sch_text(effective_head)?;
+                    let item = self.parse_sch_text()?;
                     self.screen.items.push(item)
                 }
                 "text_box" => {
@@ -2200,7 +2200,16 @@ impl KiCadSchematicParser {
         Ok(bus_entry)
     }
 
-    fn parse_sch_line(&mut self, kind: LineKind) -> Result<Line, Error> {
+    fn parse_sch_line(&mut self) -> Result<Line, Error> {
+        let kind = match &self
+            .tokens
+            .get(self.idx.saturating_sub(1))
+            .map(|token| &token.kind)
+        {
+            Some(TokKind::Atom(value)) if value == "wire" => LineKind::Wire,
+            Some(TokKind::Atom(value)) if value == "bus" => LineKind::Bus,
+            _ => return Err(self.error_here("invalid schematic line kind")),
+        };
         let mut line = Line {
             kind,
             points: vec![[0.0, 0.0], [0.0, 0.0]],
@@ -2253,7 +2262,15 @@ impl KiCadSchematicParser {
         Ok(line)
     }
 
-    fn parse_sch_text(&mut self, kind: &str) -> Result<SchItem, Error> {
+    fn parse_sch_text(&mut self) -> Result<SchItem, Error> {
+        let kind = match &self
+            .tokens
+            .get(self.idx.saturating_sub(1))
+            .map(|token| &token.kind)
+        {
+            Some(TokKind::Atom(value)) => value.as_str(),
+            _ => return Err(self.error_here("invalid schematic text kind")),
+        };
         let target = match kind {
             "text" => SchTextTarget::Text,
             "label" => SchTextTarget::Label(LabelKind::Local),

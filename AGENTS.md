@@ -51,6 +51,7 @@ Strict mode is the default for parser-parity work in this repository.
 - `polyline` is not equivalent to `wire`/`bus`. Two-point polylines collapse to line-like objects; longer ones remain shapes.
 - Keep the schematic polyline routine boundary named after upstream too. Once it owns schematic polyline parsing, it should not stay on a generic `*_shape` helper name.
 - Keep the shared wire/bus line routine on an upstream-shaped schematic-line entrypoint too. Once it owns the real line body, it should not stay on a vague local `parse_line()` name.
+- Keep `parseLine()` / `parse_sch_line()` token-driven too: once the shared wire/bus routine owns the line body, it should derive `wire` vs `bus` from the consumed section head itself rather than from a caller-supplied local kind enum.
 - `rule_area` grammar is specialized and wraps a nested `polyline`; it is not just another generic point-list shape.
 - Keep schematic shape routine boundaries named after their upstream roles too. Once a routine owns schematic `arc` / `circle` / `rectangle` / `bezier` parsing, it should not stay on a generic `*_shape` local helper name.
 - In `parseSchRuleArea()`, keep KiCad's literal fallback `Expecting(...)` text: `exclude_from_sim, on_board, in_bom, dnp, or polyline`.
@@ -113,6 +114,7 @@ Strict mode is the default for parser-parity work in this repository.
 - Keep section-local version gates inline in their owning branches too once they shrink to simple `version < minimum` checks. Do not leave `generator_version`, `embedded_files`, `table`, or `rule_area` behind a generic `require_version()` wrapper.
 - The top-level `text`, `label`, `global_label`, `hierarchical_label`, `directive_label`, and `netclass_flag` branches should converge into one shared parser entrypoint shaped like upstream `parseSchText()`, rather than staying split across separate top-level parse routines.
 - Keep the shared routine boundaries named and shaped after upstream too where practical: `parseSchText()` / `parseSchField()`-equivalent logic should not stay hidden behind repo-local helper names once those routines are the real shared entrypoints.
+- Keep `parseSchText()` / `parse_sch_text()` token-driven too: once the shared text-family routine owns the parse body, it should derive `text` / `label` / `global_label` / `hierarchical_label` / `directive_label` / `netclass_flag` from the consumed section head itself rather than from a caller-supplied string kind.
 - In that shared `parseSchText()` path, keep KiCad's `Unexpected(...)` branches for invalid `shape`, `length`, and `property` usage instead of collapsing them into the generic final `Expecting(...)` case.
 - In that same shared `parseSchText()` path, keep KiCad's literal default `Expecting(...)` text: `at, shape, iref, uuid or effects`, even though the routine also handles `exclude_from_sim`, `length`, `fields_autoplaced`, and `property`.
 - In that same shared `parseSchText()` path, when `shape` is valid for the current label kind, keep the shape token itself on the shared `NeedSYMBOL()` path. Do not accept nested non-symbol tokens there through the generic string parser.
