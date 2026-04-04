@@ -153,7 +153,7 @@ impl LibSymbol {
             local_power: false,
             body_style_names: Vec::new(),
             has_demorgan: false,
-            pin_name_offset: None,
+            pin_name_offset: Some(0.508),
             show_pin_names: true,
             show_pin_numbers: true,
             excluded_from_sim: false,
@@ -958,6 +958,7 @@ mod tests {
     fn lib_symbols_start_with_mandatory_fields() {
         let symbol = LibSymbol::new("Device:R".to_string());
 
+        assert_eq!(symbol.pin_name_offset, Some(0.508));
         assert_eq!(
             symbol
                 .properties
