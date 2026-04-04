@@ -6961,3 +6961,41 @@ fn mandatory_properties_keep_default_kicad_field_ids() {
 
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn global_label_iref_preserves_existing_intersheet_property_text() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (global_label "GL"
+    (at 1 2 0)
+    (shape input)
+    (property "Intersheet References" "keep-me" (at 8 9 0) (hide yes))
+    (iref 3 4)))
+"#;
+    let path = temp_schematic("global_label_iref_preserves_property", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let property = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("iref property");
+
+    assert_eq!(property.value, "keep-me");
+    assert_eq!(property.at, Some([3.0, 4.0]));
+    assert!(property.visible);
+
+    let _ = fs::remove_file(path);
+}

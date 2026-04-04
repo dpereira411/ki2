@@ -2279,28 +2279,32 @@ impl KiCadSchematicParser {
                             if matches!(label.kind, LabelKind::Global) {
                                 label.iref_at = Some(self.parse_xy2("iref")?);
                                 self.need_right()?;
-                                let property = Property {
-                                    id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
-                                    key: "Intersheet References".to_string(),
-                                    value: String::new(),
-                                    kind: PropertyKind::GlobalLabelIntersheetRefs,
-                                    is_private: false,
-                                    at: label.iref_at,
-                                    angle: None,
-                                    visible: true,
-                                    show_name: true,
-                                    can_autoplace: true,
-                                    has_effects: false,
-                                    effects: None,
-                                };
                                 if let Some(existing) = label
                                     .properties
                                     .iter_mut()
                                     .find(|p| p.kind == PropertyKind::GlobalLabelIntersheetRefs)
                                 {
-                                    *existing = property;
+                                    existing.id =
+                                        PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
+                                    existing.key = "Intersheet References".to_string();
+                                    existing.at = label.iref_at;
+                                    existing.visible = true;
                                 } else {
-                                    label.properties.push(property);
+                                    label.properties.push(Property {
+                                        id: PropertyKind::GlobalLabelIntersheetRefs
+                                            .default_field_id(),
+                                        key: "Intersheet References".to_string(),
+                                        value: String::new(),
+                                        kind: PropertyKind::GlobalLabelIntersheetRefs,
+                                        is_private: false,
+                                        at: label.iref_at,
+                                        angle: None,
+                                        visible: true,
+                                        show_name: true,
+                                        can_autoplace: true,
+                                        has_effects: false,
+                                        effects: None,
+                                    });
                                 }
                             }
                         }
