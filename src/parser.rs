@@ -3072,11 +3072,15 @@ impl KiCadSchematicParser {
                                 return Err(self.expecting("path"));
                             }
                             let path = self.need_symbol_atom("symbol instance path")?;
-                            let mut reference = None;
-                            let mut unit = None;
-                            let mut value = None;
-                            let mut footprint = None;
-                            let mut variants = Vec::new();
+                            let mut instance = SymbolLocalInstance {
+                                project: project.clone(),
+                                path,
+                                reference: None,
+                                unit: None,
+                                value: None,
+                                footprint: None,
+                                variants: Vec::new(),
+                            };
                             while !self.at_right() {
                                 self.need_left()?;
                                 match self
@@ -3086,11 +3090,12 @@ impl KiCadSchematicParser {
                                     .as_str()
                                 {
                                     "reference" => {
-                                        reference = Some(self.need_symbol_atom("reference")?);
+                                        instance.reference =
+                                            Some(self.need_symbol_atom("reference")?);
                                         self.need_right()?;
                                     }
                                     "unit" => {
-                                        unit = Some(self.parse_i32_atom("symbol unit")?);
+                                        instance.unit = Some(self.parse_i32_atom("symbol unit")?);
                                         self.need_right()?;
                                     }
                                     "value" => {
@@ -3111,7 +3116,7 @@ impl KiCadSchematicParser {
                                             PropertyKind::SymbolValue,
                                             parsed.clone(),
                                         );
-                                        value = Some(parsed);
+                                        instance.value = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "footprint" => {
@@ -3132,18 +3137,19 @@ impl KiCadSchematicParser {
                                             PropertyKind::SymbolFootprint,
                                             parsed.clone(),
                                         );
-                                        footprint = Some(parsed);
+                                        instance.footprint = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "variant" => {
-                                        let mut variant_name = String::new();
-                                        let mut variant_dnp = symbol.dnp;
-                                        let mut variant_excluded_from_sim =
-                                            symbol.excluded_from_sim;
-                                        let mut variant_in_bom = symbol.in_bom;
-                                        let mut variant_on_board = symbol.on_board;
-                                        let mut variant_in_pos_files = symbol.in_pos_files;
-                                        let mut variant_fields = Vec::new();
+                                        let mut variant = ItemVariant {
+                                            name: String::new(),
+                                            dnp: symbol.dnp,
+                                            excluded_from_sim: symbol.excluded_from_sim,
+                                            in_bom: symbol.in_bom,
+                                            on_board: symbol.on_board,
+                                            in_pos_files: symbol.in_pos_files,
+                                            fields: Vec::new(),
+                                        };
 
                                         while !self.at_right() {
                                             self.need_left()?;
@@ -3154,7 +3160,7 @@ impl KiCadSchematicParser {
                                                 .as_str()
                                             {
                                                 "name" => {
-                                                    variant_name = self
+                                                    variant.name = self
                                                         .need_symbol_atom("name")
                                                         .map_err(|_| {
                                                             self.error_here("Invalid variant name")
@@ -3162,37 +3168,38 @@ impl KiCadSchematicParser {
                                                     self.need_right()?;
                                                 }
                                                 "dnp" => {
-                                                    variant_dnp = self.parse_bool_atom("dnp")?;
+                                                    variant.dnp = self.parse_bool_atom("dnp")?;
                                                     self.need_right()?;
                                                 }
                                                 "exclude_from_sim" => {
-                                                    variant_excluded_from_sim =
+                                                    variant.excluded_from_sim =
                                                         self.parse_bool_atom("exclude_from_sim")?;
                                                     self.need_right()?;
                                                 }
                                                 "in_bom" => {
-                                                    variant_in_bom =
-                                                        self.parse_bool_atom("in_bom")?;
+                                                    variant.in_bom = self.parse_bool_atom("in_bom")?;
                                                     if self.require_known_version()?
                                                         < VERSION_VARIANT_IN_BOM_FIX
                                                     {
-                                                        variant_in_bom = !variant_in_bom;
+                                                        variant.in_bom = !variant.in_bom;
                                                     }
                                                     self.need_right()?;
                                                 }
                                                 "on_board" => {
-                                                    variant_on_board =
+                                                    variant.on_board =
                                                         self.parse_bool_atom("on_board")?;
                                                     self.need_right()?;
                                                 }
                                                 "in_pos_files" => {
-                                                    variant_in_pos_files =
+                                                    variant.in_pos_files =
                                                         self.parse_bool_atom("in_pos_files")?;
                                                     self.need_right()?;
                                                 }
                                                 "field" => {
-                                                    let mut field_name = None;
-                                                    let mut field_value = None;
+                                                    let mut field = VariantField {
+                                                        name: String::new(),
+                                                        value: String::new(),
+                                                    };
 
                                                     while !self.at_right() {
                                                         self.need_left()?;
@@ -3203,25 +3210,23 @@ impl KiCadSchematicParser {
                                                             .as_str()
                                                         {
                                                             "name" => {
-                                                                field_name = Some(
-                                                                    self.need_symbol_atom("name")
-                                                                        .map_err(|_| {
-                                                                            self.error_here(
-                                                                                "Invalid variant field name",
-                                                                            )
-                                                                        })?,
-                                                                );
+                                                                field.name = self
+                                                                    .need_symbol_atom("name")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field name",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             "value" => {
-                                                                field_value = Some(
-                                                                    self.need_symbol_atom("value")
-                                                                        .map_err(|_| {
-                                                                            self.error_here(
-                                                                                "Invalid variant field value",
-                                                                            )
-                                                                        })?,
-                                                                );
+                                                                field.value = self
+                                                                    .need_symbol_atom("value")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field value",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             _ => {
@@ -3232,10 +3237,7 @@ impl KiCadSchematicParser {
                                                         }
                                                     }
 
-                                                    variant_fields.push(VariantField {
-                                                        name: field_name.unwrap_or_default(),
-                                                        value: field_value.unwrap_or_default(),
-                                                    });
+                                                    variant.fields.push(field);
                                                     self.need_right()?;
                                                 }
                                                 _ => {
@@ -3246,15 +3248,7 @@ impl KiCadSchematicParser {
                                             }
                                         }
 
-                                        variants.push(ItemVariant {
-                                            name: variant_name,
-                                            dnp: variant_dnp,
-                                            excluded_from_sim: variant_excluded_from_sim,
-                                            in_bom: variant_in_bom,
-                                            on_board: variant_on_board,
-                                            in_pos_files: variant_in_pos_files,
-                                            fields: variant_fields,
-                                        });
+                                        instance.variants.push(variant);
                                         self.need_right()?;
                                     }
                                     _ => {
@@ -3265,15 +3259,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.instances.push(SymbolLocalInstance {
-                                project: project.clone(),
-                                path,
-                                reference,
-                                unit,
-                                value,
-                                footprint,
-                                variants,
-                            });
+                            symbol.instances.push(instance);
                         }
                         self.need_right()?;
                     }
@@ -3482,8 +3468,12 @@ impl KiCadSchematicParser {
                                 return Err(self.expecting("path"));
                             }
                             let path = self.need_symbol_atom("sheet instance path")?;
-                            let mut page = None;
-                            let mut variants = Vec::new();
+                            let mut instance = SheetLocalInstance {
+                                project: project.clone(),
+                                path,
+                                page: None,
+                                variants: Vec::new(),
+                            };
                             while !self.at_right() {
                                 self.need_left()?;
                                 match self.need_unquoted_symbol_atom("page or variant")?.as_str() {
@@ -3502,17 +3492,19 @@ impl KiCadSchematicParser {
                                             }
                                         }
 
-                                        page = Some(parsed_page);
+                                        instance.page = Some(parsed_page);
                                         self.need_right()?;
                                     }
                                     "variant" => {
-                                        let mut variant_name = String::new();
-                                        let mut variant_dnp = sheet.dnp;
-                                        let mut variant_excluded_from_sim = sheet.excluded_from_sim;
-                                        let mut variant_in_bom = sheet.in_bom;
-                                        let mut variant_on_board = sheet.on_board;
-                                        let mut variant_in_pos_files = false;
-                                        let mut variant_fields = Vec::new();
+                                        let mut variant = ItemVariant {
+                                            name: String::new(),
+                                            dnp: sheet.dnp,
+                                            excluded_from_sim: sheet.excluded_from_sim,
+                                            in_bom: sheet.in_bom,
+                                            on_board: sheet.on_board,
+                                            in_pos_files: false,
+                                            fields: Vec::new(),
+                                        };
 
                                         while !self.at_right() {
                                             self.need_left()?;
@@ -3523,7 +3515,7 @@ impl KiCadSchematicParser {
                                                 .as_str()
                                             {
                                                 "name" => {
-                                                    variant_name = self
+                                                    variant.name = self
                                                         .need_symbol_atom("name")
                                                         .map_err(|_| {
                                                             self.error_here("Invalid variant name")
@@ -3531,37 +3523,38 @@ impl KiCadSchematicParser {
                                                     self.need_right()?;
                                                 }
                                                 "dnp" => {
-                                                    variant_dnp = self.parse_bool_atom("dnp")?;
+                                                    variant.dnp = self.parse_bool_atom("dnp")?;
                                                     self.need_right()?;
                                                 }
                                                 "exclude_from_sim" => {
-                                                    variant_excluded_from_sim =
+                                                    variant.excluded_from_sim =
                                                         self.parse_bool_atom("exclude_from_sim")?;
                                                     self.need_right()?;
                                                 }
                                                 "in_bom" => {
-                                                    variant_in_bom =
-                                                        self.parse_bool_atom("in_bom")?;
+                                                    variant.in_bom = self.parse_bool_atom("in_bom")?;
                                                     if self.require_known_version()?
                                                         < VERSION_VARIANT_IN_BOM_FIX
                                                     {
-                                                        variant_in_bom = !variant_in_bom;
+                                                        variant.in_bom = !variant.in_bom;
                                                     }
                                                     self.need_right()?;
                                                 }
                                                 "on_board" => {
-                                                    variant_on_board =
+                                                    variant.on_board =
                                                         self.parse_bool_atom("on_board")?;
                                                     self.need_right()?;
                                                 }
                                                 "in_pos_files" => {
-                                                    variant_in_pos_files =
+                                                    variant.in_pos_files =
                                                         self.parse_bool_atom("in_pos_files")?;
                                                     self.need_right()?;
                                                 }
                                                 "field" => {
-                                                    let mut field_name = None;
-                                                    let mut field_value = None;
+                                                    let mut field = VariantField {
+                                                        name: String::new(),
+                                                        value: String::new(),
+                                                    };
 
                                                     while !self.at_right() {
                                                         self.need_left()?;
@@ -3572,25 +3565,23 @@ impl KiCadSchematicParser {
                                                             .as_str()
                                                         {
                                                             "name" => {
-                                                                field_name = Some(
-                                                                    self.need_symbol_atom("name")
-                                                                        .map_err(|_| {
-                                                                            self.error_here(
-                                                                                "Invalid variant field name",
-                                                                            )
-                                                                        })?,
-                                                                );
+                                                                field.name = self
+                                                                    .need_symbol_atom("name")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field name",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             "value" => {
-                                                                field_value = Some(
-                                                                    self.need_symbol_atom("value")
-                                                                        .map_err(|_| {
-                                                                            self.error_here(
-                                                                                "Invalid variant field value",
-                                                                            )
-                                                                        })?,
-                                                                );
+                                                                field.value = self
+                                                                    .need_symbol_atom("value")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field value",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             _ => {
@@ -3601,10 +3592,7 @@ impl KiCadSchematicParser {
                                                         }
                                                     }
 
-                                                    variant_fields.push(VariantField {
-                                                        name: field_name.unwrap_or_default(),
-                                                        value: field_value.unwrap_or_default(),
-                                                    });
+                                                    variant.fields.push(field);
                                                     self.need_right()?;
                                                 }
                                                 _ => {
@@ -3615,27 +3603,14 @@ impl KiCadSchematicParser {
                                             }
                                         }
 
-                                        variants.push(ItemVariant {
-                                            name: variant_name,
-                                            dnp: variant_dnp,
-                                            excluded_from_sim: variant_excluded_from_sim,
-                                            in_bom: variant_in_bom,
-                                            on_board: variant_on_board,
-                                            in_pos_files: variant_in_pos_files,
-                                            fields: variant_fields,
-                                        });
+                                        instance.variants.push(variant);
                                         self.need_right()?;
                                     }
                                     _ => return Err(self.expecting("page or variant")),
                                 }
                             }
                             self.need_right()?;
-                            sheet.instances.push(SheetLocalInstance {
-                                project: project.clone(),
-                                path,
-                                page,
-                                variants,
-                            });
+                            sheet.instances.push(instance);
                         }
                         self.need_right()?;
                     }
