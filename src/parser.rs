@@ -1340,8 +1340,8 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let parsed = self.parse_eda_text(true, false)?;
-                    visible = !parsed.hidden;
+                    let mut parsed = TextEffects::default();
+                    self.parse_eda_text(Some(&mut text), &mut parsed, &mut visible, true, false)?;
                     effects = Some(parsed);
                     self.need_right()?;
                 }
@@ -1435,7 +1435,9 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_eda_text(false, true)?;
+                    let mut parsed_effects = TextEffects::default();
+                    let mut visible = true;
+                    self.parse_eda_text(None, &mut parsed_effects, &mut visible, false, true)?;
                     has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
                     effects = Some(parsed_effects);
@@ -1616,7 +1618,15 @@ impl KiCadSchematicParser {
                     if self.need_unquoted_symbol_atom("effects")? != "effects" {
                         return Err(self.expecting("effects"));
                     }
-                    let parsed = self.parse_eda_text(true, true)?;
+                    let mut parsed = TextEffects::default();
+                    let mut visible = true;
+                    self.parse_eda_text(
+                        Some(name.get_or_insert_with(String::new)),
+                        &mut parsed,
+                        &mut visible,
+                        true,
+                        true,
+                    )?;
                     name_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
@@ -1644,7 +1654,15 @@ impl KiCadSchematicParser {
                     if self.need_unquoted_symbol_atom("effects")? != "effects" {
                         return Err(self.expecting("effects"));
                     }
-                    let parsed = self.parse_eda_text(true, true)?;
+                    let mut parsed = TextEffects::default();
+                    let mut visible = true;
+                    self.parse_eda_text(
+                        Some(number.get_or_insert_with(String::new)),
+                        &mut parsed,
+                        &mut visible,
+                        true,
+                        true,
+                    )?;
                     number_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
@@ -1836,12 +1854,15 @@ impl KiCadSchematicParser {
                     {
                         property.value = self.convert_old_overbar_notation(property.value.clone());
                     }
-                    let effects =
-                        self.parse_eda_text(property.kind == PropertyKind::SymbolValue, true)?;
+                    let mut effects = TextEffects::default();
+                    self.parse_eda_text(
+                        Some(&mut property.value),
+                        &mut effects,
+                        &mut property.visible,
+                        property.kind == PropertyKind::SymbolValue,
+                        true,
+                    )?;
                     property.has_effects = true;
-                    if effects.hidden {
-                        property.visible = false;
-                    }
                     property.effects = Some(effects);
                     self.need_right()?;
                 }
@@ -2161,7 +2182,14 @@ impl KiCadSchematicParser {
                             self.need_right()?;
                         }
                         "effects" => {
-                            let parsed_effects = self.parse_eda_text(true, true)?;
+                            let mut parsed_effects = TextEffects::default();
+                            self.parse_eda_text(
+                                Some(&mut text.text),
+                                &mut parsed_effects,
+                                &mut text.visible,
+                                true,
+                                true,
+                            )?;
                             text.has_effects = true;
                             text.effects = Some(parsed_effects);
                             text.visible = true;
@@ -2253,7 +2281,14 @@ impl KiCadSchematicParser {
                             self.need_right()?;
                         }
                         "effects" => {
-                            let parsed_effects = self.parse_eda_text(true, true)?;
+                            let mut parsed_effects = TextEffects::default();
+                            self.parse_eda_text(
+                                Some(&mut label.text),
+                                &mut parsed_effects,
+                                &mut label.visible,
+                                true,
+                                true,
+                            )?;
                             label.has_effects = true;
                             label.effects = Some(parsed_effects);
                             label.visible = true;
@@ -2334,7 +2369,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_text_box_content(&mut self, table_cell: bool) -> Result<TextBox, Error> {
-        let text = self
+        let mut text = self
             .need_symbol_atom("text box text")
             .map_err(|_| self.error_here("Invalid text string"))?;
         let mut at = None;
@@ -2398,7 +2433,15 @@ impl KiCadSchematicParser {
                     fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_eda_text(false, true)?;
+                    let mut parsed_effects = TextEffects::default();
+                    let mut visible = true;
+                    self.parse_eda_text(
+                        Some(&mut text),
+                        &mut parsed_effects,
+                        &mut visible,
+                        false,
+                        true,
+                    )?;
                     has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
                     effects = Some(parsed_effects);
@@ -3903,8 +3946,8 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let parsed_effects = self.parse_eda_text(true, true)?;
-                    visible = !parsed_effects.hidden;
+                    let mut parsed_effects = TextEffects::default();
+                    self.parse_eda_text(None, &mut parsed_effects, &mut visible, true, true)?;
                     has_effects = true;
                     effects = Some(parsed_effects);
                     self.need_right()?;
@@ -4190,12 +4233,15 @@ impl KiCadSchematicParser {
                     {
                         property.value = self.convert_old_overbar_notation(property.value.clone());
                     }
-                    let parsed_effects =
-                        self.parse_eda_text(property.kind == PropertyKind::SymbolValue, true)?;
+                    let mut parsed_effects = TextEffects::default();
+                    self.parse_eda_text(
+                        Some(&mut property.value),
+                        &mut parsed_effects,
+                        &mut property.visible,
+                        property.kind == PropertyKind::SymbolValue,
+                        true,
+                    )?;
                     property.has_effects = true;
-                    if parsed_effects.hidden {
-                        property.visible = false;
-                    }
                     property.effects = Some(parsed_effects);
                     self.need_right()?;
                 }
@@ -4355,10 +4401,22 @@ impl KiCadSchematicParser {
 
     fn parse_eda_text(
         &mut self,
-        _convert_overbar_syntax: bool,
+        text: Option<&mut String>,
+        effects: &mut TextEffects,
+        visible: &mut bool,
+        convert_overbar_syntax: bool,
         _enforce_min_text_size: bool,
-    ) -> Result<TextEffects, Error> {
-        let mut effects = TextEffects::default();
+    ) -> Result<(), Error> {
+        if convert_overbar_syntax
+            && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION
+        {
+            if let Some(text) = text {
+                *text = self.convert_old_overbar_notation(text.clone());
+            }
+        }
+
+        effects.h_justify = TextHJustify::Center;
+        effects.v_justify = TextVJustify::Center;
 
         while !self.at_right() {
             if self.at_atom() {
@@ -4368,6 +4426,7 @@ impl KiCadSchematicParser {
                 {
                     "hide" => {
                         effects.hidden = self.parse_maybe_absent_bool(true)?;
+                        *visible = !effects.hidden;
                     }
                     _ => return Err(self.expecting("font, justify, hide or href")),
                 }
@@ -4506,13 +4565,14 @@ impl KiCadSchematicParser {
                 }
                 "hide" => {
                     effects.hidden = self.parse_maybe_absent_bool(true)?;
+                    *visible = !effects.hidden;
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("font, justify, hide or href")),
             }
         }
 
-        Ok(effects)
+        Ok(())
     }
 
     fn validate_hyperlink(href: &str) -> bool {

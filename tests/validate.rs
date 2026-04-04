@@ -3778,6 +3778,37 @@ fn converts_legacy_overbar_value_fields_when_effects_are_parsed() {
 }
 
 #[test]
+fn converts_legacy_overbar_library_text_when_effects_are_parsed() {
+    let src = r#"(kicad_sch
+  (version 20210605)
+  (generator "eeschema")
+  (uuid "root-overbar-lib-text")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (text "~LIBTXT~" (at 0 0 0) (effects (font (size 1 1)))))))
+)"#;
+    let path = temp_schematic("legacy_overbar_lib_text_effects", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should parse");
+
+    let lib_symbol = schematic
+        .screen
+        .lib_symbols
+        .iter()
+        .find(|symbol| symbol.name == "Device:R")
+        .expect("lib symbol");
+    let lib_text = lib_symbol
+        .units
+        .iter()
+        .flat_map(|unit| unit.draw_items.iter())
+        .find(|item| item.kind == "text")
+        .expect("lib text");
+    assert_eq!(lib_text.text.as_deref(), Some("~{LIBTXT}"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn accepts_legacy_class_label_alias() {
     let src = r#"(kicad_sch
   (version 20250114)
