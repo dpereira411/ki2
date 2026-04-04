@@ -1381,7 +1381,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "start, end, at, size, stroke, fill, margins, or effects",
+                "start, end, at, size, stroke, fill, effects, or margins",
             )?;
             match head.as_str() {
                 "start" => {
@@ -1428,7 +1428,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(
-                        self.expecting("start, end, at, size, stroke, fill, margins, or effects")
+                        self.expecting("start, end, at, size, stroke, fill, effects, or margins")
                     );
                 }
             }
