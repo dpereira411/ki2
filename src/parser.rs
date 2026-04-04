@@ -2867,21 +2867,53 @@ impl KiCadSchematicParser {
                                     }
                                     "value" => {
                                         let parsed = self.parse_symbol_text_atom("value")?;
-                                        Self::upsert_symbol_field_text(
-                                            &mut properties,
-                                            PropertyKind::SymbolValue,
-                                            parsed.clone(),
-                                        );
+                                        let property = Property {
+                                            key: "Value".to_string(),
+                                            value: parsed.clone(),
+                                            kind: PropertyKind::SymbolValue,
+                                            is_private: false,
+                                            at: None,
+                                            angle: None,
+                                            visible: true,
+                                            show_name: true,
+                                            can_autoplace: true,
+                                            has_effects: false,
+                                            effects: None,
+                                        };
+                                        if let Some(existing) = properties
+                                            .iter_mut()
+                                            .find(|p| p.kind == PropertyKind::SymbolValue)
+                                        {
+                                            *existing = property;
+                                        } else {
+                                            properties.push(property);
+                                        }
                                         value = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "footprint" => {
                                         let parsed = self.parse_symbol_text_atom("footprint")?;
-                                        Self::upsert_symbol_field_text(
-                                            &mut properties,
-                                            PropertyKind::SymbolFootprint,
-                                            parsed.clone(),
-                                        );
+                                        let property = Property {
+                                            key: "Footprint".to_string(),
+                                            value: parsed.clone(),
+                                            kind: PropertyKind::SymbolFootprint,
+                                            is_private: false,
+                                            at: None,
+                                            angle: None,
+                                            visible: true,
+                                            show_name: true,
+                                            can_autoplace: true,
+                                            has_effects: false,
+                                            effects: None,
+                                        };
+                                        if let Some(existing) = properties
+                                            .iter_mut()
+                                            .find(|p| p.kind == PropertyKind::SymbolFootprint)
+                                        {
+                                            *existing = property;
+                                        } else {
+                                            properties.push(property);
+                                        }
                                         footprint = Some(parsed);
                                         self.need_right()?;
                                     }
@@ -3045,21 +3077,53 @@ impl KiCadSchematicParser {
                             }
                             "value" => {
                                 let parsed = self.parse_symbol_text_atom("value")?;
-                                Self::upsert_symbol_field_text(
-                                    &mut properties,
-                                    PropertyKind::SymbolValue,
-                                    parsed.clone(),
-                                );
+                                let property = Property {
+                                    key: "Value".to_string(),
+                                    value: parsed.clone(),
+                                    kind: PropertyKind::SymbolValue,
+                                    is_private: false,
+                                    at: None,
+                                    angle: None,
+                                    visible: true,
+                                    show_name: true,
+                                    can_autoplace: true,
+                                    has_effects: false,
+                                    effects: None,
+                                };
+                                if let Some(existing) = properties
+                                    .iter_mut()
+                                    .find(|p| p.kind == PropertyKind::SymbolValue)
+                                {
+                                    *existing = property;
+                                } else {
+                                    properties.push(property);
+                                }
                                 default_value = Some(parsed);
                                 self.need_right()?;
                             }
                             "footprint" => {
                                 let parsed = self.parse_symbol_text_atom("footprint")?;
-                                Self::upsert_symbol_field_text(
-                                    &mut properties,
-                                    PropertyKind::SymbolFootprint,
-                                    parsed.clone(),
-                                );
+                                let property = Property {
+                                    key: "Footprint".to_string(),
+                                    value: parsed.clone(),
+                                    kind: PropertyKind::SymbolFootprint,
+                                    is_private: false,
+                                    at: None,
+                                    angle: None,
+                                    visible: true,
+                                    show_name: true,
+                                    can_autoplace: true,
+                                    has_effects: false,
+                                    effects: None,
+                                };
+                                if let Some(existing) = properties
+                                    .iter_mut()
+                                    .find(|p| p.kind == PropertyKind::SymbolFootprint)
+                                {
+                                    *existing = property;
+                                } else {
+                                    properties.push(property);
+                                }
                                 default_footprint = Some(parsed);
                                 self.need_right()?;
                             }
@@ -4694,36 +4758,6 @@ impl KiCadSchematicParser {
         }
 
         out
-    }
-
-    fn upsert_symbol_field_text(properties: &mut Vec<Property>, kind: PropertyKind, value: String) {
-        let key = match kind {
-            PropertyKind::SymbolReference => "Reference",
-            PropertyKind::SymbolValue => "Value",
-            PropertyKind::SymbolFootprint => "Footprint",
-            PropertyKind::SymbolDatasheet => "Datasheet",
-            _ => return,
-        };
-
-        let property = Property {
-            key: key.to_string(),
-            value,
-            kind,
-            is_private: false,
-            at: None,
-            angle: None,
-            visible: true,
-            show_name: true,
-            can_autoplace: true,
-            has_effects: false,
-            effects: None,
-        };
-
-        if let Some(existing) = properties.iter_mut().find(|p| p.kind == kind) {
-            *existing = property;
-        } else {
-            properties.push(property);
-        }
     }
 
     fn parse_label_shape(&mut self) -> Result<LabelShape, Error> {
