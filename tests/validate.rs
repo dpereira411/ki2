@@ -2484,9 +2484,7 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
     let quoted_fill_color_path = temp_schematic("quoted_fill_color", quoted_fill_color);
     let err = parse_schematic_file(Path::new(&quoted_fill_color_path))
         .expect_err("must reject quoted fill color head");
-    assert!(err.to_string().contains(
-        "expecting none, outline, hatch, reverse_hatch, cross_hatch, color or background"
-    ));
+    assert!(err.to_string().contains("expecting type or color"));
 
     let _ = fs::remove_file(quoted_lib_pin_effects_path);
     let _ = fs::remove_file(quoted_lib_property_head_path);

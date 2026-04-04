@@ -4241,12 +4241,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom(
-                    "none, outline, hatch, reverse_hatch, cross_hatch, color or background",
-                )?
-                .as_str()
-            {
+            match self.need_unquoted_symbol_atom("type or color")?.as_str() {
                 "type" => {
                     fill.fill_type = match self
                         .need_unquoted_symbol_atom(
