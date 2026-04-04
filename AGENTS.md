@@ -82,6 +82,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same shared `parseSchText()` path, keep KiCad's literal default `Expecting(...)` text: `at, shape, iref, uuid or effects`, even though the routine also handles `exclude_from_sim`, `length`, `fields_autoplaced`, and `property`.
 - In that same shared `parseSchText()` path, when `shape` is valid for the current label kind, keep the shape token itself on the shared `NeedSYMBOL()` path. Do not accept nested non-symbol tokens there through the generic string parser.
 - Keep shared text-angle normalization helpers named after their upstream role too. Once the helper exists only to enforce KiCad text-angle behavior, it should not stay on a vague repo-local name.
+- Keep label-spin helpers named after their upstream role too. Once a helper exists only to derive KiCad label spin style from text angle, it should not stay on a vague repo-local name.
 - In that same shared `parseSchText()` shape branch, only real unquoted symbol/keyword tokens should be accepted. Quoted strings like `"input"` are not upstream shape tokens and must be rejected.
 - In that same shared `parseSchText()` shape branch, keep the label-shape enum mapping inline in the owning routine rather than behind a separate `parse_label_shape()` helper.
 - In that same shared `parseSchText()` path, do not add a repo-local requirement that non-local labels must have an explicit `shape`. Upstream leaves the label shape at its default if no `shape` token appears.

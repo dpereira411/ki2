@@ -2210,7 +2210,7 @@ impl KiCadSchematicParser {
                     text,
                     at: [x, y],
                     angle,
-                    spin: Self::label_spin_from_angle(angle),
+                    spin: Self::get_label_spin_style(angle),
                     shape,
                     pin_length,
                     iref_at,
@@ -4421,7 +4421,7 @@ impl KiCadSchematicParser {
         false
     }
 
-    fn label_spin_from_angle(angle: f64) -> Option<LabelSpin> {
+    fn get_label_spin_style(angle: f64) -> Option<LabelSpin> {
         match angle.rem_euclid(360.0) as i32 {
             0 => Some(LabelSpin::Right),
             90 => Some(LabelSpin::Up),
