@@ -470,6 +470,71 @@ fn sorts_loaded_sheet_pages_numerically() {
 }
 
 #[test]
+fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_sheet_path_virtual_sort_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let grandchild_path = dir.join("grandchild.kicad_sch");
+
+    let grandchild_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "grandchild-root")
+)"#;
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "child-root")
+  (sheet
+    (uuid "sheet-b")
+    (property "Sheetname" "Grandchild")
+    (property "Sheetfile" "grandchild.kicad_sch"))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-u")
+  (sheet
+    (uuid "sheet-a")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "2"))
+    (path "/root-u/sheet-a" (page "1"))
+    (path "/root-u/sheet-a/sheet-b" (page "1")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&grandchild_path, grandchild_src).expect("write grandchild");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+
+    assert_eq!(loaded.sheet_paths.len(), 3);
+    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
+    assert_eq!(
+        loaded.sheet_paths[1].instance_path,
+        "/root-u/sheet-a/sheet-b"
+    );
+    assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("1"));
+    assert_eq!(loaded.sheet_paths[2].instance_path, "");
+    assert_eq!(loaded.sheet_paths[2].page, None);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(grandchild_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
     let dir = env::temp_dir().join(format!(
         "ki2_intersheet_refs_{}",

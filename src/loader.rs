@@ -102,17 +102,13 @@ impl SchematicLoader {
             .to_path_buf();
 
         self.current_path.push(root_dir);
-        self.load_hierarchy(None, &canonical_root)?;
+        self.load_hierarchy(&canonical_root)?;
         self.current_path.pop();
 
         Ok(canonical_root)
     }
 
-    fn load_hierarchy(
-        &mut self,
-        parent_path: Option<&Path>,
-        sheet_path: &Path,
-    ) -> Result<usize, Error> {
+    fn load_hierarchy(&mut self, sheet_path: &Path) -> Result<usize, Error> {
         let canonical = sheet_path
             .canonicalize()
             .unwrap_or_else(|_| sheet_path.to_path_buf());
@@ -138,7 +134,7 @@ impl SchematicLoader {
         self.schematics.push(schematic);
 
         for reference in references {
-            self.load_child_sheet(parent_path.unwrap_or(&canonical), reference)?;
+            self.load_child_sheet(&canonical, reference)?;
         }
 
         self.current_path.pop();
@@ -179,7 +175,7 @@ impl SchematicLoader {
         });
 
         if !reused_existing_child {
-            self.load_hierarchy(Some(parent_path), &resolved)?;
+            self.load_hierarchy(&resolved)?;
         }
 
         Ok(())
@@ -241,18 +237,7 @@ impl SchematicLoader {
         }];
 
         self.build_child_sheet_paths(root_path, &format!("/{root_uuid}"), &mut sheet_paths);
-        sheet_paths.sort_by(|a, b| {
-            let page_cmp = match (&a.page, &b.page) {
-                (Some(a_page), Some(b_page)) => compare_page_numbers(a_page, b_page),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            };
-
-            page_cmp
-                .then_with(|| a.instance_path.cmp(&b.instance_path))
-                .then_with(|| a.schematic_path.cmp(&b.schematic_path))
-        });
+        sort_loaded_sheet_paths(&mut sheet_paths);
         sheet_paths
     }
 
@@ -376,18 +361,7 @@ impl SchematicLoader {
             }
         }
 
-        sheet_paths.sort_by(|a, b| {
-            let page_cmp = match (&a.page, &b.page) {
-                (Some(a_page), Some(b_page)) => compare_page_numbers(a_page, b_page),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
-            };
-
-            page_cmp
-                .then_with(|| a.instance_path.cmp(&b.instance_path))
-                .then_with(|| a.schematic_path.cmp(&b.schematic_path))
-        });
+        sort_loaded_sheet_paths(sheet_paths);
     }
 
     fn fix_legacy_power_symbol_mismatches(&mut self, root_path: &Path) {
@@ -674,6 +648,39 @@ impl SchematicLoader {
             }
         }
     }
+}
+
+fn sort_loaded_sheet_paths(sheet_paths: &mut [LoadedSheetPath]) {
+    let original_order: HashMap<String, usize> = sheet_paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| (path.instance_path.clone(), index))
+        .collect();
+
+    sheet_paths.sort_by(|a, b| compare_loaded_sheet_paths(a, b, &original_order));
+}
+
+fn compare_loaded_sheet_paths(
+    a: &LoadedSheetPath,
+    b: &LoadedSheetPath,
+    original_order: &HashMap<String, usize>,
+) -> std::cmp::Ordering {
+    let page_cmp = match (&a.page, &b.page) {
+        (Some(a_page), Some(b_page)) => compare_page_numbers(a_page, b_page),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    };
+
+    if page_cmp != std::cmp::Ordering::Equal {
+        return page_cmp;
+    }
+
+    original_order
+        .get(&a.instance_path)
+        .cmp(&original_order.get(&b.instance_path))
+        .then_with(|| a.instance_path.cmp(&b.instance_path))
+        .then_with(|| a.schematic_path.cmp(&b.schematic_path))
 }
 
 fn compare_page_numbers(a: &str, b: &str) -> std::cmp::Ordering {
