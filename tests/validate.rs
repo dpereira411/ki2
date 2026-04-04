@@ -3819,6 +3819,55 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
+fn rejects_bare_effects_list_heads_and_font_children() {
+    let bare_font_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-font-head")
+  (text "note" (effects font (size 1 1)))
+)"#;
+    let bare_font_head_path = temp_schematic("bare_effects_font_head", bare_font_head);
+    let err = parse_schematic_file(Path::new(&bare_font_head_path))
+        .expect_err("must reject bare font effects head");
+    assert!(
+        err.to_string()
+            .contains("expecting font, justify, hide or href")
+    );
+
+    let bare_font_size = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-font-size")
+  (text "note" (effects (font size 1 1)))
+)"#;
+    let bare_font_size_path = temp_schematic("bare_effects_font_size", bare_font_size);
+    let err = parse_schematic_file(Path::new(&bare_font_size_path))
+        .expect_err("must reject bare font child");
+    assert!(
+        err.to_string()
+            .contains("expecting face, size, thickness, line_spacing, bold, or italic")
+    );
+
+    let bare_href_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-href-head")
+  (text "note" (effects href "https://example.com"))
+)"#;
+    let bare_href_head_path = temp_schematic("bare_effects_href_head", bare_href_head);
+    let err = parse_schematic_file(Path::new(&bare_href_head_path))
+        .expect_err("must reject bare href effects head");
+    assert!(
+        err.to_string()
+            .contains("expecting font, justify, hide or href")
+    );
+
+    let _ = fs::remove_file(bare_font_head_path);
+    let _ = fs::remove_file(bare_font_size_path);
+    let _ = fs::remove_file(bare_href_head_path);
+}
+
+#[test]
 fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_face = r#"(kicad_sch
   (version 20260306)

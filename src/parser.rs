@@ -4766,29 +4766,35 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             let section_is_list = matches!(self.current().kind, TokKind::Left);
-
-            if section_is_list {
+            let head = if section_is_list {
                 self.need_left()?;
-            }
+                self.need_unquoted_symbol_atom("font, justify, hide or href")?
+            } else if self.at_unquoted_symbol_with("hide") {
+                self.need_unquoted_symbol_atom("hide")?
+            } else {
+                return Err(self.expecting("font, justify, hide or href"));
+            };
 
-            match self
-                .need_unquoted_symbol_atom("font, justify, hide or href")?
-                .as_str()
-            {
+            match head.as_str() {
                 "font" => {
                     while !self.at_right() {
                         let font_is_list = matches!(self.current().kind, TokKind::Left);
-
-                        if font_is_list {
+                        let head = if font_is_list {
                             self.need_left()?;
-                        }
-
-                        match self
-                            .need_unquoted_symbol_atom(
+                            self.need_unquoted_symbol_atom(
                                 "face, size, thickness, line_spacing, bold, or italic",
                             )?
-                            .as_str()
-                        {
+                        } else if self.at_unquoted_symbol_with("bold") {
+                            self.need_unquoted_symbol_atom("bold")?
+                        } else if self.at_unquoted_symbol_with("italic") {
+                            self.need_unquoted_symbol_atom("italic")?
+                        } else {
+                            return Err(self.expecting(
+                                "face, size, thickness, line_spacing, bold, or italic",
+                            ));
+                        };
+
+                        match head.as_str() {
                             "face" => {
                                 effects.font_face = Some(
                                     self.need_symbol_atom("font face")
