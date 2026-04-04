@@ -3203,7 +3203,25 @@ impl KiCadSchematicParser {
                         continue;
                     }
 
-                    symbol.insert_property(property);
+                    if matches!(
+                        property.kind,
+                        PropertyKind::SymbolReference
+                            | PropertyKind::SymbolValue
+                            | PropertyKind::SymbolFootprint
+                            | PropertyKind::SymbolDatasheet
+                    ) {
+                        if let Some(existing) = symbol
+                            .properties
+                            .iter_mut()
+                            .find(|existing| existing.kind == property.kind)
+                        {
+                            *existing = property;
+                        } else {
+                            symbol.properties.push(property);
+                        }
+                    } else {
+                        symbol.properties.push(property);
+                    }
                     self.need_right()?;
                 }
                 "instances" => {

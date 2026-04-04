@@ -516,28 +516,6 @@ impl Symbol {
         self.instances.push(instance);
     }
 
-    pub fn insert_property(&mut self, property: Property) {
-        if matches!(
-            property.kind,
-            PropertyKind::SymbolReference
-                | PropertyKind::SymbolValue
-                | PropertyKind::SymbolFootprint
-                | PropertyKind::SymbolDatasheet
-        ) {
-            if let Some(existing) = self
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                self.properties.push(property);
-            }
-        } else {
-            self.properties.push(property);
-        }
-    }
-
     pub fn set_field_text(&mut self, kind: PropertyKind, value: String) {
         let key = kind.canonical_key();
 
