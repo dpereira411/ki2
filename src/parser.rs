@@ -414,34 +414,55 @@ impl KiCadSchematicParser {
             let head = self.need_unquoted_symbol_atom("title, date, rev, company, or comment")?;
             match head.as_str() {
                 "title" => {
-                    title_block.title = Some(
-                        self.need_atom()
-                            .map_err(|_| self.error_here("missing title"))?,
-                    )
+                    title_block.title = Some(match &self.current().kind {
+                        TokKind::Atom(value) => {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => return Err(self.error_here("missing title")),
+                    })
                 }
                 "date" => {
-                    title_block.date = Some(
-                        self.need_atom()
-                            .map_err(|_| self.error_here("missing date"))?,
-                    )
+                    title_block.date = Some(match &self.current().kind {
+                        TokKind::Atom(value) => {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => return Err(self.error_here("missing date")),
+                    })
                 }
                 "rev" => {
-                    title_block.revision = Some(
-                        self.need_atom()
-                            .map_err(|_| self.error_here("missing rev"))?,
-                    )
+                    title_block.revision = Some(match &self.current().kind {
+                        TokKind::Atom(value) => {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => return Err(self.error_here("missing rev")),
+                    })
                 }
                 "company" => {
-                    title_block.company = Some(
-                        self.need_atom()
-                            .map_err(|_| self.error_here("missing company"))?,
-                    )
+                    title_block.company = Some(match &self.current().kind {
+                        TokKind::Atom(value) => {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => return Err(self.error_here("missing company")),
+                    })
                 }
                 "comment" => {
                     let idx = self.parse_i32_atom("comment index")?;
-                    let value = self
-                        .need_atom()
-                        .map_err(|_| self.error_here("missing comment value"))?;
+                    let value = match &self.current().kind {
+                        TokKind::Atom(value) => {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => return Err(self.error_here("missing comment value")),
+                    };
 
                     let comment_number = match idx {
                         1 => 1,
