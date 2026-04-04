@@ -129,6 +129,15 @@ pub struct LibSymbol {
 
 impl LibSymbol {
     pub fn new(name: String) -> Self {
+        let mut properties = vec![
+            Property::new(PropertyKind::SymbolReference, String::new()),
+            Property::new(PropertyKind::SymbolValue, String::new()),
+            Property::new(PropertyKind::SymbolFootprint, String::new()),
+            Property::new(PropertyKind::SymbolDatasheet, String::new()),
+        ];
+        properties[2].visible = false;
+        properties[3].visible = false;
+
         Self {
             units: vec![LibSymbolUnit {
                 name: format!("{name}_1_1"),
@@ -157,7 +166,7 @@ impl LibSymbol {
             description: None,
             fp_filters: Vec::new(),
             locked_units: false,
-            properties: Vec::new(),
+            properties,
             embedded_fonts: None,
             embedded_files: Vec::new(),
         }
@@ -907,7 +916,7 @@ impl Sheet {
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldAutoplacement, PropertyKind, Sheet, Symbol};
+    use super::{FieldAutoplacement, LibSymbol, PropertyKind, Sheet, Symbol};
 
     #[test]
     fn placed_symbols_start_with_mandatory_fields() {
@@ -942,6 +951,25 @@ mod tests {
                 .map(|property| property.kind)
                 .collect::<Vec<_>>(),
             vec![PropertyKind::SheetName, PropertyKind::SheetFile]
+        );
+    }
+
+    #[test]
+    fn lib_symbols_start_with_mandatory_fields() {
+        let symbol = LibSymbol::new("Device:R".to_string());
+
+        assert_eq!(
+            symbol
+                .properties
+                .iter()
+                .map(|property| (property.kind, property.visible))
+                .collect::<Vec<_>>(),
+            vec![
+                (PropertyKind::SymbolReference, true),
+                (PropertyKind::SymbolValue, true),
+                (PropertyKind::SymbolFootprint, false),
+                (PropertyKind::SymbolDatasheet, false),
+            ]
         );
     }
 }

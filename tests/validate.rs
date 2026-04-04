@@ -1389,8 +1389,15 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.fp_filters, vec!["R_*", "0603"]);
     assert!(lib_symbol.locked_units);
     assert_eq!(lib_symbol.extends.as_deref(), Some("Device:Base"));
-    assert_eq!(lib_symbol.properties.len(), 1);
-    assert!(!lib_symbol.properties[0].visible);
+    assert_eq!(lib_symbol.properties.len(), 4);
+    assert!(
+        !lib_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .expect("reference field")
+            .visible
+    );
     assert_eq!(lib_symbol.units.len(), 1);
     assert_eq!(lib_symbol.units[0].unit_number, 1);
     assert_eq!(lib_symbol.units[0].body_style, 1);
@@ -7594,15 +7601,29 @@ fn lib_symbol_duplicate_user_properties_follow_upstream_renaming() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
 
-    assert_eq!(lib_symbol.properties.len(), 4);
-    assert_eq!(lib_symbol.properties[0].key, "Field");
-    assert_eq!(lib_symbol.properties[0].value, "A");
-    assert_eq!(lib_symbol.properties[1].key, "Field_1");
-    assert_eq!(lib_symbol.properties[1].value, "B");
-    assert_eq!(lib_symbol.properties[2].key, "Field_2");
-    assert_eq!(lib_symbol.properties[2].value, "C");
-    assert_eq!(lib_symbol.properties[3].key, "Reference");
-    assert_eq!(lib_symbol.properties[3].value, "J");
+    assert_eq!(lib_symbol.properties.len(), 7);
+    assert_eq!(
+        lib_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("J")
+    );
+    let extra_fields = lib_symbol
+        .properties
+        .iter()
+        .filter(|property| {
+            property.key == "Field" || property.key == "Field_1" || property.key == "Field_2"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(extra_fields.len(), 3);
+    assert_eq!(extra_fields[0].key, "Field");
+    assert_eq!(extra_fields[0].value, "A");
+    assert_eq!(extra_fields[1].key, "Field_1");
+    assert_eq!(extra_fields[1].value, "B");
+    assert_eq!(extra_fields[2].key, "Field_2");
+    assert_eq!(extra_fields[2].value, "C");
 
     let _ = fs::remove_file(path);
 }
@@ -7622,11 +7643,23 @@ fn lib_symbol_private_is_preserved_on_mandatory_and_user_fields() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
 
-    assert_eq!(lib_symbol.properties.len(), 2);
-    assert_eq!(lib_symbol.properties[0].key, "Reference");
-    assert!(lib_symbol.properties[0].is_private);
-    assert_eq!(lib_symbol.properties[1].key, "UserField");
-    assert!(lib_symbol.properties[1].is_private);
+    assert_eq!(lib_symbol.properties.len(), 5);
+    assert!(
+        lib_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .expect("reference field")
+            .is_private
+    );
+    assert!(
+        lib_symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "UserField")
+            .expect("user field")
+            .is_private
+    );
 
     let _ = fs::remove_file(path);
 }

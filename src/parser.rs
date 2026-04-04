@@ -2003,15 +2003,12 @@ impl KiCadSchematicParser {
                 | PropertyKind::SymbolFootprint
                 | PropertyKind::SymbolDatasheet
         ) {
-            if let Some(existing) = symbol
+            let existing = symbol
                 .properties
                 .iter_mut()
                 .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                symbol.properties.push(property);
-            }
+                .expect("lib symbols start with mandatory fields");
+            *existing = property;
         } else if name == "ki_keywords" {
             symbol.keywords = Some(property.value);
         } else if name == "ki_description" {
