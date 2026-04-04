@@ -529,7 +529,7 @@ impl KiCadSchematicParser {
             .map_err(|_| self.error_here("Invalid symbol name"))?;
         let name = raw_name.replace("{slash}", "/");
 
-        if let Some(ch) = Self::find_invalid_library_identifier_char(&name) {
+        if let Some(ch) = Self::find_invalid_lib_id_char(&name) {
             return Err(self.error_here(format!("Symbol {name} contains invalid character '{ch}'")));
         }
 
@@ -2941,7 +2941,7 @@ impl KiCadSchematicParser {
                     let raw = self.need_symbol_or_number_atom("symbol|number")?;
                     let normalized = raw.replace("{slash}", "/");
 
-                    if let Some(ch) = Self::find_invalid_library_identifier_char(&normalized) {
+                    if let Some(ch) = Self::find_invalid_lib_id_char(&normalized) {
                         return Err(self.error_here(format!(
                             "Symbol {normalized} contains invalid character '{ch}'"
                         )));
@@ -3972,7 +3972,7 @@ impl KiCadSchematicParser {
                     let raw = self.need_symbol_or_number_atom("symbol|number")?;
                     let normalized = raw.replace("{slash}", "/");
 
-                    if let Some(ch) = Self::find_invalid_library_identifier_char(&normalized) {
+                    if let Some(ch) = Self::find_invalid_lib_id_char(&normalized) {
                         return Err(self.error_here(format!(
                             "Group library link {normalized} contains invalid character '{ch}'"
                         )));
@@ -4231,7 +4231,7 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn find_invalid_library_identifier_char(value: &str) -> Option<char> {
+    fn find_invalid_lib_id_char(value: &str) -> Option<char> {
         let (nickname, item) = match value.split_once(':') {
             Some((nickname, item)) => (Some(nickname), item),
             None => (None, value),

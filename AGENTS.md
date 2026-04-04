@@ -25,6 +25,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - `group` declarations are parsed first and resolved after the rest of the file. Do not eagerly fold them into generic item parsing.
 - In `parseGroup()`, the optional pre-list group name should only accept a quoted string, with bare `locked` as the only non-string token allowed before the first nested list. Do not accept an unquoted group name there.
 - In `parseGroup()`, keep the `lib_id` branch separate from the symbol/library helper. Upstream uses the same parse rules but a group-specific invalid-character diagnostic: `Group library link ... contains invalid character ...`.
+- Keep the shared library-ID character validator named after its upstream role too. Once it exists only to support library-ID parsing branches, it should not stay on an overlong repo-local helper name.
 - `polyline` is not equivalent to `wire`/`bus`. Two-point polylines collapse to line-like objects; longer ones remain shapes.
 - Keep the shared wire/bus line routine on an upstream-shaped schematic-line entrypoint too. Once it owns the real line body, it should not stay on a vague local `parse_line()` name.
 - `rule_area` grammar is specialized and wraps a nested `polyline`; it is not just another generic point-list shape.
