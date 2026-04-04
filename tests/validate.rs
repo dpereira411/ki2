@@ -175,6 +175,35 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
 }
 
 #[test]
+fn rejects_non_integer_rgb_color_channels() {
+    let decimal_junction_color = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-decimal-junction-color")
+  (junction (color 10.5 20 30 0.5))
+)"#;
+    let decimal_junction_color_path =
+        temp_schematic("decimal_junction_color", decimal_junction_color);
+    let err = parse_schematic_file(Path::new(&decimal_junction_color_path))
+        .expect_err("must reject decimal junction RGB channel");
+    assert!(err.to_string().contains("missing red"));
+
+    let decimal_effects_color = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-decimal-effects-color")
+  (text "note" (effects (font (color 10.5 20 30 0.5))))
+)"#;
+    let decimal_effects_color_path = temp_schematic("decimal_effects_color", decimal_effects_color);
+    let err = parse_schematic_file(Path::new(&decimal_effects_color_path))
+        .expect_err("must reject decimal effects RGB channel");
+    assert!(err.to_string().contains("missing red"));
+
+    let _ = fs::remove_file(decimal_junction_color_path);
+    let _ = fs::remove_file(decimal_effects_color_path);
+}
+
+#[test]
 fn validates_hierarchical_tree_fixture() {
     let loaded = load_schematic_tree(&fixture("hierarchical.kicad_sch")).expect("tree must load");
     assert_eq!(loaded.schematics.len(), 2);

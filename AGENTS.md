@@ -104,6 +104,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - The same token boundary applies in the core grammar entrypoints too: root `kicad_sch`, top-level `version`, `bus_alias` `members`, and raw `xy` heads in line/bezier parsing are parser keywords and must not dispatch from quoted strings.
 - Boolean parsing should stay on the upstream `yes` / `no` token path too. Do not accept repo-local `true` / `false` synonyms in `parseBool()` / `parseMaybeAbsentBool()`-equivalent branches.
 - Numeric parsing should stay on the upstream `NeedNUMBER()` path too. Do not accept quoted/string atoms in places that KiCad parses through `parseInt()` / `parseDouble()`.
+- RGB color channels should stay on the upstream `parseInt()` path too: red/green/blue are integer tokens, while alpha remains `parseDouble()`.
 - In `parseSheet()`, the `<= 20200310` legacy sheet-field-ID recovery should happen at property-parse time, like upstream, not as a later post-loop rewrite over the final property list.
 - In `parseSheet()`, mandatory sheet-name and sheet-file resolution should key off field kind/ID (`SheetName` / `SheetFile`), not canonicalized key-string lookups. That keeps the post-loop validation closer to upstream `FindField(..., FIELD_T::...)`.
 - In `parseSheet()`, mandatory sheet field overwrite behavior should stay inline in the property branch, like upstream field accumulation, rather than through a repo-local `upsert_sheet_property()` helper.

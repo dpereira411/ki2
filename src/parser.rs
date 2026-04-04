@@ -1638,9 +1638,9 @@ impl KiCadSchematicParser {
                 }
                 "color" => {
                     color = Some([
-                        self.parse_f64_atom("red")? / 255.0,
-                        self.parse_f64_atom("green")? / 255.0,
-                        self.parse_f64_atom("blue")? / 255.0,
+                        f64::from(self.parse_i32_atom("red")?) / 255.0,
+                        f64::from(self.parse_i32_atom("green")?) / 255.0,
+                        f64::from(self.parse_i32_atom("blue")?) / 255.0,
                         self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
                     ]);
                     self.need_right()?;
@@ -3744,9 +3744,9 @@ impl KiCadSchematicParser {
                 }
                 "color" => {
                     stroke.color = Some([
-                        self.parse_f64_atom("red")? / 255.0,
-                        self.parse_f64_atom("green")? / 255.0,
-                        self.parse_f64_atom("blue")? / 255.0,
+                        f64::from(self.parse_i32_atom("red")?) / 255.0,
+                        f64::from(self.parse_i32_atom("green")?) / 255.0,
+                        f64::from(self.parse_i32_atom("blue")?) / 255.0,
                         self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
                     ]);
                     self.need_right()?;
@@ -3799,9 +3799,9 @@ impl KiCadSchematicParser {
                 }
                 "color" => {
                     fill.color = Some([
-                        self.parse_f64_atom("red")? / 255.0,
-                        self.parse_f64_atom("green")? / 255.0,
-                        self.parse_f64_atom("blue")? / 255.0,
+                        f64::from(self.parse_i32_atom("red")?) / 255.0,
+                        f64::from(self.parse_i32_atom("green")?) / 255.0,
+                        f64::from(self.parse_i32_atom("blue")?) / 255.0,
                         self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
                     ]);
                     self.need_right()?;
@@ -3990,9 +3990,9 @@ impl KiCadSchematicParser {
                 }
                 "color" => {
                     effects.color = Some([
-                        self.parse_f64_atom("red")? / 255.0,
-                        self.parse_f64_atom("green")? / 255.0,
-                        self.parse_f64_atom("blue")? / 255.0,
+                        f64::from(self.parse_i32_atom("red")?) / 255.0,
+                        f64::from(self.parse_i32_atom("green")?) / 255.0,
+                        f64::from(self.parse_i32_atom("blue")?) / 255.0,
                         self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
                     ]);
                     self.need_right()?;
