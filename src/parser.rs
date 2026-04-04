@@ -2611,8 +2611,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self
-                .need_unquoted_symbol_atom("pts, start, mid, end, center, uuid, stroke, or fill")?;
+            let head = self.need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?;
             match head.as_str() {
                 "pts" => {
                     let mut parsed_points = Vec::new();
@@ -2626,22 +2625,6 @@ impl KiCadSchematicParser {
                         self.need_right()?;
                     }
                     points = parsed_points;
-                    self.need_right()?;
-                }
-                "start" => {
-                    points.push(self.parse_xy2("shape start")?);
-                    self.need_right()?;
-                }
-                "mid" => {
-                    points.push(self.parse_xy2("shape mid")?);
-                    self.need_right()?;
-                }
-                "end" => {
-                    points.push(self.parse_xy2("shape end")?);
-                    self.need_right()?;
-                }
-                "center" => {
-                    points.push(self.parse_xy2("shape center")?);
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -2663,9 +2646,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 _ => {
-                    return Err(
-                        self.expecting("pts, start, mid, end, center, uuid, stroke, or fill")
-                    );
+                    return Err(self.expecting("pts, uuid, stroke, or fill"));
                 }
             }
         }

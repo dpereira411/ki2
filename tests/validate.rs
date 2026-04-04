@@ -2898,7 +2898,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
         .expect_err("must reject quoted polyline head");
     assert!(
         err.to_string()
-            .contains("expecting pts, start, mid, end, center, uuid, stroke, or fill")
+            .contains("expecting pts, uuid, stroke, or fill")
     );
 
     let quoted_arc_head = r#"(kicad_sch
@@ -3742,7 +3742,7 @@ fn line_and_polyline_keep_upstream_error_text() {
         .expect_err("must reject bad polyline child");
     assert!(
         err.to_string()
-            .contains("expecting pts, start, mid, end, center, uuid, stroke, or fill")
+            .contains("expecting pts, uuid, stroke, or fill")
     );
     let _ = fs::remove_file(bad_polyline_path);
 }
