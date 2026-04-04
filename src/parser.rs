@@ -634,7 +634,7 @@ impl KiCadSchematicParser {
                         self.need_left()?;
                         let mut group = Vec::new();
                         while !self.at_right() {
-                            group.push(self.need_symbol_atom("list of pin names")?);
+                            group.push(self.need_quoted_atom("list of pin names")?);
                         }
                         self.need_right()?;
                         jumper_pin_groups.push(group);

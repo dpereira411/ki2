@@ -2491,6 +2491,31 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
 }
 
 #[test]
+fn rejects_unquoted_jumper_pin_group_names() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-unquoted-jumper-pin-group")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (jumper_pin_groups
+        (A B))))
+)"#;
+    let path = temp_schematic("unquoted_jumper_pin_groups", src);
+    let schematic = parse_schematic_file(Path::new(&path))
+        .expect("bad lib symbol should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting list of pin names"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn labels_do_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)
