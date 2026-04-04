@@ -4464,14 +4464,16 @@ impl KiCadSchematicParser {
 
     fn parse_group(&mut self) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("group")?;
-        let mut group = Group::new();
+        let group_index = self.pending_groups.len();
+        self.pending_groups.push(Group::new());
 
         while matches!(self.current().kind, TokKind::Atom(_)) {
             if self.at_unquoted_symbol_with("locked") {
                 let _ = self.need_unquoted_symbol_atom("locked")?;
                 continue;
             }
-            group.name = Some(self.need_quoted_atom("group name or locked")?);
+            self.pending_groups[group_index].name =
+                Some(self.need_quoted_atom("group name or locked")?);
             break;
         }
 
@@ -4482,7 +4484,7 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "uuid" => {
-                    group.uuid = Some(self.need_symbol_atom("uuid")?);
+                    self.pending_groups[group_index].uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "lib_id" => {
@@ -4499,27 +4501,25 @@ impl KiCadSchematicParser {
                         return Err(self.error_here("Invalid library ID"));
                     }
 
-                    group.lib_id = Some(normalized);
+                    self.pending_groups[group_index].lib_id = Some(normalized);
                     self.need_right()?;
                 }
                 "members" => {
-                    self.parse_group_members(&mut group)?;
+                    self.parse_group_members(group_index)?;
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("uuid, lib_id, members")),
             }
         }
 
-        self.pending_groups.push(group);
         self.need_right()?;
         Ok(())
     }
 
-    fn parse_group_members(&mut self, group: &mut Group) -> Result<(), Error> {
+    fn parse_group_members(&mut self, group_index: usize) -> Result<(), Error> {
         while !self.at_right() {
-            group
-                .members
-                .push(self.need_symbol_atom("group member uuid")?);
+            let member = self.need_symbol_atom("group member uuid")?;
+            self.pending_groups[group_index].members.push(member);
         }
 
         Ok(())
