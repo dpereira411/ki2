@@ -2002,7 +2002,7 @@ fn rejects_unexpected_sheet_child_with_upstream_expect_list() {
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad sheet child");
     let msg = err.to_string();
     assert!(msg.contains(
-        "expecting at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, background, instances, uuid, property, or pin"
+        "expecting at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, fill, instances, uuid, property, or pin"
     ));
     let _ = fs::remove_file(path);
 }
@@ -2590,7 +2590,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_sheet_head_path))
         .expect_err("must reject quoted top-level sheet head token");
     assert!(err.to_string().contains(
-        "expecting at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, background, instances, uuid, property, or pin"
+        "expecting at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, fill, instances, uuid, property, or pin"
     ));
 
     let quoted_sheet_project = r#"(kicad_sch
@@ -2643,7 +2643,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_sheet_fields_autoplaced_path))
         .expect_err("must reject quoted sheet fields_autoplaced head");
     assert!(err.to_string().contains(
-        "expecting at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, background, instances, uuid, property, or pin"
+        "expecting at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, fill, instances, uuid, property, or pin"
     ));
 
     let quoted_sheet_pin_head = r#"(kicad_sch
