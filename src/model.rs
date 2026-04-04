@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -642,12 +643,6 @@ pub struct SymbolInstance {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct VariantField {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct ItemVariant {
     pub name: String,
     pub dnp: bool,
@@ -655,7 +650,7 @@ pub struct ItemVariant {
     pub in_bom: bool,
     pub on_board: bool,
     pub in_pos_files: bool,
-    pub fields: Vec<VariantField>,
+    pub fields: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -663,7 +658,7 @@ pub struct SheetLocalInstance {
     pub project: String,
     pub path: String,
     pub page: Option<String>,
-    pub variants: Vec<ItemVariant>,
+    pub variants: BTreeMap<String, ItemVariant>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -672,7 +667,7 @@ pub struct SymbolLocalInstance {
     pub path: String,
     pub reference: Option<String>,
     pub unit: Option<i32>,
-    pub variants: Vec<ItemVariant>,
+    pub variants: BTreeMap<String, ItemVariant>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

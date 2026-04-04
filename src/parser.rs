@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -13,7 +14,7 @@ use crate::model::{
     Property, PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet,
     SheetInstance, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle,
     Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, Text, TextBox, TextEffects,
-    TextHJustify, TextKind, TextVJustify, TitleBlock, VariantField,
+    TextHJustify, TextKind, TextVJustify, TitleBlock,
 };
 use crate::token::{AtomClass, TokKind, Token, lex};
 
@@ -3904,7 +3905,7 @@ impl KiCadSchematicParser {
                                 path,
                                 reference: None,
                                 unit: None,
-                                variants: Vec::new(),
+                                variants: BTreeMap::new(),
                             };
                             while !self.at_right() {
                                 self.need_left()?;
@@ -3981,7 +3982,7 @@ impl KiCadSchematicParser {
                                             in_bom: symbol.in_bom,
                                             on_board: symbol.on_board,
                                             in_pos_files: symbol.in_pos_files,
-                                            fields: Vec::new(),
+                                            fields: BTreeMap::new(),
                                         };
 
                                         while !self.at_right() {
@@ -4056,10 +4057,8 @@ impl KiCadSchematicParser {
                                                 "field" => {
                                                     let _ =
                                                         self.need_unquoted_symbol_atom("field")?;
-                                                    let mut field = VariantField {
-                                                        name: String::new(),
-                                                        value: String::new(),
-                                                    };
+                                                    let mut field_name = String::new();
+                                                    let mut field_value = String::new();
 
                                                     while !self.at_right() {
                                                         self.need_left()?;
@@ -4085,7 +4084,7 @@ impl KiCadSchematicParser {
                                                                     .need_unquoted_symbol_atom(
                                                                         "name",
                                                                     )?;
-                                                                field.name = self
+                                                                field_name = self
                                                                     .need_symbol_atom("name")
                                                                     .map_err(|_| {
                                                                         self.error_here(
@@ -4099,7 +4098,7 @@ impl KiCadSchematicParser {
                                                                     .need_unquoted_symbol_atom(
                                                                         "value",
                                                                     )?;
-                                                                field.value = self
+                                                                field_value = self
                                                                     .need_symbol_atom("value")
                                                                     .map_err(|_| {
                                                                         self.error_here(
@@ -4116,7 +4115,7 @@ impl KiCadSchematicParser {
                                                         }
                                                     }
 
-                                                    variant.fields.push(field);
+                                                    variant.fields.insert(field_name, field_value);
                                                     self.need_right()?;
                                                 }
                                                 _ => {
@@ -4127,7 +4126,7 @@ impl KiCadSchematicParser {
                                             }
                                         }
 
-                                        instance.variants.push(variant);
+                                        instance.variants.insert(variant.name.clone(), variant);
                                         self.need_right()?;
                                     }
                                     _ => {
@@ -4397,7 +4396,7 @@ impl KiCadSchematicParser {
                                 project: project.clone(),
                                 path,
                                 page: None,
-                                variants: Vec::new(),
+                                variants: BTreeMap::new(),
                             };
                             while !self.at_right() {
                                 self.need_left()?;
@@ -4441,7 +4440,7 @@ impl KiCadSchematicParser {
                                             in_bom: sheet.in_bom,
                                             on_board: sheet.on_board,
                                             in_pos_files: false,
-                                            fields: Vec::new(),
+                                            fields: BTreeMap::new(),
                                         };
 
                                         while !self.at_right() {
@@ -4516,10 +4515,8 @@ impl KiCadSchematicParser {
                                                 "field" => {
                                                     let _ =
                                                         self.need_unquoted_symbol_atom("field")?;
-                                                    let mut field = VariantField {
-                                                        name: String::new(),
-                                                        value: String::new(),
-                                                    };
+                                                    let mut field_name = String::new();
+                                                    let mut field_value = String::new();
 
                                                     while !self.at_right() {
                                                         self.need_left()?;
@@ -4545,7 +4542,7 @@ impl KiCadSchematicParser {
                                                                     .need_unquoted_symbol_atom(
                                                                         "name",
                                                                     )?;
-                                                                field.name = self
+                                                                field_name = self
                                                                     .need_symbol_atom("name")
                                                                     .map_err(|_| {
                                                                         self.error_here(
@@ -4559,7 +4556,7 @@ impl KiCadSchematicParser {
                                                                     .need_unquoted_symbol_atom(
                                                                         "value",
                                                                     )?;
-                                                                field.value = self
+                                                                field_value = self
                                                                     .need_symbol_atom("value")
                                                                     .map_err(|_| {
                                                                         self.error_here(
@@ -4576,7 +4573,7 @@ impl KiCadSchematicParser {
                                                         }
                                                     }
 
-                                                    variant.fields.push(field);
+                                                    variant.fields.insert(field_name, field_value);
                                                     self.need_right()?;
                                                 }
                                                 _ => {
@@ -4587,7 +4584,7 @@ impl KiCadSchematicParser {
                                             }
                                         }
 
-                                        instance.variants.push(variant);
+                                        instance.variants.insert(variant.name.clone(), variant);
                                         self.need_right()?;
                                     }
                                     _ => return Err(self.expecting("page or variant")),

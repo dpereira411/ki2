@@ -5298,8 +5298,15 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     assert_eq!(symbol.instances[0].project, "demo");
     assert_eq!(symbol.instances[0].path, "/A");
     assert_eq!(symbol.instances[0].variants.len(), 1);
-    assert_eq!(symbol.instances[0].variants[0].name, "ALT");
-    assert_eq!(symbol.instances[0].variants[0].fields[0].name, "MPN");
+    let sym_variant = symbol.instances[0]
+        .variants
+        .get("ALT")
+        .expect("ALT variant");
+    assert_eq!(sym_variant.name, "ALT");
+    assert_eq!(
+        sym_variant.fields.get("MPN").map(String::as_str),
+        Some("123")
+    );
 
     let sheet = schematic
         .screen
@@ -5313,9 +5320,13 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     assert_eq!(sheet.instances.len(), 1);
     assert_eq!(sheet.instances[0].project, "demo");
     assert_eq!(sheet.instances[0].page.as_deref(), Some("2"));
-    assert_eq!(sheet.instances[0].variants[0].name, "ASSEMBLY");
-    assert!(sheet.instances[0].variants[0].in_bom);
-    assert!(!sheet.instances[0].variants[0].in_pos_files);
+    let sheet_variant = sheet.instances[0]
+        .variants
+        .get("ASSEMBLY")
+        .expect("ASSEMBLY variant");
+    assert_eq!(sheet_variant.name, "ASSEMBLY");
+    assert!(sheet_variant.in_bom);
+    assert!(!sheet_variant.in_pos_files);
 
     let _ = fs::remove_file(path);
 }
@@ -5474,7 +5485,7 @@ fn sheet_variant_in_bom_respects_20260306_fix_boundary() {
             _ => None,
         })
         .expect("old sheet");
-    assert!(!old_sheet.instances[0].variants[0].in_bom);
+    assert!(!old_sheet.instances[0].variants["OLD"].in_bom);
 
     let new_src = r#"(kicad_sch
   (version 20260306)
@@ -5503,7 +5514,7 @@ fn sheet_variant_in_bom_respects_20260306_fix_boundary() {
             _ => None,
         })
         .expect("new sheet");
-    assert!(new_sheet.instances[0].variants[0].in_bom);
+    assert!(new_sheet.instances[0].variants["NEW"].in_bom);
 
     let _ = fs::remove_file(old_path);
     let _ = fs::remove_file(new_path);
@@ -5554,7 +5565,7 @@ fn symbol_and_sheet_variants_inherit_parent_attributes() {
             _ => None,
         })
         .expect("symbol");
-    let sym_variant = &symbol.instances[0].variants[0];
+    let sym_variant = &symbol.instances[0].variants["SYM"];
     assert_eq!(sym_variant.name, "SYM");
     assert!(sym_variant.dnp);
     assert!(sym_variant.excluded_from_sim);
@@ -5571,7 +5582,7 @@ fn symbol_and_sheet_variants_inherit_parent_attributes() {
             _ => None,
         })
         .expect("sheet");
-    let sheet_variant = &sheet.instances[0].variants[0];
+    let sheet_variant = &sheet.instances[0].variants["SHEET"];
     assert_eq!(sheet_variant.name, "SHEET");
     assert!(sheet_variant.dnp);
     assert!(sheet_variant.excluded_from_sim);
@@ -5646,6 +5657,88 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let _ = fs::remove_file(bad_name_path);
     let _ = fs::remove_file(bad_variant_name_path);
     let _ = fs::remove_file(bad_value_path);
+}
+
+#[test]
+fn duplicate_variant_names_and_fields_overwrite_by_name() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-duplicate-variants")
+  (symbol
+    (lib_id "Device:R")
+    (instances
+      (project "demo"
+        (path "/A"
+          (variant
+            (name "ALT")
+            (dnp no)
+            (field (name "MPN") (value "111"))
+            (field (name "MPN") (value "222")))
+          (variant
+            (name "ALT")
+            (dnp yes)
+            (field (name "MPN") (value "333")))))))
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S"
+          (variant
+            (name "ASSEMBLY")
+            (on_board yes)
+            (field (name "POP") (value "ONE"))
+            (field (name "POP") (value "TWO")))
+          (variant
+            (name "ASSEMBLY")
+            (on_board no)
+            (field (name "POP") (value "THREE")))))))
+)"#;
+    let path = temp_schematic("duplicate_variant_names_and_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert_eq!(symbol.instances[0].variants.len(), 1);
+    let symbol_variant = symbol.instances[0]
+        .variants
+        .get("ALT")
+        .expect("ALT variant");
+    assert!(symbol_variant.dnp);
+    assert_eq!(
+        symbol_variant.fields.get("MPN").map(String::as_str),
+        Some("333")
+    );
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.instances[0].variants.len(), 1);
+    let sheet_variant = sheet.instances[0]
+        .variants
+        .get("ASSEMBLY")
+        .expect("ASSEMBLY variant");
+    assert!(!sheet_variant.on_board);
+    assert_eq!(
+        sheet_variant.fields.get("POP").map(String::as_str),
+        Some("THREE")
+    );
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]

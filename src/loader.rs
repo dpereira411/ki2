@@ -340,7 +340,7 @@ impl SchematicLoader {
                         path: sheet_path.instance_path.clone(),
                         reference: instance.reference.clone(),
                         unit: instance.unit,
-                        variants: Vec::new(),
+                        variants: Default::default(),
                     });
                 }
             }
