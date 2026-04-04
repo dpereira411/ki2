@@ -510,6 +510,10 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    pub fn add_hierarchical_reference(&mut self, instance: SymbolLocalInstance) {
+        self.instances.push(instance);
+    }
+
     pub fn insert_property(&mut self, property: Property) {
         if matches!(
             property.kind,
@@ -569,6 +573,10 @@ pub struct Sheet {
 }
 
 impl Sheet {
+    pub fn set_instances(&mut self, instances: Vec<SheetLocalInstance>) {
+        self.instances = instances;
+    }
+
     pub fn name(&self) -> Option<&str> {
         self.properties
             .iter()

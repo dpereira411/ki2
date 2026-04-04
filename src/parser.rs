@@ -3321,7 +3321,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.instances.push(instance);
+                            symbol.add_hierarchical_reference(instance);
                         }
                         self.need_right()?;
                     }
@@ -3521,6 +3521,8 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "instances" => {
+                    let mut instances = Vec::new();
+
                     while !self.at_right() {
                         self.need_left()?;
                         if self.need_unquoted_symbol_atom("project")? != "project" {
@@ -3675,10 +3677,11 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            sheet.instances.push(instance);
+                            instances.push(instance);
                         }
                         self.need_right()?;
                     }
+                    sheet.set_instances(instances);
                     self.need_right()?;
                 }
                 _ => {
