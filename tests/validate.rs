@@ -576,6 +576,84 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
 }
 
 #[test]
+fn fixes_legacy_global_power_symbol_value_after_load() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_legacy_power_fix_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+
+    let root_src = r#"(kicad_sch
+  (version 20230220)
+  (generator "eeschema")
+  (uuid "root-u")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:VCC"
+      (power global)
+      (property "Value" "OLDLIB")
+      (symbol "power:VCC_1_1"
+        (pin power_in line
+          hide
+          (at 0 0 0)
+          (length 0)
+          (name "VCC")
+          (number "1")))))
+  (symbol
+    (lib_id "power:VCC")
+    (property "Value" "WRONG")
+    (at 10 10 0)
+    (uuid "sym-u"))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let lib_symbol = root.screen.lib_symbols.first().expect("lib symbol");
+    assert!(lib_symbol.power);
+    assert!(!lib_symbol.local_power);
+    let first_pin = lib_symbol
+        .units
+        .iter()
+        .flat_map(|unit| unit.draw_items.iter())
+        .find(|item| item.kind == "pin")
+        .expect("lib pin");
+    assert_eq!(first_pin.electrical_type.as_deref(), Some("power_in"));
+    assert!(!first_pin.visible);
+    assert_eq!(first_pin.name.as_deref(), Some("VCC"));
+    let symbol = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("VCC")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_direct_ancestor_sheet_cycles() {
     let dir = env::temp_dir().join(format!(
         "ki2_cycle_{}",

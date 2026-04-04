@@ -51,6 +51,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
     loader.update_symbol_instance_data(&root_path, &sheet_paths);
     loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
+    loader.fix_legacy_power_symbol_mismatches(&root_path);
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
     loader.update_all_screen_references(&sheet_paths);
@@ -374,6 +375,61 @@ impl SchematicLoader {
                 .then_with(|| a.instance_path.cmp(&b.instance_path))
                 .then_with(|| a.schematic_path.cmp(&b.schematic_path))
         });
+    }
+
+    fn fix_legacy_power_symbol_mismatches(&mut self, root_path: &Path) {
+        let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
+            return;
+        };
+        if self.schematics[root_index].version >= 20230221 {
+            return;
+        }
+
+        for schematic in &mut self.schematics {
+            for item in &mut schematic.screen.items {
+                let SchItem::Symbol(symbol) = item else {
+                    continue;
+                };
+
+                let lib_symbol_name = symbol
+                    .linked_lib_symbol_name
+                    .as_deref()
+                    .or(symbol.lib_name.as_deref())
+                    .unwrap_or(symbol.lib_id.as_str());
+
+                let Some(lib_symbol) = schematic
+                    .screen
+                    .lib_symbols
+                    .iter()
+                    .find(|candidate| candidate.name == lib_symbol_name)
+                else {
+                    continue;
+                };
+
+                if !lib_symbol.power || lib_symbol.local_power {
+                    continue;
+                }
+
+                let Some(first_pin) = lib_symbol
+                    .units
+                    .iter()
+                    .flat_map(|unit| unit.draw_items.iter())
+                    .find(|draw_item| draw_item.kind == "pin")
+                else {
+                    continue;
+                };
+
+                if first_pin.electrical_type.as_deref() != Some("power_in") || first_pin.visible {
+                    continue;
+                }
+
+                let Some(pin_name) = first_pin.name.clone() else {
+                    continue;
+                };
+
+                upsert_symbol_property(symbol, "Value", pin_name, PropertyKind::SymbolValue);
+            }
+        }
     }
 
     fn set_sheet_number_and_count(&self, sheet_paths: &mut [LoadedSheetPath]) {
