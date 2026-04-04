@@ -2048,9 +2048,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property",
-            )?;
+            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -2157,11 +2155,7 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                _ => {
-                    return Err(self.expecting(
-                        "exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property",
-                    ))
-                }
+                _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
             }
         }
 

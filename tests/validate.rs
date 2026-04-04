@@ -2269,7 +2269,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
         .expect_err("must reject quoted shared sch text head token");
     assert!(
         err.to_string()
-            .contains("expecting exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property")
+            .contains("expecting at, shape, iref, uuid or effects")
     );
     let _ = fs::remove_file(quoted_text_head_path);
 
@@ -2288,7 +2288,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
         .expect_err("must reject quoted fields_autoplaced head in shared sch text parser");
     assert!(
         err.to_string()
-            .contains("expecting exclude_from_sim, at, shape, length, fields_autoplaced, effects, iref, uuid or property")
+            .contains("expecting at, shape, iref, uuid or effects")
     );
     let _ = fs::remove_file(quoted_text_fields_autoplaced_head_path);
 }
