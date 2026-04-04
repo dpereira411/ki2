@@ -32,6 +32,9 @@ Strict mode is the default for parser-parity work in this repository.
 11. When a work unit is committed and meaningful backlog still remains, continue directly into the next work unit instead of sending a status reply. Only surface a reply if the backlog is exhausted or a real blocker is hit.
 12. A successful commit is not, by itself, a valid reason to reply. After `cargo fmt --all`, `cargo test -q`, and commit succeed, immediately start the next backlog item unless the backlog is exhausted or a real blocker prevents further local progress.
 13. If the user has explicitly asked for continuous execution, any reply without exhausted backlog or a real blocker is a behavior failure. In that mode, prefer doing more work over sending a summary.
+14. Do not treat the end of a turn, a clean git status, or a green test run as an implicit stopping point. Those are normal checkpoints inside execution mode, not reasons to report.
+15. If backlog remains, the default action after every successful work unit is: pick the next largest mismatch, edit, test, commit, continue. Do not wait for another user prompt to resume.
+16. If a reply is unavoidable, it must explain the blocker or state that the backlog is exhausted. Do not send celebratory, summary-only, or “latest progress” replies while executable parity work still remains.
 
 ## Specific Learnings
 
