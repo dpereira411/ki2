@@ -510,7 +510,7 @@ impl SchematicLoader {
                     property.value = value;
                 } else {
                     label.properties.push(Property {
-                        id: None,
+                        id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
                         key: "Intersheet References".to_string(),
                         value,
                         kind: PropertyKind::GlobalLabelIntersheetRefs,
@@ -584,7 +584,7 @@ impl SchematicLoader {
 
 fn upsert_symbol_property(symbol: &mut Symbol, key: &str, value: String, kind: PropertyKind) {
     let property = Property {
-        id: None,
+        id: kind.default_field_id(),
         key: key.to_string(),
         value,
         kind,

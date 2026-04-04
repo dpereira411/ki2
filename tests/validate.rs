@@ -6784,3 +6784,114 @@ fn legacy_derived_lib_symbols_inherit_demorgan_state_from_root() {
     assert!(schematic.screen.lib_symbols[1].has_demorgan);
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn mandatory_properties_keep_default_kicad_field_ids() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (global_label "GL" (at 1 2 0) (shape input) (iref 3 4))
+  (sheet
+    (at 10 20)
+    (size 30 40)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (symbol
+    (lib_id "Device:R")
+    (at 5 6 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")
+    (property "Footprint" "Resistor_SMD:R_0603_1608Metric")
+    (property "Datasheet" "ds")))
+"#;
+    let path = temp_schematic("mandatory_property_ids", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let irefs = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("iref property");
+    assert_eq!(irefs.id, Some(6));
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SheetName)
+            .and_then(|property| property.id),
+        Some(7)
+    );
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SheetFile)
+            .and_then(|property| property.id),
+        Some(8)
+    );
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .and_then(|property| property.id),
+        Some(1)
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .and_then(|property| property.id),
+        Some(2)
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .and_then(|property| property.id),
+        Some(3)
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolDatasheet)
+            .and_then(|property| property.id),
+        Some(4)
+    );
+
+    let _ = fs::remove_file(path);
+}
