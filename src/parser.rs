@@ -913,7 +913,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("start, mid, end, radius, stroke, or fill")?
+                .as_str()
+            {
                 "start" => {
                     item.points[0] = self.parse_xy2("arc start")?;
                     saw_start = true;
@@ -932,7 +935,10 @@ impl KiCadSchematicParser {
                 "radius" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom("at, length, or angles")?
+                            .as_str()
+                        {
                             "at" => {
                                 item.arc_center = Some(self.parse_xy2("arc center")?);
                                 self.need_right()?;
@@ -977,7 +983,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("pts, stroke, or fill")?
+                .as_str()
+            {
                 "pts" => {
                     let mut points = Vec::new();
                     while !self.at_right() {
@@ -1015,7 +1024,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("center, radius, stroke, or fill")?
+                .as_str()
+            {
                 "center" => {
                     item.points[0] = self.parse_xy2("circle center")?;
                     self.need_right()?;
@@ -1043,7 +1055,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("pts, stroke, or fill")?
+                .as_str()
+            {
                 "pts" => {
                     item.points = self.parse_pts()?;
                     self.need_right()?;
@@ -1067,7 +1082,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("start, end, stroke, or fill")?
+                .as_str()
+            {
                 "start" => {
                     item.points.push(self.parse_xy2("rectangle start")?);
                     self.need_right()?;
@@ -1113,7 +1131,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self.need_unquoted_symbol_atom("at or effects")?.as_str() {
                 "at" => {
                     let parsed = self.parse_xy3("text at")?;
                     at = Some([parsed[0], parsed[1]]);
@@ -1225,7 +1243,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "start, end, at, size, stroke, fill, margins, or effects",
+            )?;
             match head.as_str() {
                 "start" => {
                     at = Some(self.parse_xy2("text_box start")?);

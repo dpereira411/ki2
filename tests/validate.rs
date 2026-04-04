@@ -2516,6 +2516,71 @@ fn rejects_unquoted_jumper_pin_group_names() {
 }
 
 #[test]
+fn rejects_quoted_lib_draw_item_list_heads() {
+    let quoted_lib_rectangle_start = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-rectangle-start")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (rectangle ("start" 0 0) (end 1 1))))
+)"#;
+    let quoted_lib_rectangle_start_path =
+        temp_schematic("quoted_lib_rectangle_start", quoted_lib_rectangle_start);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_rectangle_start_path))
+        .expect("bad lib rectangle should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting start, end, stroke, or fill"))
+    );
+
+    let quoted_lib_text_at = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-text-at")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (text "TXT" ("at" 0 0 90))))
+)"#;
+    let quoted_lib_text_at_path = temp_schematic("quoted_lib_text_at", quoted_lib_text_at);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_text_at_path))
+        .expect("bad lib text should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting at or effects"))
+    );
+
+    let quoted_lib_text_box_effects = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-textbox-effects")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (text_box "TXT" ("effects" (font (size 1 1))) (size 1 1))))
+)"#;
+    let quoted_lib_text_box_effects_path =
+        temp_schematic("quoted_lib_textbox_effects", quoted_lib_text_box_effects);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_text_box_effects_path))
+        .expect("bad lib text_box should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
+        warning.contains("expecting start, end, at, size, stroke, fill, margins, or effects")
+    }));
+
+    let _ = fs::remove_file(quoted_lib_rectangle_start_path);
+    let _ = fs::remove_file(quoted_lib_text_at_path);
+    let _ = fs::remove_file(quoted_lib_text_box_effects_path);
+}
+
+#[test]
 fn labels_do_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)
