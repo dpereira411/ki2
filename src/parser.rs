@@ -484,7 +484,7 @@ impl KiCadSchematicParser {
     fn parse_lib_symbols(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("symbol")?;
             if head != "symbol" {
                 return Err(self.expecting("symbol"));
             }

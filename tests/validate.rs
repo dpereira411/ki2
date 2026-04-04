@@ -2286,6 +2286,22 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
 }
 
 #[test]
+fn rejects_quoted_lib_symbols_top_level_symbol_head() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-symbol-head")
+  (lib_symbols
+    ("symbol" "MyLib:U"))
+)"#;
+    let path = temp_schematic("quoted_lib_symbols_symbol_head", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("quoted lib_symbols head should fail before lib-symbol recovery starts");
+    assert!(err.to_string().contains("expecting symbol"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_symbol_head = r#"(kicad_sch
   (version 20260306)
