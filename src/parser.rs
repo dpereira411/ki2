@@ -2247,12 +2247,10 @@ impl KiCadSchematicParser {
                 "show_name" => {
                     let _ = self.need_unquoted_symbol_atom("show_name")?;
                     property.show_name = self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
                 }
                 "do_not_autoplace" => {
                     let _ = self.need_unquoted_symbol_atom("do_not_autoplace")?;
                     property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
                 }
                 "effects" => {
                     let mut effects = TextEffects::default();
@@ -2786,7 +2784,6 @@ impl KiCadSchematicParser {
                             }
                         }
                     }
-                    self.need_right()?;
                 }
                 "effects" => match &mut item {
                     ParsedSchText::Text(text) => {
@@ -3922,7 +3919,6 @@ impl KiCadSchematicParser {
                     if self.parse_maybe_absent_bool(true)? {
                         symbol.fields_autoplaced = FieldAutoplacement::Auto;
                     }
-                    self.need_right()?;
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -4420,7 +4416,6 @@ impl KiCadSchematicParser {
                     if self.parse_maybe_absent_bool(true)? {
                         sheet.fields_autoplaced = FieldAutoplacement::Auto;
                     }
-                    self.need_right()?;
                 }
                 "stroke" => {
                     let _ = self.need_unquoted_symbol_atom("stroke")?;
@@ -5162,12 +5157,10 @@ impl KiCadSchematicParser {
                 "show_name" => {
                     let _ = self.need_unquoted_symbol_atom("show_name")?;
                     property.show_name = self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
                 }
                 "do_not_autoplace" => {
                     let _ = self.need_unquoted_symbol_atom("do_not_autoplace")?;
                     property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
-                    self.need_right()?;
                 }
                 "effects" => {
                     let mut parsed_effects = TextEffects::default();
@@ -5374,83 +5367,31 @@ impl KiCadSchematicParser {
         effects.v_justify = TextVJustify::Center;
 
         while !self.at_right() {
-            if matches!(self.current().kind, TokKind::Atom(_)) {
-                match self
-                    .need_unquoted_symbol_atom("font, justify, hide or href")?
-                    .as_str()
-                {
-                    "hide" => {
-                        effects.hidden = self.parse_maybe_absent_bool(true)?;
-                        *visible = !effects.hidden;
-                    }
-                    _ => return Err(self.expecting("font, justify, hide or href")),
-                }
+            let section_is_list = matches!(self.current().kind, TokKind::Left);
 
-                continue;
+            if section_is_list {
+                self.need_left()?;
             }
 
-            self.need_left()?;
             match self
                 .need_unquoted_symbol_atom("font, justify, hide or href")?
                 .as_str()
             {
                 "font" => {
                     while !self.at_right() {
-                        if matches!(self.current().kind, TokKind::Atom(_)) {
-                            match self
-                                .need_unquoted_symbol_atom(
-                                    "face, size, thickness, line_spacing, bold, or italic",
-                                )?
-                                .as_str()
-                            {
-                                "bold" => {
-                                    effects.bold = match &self.current().kind {
-                                        TokKind::Right | TokKind::Left | TokKind::Eof => true,
-                                        TokKind::Atom(value)
-                                            if matches!(value.as_str(), "yes" | "no") =>
-                                        {
-                                            self.parse_bool_atom("boolean")?
-                                        }
-                                        TokKind::Atom(_) => true,
-                                    }
-                                }
-                                "italic" => {
-                                    effects.italic = match &self.current().kind {
-                                        TokKind::Right | TokKind::Left | TokKind::Eof => true,
-                                        TokKind::Atom(value)
-                                            if matches!(value.as_str(), "yes" | "no") =>
-                                        {
-                                            self.parse_bool_atom("boolean")?
-                                        }
-                                        TokKind::Atom(_) => true,
-                                    }
-                                }
-                                _ => {
-                                    return Err(self.expecting(
-                                        "face, size, thickness, line_spacing, bold, or italic",
-                                    ));
-                                }
-                            }
+                        let font_is_list = matches!(self.current().kind, TokKind::Left);
 
-                            continue;
+                        if font_is_list {
+                            self.need_left()?;
                         }
 
-                        self.need_left()?;
-                        let font_head = match &self.current().kind {
-                            TokKind::Atom(value)
-                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
-                            {
-                                value.clone()
-                            }
-                            _ => {
-                                return Err(self.expecting(
-                                    "face, size, thickness, line_spacing, bold, or italic",
-                                ));
-                            }
-                        };
-                        match font_head.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom(
+                                "face, size, thickness, line_spacing, bold, or italic",
+                            )?
+                            .as_str()
+                        {
                             "face" => {
-                                let _ = self.need_unquoted_symbol_atom("face")?;
                                 effects.font_face = Some(
                                     self.need_symbol_atom("font face")
                                         .map_err(|_| self.error_here("missing font face"))?,
@@ -5458,7 +5399,6 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "size" => {
-                                let _ = self.need_unquoted_symbol_atom("size")?;
                                 effects.font_size = Some([
                                     self.parse_f64_atom("font width")?,
                                     self.parse_f64_atom("font height")?,
@@ -5466,12 +5406,10 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "thickness" => {
-                                let _ = self.need_unquoted_symbol_atom("thickness")?;
                                 effects.thickness = Some(self.parse_f64_atom("text thickness")?);
                                 self.need_right()?;
                             }
                             "color" => {
-                                let _ = self.need_unquoted_symbol_atom("color")?;
                                 effects.color = Some([
                                     f64::from(self.parse_i32_atom("red")?) / 255.0,
                                     f64::from(self.parse_i32_atom("green")?) / 255.0,
@@ -5481,19 +5419,14 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "line_spacing" => {
-                                let _ = self.need_unquoted_symbol_atom("line_spacing")?;
                                 effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
                                 self.need_right()?;
                             }
                             "bold" => {
-                                let _ = self.need_unquoted_symbol_atom("bold")?;
                                 effects.bold = self.parse_maybe_absent_bool(true)?;
-                                self.need_right()?;
                             }
                             "italic" => {
-                                let _ = self.need_unquoted_symbol_atom("italic")?;
                                 effects.italic = self.parse_maybe_absent_bool(true)?;
-                                self.need_right()?;
                             }
                             _ => {
                                 return Err(self.expecting(
@@ -5507,33 +5440,24 @@ impl KiCadSchematicParser {
                 }
                 "justify" => {
                     while !self.at_right() {
-                        let justify_head = match &self.current().kind {
-                            TokKind::Atom(value)
-                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
-                            {
-                                value.clone()
-                            }
-                            _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
-                        };
-                        match justify_head.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom("left, right, top, bottom, or mirror")?
+                            .as_str()
+                        {
                             "left" => {
-                                let _ = self.need_unquoted_symbol_atom("left")?;
                                 effects.h_justify = TextHJustify::Left;
                             }
                             "right" => {
-                                let _ = self.need_unquoted_symbol_atom("right")?;
                                 effects.h_justify = TextHJustify::Right;
                             }
                             "top" => {
-                                let _ = self.need_unquoted_symbol_atom("top")?;
                                 effects.v_justify = TextVJustify::Top;
                             }
                             "bottom" => {
-                                let _ = self.need_unquoted_symbol_atom("bottom")?;
                                 effects.v_justify = TextVJustify::Bottom;
                             }
                             "mirror" => {
-                                let _ = self.need_unquoted_symbol_atom("mirror")?;
+                                // Upstream accepts but ignores mirror for schematic text.
                             }
                             _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
                         }
@@ -5554,7 +5478,6 @@ impl KiCadSchematicParser {
                 "hide" => {
                     effects.hidden = self.parse_maybe_absent_bool(true)?;
                     *visible = !effects.hidden;
-                    self.need_right()?;
                 }
                 _ => return Err(self.expecting("font, justify, hide or href")),
             }
@@ -5720,11 +5643,26 @@ impl KiCadSchematicParser {
     }
 
     fn parse_maybe_absent_bool(&mut self, default: bool) -> Result<bool, Error> {
-        if self.at_right() {
-            Ok(default)
-        } else {
-            self.parse_bool_atom("boolean")
+        let had_left = self.idx >= 2 && matches!(self.tokens[self.idx - 2].kind, TokKind::Left);
+
+        if !had_left {
+            return Ok(default);
         }
+
+        if self.at_right() {
+            self.need_right()?;
+            return Ok(default);
+        }
+
+        let value = match &self.current().kind {
+            TokKind::Atom(value) if matches!(value.as_str(), "yes" | "no") => {
+                self.parse_bool_atom("boolean")?
+            }
+            _ => return Err(self.expecting("yes or no")),
+        };
+
+        self.need_right()?;
+        Ok(value)
     }
 
     fn require_known_version(&self) -> Result<i32, Error> {
