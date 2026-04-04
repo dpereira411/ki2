@@ -4096,9 +4096,9 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_stroke_with_seed(&mut self, seed_width: Option<f64>) -> Result<Stroke, Error> {
+    fn parse_stroke(&mut self) -> Result<Stroke, Error> {
         let mut stroke = Stroke {
-            width: seed_width,
+            width: None,
             style: StrokeStyle::Default,
             color: None,
         };
@@ -4149,10 +4149,6 @@ impl KiCadSchematicParser {
 
         self.need_right()?;
         Ok(stroke)
-    }
-
-    fn parse_stroke(&mut self) -> Result<Stroke, Error> {
-        self.parse_stroke_with_seed(None)
     }
 
     fn parse_fill(&mut self) -> Result<Fill, Error> {
