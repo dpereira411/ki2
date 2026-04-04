@@ -1089,7 +1089,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("start, end, stroke, or fill")?
+                .need_unquoted_symbol_atom("start, end, radius, stroke, or fill")?
                 .as_str()
             {
                 "start" => {
@@ -1106,7 +1106,7 @@ impl KiCadSchematicParser {
                 }
                 "stroke" => item.stroke = Some(self.parse_stroke()?),
                 "fill" => item.fill = Some(self.parse_fill()?),
-                _ => return Err(self.expecting("start, end, stroke, or fill")),
+                _ => return Err(self.expecting("start, end, radius, stroke, or fill")),
             }
         }
 

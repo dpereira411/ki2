@@ -3286,7 +3286,28 @@ fn rejects_quoted_lib_draw_item_list_heads() {
             .screen
             .parse_warnings
             .iter()
-            .any(|warning| warning.contains("expecting start, end, stroke, or fill"))
+            .any(|warning| warning.contains("expecting start, end, radius, stroke, or fill"))
+    );
+
+    let quoted_lib_rectangle_radius = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-rectangle-radius")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (rectangle (start 0 0) (end 1 1) ("radius" 0.5))))
+)"#;
+    let quoted_lib_rectangle_radius_path =
+        temp_schematic("quoted_lib_rectangle_radius", quoted_lib_rectangle_radius);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_rectangle_radius_path))
+        .expect("bad lib rectangle radius should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| { warning.contains("expecting start, end, radius, stroke, or fill") })
     );
 
     let quoted_lib_text_at = r#"(kicad_sch
@@ -3327,6 +3348,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
     }));
 
     let _ = fs::remove_file(quoted_lib_rectangle_start_path);
+    let _ = fs::remove_file(quoted_lib_rectangle_radius_path);
     let _ = fs::remove_file(quoted_lib_text_at_path);
     let _ = fs::remove_file(quoted_lib_text_box_effects_path);
 }
