@@ -1846,11 +1846,17 @@ impl KiCadSchematicParser {
             }
 
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("at, name, number, hide, length, or alternate")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, name, number, hide, length, or alternate")),
+            };
+            match head.as_str() {
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("pin at")?;
                     match parsed[2] as i32 {
                         0 | 90 | 180 | 270 => {}
@@ -1861,14 +1867,17 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "length" => {
+                    let _ = self.need_unquoted_symbol_atom("length")?;
                     item.length = Some(self.parse_f64_atom("pin length")?);
                     self.need_right()?;
                 }
                 "hide" => {
+                    let _ = self.need_unquoted_symbol_atom("hide")?;
                     item.visible = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
                 "name" => {
+                    let _ = self.need_unquoted_symbol_atom("name")?;
                     let mut parsed = self
                         .need_symbol_atom("pin name")
                         .map_err(|_| self.error_here("Invalid pin name"))?;
@@ -1895,6 +1904,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "number" => {
+                    let _ = self.need_unquoted_symbol_atom("number")?;
                     let mut parsed = self
                         .need_symbol_atom("pin number")
                         .map_err(|_| self.error_here("Invalid pin number"))?;
@@ -1927,6 +1937,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "alternate" => {
+                    let _ = self.need_unquoted_symbol_atom("alternate")?;
                     let mut alt_name = self
                         .need_symbol_atom("alternate pin name")
                         .map_err(|_| self.error_here("Invalid alternate pin name"))?;
