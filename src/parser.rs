@@ -3586,7 +3586,7 @@ impl KiCadSchematicParser {
                                 match self.need_unquoted_symbol_atom("page or variant")?.as_str() {
                                     "page" => {
                                         let raw_page = self.need_symbol_atom("page")?;
-                                        page = Some(self.normalize_page_number(raw_page));
+                                        page = Some(self.normalize_instance_page(raw_page));
                                         self.need_right()?;
                                     }
                                     "variant" => {
@@ -3858,7 +3858,7 @@ impl KiCadSchematicParser {
                 match child.as_str() {
                     "page" => {
                         let raw_page = self.need_symbol_atom("page")?;
-                        page = Some(self.normalize_page_number(raw_page));
+                        page = Some(self.normalize_instance_page(raw_page));
                     }
                     _ => return Err(self.expecting("page")),
                 }
@@ -4785,7 +4785,7 @@ impl KiCadSchematicParser {
         self.validation(Some(self.current_span()), message)
     }
 
-    fn normalize_page_number(&self, mut page: String) -> String {
+    fn normalize_instance_page(&self, mut page: String) -> String {
         if page.is_empty() {
             return "#".to_string();
         }
