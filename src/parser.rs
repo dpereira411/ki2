@@ -5179,13 +5179,21 @@ impl KiCadSchematicParser {
                         }
 
                         self.need_left()?;
-                        match self
-                            .need_unquoted_symbol_atom(
-                                "face, size, thickness, line_spacing, bold, or italic",
-                            )?
-                            .as_str()
-                        {
+                        let font_head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => {
+                                return Err(self.expecting(
+                                    "face, size, thickness, line_spacing, bold, or italic",
+                                ));
+                            }
+                        };
+                        match font_head.as_str() {
                             "face" => {
+                                let _ = self.need_unquoted_symbol_atom("face")?;
                                 effects.font_face = Some(
                                     self.need_symbol_atom("font face")
                                         .map_err(|_| self.error_here("missing font face"))?,
@@ -5193,6 +5201,7 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "size" => {
+                                let _ = self.need_unquoted_symbol_atom("size")?;
                                 effects.font_size = Some([
                                     self.parse_f64_atom("font width")?,
                                     self.parse_f64_atom("font height")?,
@@ -5200,10 +5209,12 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "thickness" => {
+                                let _ = self.need_unquoted_symbol_atom("thickness")?;
                                 effects.thickness = Some(self.parse_f64_atom("text thickness")?);
                                 self.need_right()?;
                             }
                             "color" => {
+                                let _ = self.need_unquoted_symbol_atom("color")?;
                                 effects.color = Some([
                                     f64::from(self.parse_i32_atom("red")?) / 255.0,
                                     f64::from(self.parse_i32_atom("green")?) / 255.0,
@@ -5213,14 +5224,17 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "line_spacing" => {
+                                let _ = self.need_unquoted_symbol_atom("line_spacing")?;
                                 effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
                                 self.need_right()?;
                             }
                             "bold" => {
+                                let _ = self.need_unquoted_symbol_atom("bold")?;
                                 effects.bold = self.parse_maybe_absent_bool(true)?;
                                 self.need_right()?;
                             }
                             "italic" => {
+                                let _ = self.need_unquoted_symbol_atom("italic")?;
                                 effects.italic = self.parse_maybe_absent_bool(true)?;
                                 self.need_right()?;
                             }
@@ -5236,15 +5250,34 @@ impl KiCadSchematicParser {
                 }
                 "justify" => {
                     while !self.at_right() {
-                        match self
-                            .need_unquoted_symbol_atom("left, right, top, bottom, or mirror")?
-                            .as_str()
-                        {
-                            "left" => effects.h_justify = TextHJustify::Left,
-                            "right" => effects.h_justify = TextHJustify::Right,
-                            "top" => effects.v_justify = TextVJustify::Top,
-                            "bottom" => effects.v_justify = TextVJustify::Bottom,
-                            "mirror" => {}
+                        let justify_head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
+                        };
+                        match justify_head.as_str() {
+                            "left" => {
+                                let _ = self.need_unquoted_symbol_atom("left")?;
+                                effects.h_justify = TextHJustify::Left;
+                            }
+                            "right" => {
+                                let _ = self.need_unquoted_symbol_atom("right")?;
+                                effects.h_justify = TextHJustify::Right;
+                            }
+                            "top" => {
+                                let _ = self.need_unquoted_symbol_atom("top")?;
+                                effects.v_justify = TextVJustify::Top;
+                            }
+                            "bottom" => {
+                                let _ = self.need_unquoted_symbol_atom("bottom")?;
+                                effects.v_justify = TextVJustify::Bottom;
+                            }
+                            "mirror" => {
+                                let _ = self.need_unquoted_symbol_atom("mirror")?;
+                            }
                             _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
                         }
                     }
