@@ -2953,7 +2953,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
         .expect_err("must reject quoted rule_area head");
     assert!(
         err.to_string()
-            .contains("expecting polyline, exclude_from_sim, in_bom, on_board, or dnp")
+            .contains("expecting exclude_from_sim, on_board, in_bom, dnp, or polyline")
     );
 
     let _ = fs::remove_file(quoted_polyline_head_path);

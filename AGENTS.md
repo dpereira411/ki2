@@ -27,7 +27,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseGroup()`, keep the `lib_id` branch separate from the symbol/library helper. Upstream uses the same parse rules but a group-specific invalid-character diagnostic: `Group library link ... contains invalid character ...`.
 - `polyline` is not equivalent to `wire`/`bus`. Two-point polylines collapse to line-like objects; longer ones remain shapes.
 - `rule_area` grammar is specialized and wraps a nested `polyline`; it is not just another generic point-list shape.
-- In `parseRuleArea()`, keep the local branch-head token and fallback `Expecting(...)` text aligned with the actual routine body too: `polyline, exclude_from_sim, in_bom, on_board, or dnp`. Do not leave a stale reordered child list there after branch churn.
+- In `parseSchRuleArea()`, keep KiCad's literal fallback `Expecting(...)` text: `exclude_from_sim, on_board, in_bom, dnp, or polyline`.
 - `text`, `label`, `global_label`, `hierarchical_label`, `directive_label`, and `netclass_flag` should be treated as one shared parser family with type-specific branches, like upstream `parseSchText()`.
 - `property` parsing is parent-sensitive. Symbol, sheet, and global-label mandatory fields are not just arbitrary user properties.
 - `private` only survives for user fields; it should not be blindly preserved on mandatory fields.
