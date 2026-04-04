@@ -3698,25 +3698,29 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let raw_path = self.need_symbol_atom("sheet instance path")?;
-            let mut path = raw_path;
+            let mut instance = SheetInstance {
+                path: raw_path,
+                page: None,
+            };
 
             if self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH {
                 if let Some(root_uuid) = self.root_uuid.as_ref() {
-                    if !path.is_empty() {
+                    if !instance.path.is_empty() {
                         let prefix = format!("/{root_uuid}");
 
-                        path = if path == prefix || path.starts_with(&(prefix.clone() + "/")) {
-                            path
-                        } else if path.starts_with('/') {
-                            format!("{prefix}{path}")
+                        instance.path = if instance.path == prefix
+                            || instance.path.starts_with(&(prefix.clone() + "/"))
+                        {
+                            instance.path
+                        } else if instance.path.starts_with('/') {
+                            format!("{prefix}{}", instance.path)
                         } else {
-                            format!("{prefix}/{path}")
+                            format!("{prefix}/{}", instance.path)
                         };
                     }
                 }
             }
 
-            let mut page = None;
             while !self.at_right() {
                 self.need_left()?;
                 let child = self.need_unquoted_symbol_atom("path or page")?;
@@ -3734,7 +3738,7 @@ impl KiCadSchematicParser {
                             }
                         }
 
-                        page = Some(parsed_page);
+                        instance.page = Some(parsed_page);
                     }
                     _ => return Err(self.expecting("path or page")),
                 }
@@ -3742,11 +3746,11 @@ impl KiCadSchematicParser {
             }
             self.need_right()?;
             if self.require_known_version()? >= VERSION_SKIP_EMPTY_ROOT_SHEET_INSTANCE_PATH
-                && path.is_empty()
+                && instance.path.is_empty()
             {
                 continue;
             }
-            out.push(SheetInstance { path, page });
+            out.push(instance);
         }
         Ok(out)
     }
@@ -3777,18 +3781,21 @@ impl KiCadSchematicParser {
             } else {
                 raw_path
             };
-            let mut reference = None;
-            let mut unit = None;
-            let mut value = None;
-            let mut footprint = None;
+            let mut instance = SymbolInstance {
+                path,
+                reference: None,
+                unit: None,
+                value: None,
+                footprint: None,
+            };
             while !self.at_right() {
                 self.need_left()?;
                 let child = self.need_unquoted_symbol_atom("path, unit, value or footprint")?;
                 match child.as_str() {
-                    "reference" => reference = Some(self.need_symbol_atom("reference")?),
-                    "unit" => unit = Some(self.parse_i32_atom("unit")?),
+                    "reference" => instance.reference = Some(self.need_symbol_atom("reference")?),
+                    "unit" => instance.unit = Some(self.parse_i32_atom("unit")?),
                     "value" => {
-                        value = Some({
+                        instance.value = Some({
                             let value = self.need_symbol_atom("value")?;
                             if self
                                 .require_known_version()
@@ -3803,7 +3810,7 @@ impl KiCadSchematicParser {
                         })
                     }
                     "footprint" => {
-                        footprint = Some({
+                        instance.footprint = Some({
                             let value = self.need_symbol_atom("footprint")?;
                             if self
                                 .require_known_version()
@@ -3822,13 +3829,7 @@ impl KiCadSchematicParser {
                 self.need_right()?;
             }
             self.need_right()?;
-            out.push(SymbolInstance {
-                path,
-                reference,
-                unit,
-                value,
-                footprint,
-            });
+            out.push(instance);
         }
         Ok(out)
     }
