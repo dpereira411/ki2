@@ -2385,17 +2385,19 @@ impl KiCadSchematicParser {
                 "table requires schematic version {VERSION_TABLES} or newer"
             )));
         }
-        let mut column_count = None;
-        let mut column_widths = Vec::new();
-        let mut row_heights = Vec::new();
-        let mut cells = Vec::new();
-        let mut border_external = None;
-        let mut border_header = None;
-        let mut border_stroke = None;
-        let mut separators_rows = None;
-        let mut separators_cols = None;
-        let mut separators_stroke = None;
-        let mut uuid = None;
+        let mut table = Table {
+            column_count: None,
+            column_widths: Vec::new(),
+            row_heights: Vec::new(),
+            cells: Vec::new(),
+            border_external: None,
+            border_header: None,
+            border_stroke: None,
+            separators_rows: None,
+            separators_cols: None,
+            separators_stroke: None,
+            uuid: None,
+        };
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
@@ -2403,7 +2405,7 @@ impl KiCadSchematicParser {
             )?;
             match head.as_str() {
                 "column_count" => {
-                    column_count = Some(self.parse_i32_atom("column count")?);
+                    table.column_count = Some(self.parse_i32_atom("column count")?);
                     self.need_right()?;
                 }
                 "column_widths" => {
@@ -2411,7 +2413,7 @@ impl KiCadSchematicParser {
                     while !self.at_right() {
                         values.push(self.parse_f64_atom("column width")?);
                     }
-                    column_widths = values;
+                    table.column_widths = values;
                     self.need_right()?;
                 }
                 "row_heights" => {
@@ -2419,7 +2421,7 @@ impl KiCadSchematicParser {
                     while !self.at_right() {
                         values.push(self.parse_f64_atom("row height")?);
                     }
-                    row_heights = values;
+                    table.row_heights = values;
                     self.need_right()?;
                 }
                 "cells" => {
@@ -2430,7 +2432,7 @@ impl KiCadSchematicParser {
                         }
                         let cell = self.parse_sch_table_cell()?;
                         self.need_right()?;
-                        cells.push(cell);
+                        table.cells.push(cell);
                     }
                     self.need_right()?;
                 }
@@ -2442,15 +2444,15 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "external" => {
-                                border_external = Some(self.parse_bool_atom("external")?);
+                                table.border_external = Some(self.parse_bool_atom("external")?);
                                 self.need_right()?;
                             }
                             "header" => {
-                                border_header = Some(self.parse_bool_atom("header")?);
+                                table.border_header = Some(self.parse_bool_atom("header")?);
                                 self.need_right()?;
                             }
                             "stroke" => {
-                                border_stroke = Some(self.parse_stroke()?);
+                                table.border_stroke = Some(self.parse_stroke()?);
                             }
                             _ => return Err(self.expecting("external, header or stroke")),
                         }
@@ -2465,15 +2467,15 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "rows" => {
-                                separators_rows = Some(self.parse_bool_atom("rows")?);
+                                table.separators_rows = Some(self.parse_bool_atom("rows")?);
                                 self.need_right()?;
                             }
                             "cols" => {
-                                separators_cols = Some(self.parse_bool_atom("cols")?);
+                                table.separators_cols = Some(self.parse_bool_atom("cols")?);
                                 self.need_right()?;
                             }
                             "stroke" => {
-                                separators_stroke = Some(self.parse_stroke()?);
+                                table.separators_stroke = Some(self.parse_stroke()?);
                             }
                             _ => return Err(self.expecting("rows, cols, or stroke")),
                         }
@@ -2481,7 +2483,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    table.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => {
@@ -2491,22 +2493,10 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        if cells.is_empty() {
+        if table.cells.is_empty() {
             return Err(self.error_here("Invalid table: no cells defined"));
         }
-        Ok(Table {
-            column_count,
-            column_widths,
-            row_heights,
-            cells,
-            border_external,
-            border_header,
-            border_stroke,
-            separators_rows,
-            separators_cols,
-            separators_stroke,
-            uuid,
-        })
+        Ok(table)
     }
 
     fn parse_sch_image(&mut self) -> Result<Image, Error> {
@@ -2569,12 +2559,21 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_polyline(&mut self) -> Result<Shape, Error> {
-        let mut points = Vec::new();
-        let mut has_stroke = false;
-        let mut has_fill = false;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut uuid = None;
+        let mut shape = Shape {
+            kind: ShapeKind::Polyline,
+            points: Vec::new(),
+            radius: None,
+            corner_radius: None,
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            dnp: false,
+            uuid: None,
+        };
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("pts, uuid, stroke, or fill")?;
@@ -2590,25 +2589,25 @@ impl KiCadSchematicParser {
                         parsed_points.push(self.parse_xy2("xy")?);
                         self.need_right()?;
                     }
-                    points = parsed_points;
+                    shape.points = parsed_points;
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
+                    shape.has_stroke = true;
                     let mut parsed_stroke = self.parse_stroke()?;
                     if self.require_known_version()? <= 20211123
                         && parsed_stroke.style == StrokeStyle::Default
                     {
                         parsed_stroke.style = StrokeStyle::Dash;
                     }
-                    stroke = Some(parsed_stroke);
+                    shape.stroke = Some(parsed_stroke);
                 }
                 "fill" => {
-                    has_fill = true;
-                    fill = Some(self.parse_fill()?);
+                    shape.has_fill = true;
+                    shape.fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => {
@@ -2616,31 +2615,26 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        Self::fixup_sch_fill_mode(&mut fill, &stroke);
-        Ok(Shape {
-            kind: ShapeKind::Polyline,
-            points,
+        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        Ok(shape)
+    }
+
+    fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
+        let mut shape = Shape {
+            kind: ShapeKind::Arc,
+            points: vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
             radius: None,
             corner_radius: None,
-            has_stroke,
-            has_fill,
-            stroke,
-            fill,
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
             dnp: false,
-            uuid,
-        })
-    }
-
-    fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
-        let mut points = Vec::new();
-        let mut has_stroke = false;
-        let mut has_fill = false;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut uuid = None;
+            uuid: None,
+        };
         while !self.at_right() {
             self.need_left()?;
             match self
@@ -2648,62 +2642,52 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "start" => {
-                    points.push(self.parse_xy2("shape start")?);
+                    shape.points[0] = self.parse_xy2("shape start")?;
                     self.need_right()?;
                 }
                 "mid" => {
-                    points.push(self.parse_xy2("shape mid")?);
+                    shape.points[1] = self.parse_xy2("shape mid")?;
                     self.need_right()?;
                 }
                 "end" => {
-                    points.push(self.parse_xy2("shape end")?);
+                    shape.points[2] = self.parse_xy2("shape end")?;
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    shape.has_stroke = true;
+                    shape.stroke = Some(self.parse_stroke()?);
                 }
                 "fill" => {
-                    has_fill = true;
-                    fill = Some(self.parse_fill()?);
+                    shape.has_fill = true;
+                    shape.fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, mid, end, stroke, fill or uuid")),
             }
         }
-        Self::fixup_sch_fill_mode(&mut fill, &stroke);
-        let mut geometry = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
-        for (slot, point) in points.into_iter().take(3).enumerate() {
-            geometry[slot] = point;
-        }
-        Ok(Shape {
-            kind: ShapeKind::Arc,
-            points: geometry.to_vec(),
-            radius: None,
+        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        Ok(shape)
+    }
+
+    fn parse_sch_circle(&mut self) -> Result<Shape, Error> {
+        let mut shape = Shape {
+            kind: ShapeKind::Circle,
+            points: vec![[0.0, 0.0]],
+            radius: Some(0.0),
             corner_radius: None,
-            has_stroke,
-            has_fill,
-            stroke,
-            fill,
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
             dnp: false,
-            uuid,
-        })
-    }
-
-    fn parse_sch_circle(&mut self) -> Result<Shape, Error> {
-        let mut center = None;
-        let mut radius = Some(0.0);
-        let mut has_stroke = false;
-        let mut has_fill = false;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut uuid = None;
+            uuid: None,
+        };
         while !self.at_right() {
             self.need_left()?;
             match self
@@ -2711,55 +2695,48 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "center" => {
-                    center = Some(self.parse_xy2("center")?);
+                    shape.points[0] = self.parse_xy2("center")?;
                     self.need_right()?;
                 }
                 "radius" => {
-                    radius = Some(self.parse_f64_atom("radius length")?);
+                    shape.radius = Some(self.parse_f64_atom("radius length")?);
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    shape.has_stroke = true;
+                    shape.stroke = Some(self.parse_stroke()?);
                 }
                 "fill" => {
-                    has_fill = true;
-                    fill = Some(self.parse_fill()?);
+                    shape.has_fill = true;
+                    shape.fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("center, radius, stroke, fill or uuid")),
             }
         }
-        Self::fixup_sch_fill_mode(&mut fill, &stroke);
-        Ok(Shape {
-            kind: ShapeKind::Circle,
-            points: vec![center.unwrap_or([0.0, 0.0])],
-            radius,
+        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        Ok(shape)
+    }
+
+    fn parse_sch_rectangle(&mut self) -> Result<Shape, Error> {
+        let mut shape = Shape {
+            kind: ShapeKind::Rectangle,
+            points: vec![[0.0, 0.0], [0.0, 0.0]],
+            radius: None,
             corner_radius: None,
-            has_stroke,
-            has_fill,
-            stroke,
-            fill,
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
             dnp: false,
-            uuid,
-        })
-    }
-
-    fn parse_sch_rectangle(&mut self) -> Result<Shape, Error> {
-        let mut start = [0.0, 0.0];
-        let mut end = [0.0, 0.0];
-        let mut corner_radius = None;
-        let mut has_stroke = false;
-        let mut has_fill = false;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut uuid = None;
+            uuid: None,
+        };
         while !self.at_right() {
             self.need_left()?;
             match self
@@ -2767,57 +2744,52 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "start" => {
-                    start = self.parse_xy2("start")?;
+                    shape.points[0] = self.parse_xy2("start")?;
                     self.need_right()?;
                 }
                 "end" => {
-                    end = self.parse_xy2("end")?;
+                    shape.points[1] = self.parse_xy2("end")?;
                     self.need_right()?;
                 }
                 "radius" => {
-                    corner_radius = Some(self.parse_f64_atom("corner radius")?);
+                    shape.corner_radius = Some(self.parse_f64_atom("corner radius")?);
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    shape.has_stroke = true;
+                    shape.stroke = Some(self.parse_stroke()?);
                 }
                 "fill" => {
-                    has_fill = true;
-                    fill = Some(self.parse_fill()?);
+                    shape.has_fill = true;
+                    shape.fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
             }
         }
-        Self::fixup_sch_fill_mode(&mut fill, &stroke);
-        Ok(Shape {
-            kind: ShapeKind::Rectangle,
-            points: vec![start, end],
+        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        Ok(shape)
+    }
+
+    fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
+        let mut shape = Shape {
+            kind: ShapeKind::Bezier,
+            points: vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
             radius: None,
-            corner_radius,
-            has_stroke,
-            has_fill,
-            stroke,
-            fill,
+            corner_radius: None,
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
             dnp: false,
-            uuid,
-        })
-    }
-
-    fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
-        let mut points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
-        let mut has_stroke = false;
-        let mut has_fill = false;
-        let mut stroke = None;
-        let mut fill = None;
-        let mut uuid = None;
+            uuid: None,
+        };
         while !self.at_right() {
             self.need_left()?;
             match self
@@ -2832,7 +2804,7 @@ impl KiCadSchematicParser {
                             return Err(self.expecting("xy"));
                         }
                         match ii {
-                            0..=3 => points[ii] = self.parse_xy2("xy")?,
+                            0..=3 => shape.points[ii] = self.parse_xy2("xy")?,
                             _ => return Err(self.unexpected("control point")),
                         }
                         ii += 1;
@@ -2841,36 +2813,22 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "stroke" => {
-                    has_stroke = true;
-                    stroke = Some(self.parse_stroke()?);
+                    shape.has_stroke = true;
+                    shape.stroke = Some(self.parse_stroke()?);
                 }
                 "fill" => {
-                    has_fill = true;
-                    fill = Some(self.parse_fill()?);
+                    shape.has_fill = true;
+                    shape.fill = Some(self.parse_fill()?);
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("pts, stroke, fill or uuid")),
             }
         }
-        Self::fixup_sch_fill_mode(&mut fill, &stroke);
-        Ok(Shape {
-            kind: ShapeKind::Bezier,
-            points,
-            radius: None,
-            corner_radius: None,
-            has_stroke,
-            has_fill,
-            stroke,
-            fill,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid,
-        })
+        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
+        Ok(shape)
     }
 
     fn parse_sch_rule_area(&mut self) -> Result<Shape, Error> {
