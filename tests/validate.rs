@@ -2276,10 +2276,58 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
         .expect_err("must reject quoted sheet instances project head");
     assert!(err.to_string().contains("expecting project"));
 
+    let quoted_sheet_pin_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-sheet-pin-head")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "P" input
+      ("at" 0 0 0)))
+)"#;
+    let quoted_sheet_pin_head_path = temp_schematic("quoted_sheet_pin_head", quoted_sheet_pin_head);
+    let err = parse_schematic_file(Path::new(&quoted_sheet_pin_head_path))
+        .expect_err("must reject quoted sheet pin head token");
+    assert!(err.to_string().contains("expecting at, uuid or effects"));
+
+    let quoted_top_sheet_instance = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-top-sheet-instance")
+  (sheet_instances
+    ("path" "/"))
+)"#;
+    let quoted_top_sheet_instance_path =
+        temp_schematic("quoted_top_sheet_instance", quoted_top_sheet_instance);
+    let err = parse_schematic_file(Path::new(&quoted_top_sheet_instance_path))
+        .expect_err("must reject quoted top-level sheet_instances path head");
+    assert!(err.to_string().contains("expecting path"));
+
+    let quoted_top_symbol_instance = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-top-symbol-instance")
+  (symbol_instances
+    (path "/sym"
+      ("reference" "R1")))
+)"#;
+    let quoted_top_symbol_instance_path =
+        temp_schematic("quoted_top_symbol_instance", quoted_top_symbol_instance);
+    let err = parse_schematic_file(Path::new(&quoted_top_symbol_instance_path))
+        .expect_err("must reject quoted top-level symbol_instances child head");
+    assert!(
+        err.to_string()
+            .contains("expecting path, unit, value or footprint")
+    );
+
     let _ = fs::remove_file(quoted_symbol_head_path);
     let _ = fs::remove_file(quoted_symbol_project_path);
     let _ = fs::remove_file(quoted_sheet_head_path);
     let _ = fs::remove_file(quoted_sheet_project_path);
+    let _ = fs::remove_file(quoted_sheet_pin_head_path);
+    let _ = fs::remove_file(quoted_top_sheet_instance_path);
+    let _ = fs::remove_file(quoted_top_symbol_instance_path);
 }
 
 #[test]

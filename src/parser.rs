@@ -1735,7 +1735,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, uuid or effects")?;
             match head.as_str() {
                 "pts" => {
                     self.need_left()?;
@@ -1981,7 +1981,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, uuid or effects")?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -3377,7 +3377,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, uuid or effects")?;
             match head.as_str() {
                 "at" => {
                     let parsed = self.parse_xy3("sheet pin at")?;
@@ -3423,7 +3423,7 @@ impl KiCadSchematicParser {
         let mut out = Vec::new();
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("path")?;
             if head != "path" {
                 return Err(self.expecting("path"));
             }
@@ -3435,7 +3435,7 @@ impl KiCadSchematicParser {
             let mut page = None;
             while !self.at_right() {
                 self.need_left()?;
-                let child = self.need_atom()?;
+                let child = self.need_unquoted_symbol_atom("path or page")?;
                 match child.as_str() {
                     "page" => {
                         let raw_page = self.need_symbol_atom("page")?;
@@ -3460,7 +3460,7 @@ impl KiCadSchematicParser {
         let mut out = Vec::new();
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("path")?;
             if head != "path" {
                 return Err(self.expecting("path"));
             }
@@ -3472,7 +3472,7 @@ impl KiCadSchematicParser {
             let mut footprint = None;
             while !self.at_right() {
                 self.need_left()?;
-                let child = self.need_atom()?;
+                let child = self.need_unquoted_symbol_atom("path, unit, value or footprint")?;
                 match child.as_str() {
                     "reference" => reference = Some(self.need_symbol_atom("reference")?),
                     "unit" => unit = Some(self.parse_i32_atom("unit")?),
