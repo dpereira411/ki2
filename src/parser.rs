@@ -1354,7 +1354,10 @@ impl KiCadSchematicParser {
             }
 
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("at, name, number, hide, length, or alternate")?
+                .as_str()
+            {
                 "at" => {
                     let parsed = self.parse_xy3("pin at")?;
                     match parsed[2] as i32 {
@@ -1393,7 +1396,7 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
-                    if self.need_atom()? != "effects" {
+                    if self.need_unquoted_symbol_atom("effects")? != "effects" {
                         return Err(self.expecting("effects"));
                     }
                     let parsed = self.parse_effects_summary()?;
@@ -1421,7 +1424,7 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
-                    if self.need_atom()? != "effects" {
+                    if self.need_unquoted_symbol_atom("effects")? != "effects" {
                         return Err(self.expecting("effects"));
                     }
                     let parsed = self.parse_effects_summary()?;
@@ -1545,7 +1548,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("id, at, hide, show_name, do_not_autoplace or effects")?
+                .as_str()
+            {
                 "id" => {
                     let _ = self.parse_i32_atom("field ID")?;
                     self.need_right()?;
@@ -3539,7 +3545,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("width, type or color")?
+                .as_str()
+            {
                 "uuid" => {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
@@ -3706,7 +3715,10 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom("width, type or color")?
+                .as_str()
+            {
                 "width" => {
                     stroke.width = Some(self.parse_f64_atom("stroke width")?);
                     self.need_right()?;
@@ -3761,7 +3773,12 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_atom()?.as_str() {
+            match self
+                .need_unquoted_symbol_atom(
+                    "none, outline, hatch, reverse_hatch, cross_hatch, color or background",
+                )?
+                .as_str()
+            {
                 "type" => {
                     fill.fill_type = match self
                         .need_unquoted_symbol_atom(

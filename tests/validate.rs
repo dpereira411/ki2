@@ -2212,6 +2212,80 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
 }
 
 #[test]
+fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
+    let quoted_lib_pin_effects = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-pin-effects")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin input line
+        (at 0 0 0)
+        (length 2.54)
+        (name "PIN" ("effects" (font (size 1 1))))
+        (number "1"))))
+)"#;
+    let quoted_lib_pin_effects_path =
+        temp_schematic("quoted_lib_pin_effects", quoted_lib_pin_effects);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_effects_path))
+        .expect("quoted lib pin effects head should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting effects"))
+    );
+
+    let quoted_lib_property_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-property-head")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (property "User" "v" ("at" 1 2 0))))
+)"#;
+    let quoted_lib_property_head_path =
+        temp_schematic("quoted_lib_property_head", quoted_lib_property_head);
+    let schematic = parse_schematic_file(Path::new(&quoted_lib_property_head_path))
+        .expect("quoted lib property head should be skipped with a warning");
+    assert!(schematic.screen.lib_symbols.is_empty());
+    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
+        warning.contains("expecting id, at, hide, show_name, do_not_autoplace or effects")
+    }));
+
+    let quoted_stroke_width = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-stroke-width")
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke ("width" 0.2)))
+)"#;
+    let quoted_stroke_width_path = temp_schematic("quoted_stroke_width", quoted_stroke_width);
+    let err = parse_schematic_file(Path::new(&quoted_stroke_width_path))
+        .expect_err("must reject quoted stroke width head");
+    assert!(err.to_string().contains("expecting width, type or color"));
+
+    let quoted_fill_color = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-fill-color")
+  (rectangle (start 0 0) (end 1 1) (fill ("color" 1 2 3 0.5)))
+)"#;
+    let quoted_fill_color_path = temp_schematic("quoted_fill_color", quoted_fill_color);
+    let err = parse_schematic_file(Path::new(&quoted_fill_color_path))
+        .expect_err("must reject quoted fill color head");
+    assert!(err.to_string().contains(
+        "expecting none, outline, hatch, reverse_hatch, cross_hatch, color or background"
+    ));
+
+    let _ = fs::remove_file(quoted_lib_pin_effects_path);
+    let _ = fs::remove_file(quoted_lib_property_head_path);
+    let _ = fs::remove_file(quoted_stroke_width_path);
+    let _ = fs::remove_file(quoted_fill_color_path);
+}
+
+#[test]
 fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_symbol_head = r#"(kicad_sch
   (version 20260306)
