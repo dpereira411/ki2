@@ -175,6 +175,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - Keep the placed-symbol routine boundary named after upstream too: once it owns schematic symbol parsing, it should not stay on a vague local `parse_symbol()` name.
 - In `parseSchematicSymbol()`, do not add repo-local post-loop requirements that `lib_id` or `(at ...)` must be present. Upstream leaves the placed symbol at its default library ID / position / orientation when those tokens are absent.
 - In `parseSchematicSymbol()`, do not run a second local canonicalization pass over field names after `parseSchField()`-equivalent parsing. Mandatory symbol field naming should already be settled by the property parser.
+- In `parseSchematicSymbol()`, construct the `Symbol` object up front and mutate it through the branch loop. Do not drift back to a gather-locals-first / assemble-at-return routine shape there.
 - In `parseSchematicSymbol()`, `lib_name` should keep the distinct `Invalid symbol library name` header failure instead of going through a generic string parser.
 - In `parseSchematicSymbol()`, `lib_id` should stay inline on the shared `NeedSYMBOLorNUMBER()` path, like upstream. Do not route it through a generic string helper that accepts nested non-symbol tokens or hides the `Expecting( "symbol|number" )` branch.
 - In `parseSchematicSymbol()`, `mirror` should stay on the symbol-token path too. Do not accept nested non-symbol tokens there through the generic string parser before checking `x` or `y`.

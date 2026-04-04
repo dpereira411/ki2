@@ -3016,26 +3016,30 @@ impl KiCadSchematicParser {
     }
 
     fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
-        let mut lib_id = None;
-        let mut lib_name = None;
-        let mut at = None;
-        let mut mirror = None;
-        let mut unit = None;
-        let mut body_style = None;
-        let mut excluded_from_sim = false;
-        let mut in_bom = true;
-        let mut on_board = true;
-        let mut in_pos_files = true;
-        let mut dnp = false;
-        let mut fields_autoplaced = FieldAutoplacement::None;
-        let mut uuid = None;
-        let mut properties: Vec<Property> = Vec::new();
-        let mut instances = Vec::new();
-        let mut default_reference = None;
-        let mut default_unit = None;
-        let mut default_value = None;
-        let mut default_footprint = None;
-        let mut pins = Vec::new();
+        let mut symbol = Symbol {
+            lib_id: String::new(),
+            lib_name: None,
+            linked_lib_symbol_name: None,
+            at: [0.0, 0.0],
+            angle: 0.0,
+            mirror: None,
+            unit: None,
+            body_style: None,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            in_pos_files: true,
+            dnp: false,
+            fields_autoplaced: FieldAutoplacement::None,
+            uuid: None,
+            properties: Vec::new(),
+            instances: Vec::new(),
+            default_reference: None,
+            default_unit: None,
+            default_value: None,
+            default_footprint: None,
+            pins: Vec::new(),
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -3057,11 +3061,11 @@ impl KiCadSchematicParser {
                         return Err(self.error_here("Invalid symbol library ID"));
                     }
 
-                    lib_id = Some(normalized);
+                    symbol.lib_id = normalized;
                     self.need_right()?;
                 }
                 "lib_name" => {
-                    lib_name = Some(
+                    symbol.lib_name = Some(
                         self.need_symbol_atom("lib_name")
                             .map_err(|_| self.error_here("Invalid symbol library name"))?
                             .replace("{slash}", "/"),
@@ -3071,13 +3075,16 @@ impl KiCadSchematicParser {
                 "at" => {
                     let parsed = self.parse_xy3("symbol at")?;
                     match parsed[2] as i32 {
-                        0 | 90 | 180 | 270 => at = Some(parsed),
+                        0 | 90 | 180 | 270 => {
+                            symbol.at = [parsed[0], parsed[1]];
+                            symbol.angle = parsed[2];
+                        }
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }
                     self.need_right()?;
                 }
                 "mirror" => {
-                    mirror = Some(
+                    symbol.mirror = Some(
                         match self.need_unquoted_symbol_atom("mirror axis")?.as_str() {
                             "x" => MirrorAxis::X,
                             "y" => MirrorAxis::Y,
@@ -3087,52 +3094,52 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "convert" | "body_style" => {
-                    body_style = Some(self.parse_i32_atom("symbol body style")?);
+                    symbol.body_style = Some(self.parse_i32_atom("symbol body style")?);
                     self.need_right()?;
                 }
                 "unit" => {
-                    unit = Some(self.parse_i32_atom("unit")?);
+                    symbol.unit = Some(self.parse_i32_atom("unit")?);
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
-                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    symbol.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "in_bom" => {
-                    in_bom = self.parse_bool_atom("in_bom")?;
+                    symbol.in_bom = self.parse_bool_atom("in_bom")?;
                     self.need_right()?;
                 }
                 "on_board" => {
-                    on_board = self.parse_bool_atom("on_board")?;
+                    symbol.on_board = self.parse_bool_atom("on_board")?;
                     self.need_right()?;
                 }
                 "in_pos_files" => {
-                    in_pos_files = self.parse_bool_atom("in_pos_files")?;
+                    symbol.in_pos_files = self.parse_bool_atom("in_pos_files")?;
                     self.need_right()?;
                 }
                 "dnp" => {
-                    dnp = self.parse_bool_atom("dnp")?;
+                    symbol.dnp = self.parse_bool_atom("dnp")?;
                     self.need_right()?;
                 }
                 "fields_autoplaced" => {
                     if self.parse_maybe_absent_bool(true)? {
-                        fields_autoplaced = FieldAutoplacement::Auto;
+                        symbol.fields_autoplaced = FieldAutoplacement::Auto;
                     }
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    symbol.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "property" => {
                     let property = self.parse_sch_field(FieldParent::Symbol)?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
-                        excluded_from_sim = property.value == "0";
+                        symbol.excluded_from_sim = property.value == "0";
                         self.need_right()?;
                         continue;
                     }
                     if property.key == SIM_LEGACY_ENABLE_FIELD {
-                        excluded_from_sim = property.value == "N";
+                        symbol.excluded_from_sim = property.value == "N";
                         self.need_right()?;
                         continue;
                     }
@@ -3144,15 +3151,17 @@ impl KiCadSchematicParser {
                             | PropertyKind::SymbolFootprint
                             | PropertyKind::SymbolDatasheet
                     ) {
-                        if let Some(existing) =
-                            properties.iter_mut().find(|p| p.kind == property.kind)
+                        if let Some(existing) = symbol
+                            .properties
+                            .iter_mut()
+                            .find(|p| p.kind == property.kind)
                         {
                             *existing = property;
                         } else {
-                            properties.push(property);
+                            symbol.properties.push(property);
                         }
                     } else {
-                        properties.push(property);
+                        symbol.properties.push(property);
                     }
                     self.need_right()?;
                 }
@@ -3217,13 +3226,14 @@ impl KiCadSchematicParser {
                                             has_effects: false,
                                             effects: None,
                                         };
-                                        if let Some(existing) = properties
+                                        if let Some(existing) = symbol
+                                            .properties
                                             .iter_mut()
                                             .find(|p| p.kind == PropertyKind::SymbolValue)
                                         {
                                             *existing = property;
                                         } else {
-                                            properties.push(property);
+                                            symbol.properties.push(property);
                                         }
                                         value = Some(parsed);
                                         self.need_right()?;
@@ -3255,24 +3265,26 @@ impl KiCadSchematicParser {
                                             has_effects: false,
                                             effects: None,
                                         };
-                                        if let Some(existing) = properties
+                                        if let Some(existing) = symbol
+                                            .properties
                                             .iter_mut()
                                             .find(|p| p.kind == PropertyKind::SymbolFootprint)
                                         {
                                             *existing = property;
                                         } else {
-                                            properties.push(property);
+                                            symbol.properties.push(property);
                                         }
                                         footprint = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "variant" => {
                                         let mut variant_name = String::new();
-                                        let mut variant_dnp = dnp;
-                                        let mut variant_excluded_from_sim = excluded_from_sim;
-                                        let mut variant_in_bom = in_bom;
-                                        let mut variant_on_board = on_board;
-                                        let mut variant_in_pos_files = in_pos_files;
+                                        let mut variant_dnp = symbol.dnp;
+                                        let mut variant_excluded_from_sim =
+                                            symbol.excluded_from_sim;
+                                        let mut variant_in_bom = symbol.in_bom;
+                                        let mut variant_on_board = symbol.on_board;
+                                        let mut variant_in_pos_files = symbol.in_pos_files;
                                         let mut variant_fields = Vec::new();
 
                                         while !self.at_right() {
@@ -3395,7 +3407,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            instances.push(SymbolLocalInstance {
+                            symbol.instances.push(SymbolLocalInstance {
                                 project: project.clone(),
                                 path,
                                 reference,
@@ -3417,11 +3429,12 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "reference" => {
-                                default_reference = Some(self.need_symbol_atom("reference")?);
+                                symbol.default_reference =
+                                    Some(self.need_symbol_atom("reference")?);
                                 self.need_right()?;
                             }
                             "unit" => {
-                                default_unit = Some(self.parse_i32_atom("symbol unit")?);
+                                symbol.default_unit = Some(self.parse_i32_atom("symbol unit")?);
                                 self.need_right()?;
                             }
                             "value" => {
@@ -3451,15 +3464,16 @@ impl KiCadSchematicParser {
                                     has_effects: false,
                                     effects: None,
                                 };
-                                if let Some(existing) = properties
+                                if let Some(existing) = symbol
+                                    .properties
                                     .iter_mut()
                                     .find(|p| p.kind == PropertyKind::SymbolValue)
                                 {
                                     *existing = property;
                                 } else {
-                                    properties.push(property);
+                                    symbol.properties.push(property);
                                 }
-                                default_value = Some(parsed);
+                                symbol.default_value = Some(parsed);
                                 self.need_right()?;
                             }
                             "footprint" => {
@@ -3489,15 +3503,16 @@ impl KiCadSchematicParser {
                                     has_effects: false,
                                     effects: None,
                                 };
-                                if let Some(existing) = properties
+                                if let Some(existing) = symbol
+                                    .properties
                                     .iter_mut()
                                     .find(|p| p.kind == PropertyKind::SymbolFootprint)
                                 {
                                     *existing = property;
                                 } else {
-                                    properties.push(property);
+                                    symbol.properties.push(property);
                                 }
-                                default_footprint = Some(parsed);
+                                symbol.default_footprint = Some(parsed);
                                 self.need_right()?;
                             }
                             _ => {
@@ -3532,7 +3547,7 @@ impl KiCadSchematicParser {
                         }
                     }
                     self.need_right()?;
-                    pins.push(SymbolPin {
+                    symbol.pins.push(SymbolPin {
                         number,
                         alternate,
                         uuid: pin_uuid,
@@ -3546,33 +3561,8 @@ impl KiCadSchematicParser {
             }
         }
 
-        let lib_id = lib_id.unwrap_or_default();
-        let [x, y, angle] = at.unwrap_or([0.0, 0.0, 0.0]);
-        let lib_name = lib_name.filter(|name| name != &lib_id);
-        Ok(Symbol {
-            lib_id,
-            lib_name,
-            linked_lib_symbol_name: None,
-            at: [x, y],
-            angle,
-            mirror,
-            unit,
-            body_style,
-            excluded_from_sim,
-            in_bom,
-            on_board,
-            in_pos_files,
-            dnp,
-            fields_autoplaced,
-            uuid,
-            properties,
-            instances,
-            default_reference,
-            default_unit,
-            default_value,
-            default_footprint,
-            pins,
-        })
+        symbol.lib_name = symbol.lib_name.take().filter(|name| name != &symbol.lib_id);
+        Ok(symbol)
     }
 
     fn parse_sch_sheet(&mut self) -> Result<Sheet, Error> {
