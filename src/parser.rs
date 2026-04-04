@@ -1668,7 +1668,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+                "lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin",
             )?;
             match head.as_str() {
                 "at" => {
@@ -1697,7 +1697,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+                "lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin",
             )?;
             match head.as_str() {
                 "at" => {
@@ -2664,7 +2664,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+                "lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin",
             )?;
             match head.as_str() {
                 "lib_id" => {
@@ -3052,7 +3052,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "lib_id, lib_name, at, mirror, uuid, exclude_from_sim, on_board, in_bom, dnp, default_instance, property, pin, or instances",
+                        "lib_id, lib_name, at, mirror, convert, body_style, unit, exclude_from_sim, in_bom, on_board, in_pos_files, dnp, fields_autoplaced, uuid, property, instances, default_instance, or pin",
                     ));
                 }
             }
@@ -3107,7 +3107,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "at, size, stroke, background, instances, uuid, property, or pin",
+                "at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, background, instances, uuid, property, or pin",
             )?;
             match head.as_str() {
                 "at" => {
@@ -3348,7 +3348,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "at, size, stroke, background, instances, uuid, property, or pin",
+                        "at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, background, instances, uuid, property, or pin",
                     ));
                 }
             }
