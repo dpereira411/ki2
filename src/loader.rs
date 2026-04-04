@@ -21,6 +21,8 @@ pub struct LoadedSheetPath {
     pub schematic_path: PathBuf,
     pub instance_path: String,
     pub symbol_path: String,
+    pub sheet_uuid: Option<String>,
+    pub sheet_name: Option<String>,
     pub page: Option<String>,
     pub sheet_number: usize,
     pub sheet_count: usize,
@@ -226,6 +228,8 @@ impl SchematicLoader {
             schematic_path: root_path.to_path_buf(),
             instance_path: String::new(),
             symbol_path: format!("/{root_uuid}"),
+            sheet_uuid: Some(root_uuid.clone()),
+            sheet_name: None,
             page: root.screen.root_sheet_page.clone().or_else(|| {
                 root.screen
                     .sheet_instances
@@ -262,6 +266,8 @@ impl SchematicLoader {
                 schematic_path: link.child_path.clone(),
                 instance_path: instance_path.clone(),
                 symbol_path: instance_path.clone(),
+                sheet_uuid: link.sheet_uuid.clone(),
+                sheet_name: link.sheet_name.clone(),
                 page: None,
                 sheet_number: 0,
                 sheet_count: 0,

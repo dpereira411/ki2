@@ -354,10 +354,14 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     let loaded = load_schematic_tree(&root_path).expect("load tree");
     assert_eq!(loaded.sheet_paths.len(), 2);
     assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(loaded.sheet_paths[0].sheet_uuid.as_deref(), Some("sheet-a"));
+    assert_eq!(loaded.sheet_paths[0].sheet_name.as_deref(), Some("Child"));
     assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
     assert_eq!(loaded.sheet_paths[0].sheet_number, 1);
     assert_eq!(loaded.sheet_paths[0].sheet_count, 2);
     assert_eq!(loaded.sheet_paths[1].instance_path, "");
+    assert_eq!(loaded.sheet_paths[1].sheet_uuid.as_deref(), Some("root-u"));
+    assert_eq!(loaded.sheet_paths[1].sheet_name, None);
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("2"));
     assert_eq!(loaded.sheet_paths[1].sheet_number, 2);
     assert_eq!(loaded.sheet_paths[1].sheet_count, 2);
