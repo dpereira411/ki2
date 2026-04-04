@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
-use crate::model::{Schematic, SheetReference};
+use crate::model::{Property, PropertyKind, SchItem, Schematic, SheetReference, Symbol};
 use crate::parser::parse_schematic_file;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,11 +16,20 @@ pub struct HierarchyLink {
     pub reused_existing_child: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedSheetPath {
+    pub schematic_path: PathBuf,
+    pub instance_path: String,
+    pub symbol_path: String,
+    pub page: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct LoadResult {
     pub root_path: PathBuf,
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
+    pub sheet_paths: Vec<LoadedSheetPath>,
 }
 
 impl LoadResult {
@@ -37,10 +46,14 @@ impl LoadResult {
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     let mut loader = SchematicLoader::new();
     let root_path = loader.load_schematic_file(root)?;
+    let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
+    loader.update_symbol_instance_data(&root_path, &sheet_paths);
+    loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
     Ok(LoadResult {
         root_path,
         schematics: loader.schematics,
         links: loader.links,
+        sheet_paths,
     })
 }
 
@@ -180,5 +193,203 @@ impl SchematicLoader {
             });
         }
         Ok(())
+    }
+
+    fn build_sheet_list_sorted_by_page_numbers(&self, root_path: &Path) -> Vec<LoadedSheetPath> {
+        let Some(root_index) = self.loaded_by_canonical.get(root_path) else {
+            return Vec::new();
+        };
+        let root = &self.schematics[*root_index];
+        let Some(root_uuid) = root
+            .root_sheet
+            .uuid
+            .as_ref()
+            .or(root.screen.uuid.as_ref())
+            .cloned()
+        else {
+            return Vec::new();
+        };
+
+        let mut sheet_paths = vec![LoadedSheetPath {
+            schematic_path: root_path.to_path_buf(),
+            instance_path: String::new(),
+            symbol_path: format!("/{root_uuid}"),
+            page: root
+                .screen
+                .sheet_instances
+                .iter()
+                .find(|instance| instance.path.is_empty())
+                .and_then(|instance| instance.page.clone()),
+        }];
+
+        self.build_child_sheet_paths(root_path, &format!("/{root_uuid}"), &mut sheet_paths);
+        sheet_paths.sort_by(|a, b| {
+            let page_cmp = match (&a.page, &b.page) {
+                (Some(a_page), Some(b_page)) => a_page.cmp(b_page),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            };
+
+            page_cmp
+                .then_with(|| a.instance_path.cmp(&b.instance_path))
+                .then_with(|| a.schematic_path.cmp(&b.schematic_path))
+        });
+        sheet_paths
+    }
+
+    fn build_child_sheet_paths(
+        &self,
+        parent_path: &Path,
+        parent_symbol_path: &str,
+        out: &mut Vec<LoadedSheetPath>,
+    ) {
+        for link in self
+            .links
+            .iter()
+            .filter(|link| link.parent_path == parent_path)
+        {
+            let Some(sheet_uuid) = link.sheet_uuid.as_ref() else {
+                continue;
+            };
+
+            let instance_path = format!("{parent_symbol_path}/{sheet_uuid}");
+            out.push(LoadedSheetPath {
+                schematic_path: link.child_path.clone(),
+                instance_path: instance_path.clone(),
+                symbol_path: instance_path.clone(),
+                page: None,
+            });
+            self.build_child_sheet_paths(&link.child_path, &instance_path, out);
+        }
+    }
+
+    fn update_symbol_instance_data(&mut self, root_path: &Path, sheet_paths: &[LoadedSheetPath]) {
+        let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
+            return;
+        };
+        let root_version = self.schematics[root_index].version;
+        if root_version >= 20221002 {
+            return;
+        }
+
+        let symbol_instances = self.schematics[root_index].screen.symbol_instances.clone();
+
+        for sheet_path in sheet_paths {
+            let Some(schematic_index) = self
+                .loaded_by_canonical
+                .get(&sheet_path.schematic_path)
+                .copied()
+            else {
+                continue;
+            };
+
+            for item in &mut self.schematics[schematic_index].screen.items {
+                let SchItem::Symbol(symbol) = item else {
+                    continue;
+                };
+                let Some(symbol_uuid) = symbol.uuid.as_ref() else {
+                    continue;
+                };
+
+                let full_path = format!("{}/{}", sheet_path.symbol_path, symbol_uuid);
+                let Some(instance) = symbol_instances
+                    .iter()
+                    .find(|instance| instance.path == full_path)
+                else {
+                    continue;
+                };
+
+                if let Some(reference) = instance.reference.as_ref() {
+                    upsert_symbol_property(
+                        symbol,
+                        "Reference",
+                        reference.clone(),
+                        PropertyKind::SymbolReference,
+                    );
+                }
+
+                if let Some(unit) = instance.unit {
+                    symbol.unit = Some(unit);
+                }
+
+                if let Some(value) = instance.value.as_ref() {
+                    if !value.is_empty() {
+                        upsert_symbol_property(
+                            symbol,
+                            "Value",
+                            value.clone(),
+                            PropertyKind::SymbolValue,
+                        );
+                    }
+                }
+
+                if let Some(footprint) = instance.footprint.as_ref() {
+                    if !footprint.is_empty() {
+                        upsert_symbol_property(
+                            symbol,
+                            "Footprint",
+                            footprint.clone(),
+                            PropertyKind::SymbolFootprint,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn update_sheet_instance_data(&self, root_path: &Path, sheet_paths: &mut [LoadedSheetPath]) {
+        let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
+            return;
+        };
+        let sheet_instances = &self.schematics[root_index].screen.sheet_instances;
+
+        for sheet_path in sheet_paths.iter_mut() {
+            if let Some(instance) = sheet_instances
+                .iter()
+                .find(|instance| instance.path == sheet_path.instance_path)
+            {
+                sheet_path.page = instance.page.clone();
+            }
+        }
+
+        sheet_paths.sort_by(|a, b| {
+            let page_cmp = match (&a.page, &b.page) {
+                (Some(a_page), Some(b_page)) => a_page.cmp(b_page),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            };
+
+            page_cmp
+                .then_with(|| a.instance_path.cmp(&b.instance_path))
+                .then_with(|| a.schematic_path.cmp(&b.schematic_path))
+        });
+    }
+}
+
+fn upsert_symbol_property(symbol: &mut Symbol, key: &str, value: String, kind: PropertyKind) {
+    let property = Property {
+        key: key.to_string(),
+        value,
+        kind,
+        is_private: false,
+        at: None,
+        angle: None,
+        visible: true,
+        show_name: true,
+        can_autoplace: true,
+        has_effects: false,
+        effects: None,
+    };
+
+    if let Some(existing) = symbol
+        .properties
+        .iter_mut()
+        .find(|property| property.kind == kind)
+    {
+        *existing = property;
+    } else {
+        symbol.properties.push(property);
     }
 }

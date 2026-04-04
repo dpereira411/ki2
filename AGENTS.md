@@ -262,6 +262,9 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In library `text_box` parsing, keep the body walk and `LibDrawItem` construction in `parseSymbolTextBox()` / `parse_lib_text_box_draw_item()` itself. Do not hide that routine behind a separate `parse_lib_text_box_content()` helper.
 - In library `parseSymbolTextBox()` / `parse_lib_text_box_draw_item()`, keep KiCad's literal fallback `Expecting(...)` text: `at, size, stroke, fill or effects`, even though the routine also handles legacy `start/end` and `margins`.
 - For the `paper` / `page` area, the remaining exactness after the local helper chain is ported is parser-wide token-category adoption. If a future discrepancy in this area requires broader `NeedSYMBOL` / `NeedNUMBER` parity outside the dedicated page helpers, treat that as a wider lexer/parser task rather than another local `parsePAGE_INFO()` branch.
+- The first missing cross-file post-load stage belongs in the loader-side hierarchy flow, not as scattered parser fixups. Build a real loaded sheet-path list before applying root-screen `symbol_instances` / `sheet_instances`.
+- Keep that loaded sheet-path list structurally close to upstream `BuildSheetListSortedByPageNumbers()`: root path first as an explicit hierarchy entry, then child entries derived from sheet UUID links, with page-number assignment applied from the root screen’s `sheet_instances`.
+- For legacy `< 20221002` files, apply root-screen `symbol_instances` across the loaded hierarchy using those sheet paths rather than leaving `SetLegacySymbolInstanceData()` as a dead partial fixup. The effective symbol update belongs in the post-load flow, not in per-file parsing.
 
 ## Expected Workflow
 

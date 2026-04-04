@@ -301,6 +301,110 @@ fn reuses_previously_loaded_child_schematic() {
 }
 
 #[test]
+fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_post_load_instances_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20221001)
+  (generator "eeschema")
+  (uuid "child-root")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "sym-u")
+    (property "Reference" "R?")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20221001)
+  (generator "eeschema")
+  (uuid "root-u")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "sheet-a")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "2"))
+    (path "/sheet-a" (page "1")))
+  (symbol_instances
+    (path "/sheet-a/sym-u"
+      (reference "R7")
+      (unit 2)
+      (value "47k")
+      (footprint "Resistor_SMD:R_0603")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(loaded.sheet_paths.len(), 2);
+    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
+    assert_eq!(loaded.sheet_paths[1].instance_path, "");
+    assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("2"));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let symbol = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("child symbol");
+
+    assert_eq!(symbol.unit, Some(2));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R7")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("47k")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_direct_ancestor_sheet_cycles() {
     let dir = env::temp_dir().join(format!(
         "ki2_cycle_{}",
