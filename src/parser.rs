@@ -2190,6 +2190,24 @@ impl KiCadSchematicParser {
                 Ok(SchItem::Text(text))
             }
             SchTextTarget::Label(kind) => {
+                let properties = if matches!(kind, LabelKind::Global) {
+                    vec![Property {
+                        id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
+                        key: "Intersheet References".to_string(),
+                        value: "${INTERSHEET_REFS}".to_string(),
+                        kind: PropertyKind::GlobalLabelIntersheetRefs,
+                        is_private: false,
+                        at: Some([0.0, 0.0]),
+                        angle: None,
+                        visible: false,
+                        show_name: true,
+                        can_autoplace: true,
+                        has_effects: false,
+                        effects: None,
+                    }]
+                } else {
+                    Vec::new()
+                };
                 let mut label = Label {
                     kind,
                     text,
@@ -2205,7 +2223,7 @@ impl KiCadSchematicParser {
                     has_effects: false,
                     effects: None,
                     uuid: None,
-                    properties: Vec::new(),
+                    properties,
                 };
 
                 while !self.at_right() {

@@ -2425,7 +2425,12 @@ fn private_only_survives_on_true_user_fields() {
             _ => None,
         })
         .expect("global label");
-    assert!(global.properties[0].is_private);
+    let global_user = global
+        .properties
+        .iter()
+        .find(|property| property.key == "UserField")
+        .expect("global user field");
+    assert!(global_user.is_private);
 
     let _ = fs::remove_file(path);
 }
@@ -2731,6 +2736,42 @@ fn parses_text_and_label_semantics() {
         })
         .expect("directive label");
     assert_eq!(directive.pin_length, Some(3.5));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn global_label_starts_with_hidden_intersheet_refs_field() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-global-default-field")
+  (global_label "GL")
+)"#;
+    let path = temp_schematic("global_label_default_intersheet_field", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let intersheet_refs = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("intersheet refs field");
+
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
+    assert_eq!(intersheet_refs.id, Some(6));
+    assert_eq!(intersheet_refs.key, "Intersheet References");
+    assert_eq!(intersheet_refs.value, "${INTERSHEET_REFS}");
+    assert_eq!(intersheet_refs.at, Some([0.0, 0.0]));
+    assert!(!intersheet_refs.visible);
 
     let _ = fs::remove_file(path);
 }
