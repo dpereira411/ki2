@@ -4699,15 +4699,22 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("width, type or color")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("width, type or color")),
+            };
+            match head.as_str() {
                 "width" => {
+                    let _ = self.need_unquoted_symbol_atom("width")?;
                     stroke.width = Some(self.parse_f64_atom("stroke width")?);
                     self.need_right()?;
                 }
                 "type" => {
+                    let _ = self.need_unquoted_symbol_atom("type")?;
                     stroke.style = match self
                         .need_unquoted_symbol_atom(
                             "default, dash, dot, dash_dot, dash_dot_dot, or solid",
@@ -4729,6 +4736,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "color" => {
+                    let _ = self.need_unquoted_symbol_atom("color")?;
                     stroke.color = Some([
                         f64::from(self.parse_i32_atom("red")?) / 255.0,
                         f64::from(self.parse_i32_atom("green")?) / 255.0,
@@ -4753,8 +4761,17 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_unquoted_symbol_atom("type or color")?.as_str() {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("type or color")),
+            };
+            match head.as_str() {
                 "type" => {
+                    let _ = self.need_unquoted_symbol_atom("type")?;
                     fill.fill_type = match self
                         .need_unquoted_symbol_atom(
                             "none, outline, hatch, reverse_hatch, cross_hatch, color or background",
@@ -4775,6 +4792,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "color" => {
+                    let _ = self.need_unquoted_symbol_atom("color")?;
                     fill.color = Some([
                         f64::from(self.parse_i32_atom("red")?) / 255.0,
                         f64::from(self.parse_i32_atom("green")?) / 255.0,
