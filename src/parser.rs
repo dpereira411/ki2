@@ -4383,7 +4383,7 @@ impl KiCadSchematicParser {
                 }
                 "href" => {
                     let href = self.parse_string_atom("hyperlink url")?;
-                    if !Self::is_valid_hyperlink(&href) {
+                    if !Self::validate_hyperlink(&href) {
                         return Err(self.error_here(format!("invalid hyperlink url `{href}`")));
                     }
                     effects.hyperlink = Some(href);
@@ -4400,7 +4400,7 @@ impl KiCadSchematicParser {
         Ok(effects)
     }
 
-    fn is_valid_hyperlink(href: &str) -> bool {
+    fn validate_hyperlink(href: &str) -> bool {
         // Match upstream EDA_TEXT::ValidateHyperlink:
         // - empty is valid (no hyperlink)
         // - "#page" goto-page refs are valid (IsGotoPageHref)
