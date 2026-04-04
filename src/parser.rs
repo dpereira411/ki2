@@ -799,8 +799,14 @@ impl KiCadSchematicParser {
                     }
 
                     let mut unit_name = None;
-                    let mut draw_item_kinds = Vec::new();
-                    let mut draw_items = Vec::new();
+                    let mut unit = crate::model::LibSymbolUnit {
+                        name: unit_full_name,
+                        unit_number,
+                        body_style,
+                        unit_name: None,
+                        draw_item_kinds: Vec::new(),
+                        draw_items: Vec::new(),
+                    };
 
                     while !self.at_right() {
                         self.need_left()?;
@@ -822,8 +828,7 @@ impl KiCadSchematicParser {
                                 let item =
                                     self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
                                 self.need_right()?;
-                                draw_item_kinds.push(item.kind.clone());
-                                draw_items.push(item);
+                                unit.push_draw_item(item);
                             }
                             _ => {
                                 return Err(self.expecting(
@@ -833,38 +838,15 @@ impl KiCadSchematicParser {
                         }
                     }
 
-                    symbol.units.push(crate::model::LibSymbolUnit {
-                        name: unit_full_name,
-                        unit_number,
-                        body_style,
-                        unit_name,
-                        draw_item_kinds,
-                        draw_items,
-                    });
+                    unit.unit_name = unit_name;
+                    symbol.units.push(unit);
                     self.need_right()?;
                 }
                 kind @ ("arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
                 | "text" | "text_box") => {
                     let item = self.parse_symbol_draw_item(kind, 1, 1)?;
                     self.need_right()?;
-
-                    if let Some(unit) = symbol.units.iter_mut().find(|unit| {
-                        unit.unit_number == 1
-                            && unit.body_style == 1
-                            && unit.name == format!("{name}_{}_{}", 1, 1)
-                    }) {
-                        unit.draw_item_kinds.push(item.kind.clone());
-                        unit.draw_items.push(item);
-                    } else {
-                        symbol.units.push(crate::model::LibSymbolUnit {
-                            name: format!("{name}_{}_{}", 1, 1),
-                            unit_number: 1,
-                            body_style: 1,
-                            unit_name: None,
-                            draw_item_kinds: vec![item.kind.clone()],
-                            draw_items: vec![item],
-                        });
-                    }
+                    symbol.push_root_draw_item(item);
                 }
                 "embedded_fonts" => {
                     symbol.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
@@ -1857,66 +1839,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        match property.kind {
-            PropertyKind::SymbolReference
-            | PropertyKind::SymbolValue
-            | PropertyKind::SymbolFootprint
-            | PropertyKind::SymbolDatasheet => {
-                if let Some(existing) = symbol
-                    .properties
-                    .iter_mut()
-                    .find(|existing| existing.kind == property.kind)
-                {
-                    *existing = property;
-                } else {
-                    symbol.properties.push(property);
-                }
-            }
-            PropertyKind::User => match property.key.as_str() {
-                "ki_keywords" => symbol.keywords = Some(property.value),
-                "ki_description" => symbol.description = Some(property.value),
-                "ki_fp_filters" => {
-                    symbol.fp_filters = property
-                        .value
-                        .split_whitespace()
-                        .map(str::to_string)
-                        .collect();
-                }
-                "ki_locked" => symbol.locked_units = true,
-                _ => {
-                    if symbol
-                        .properties
-                        .iter()
-                        .any(|existing| existing.key == property.key)
-                    {
-                        let base = property.key.clone();
-                        let mut renamed = false;
-
-                        for suffix in 1..10 {
-                            let candidate = format!("{base}_{suffix}");
-
-                            if !symbol
-                                .properties
-                                .iter()
-                                .any(|existing| existing.key == candidate)
-                            {
-                                property.key = candidate;
-                                symbol.properties.push(property);
-                                renamed = true;
-                                break;
-                            }
-                        }
-
-                        if !renamed {
-                            return Ok(());
-                        }
-                    } else {
-                        symbol.properties.push(property);
-                    }
-                }
-            },
-            _ => symbol.properties.push(property),
-        }
+        symbol.upsert_property(property);
 
         self.need_right()?;
         Ok(())

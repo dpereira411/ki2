@@ -111,6 +111,88 @@ pub struct LibSymbol {
     pub embedded_files: Vec<EmbeddedFile>,
 }
 
+impl LibSymbol {
+    pub fn upsert_property(&mut self, mut property: Property) {
+        match property.kind {
+            PropertyKind::SymbolReference
+            | PropertyKind::SymbolValue
+            | PropertyKind::SymbolFootprint
+            | PropertyKind::SymbolDatasheet => {
+                if let Some(existing) = self
+                    .properties
+                    .iter_mut()
+                    .find(|existing| existing.kind == property.kind)
+                {
+                    *existing = property;
+                } else {
+                    self.properties.push(property);
+                }
+            }
+            PropertyKind::User => match property.key.as_str() {
+                "ki_keywords" => self.keywords = Some(property.value),
+                "ki_description" => self.description = Some(property.value),
+                "ki_fp_filters" => {
+                    self.fp_filters = property
+                        .value
+                        .split_whitespace()
+                        .map(str::to_string)
+                        .collect();
+                }
+                "ki_locked" => self.locked_units = true,
+                _ => {
+                    if self
+                        .properties
+                        .iter()
+                        .any(|existing| existing.key == property.key)
+                    {
+                        let base = property.key.clone();
+
+                        for suffix in 1..10 {
+                            let candidate = format!("{base}_{suffix}");
+
+                            if !self
+                                .properties
+                                .iter()
+                                .any(|existing| existing.key == candidate)
+                            {
+                                property.key = candidate;
+                                self.properties.push(property);
+                                return;
+                            }
+                        }
+                    } else {
+                        self.properties.push(property);
+                    }
+                }
+            },
+            _ => self.properties.push(property),
+        }
+    }
+
+    pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
+        let unit_name = format!("{}_{}_{}", self.name, 1, 1);
+
+        if let Some(unit) = self
+            .units
+            .iter_mut()
+            .find(|unit| unit.unit_number == 1 && unit.body_style == 1 && unit.name == unit_name)
+        {
+            unit.push_draw_item(item);
+        } else {
+            let mut unit = LibSymbolUnit {
+                name: unit_name,
+                unit_number: 1,
+                body_style: 1,
+                unit_name: None,
+                draw_item_kinds: Vec::new(),
+                draw_items: Vec::new(),
+            };
+            unit.push_draw_item(item);
+            self.units.push(unit);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LibSymbolUnit {
     pub name: String,
@@ -119,6 +201,13 @@ pub struct LibSymbolUnit {
     pub unit_name: Option<String>,
     pub draw_item_kinds: Vec<String>,
     pub draw_items: Vec<LibDrawItem>,
+}
+
+impl LibSymbolUnit {
+    pub fn push_draw_item(&mut self, item: LibDrawItem) {
+        self.draw_item_kinds.push(item.kind.clone());
+        self.draw_items.push(item);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
