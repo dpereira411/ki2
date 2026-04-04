@@ -335,7 +335,7 @@ impl SchematicLoader {
                     existing.reference = instance.reference.clone();
                     existing.unit = instance.unit;
                 } else {
-                    symbol.add_hierarchical_reference(crate::model::SymbolLocalInstance {
+                    symbol.instances.push(crate::model::SymbolLocalInstance {
                         project: String::new(),
                         path: sheet_path.instance_path.clone(),
                         reference: instance.reference.clone(),

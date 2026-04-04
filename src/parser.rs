@@ -2402,7 +2402,12 @@ impl KiCadSchematicParser {
                                 self.parse_sch_field(FieldParent::OtherLabel)?
                             };
 
-                            label.insert_property(property);
+                            if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+                                let existing = label.ensure_global_intersheet_refs_property();
+                                *existing = property;
+                            } else {
+                                label.properties.push(property);
+                            }
                             self.need_right()?;
                         }
                         _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
@@ -3428,7 +3433,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.add_hierarchical_reference(instance);
+                            symbol.instances.push(instance);
                         }
                         self.need_right()?;
                     }
@@ -3785,7 +3790,7 @@ impl KiCadSchematicParser {
                         }
                         self.need_right()?;
                     }
-                    sheet.set_instances(instances);
+                    sheet.instances = instances;
                     self.need_right()?;
                 }
                 _ => {

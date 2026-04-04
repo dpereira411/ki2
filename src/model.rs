@@ -298,15 +298,6 @@ impl Label {
             .to_string();
         property
     }
-
-    pub fn insert_property(&mut self, property: Property) {
-        if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
-            let existing = self.ensure_global_intersheet_refs_property();
-            *existing = property;
-        } else {
-            self.properties.push(property);
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -512,10 +503,6 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn add_hierarchical_reference(&mut self, instance: SymbolLocalInstance) {
-        self.instances.push(instance);
-    }
-
     pub fn set_field_text(&mut self, kind: PropertyKind, value: String) {
         let key = kind.canonical_key();
 
@@ -553,10 +540,6 @@ pub struct Sheet {
 }
 
 impl Sheet {
-    pub fn set_instances(&mut self, instances: Vec<SheetLocalInstance>) {
-        self.instances = instances;
-    }
-
     pub fn set_properties(&mut self, mut properties: Vec<Property>) {
         for property in &mut properties {
             if property.kind == PropertyKind::SheetFile {
