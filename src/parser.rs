@@ -3544,7 +3544,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("width, type or color")?
+                .need_unquoted_symbol_atom("uuid, lib_id, members")?
                 .as_str()
             {
                 "uuid" => {

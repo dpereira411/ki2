@@ -4603,6 +4603,18 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
         .expect_err("must reject bad group member uuid");
     assert!(err.to_string().contains("expecting group member uuid"));
 
+    let bad_group_child = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-child")
+  (group "g"
+    (bogus "x")))
+)"#;
+    let bad_group_child_path = temp_schematic("bad_group_child", bad_group_child);
+    let err = parse_schematic_file(Path::new(&bad_group_child_path))
+        .expect_err("must reject bad group child");
+    assert!(err.to_string().contains("expecting uuid, lib_id, members"));
+
     let bad_group_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -4648,6 +4660,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let _ = fs::remove_file(bad_symbol_path);
     let _ = fs::remove_file(bad_group_path);
     let _ = fs::remove_file(bad_group_member_path);
+    let _ = fs::remove_file(bad_group_child_path);
     let _ = fs::remove_file(bad_group_name_path);
     let _ = fs::remove_file(bad_group_lib_id_path);
     let _ = fs::remove_file(bad_rectangle_path);
