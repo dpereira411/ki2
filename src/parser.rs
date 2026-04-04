@@ -3974,16 +3974,16 @@ impl KiCadSchematicParser {
             if self.at_atom() {
                 match self
                     .need_unquoted_symbol_atom(
-                        "face, size, thickness, line_spacing, bold, or italic",
+                        "face, size, thickness, color, line_spacing, bold, or italic",
                     )?
                     .as_str()
                 {
                     "bold" => effects.bold = self.parse_inline_optional_bool(true)?,
                     "italic" => effects.italic = self.parse_inline_optional_bool(true)?,
                     _ => {
-                        return Err(
-                            self.expecting("face, size, thickness, line_spacing, bold, or italic")
-                        );
+                        return Err(self.expecting(
+                            "face, size, thickness, color, line_spacing, bold, or italic",
+                        ));
                     }
                 }
 
@@ -3992,7 +3992,9 @@ impl KiCadSchematicParser {
 
             self.need_left()?;
             match self
-                .need_unquoted_symbol_atom("face, size, thickness, line_spacing, bold, or italic")?
+                .need_unquoted_symbol_atom(
+                    "face, size, thickness, color, line_spacing, bold, or italic",
+                )?
                 .as_str()
             {
                 "face" => {
@@ -4035,9 +4037,8 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 _ => {
-                    return Err(
-                        self.expecting("face, size, thickness, line_spacing, bold, or italic")
-                    );
+                    return Err(self
+                        .expecting("face, size, thickness, color, line_spacing, bold, or italic"));
                 }
             }
         }

@@ -2717,7 +2717,21 @@ fn rejects_quoted_effects_keyword_tokens() {
         .expect_err("must reject quoted font keyword");
     assert!(
         err.to_string()
-            .contains("expecting face, size, thickness, line_spacing, bold, or italic")
+            .contains("expecting face, size, thickness, color, line_spacing, bold, or italic")
+    );
+
+    let quoted_font_color = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-font-color")
+  (text "note" (effects (font ("color" 1 2 3 0.5))))
+)"#;
+    let quoted_font_color_path = temp_schematic("quoted_effects_font_color", quoted_font_color);
+    let err = parse_schematic_file(Path::new(&quoted_font_color_path))
+        .expect_err("must reject quoted font color keyword");
+    assert!(
+        err.to_string()
+            .contains("expecting face, size, thickness, color, line_spacing, bold, or italic")
     );
 
     let quoted_hide = r#"(kicad_sch
@@ -2736,6 +2750,7 @@ fn rejects_quoted_effects_keyword_tokens() {
 
     let _ = fs::remove_file(quoted_justify_path);
     let _ = fs::remove_file(quoted_font_bold_path);
+    let _ = fs::remove_file(quoted_font_color_path);
     let _ = fs::remove_file(quoted_hide_path);
 }
 
