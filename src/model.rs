@@ -797,8 +797,8 @@ impl Symbol {
             at: [0.0, 0.0],
             angle: 0.0,
             mirror: None,
-            unit: None,
-            body_style: None,
+            unit: Some(1),
+            body_style: Some(1),
             excluded_from_sim: false,
             in_bom: true,
             on_board: true,
@@ -913,6 +913,8 @@ mod tests {
     fn placed_symbols_start_with_mandatory_fields() {
         let symbol = Symbol::new();
 
+        assert_eq!(symbol.unit, Some(1));
+        assert_eq!(symbol.body_style, Some(1));
         assert_eq!(
             symbol
                 .properties

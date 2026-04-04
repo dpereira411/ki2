@@ -471,6 +471,8 @@ fn placed_symbols_start_with_mandatory_fields() {
             .iter()
             .all(|property| property.value.is_empty())
     );
+    assert_eq!(symbol.unit, Some(1));
+    assert_eq!(symbol.body_style, Some(1));
 
     let _ = fs::remove_file(path);
 }

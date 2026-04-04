@@ -3345,6 +3345,7 @@ impl KiCadSchematicParser {
     fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
         let _ = self.need_unquoted_symbol_atom("symbol")?;
         let mut symbol = Symbol::new();
+        symbol.fields_autoplaced = FieldAutoplacement::None;
 
         while !self.at_right() {
             self.need_left()?;
