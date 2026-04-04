@@ -818,17 +818,14 @@ impl Symbol {
     }
 
     pub fn set_field_text(&mut self, kind: PropertyKind, value: String) {
-        if let Some(existing) = self
+        let existing = self
             .properties
             .iter_mut()
             .find(|property| property.kind == kind)
-        {
-            existing.id = kind.default_field_id().or(existing.id);
-            existing.key = kind.canonical_key().to_string();
-            existing.value = value;
-        } else {
-            self.properties.push(Property::new(kind, value));
-        }
+            .expect("placed symbols start with mandatory fields");
+        existing.id = kind.default_field_id().or(existing.id);
+        existing.key = kind.canonical_key().to_string();
+        existing.value = value;
     }
 
     pub fn add_pin(&mut self, pin: SymbolPin) {

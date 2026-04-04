@@ -451,6 +451,7 @@ fn placed_symbols_start_with_mandatory_fields() {
         })
         .expect("symbol");
 
+    assert_eq!(symbol.properties.len(), 4);
     assert_eq!(
         symbol
             .properties
