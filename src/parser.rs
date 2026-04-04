@@ -387,7 +387,7 @@ impl KiCadSchematicParser {
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_sch_arc()?)),
                 "circle" => parsed_item = Some(SchItem::Shape(self.parse_sch_circle()?)),
                 "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_sch_rectangle()?)),
-                "bezier" => parsed_item = Some(SchItem::Shape(self.parse_bezier_shape()?)),
+                "bezier" => parsed_item = Some(SchItem::Shape(self.parse_sch_bezier()?)),
                 "rule_area" => parsed_item = Some(SchItem::Shape(self.parse_rule_area_shape()?)),
                 "sheet_instances" => {
                     self.screen.sheet_instances = self.parse_sch_sheet_instances()?
@@ -2791,7 +2791,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_bezier_shape(&mut self) -> Result<Shape, Error> {
+    fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
         let mut points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         let mut has_stroke = false;
         let mut has_fill = false;
