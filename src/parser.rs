@@ -1404,7 +1404,11 @@ impl KiCadSchematicParser {
                     ]);
                     self.need_right()?;
                 }
-                _ => return Err(self.expecting("at, size, stroke, fill or effects")),
+                _ => {
+                    return Err(
+                        self.expecting("start, end, at, size, stroke, fill, margins, or effects")
+                    );
+                }
             }
         }
 

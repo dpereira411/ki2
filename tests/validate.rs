@@ -775,7 +775,8 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
     let schematic = parse_schematic_file(Path::new(&bad_path))
         .expect("must warn and skip malformed lib symbol");
     assert!(
-        schematic.screen.parse_warnings[0].contains("expecting at, size, stroke, fill or effects")
+        schematic.screen.parse_warnings[0]
+            .contains("expecting start, end, at, size, stroke, fill, margins, or effects")
     );
     assert!(schematic.screen.lib_symbols.is_empty());
     let _ = fs::remove_file(bad_path);
