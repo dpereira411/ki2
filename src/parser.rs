@@ -580,28 +580,31 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Invalid library identifier"));
         }
 
-        let mut extends = None;
-        let mut power = false;
-        let mut local_power = false;
-        let mut body_style_names = Vec::new();
-        let mut has_demorgan = false;
-        let mut pin_name_offset = None;
-        let mut show_pin_names = true;
-        let mut show_pin_numbers = true;
-        let mut excluded_from_sim = false;
-        let mut in_bom = true;
-        let mut on_board = true;
-        let mut in_pos_files = true;
-        let mut duplicate_pin_numbers_are_jumpers = false;
-        let mut jumper_pin_groups = Vec::new();
-        let mut keywords = None;
-        let mut description = None;
-        let mut fp_filters = Vec::new();
-        let mut locked_units = false;
-        let mut properties: Vec<Property> = Vec::new();
-        let mut units = Vec::new();
-        let mut embedded_fonts = None;
-        let mut embedded_files = Vec::new();
+        let mut symbol = LibSymbol {
+            name: name.clone(),
+            extends: None,
+            power: false,
+            local_power: false,
+            body_style_names: Vec::new(),
+            has_demorgan: false,
+            pin_name_offset: None,
+            show_pin_names: true,
+            show_pin_numbers: true,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            in_pos_files: true,
+            duplicate_pin_numbers_are_jumpers: false,
+            jumper_pin_groups: Vec::new(),
+            keywords: None,
+            description: None,
+            fp_filters: Vec::new(),
+            locked_units: false,
+            properties: Vec::new(),
+            units: Vec::new(),
+            embedded_fonts: None,
+            embedded_files: Vec::new(),
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -610,11 +613,11 @@ impl KiCadSchematicParser {
             )?;
             match branch.as_str() {
                 "power" => {
-                    power = true;
+                    symbol.power = true;
                     if self.at_atom() {
                         match self.need_unquoted_symbol_atom("global or local")?.as_str() {
-                            "local" => local_power = true,
-                            "global" => local_power = false,
+                            "local" => symbol.local_power = true,
+                            "global" => symbol.local_power = false,
                             _ => return Err(self.expecting("global or local")),
                         }
                     }
@@ -624,9 +627,11 @@ impl KiCadSchematicParser {
                     while !self.at_right() {
                         if self.at_unquoted_symbol_with("demorgan") {
                             let _ = self.need_unquoted_symbol_atom("demorgan")?;
-                            has_demorgan = true;
+                            symbol.has_demorgan = true;
                         } else {
-                            body_style_names.push(self.need_symbol_atom("property value")?);
+                            symbol
+                                .body_style_names
+                                .push(self.need_symbol_atom("property value")?);
                         }
                     }
                     self.need_right()?;
@@ -635,18 +640,19 @@ impl KiCadSchematicParser {
                     while !self.at_right() {
                         if self.at_unquoted_symbol_with("hide") {
                             let _ = self.need_unquoted_symbol_atom("hide")?;
-                            show_pin_names = false;
+                            symbol.show_pin_names = false;
                             continue;
                         }
 
                         self.need_left()?;
                         match self.need_unquoted_symbol_atom("offset or hide")?.as_str() {
                             "offset" => {
-                                pin_name_offset = Some(self.parse_f64_atom("pin name offset")?);
+                                symbol.pin_name_offset =
+                                    Some(self.parse_f64_atom("pin name offset")?);
                                 self.need_right()?;
                             }
                             "hide" => {
-                                show_pin_names = !self.parse_bool_atom("hide")?;
+                                symbol.show_pin_names = !self.parse_bool_atom("hide")?;
                                 self.need_right()?;
                             }
                             _ => return Err(self.expecting("offset or hide")),
@@ -658,14 +664,14 @@ impl KiCadSchematicParser {
                     while !self.at_right() {
                         if self.at_unquoted_symbol_with("hide") {
                             let _ = self.need_unquoted_symbol_atom("hide")?;
-                            show_pin_numbers = false;
+                            symbol.show_pin_numbers = false;
                             continue;
                         }
 
                         self.need_left()?;
                         match self.need_unquoted_symbol_atom("hide")?.as_str() {
                             "hide" => {
-                                show_pin_numbers = !self.parse_bool_atom("hide")?;
+                                symbol.show_pin_numbers = !self.parse_bool_atom("hide")?;
                                 self.need_right()?;
                             }
                             _ => return Err(self.expecting("hide")),
@@ -674,23 +680,23 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
-                    excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    symbol.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "in_bom" => {
-                    in_bom = self.parse_bool_atom("in_bom")?;
+                    symbol.in_bom = self.parse_bool_atom("in_bom")?;
                     self.need_right()?;
                 }
                 "on_board" => {
-                    on_board = self.parse_bool_atom("on_board")?;
+                    symbol.on_board = self.parse_bool_atom("on_board")?;
                     self.need_right()?;
                 }
                 "in_pos_files" => {
-                    in_pos_files = self.parse_bool_atom("in_pos_files")?;
+                    symbol.in_pos_files = self.parse_bool_atom("in_pos_files")?;
                     self.need_right()?;
                 }
                 "duplicate_pin_numbers_are_jumpers" => {
-                    duplicate_pin_numbers_are_jumpers =
+                    symbol.duplicate_pin_numbers_are_jumpers =
                         self.parse_bool_atom("duplicate_pin_numbers_are_jumpers")?;
                     self.need_right()?;
                 }
@@ -702,23 +708,23 @@ impl KiCadSchematicParser {
                             group.push(self.need_quoted_atom("list of pin names")?);
                         }
                         self.need_right()?;
-                        jumper_pin_groups.push(group);
+                        symbol.jumper_pin_groups.push(group);
                     }
                     self.need_right()?;
                 }
                 "property" => {
                     let mut property = self.parse_lib_property()?;
                     match property.key.as_str() {
-                        "ki_keywords" => keywords = Some(property.value),
-                        "ki_description" => description = Some(property.value),
+                        "ki_keywords" => symbol.keywords = Some(property.value),
+                        "ki_description" => symbol.description = Some(property.value),
                         "ki_fp_filters" => {
-                            fp_filters = property
+                            symbol.fp_filters = property
                                 .value
                                 .split_whitespace()
                                 .map(str::to_string)
                                 .collect();
                         }
-                        "ki_locked" => locked_units = true,
+                        "ki_locked" => symbol.locked_units = true,
                         _ => {
                             if matches!(
                                 property.kind,
@@ -728,13 +734,14 @@ impl KiCadSchematicParser {
                                     | PropertyKind::SymbolDatasheet
                             ) {
                                 if let Some(existing) =
-                                    properties.iter_mut().find(|p| p.kind == property.kind)
+                                    symbol.properties.iter_mut().find(|p| p.kind == property.kind)
                                 {
                                     *existing = property;
                                 } else {
-                                    properties.push(property);
+                                    symbol.properties.push(property);
                                 }
-                            } else if properties
+                            } else if symbol
+                                .properties
                                 .iter()
                                 .any(|existing| existing.key == property.key)
                             {
@@ -743,21 +750,25 @@ impl KiCadSchematicParser {
                                 for suffix in 1..10 {
                                     let candidate = format!("{base}_{suffix}");
 
-                                    if !properties.iter().any(|existing| existing.key == candidate) {
+                                    if !symbol
+                                        .properties
+                                        .iter()
+                                        .any(|existing| existing.key == candidate)
+                                    {
                                         property.key = candidate;
-                                        properties.push(property);
+                                        symbol.properties.push(property);
                                         break;
                                     }
                                 }
                             } else {
-                                properties.push(property);
+                                symbol.properties.push(property);
                             }
                         }
                     }
                     self.need_right()?;
                 }
                 "extends" => {
-                    extends = Some(
+                    symbol.extends = Some(
                         self.need_symbol_atom("parent symbol name")
                             .map_err(|_| self.error_here("Invalid parent symbol name"))?
                             .replace("{slash}", "/"),
@@ -860,7 +871,7 @@ impl KiCadSchematicParser {
                         }
                     }
 
-                    units.push(crate::model::LibSymbolUnit {
+                    symbol.units.push(crate::model::LibSymbolUnit {
                         name: unit_full_name,
                         unit_number,
                         body_style,
@@ -887,7 +898,7 @@ impl KiCadSchematicParser {
                     }?;
                     self.need_right()?;
 
-                    if let Some(unit) = units.iter_mut().find(|unit| {
+                    if let Some(unit) = symbol.units.iter_mut().find(|unit| {
                         unit.unit_number == 1
                             && unit.body_style == 1
                             && unit.name == format!("{name}_{}_{}", 1, 1)
@@ -895,7 +906,7 @@ impl KiCadSchematicParser {
                         unit.draw_item_kinds.push(item.kind.clone());
                         unit.draw_items.push(item);
                     } else {
-                        units.push(crate::model::LibSymbolUnit {
+                        symbol.units.push(crate::model::LibSymbolUnit {
                             name: format!("{name}_{}_{}", 1, 1),
                             unit_number: 1,
                             body_style: 1,
@@ -906,7 +917,7 @@ impl KiCadSchematicParser {
                     }
                 }
                 "embedded_fonts" => {
-                    embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
+                    symbol.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                     self.need_right()?;
                 }
                 "embedded_files" => {
@@ -958,7 +969,7 @@ impl KiCadSchematicParser {
 
                         Ok(files)
                     })() {
-                        Ok(files) => embedded_files = files,
+                        Ok(files) => symbol.embedded_files = files,
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
                             self.skip_to_block_right(block_depth);
@@ -974,31 +985,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        Ok(LibSymbol {
-            name,
-            extends,
-            power,
-            local_power,
-            body_style_names,
-            has_demorgan,
-            pin_name_offset,
-            show_pin_names,
-            show_pin_numbers,
-            excluded_from_sim,
-            in_bom,
-            on_board,
-            in_pos_files,
-            duplicate_pin_numbers_are_jumpers,
-            jumper_pin_groups,
-            keywords,
-            description,
-            fp_filters,
-            locked_units,
-            properties,
-            units,
-            embedded_fonts,
-            embedded_files,
-        })
+        Ok(symbol)
     }
 
     fn parse_symbol_arc(
