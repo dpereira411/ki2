@@ -384,7 +384,7 @@ impl KiCadSchematicParser {
                 "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_sch_text_box()?)),
                 "table" => parsed_item = Some(SchItem::Table(self.parse_sch_table()?)),
                 "image" => parsed_item = Some(SchItem::Image(self.parse_sch_image()?)),
-                "arc" => parsed_item = Some(SchItem::Shape(self.parse_arc_shape()?)),
+                "arc" => parsed_item = Some(SchItem::Shape(self.parse_sch_arc()?)),
                 "circle" => parsed_item = Some(SchItem::Shape(self.parse_circle_shape()?)),
                 "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_rectangle_shape()?)),
                 "bezier" => parsed_item = Some(SchItem::Shape(self.parse_bezier_shape()?)),
@@ -2614,7 +2614,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_arc_shape(&mut self) -> Result<Shape, Error> {
+    fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
         let mut points = Vec::new();
         let mut has_stroke = false;
         let mut has_fill = false;

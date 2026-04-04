@@ -28,6 +28,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - `polyline` is not equivalent to `wire`/`bus`. Two-point polylines collapse to line-like objects; longer ones remain shapes.
 - Keep the shared wire/bus line routine on an upstream-shaped schematic-line entrypoint too. Once it owns the real line body, it should not stay on a vague local `parse_line()` name.
 - `rule_area` grammar is specialized and wraps a nested `polyline`; it is not just another generic point-list shape.
+- Keep schematic shape routine boundaries named after their upstream roles too. Once a routine owns schematic `arc` / `circle` / `rectangle` / `bezier` parsing, it should not stay on a generic `*_shape` local helper name.
 - In `parseSchRuleArea()`, keep KiCad's literal fallback `Expecting(...)` text: `exclude_from_sim, on_board, in_bom, dnp, or polyline`.
 - `text`, `label`, `global_label`, `hierarchical_label`, `directive_label`, and `netclass_flag` should be treated as one shared parser family with type-specific branches, like upstream `parseSchText()`.
 - `property` parsing is parent-sensitive. Symbol, sheet, and global-label mandatory fields are not just arbitrary user properties.
