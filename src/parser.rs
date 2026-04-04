@@ -293,10 +293,14 @@ impl KiCadSchematicParser {
                             "generator_version requires schematic version {VERSION_GENERATOR_VERSION} or newer"
                         )));
                     }
-                    self.generator_version = Some(
-                        self.need_atom()
-                            .map_err(|_| self.error_here("missing generator_version"))?,
-                    );
+                    self.generator_version = Some(match &self.current().kind {
+                        TokKind::Atom(value) => {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => return Err(self.error_here("missing generator_version")),
+                    });
                 }
                 "uuid" => {
                     let uuid = self.need_symbol_atom("uuid")?;
@@ -4787,17 +4791,6 @@ impl KiCadSchematicParser {
                 Ok(())
             }
             _ => Err(self.expecting(")")),
-        }
-    }
-
-    fn need_atom(&mut self) -> Result<String, Error> {
-        match &self.current().kind {
-            TokKind::Atom(value) => {
-                let out = value.clone();
-                self.idx += 1;
-                Ok(out)
-            }
-            _ => Err(self.expecting("symbol")),
         }
     }
 
