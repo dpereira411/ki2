@@ -791,7 +791,7 @@ impl KiCadSchematicParser {
                                     "bezier" => self.parse_symbol_bezier(unit_number, body_style),
                                     "circle" => self.parse_symbol_circle(unit_number, body_style),
                                     "polyline" => {
-                                        self.parse_lib_polyline_draw_item(unit_number, body_style)
+                                        self.parse_symbol_polyline(unit_number, body_style)
                                     }
                                     "rectangle" => self
                                         .parse_lib_rectangle_draw_item(unit_number, body_style),
@@ -832,7 +832,7 @@ impl KiCadSchematicParser {
                         "arc" => self.parse_symbol_arc(1, 1),
                         "bezier" => self.parse_symbol_bezier(1, 1),
                         "circle" => self.parse_symbol_circle(1, 1),
-                        "polyline" => self.parse_lib_polyline_draw_item(1, 1),
+                        "polyline" => self.parse_symbol_polyline(1, 1),
                         "rectangle" => self.parse_lib_rectangle_draw_item(1, 1),
                         "text" => self.parse_lib_text_draw_item(1, 1),
                         "text_box" => self.parse_lib_text_box_draw_item(1, 1),
@@ -1183,7 +1183,7 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_lib_polyline_draw_item(
+    fn parse_symbol_polyline(
         &mut self,
         unit_number: i32,
         body_style: i32,
