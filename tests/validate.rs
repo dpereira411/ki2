@@ -473,6 +473,7 @@ fn placed_symbols_start_with_mandatory_fields() {
             .all(|property| property.value.is_empty())
     );
     assert_eq!(symbol.prefix, "U");
+    assert!(symbol.in_netlist);
     assert_eq!(symbol.unit, Some(1));
     assert_eq!(symbol.body_style, Some(1));
 
@@ -528,6 +529,7 @@ fn symbol_reference_property_updates_prefix() {
         .expect("symbol");
 
     assert_eq!(symbol.prefix, "J");
+    assert!(symbol.in_netlist);
     assert_eq!(
         symbol
             .properties
@@ -536,6 +538,33 @@ fn symbol_reference_property_updates_prefix() {
             .map(|property| property.value.as_str()),
         Some("J12")
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn power_style_reference_updates_symbol_netlist_state() {
+    let src = r##"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-netlist")
+  (symbol
+    (lib_id "power:GND")
+    (property "Reference" "#PWR01")))"##;
+    let path = temp_schematic("symbol_in_netlist_from_reference", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.prefix, "#PWR");
+    assert!(!symbol.in_netlist);
 
     let _ = fs::remove_file(path);
 }

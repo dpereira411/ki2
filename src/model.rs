@@ -787,6 +787,7 @@ pub struct Symbol {
     pub lib_name: Option<String>,
     pub linked_lib_symbol_name: Option<String>,
     pub prefix: String,
+    pub in_netlist: bool,
     pub at: [f64; 2],
     pub angle: f64,
     pub mirror: Option<MirrorAxis>,
@@ -811,6 +812,7 @@ impl Symbol {
             lib_name: None,
             linked_lib_symbol_name: None,
             prefix: "U".to_string(),
+            in_netlist: true,
             at: [0.0, 0.0],
             angle: 0.0,
             mirror: None,
@@ -863,6 +865,8 @@ impl Symbol {
         else {
             return;
         };
+
+        self.in_netlist = !reference.starts_with('#');
 
         let trimmed = reference
             .trim()
@@ -956,6 +960,7 @@ mod tests {
         let symbol = Symbol::new();
 
         assert_eq!(symbol.prefix, "U");
+        assert!(symbol.in_netlist);
         assert_eq!(symbol.unit, Some(1));
         assert_eq!(symbol.body_style, Some(1));
         assert_eq!(
@@ -980,12 +985,19 @@ mod tests {
 
         symbol.set_field_text(PropertyKind::SymbolReference, "J12".to_string());
         assert_eq!(symbol.prefix, "J");
+        assert!(symbol.in_netlist);
 
         symbol.set_field_text(PropertyKind::SymbolReference, "TP?".to_string());
         assert_eq!(symbol.prefix, "TP");
+        assert!(symbol.in_netlist);
+
+        symbol.set_field_text(PropertyKind::SymbolReference, "#PWR01".to_string());
+        assert_eq!(symbol.prefix, "#PWR");
+        assert!(!symbol.in_netlist);
 
         symbol.set_field_text(PropertyKind::SymbolReference, "".to_string());
-        assert_eq!(symbol.prefix, "TP");
+        assert_eq!(symbol.prefix, "#PWR");
+        assert!(symbol.in_netlist);
     }
 
     #[test]
