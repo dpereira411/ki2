@@ -280,7 +280,6 @@ impl KiCadSchematicParser {
             {
                 effective_head = "paper";
             }
-            let mut parsed_item = None;
             let mut section_consumed_right = false;
 
             match effective_head {
@@ -391,20 +390,41 @@ impl KiCadSchematicParser {
                 }
                 "lib_symbols" => self.parse_sch_lib_symbols()?,
                 "bus_alias" => self.parse_bus_alias()?,
-                "symbol" => parsed_item = Some(SchItem::Symbol(self.parse_schematic_symbol()?)),
-                "sheet" => parsed_item = Some(SchItem::Sheet(self.parse_sch_sheet()?)),
-                "junction" => parsed_item = Some(SchItem::Junction(self.parse_junction()?)),
-                "no_connect" => parsed_item = Some(SchItem::NoConnect(self.parse_no_connect()?)),
-                "bus_entry" => parsed_item = Some(SchItem::BusEntry(self.parse_bus_entry()?)),
-                "wire" => parsed_item = Some(SchItem::Wire(self.parse_sch_line(LineKind::Wire)?)),
-                "bus" => parsed_item = Some(SchItem::Bus(self.parse_sch_line(LineKind::Bus)?)),
+                "symbol" => {
+                    let symbol = self.parse_schematic_symbol()?;
+                    self.screen.items.push(SchItem::Symbol(symbol));
+                }
+                "sheet" => {
+                    let sheet = self.parse_sch_sheet()?;
+                    self.screen.items.push(SchItem::Sheet(sheet));
+                }
+                "junction" => {
+                    let junction = self.parse_junction()?;
+                    self.screen.items.push(SchItem::Junction(junction));
+                }
+                "no_connect" => {
+                    let no_connect = self.parse_no_connect()?;
+                    self.screen.items.push(SchItem::NoConnect(no_connect));
+                }
+                "bus_entry" => {
+                    let bus_entry = self.parse_bus_entry()?;
+                    self.screen.items.push(SchItem::BusEntry(bus_entry));
+                }
+                "wire" => {
+                    let wire = self.parse_sch_line(LineKind::Wire)?;
+                    self.screen.items.push(SchItem::Wire(wire));
+                }
+                "bus" => {
+                    let bus = self.parse_sch_line(LineKind::Bus)?;
+                    self.screen.items.push(SchItem::Bus(bus));
+                }
                 "polyline" => {
                     let shape = self.parse_sch_polyline()?;
                     if shape.points.len() < 2 {
                         return Err(self.error_here("Schematic polyline has too few points"));
                     }
                     if shape.points.len() == 2 {
-                        parsed_item = Some(SchItem::Polyline(Line {
+                        self.screen.items.push(SchItem::Polyline(Line {
                             kind: LineKind::Polyline,
                             points: shape.points,
                             has_stroke: shape.has_stroke,
@@ -412,27 +432,48 @@ impl KiCadSchematicParser {
                             uuid: shape.uuid,
                         }));
                     } else {
-                        parsed_item = Some(SchItem::Shape(shape));
+                        self.screen.items.push(SchItem::Shape(shape));
                     }
                 }
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
                 | "class_label" | "netclass_flag" | "text" => {
-                    parsed_item = Some(self.parse_sch_text(effective_head)?)
+                    let item = self.parse_sch_text(effective_head)?;
+                    self.screen.items.push(item)
                 }
-                "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_sch_text_box()?)),
-                "table" => parsed_item = Some(SchItem::Table(self.parse_sch_table()?)),
-                "image" => parsed_item = Some(SchItem::Image(self.parse_sch_image()?)),
-                "arc" => parsed_item = Some(SchItem::Shape(self.parse_sch_arc()?)),
-                "circle" => parsed_item = Some(SchItem::Shape(self.parse_sch_circle()?)),
-                "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_sch_rectangle()?)),
-                "bezier" => parsed_item = Some(SchItem::Shape(self.parse_sch_bezier()?)),
-                "rule_area" => parsed_item = Some(SchItem::Shape(self.parse_sch_rule_area()?)),
-                "sheet_instances" => {
-                    self.screen.sheet_instances = self.parse_sch_sheet_instances()?
+                "text_box" => {
+                    let text_box = self.parse_sch_text_box()?;
+                    self.screen.items.push(SchItem::TextBox(text_box));
                 }
-                "symbol_instances" => {
-                    self.screen.symbol_instances = self.parse_sch_symbol_instances()?
+                "table" => {
+                    let table = self.parse_sch_table()?;
+                    self.screen.items.push(SchItem::Table(table));
                 }
+                "image" => {
+                    let image = self.parse_sch_image()?;
+                    self.screen.items.push(SchItem::Image(image));
+                }
+                "arc" => {
+                    let shape = self.parse_sch_arc()?;
+                    self.screen.items.push(SchItem::Shape(shape));
+                }
+                "circle" => {
+                    let shape = self.parse_sch_circle()?;
+                    self.screen.items.push(SchItem::Shape(shape));
+                }
+                "rectangle" => {
+                    let shape = self.parse_sch_rectangle()?;
+                    self.screen.items.push(SchItem::Shape(shape));
+                }
+                "bezier" => {
+                    let shape = self.parse_sch_bezier()?;
+                    self.screen.items.push(SchItem::Shape(shape));
+                }
+                "rule_area" => {
+                    let shape = self.parse_sch_rule_area()?;
+                    self.screen.items.push(SchItem::Shape(shape));
+                }
+                "sheet_instances" => self.parse_sch_sheet_instances()?,
+                "symbol_instances" => self.parse_sch_symbol_instances()?,
                 "group" => self.parse_group()?,
                 _ => {
                     return Err(self.validation(
@@ -440,9 +481,6 @@ impl KiCadSchematicParser {
                         format!("unsupported schematic section `{head}`"),
                     ));
                 }
-            }
-            if let Some(item) = parsed_item {
-                self.screen.items.push(item);
             }
             if !section_consumed_right {
                 self.need_right()?;
@@ -3691,8 +3729,7 @@ impl KiCadSchematicParser {
         Ok(sheet_pin)
     }
 
-    fn parse_sch_sheet_instances(&mut self) -> Result<Vec<SheetInstance>, Error> {
-        let mut out = Vec::new();
+    fn parse_sch_sheet_instances(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("path")?;
@@ -3752,13 +3789,12 @@ impl KiCadSchematicParser {
             {
                 continue;
             }
-            out.push(instance);
+            self.screen.sheet_instances.push(instance);
         }
-        Ok(out)
+        Ok(())
     }
 
-    fn parse_sch_symbol_instances(&mut self) -> Result<Vec<SymbolInstance>, Error> {
-        let mut out = Vec::new();
+    fn parse_sch_symbol_instances(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("path")?;
@@ -3831,9 +3867,9 @@ impl KiCadSchematicParser {
                 self.need_right()?;
             }
             self.need_right()?;
-            out.push(instance);
+            self.screen.symbol_instances.push(instance);
         }
-        Ok(out)
+        Ok(())
     }
 
     fn parse_group(&mut self) -> Result<(), Error> {
