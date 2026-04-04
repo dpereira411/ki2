@@ -85,6 +85,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same shared `parseSchText()` path, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep the text payload on the same strict `Invalid text string` symbol-token path as upstream before any textbox body parsing runs.
 - Keep top-level schematic `text_box` and table-cell parsing on thin owning entrypoints, but share the real textbox body walk through one `parseSchTextBoxContent()`-equivalent routine like upstream. The table-cell-only `span` branch and fallback text can still stay conditional inside that shared body.
+- Keep those thin owning entrypoints named and shaped after upstream too: `parseSchTextBox()` and `parseSchTableCell()` should delegate into the shared content routine rather than staying on repo-local wrapper names.
 - In `parseSchTextBoxContent()`, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep KiCad's literal default `Expecting(...)` text: `at, size, stroke, fill, effects or uuid`, even though the routine also handles `exclude_from_sim`, legacy `start/end`, and `margins`.
 - In table-cell textbox parsing, keep KiCad's literal default `Expecting(...)` text: `at, size, stroke, fill, effects, span or uuid`, even though the routine also handles `exclude_from_sim`, legacy `start/end`, and `margins`.

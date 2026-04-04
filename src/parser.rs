@@ -381,7 +381,7 @@ impl KiCadSchematicParser {
                 | "class_label" | "netclass_flag" | "text" => {
                     parsed_item = Some(self.parse_sch_text(effective_head)?)
                 }
-                "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_text_box()?)),
+                "text_box" => parsed_item = Some(SchItem::TextBox(self.parse_sch_text_box()?)),
                 "table" => parsed_item = Some(SchItem::Table(self.parse_table()?)),
                 "image" => parsed_item = Some(SchItem::Image(self.parse_image()?)),
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_arc_shape()?)),
@@ -2215,11 +2215,11 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn parse_text_box(&mut self) -> Result<TextBox, Error> {
+    fn parse_sch_text_box(&mut self) -> Result<TextBox, Error> {
         self.parse_sch_text_box_content(false)
     }
 
-    fn parse_table_cell(&mut self) -> Result<TextBox, Error> {
+    fn parse_sch_table_cell(&mut self) -> Result<TextBox, Error> {
         self.parse_sch_text_box_content(true)
     }
 
@@ -2392,7 +2392,7 @@ impl KiCadSchematicParser {
                         if self.need_unquoted_symbol_atom("table_cell")? != "table_cell" {
                             return Err(self.expecting("table_cell"));
                         }
-                        let cell = self.parse_table_cell()?;
+                        let cell = self.parse_sch_table_cell()?;
                         self.need_right()?;
                         cells.push(cell);
                     }
