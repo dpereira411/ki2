@@ -2380,6 +2380,71 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
+fn rejects_quoted_text_box_table_and_image_keyword_heads() {
+    let quoted_text_box_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-text-box-head")
+  (text_box "body" ("size" 3 4))
+)"#;
+    let quoted_text_box_head_path = temp_schematic("quoted_text_box_head", quoted_text_box_head);
+    let err = parse_schematic_file(Path::new(&quoted_text_box_head_path))
+        .expect_err("must reject quoted schematic text_box head");
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, stroke, fill, effects or uuid")
+    );
+
+    let quoted_table_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-table-head")
+  (table
+    ("column_count" 1)
+    (cells (table_cell "c" (at 0 0 0) (size 5 5))))
+)"#;
+    let quoted_table_head_path = temp_schematic("quoted_table_head", quoted_table_head);
+    let err = parse_schematic_file(Path::new(&quoted_table_head_path))
+        .expect_err("must reject quoted table head");
+    assert!(err.to_string().contains(
+        "expecting columns, col_widths, row_heights, border, separators, uuid, header or cells"
+    ));
+
+    let quoted_table_cell_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-table-cell-head")
+  (table
+    (column_count 1)
+    (cells ("table_cell" "c" (at 0 0 0) (size 5 5))))
+)"#;
+    let quoted_table_cell_head_path =
+        temp_schematic("quoted_table_cell_head", quoted_table_cell_head);
+    let err = parse_schematic_file(Path::new(&quoted_table_cell_head_path))
+        .expect_err("must reject quoted table_cell head");
+    assert!(err.to_string().contains("expecting table_cell"));
+
+    let quoted_image_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-image-head")
+  (image ("scale" 2.0) (data "AA=="))
+)"#;
+    let quoted_image_head_path = temp_schematic("quoted_image_head", quoted_image_head);
+    let err = parse_schematic_file(Path::new(&quoted_image_head_path))
+        .expect_err("must reject quoted image head");
+    assert!(
+        err.to_string()
+            .contains("expecting at, scale, uuid or data")
+    );
+
+    let _ = fs::remove_file(quoted_text_box_head_path);
+    let _ = fs::remove_file(quoted_table_head_path);
+    let _ = fs::remove_file(quoted_table_cell_head_path);
+    let _ = fs::remove_file(quoted_image_head_path);
+}
+
+#[test]
 fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
     let quoted_power_scope = r#"(kicad_sch
   (version 20260306)

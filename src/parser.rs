@@ -1735,7 +1735,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, uuid or effects")?;
+            let head = self.need_atom()?;
             match head.as_str() {
                 "pts" => {
                     self.need_left()?;
@@ -1981,7 +1981,11 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, uuid or effects")?;
+            let head = self.need_unquoted_symbol_atom(if table_cell {
+                "at, size, stroke, fill, effects, span or uuid"
+            } else {
+                "at, size, stroke, fill, effects or uuid"
+            })?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -2095,7 +2099,9 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "columns, col_widths, row_heights, border, separators, uuid, header or cells",
+            )?;
             match head.as_str() {
                 "column_count" => {
                     column_count = Some(self.parse_i32_atom("column count")?);
@@ -2112,7 +2118,7 @@ impl KiCadSchematicParser {
                 "cells" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_atom()? != "table_cell" {
+                        if self.need_unquoted_symbol_atom("table_cell")? != "table_cell" {
                             return Err(self.expecting("table_cell"));
                         }
                         let cell = self.parse_text_box_content(true)?;
@@ -2124,7 +2130,10 @@ impl KiCadSchematicParser {
                 "border" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom("external, header or stroke")?
+                            .as_str()
+                        {
                             "external" => {
                                 border_external = Some(self.parse_bool_atom("external")?);
                                 self.need_right()?;
@@ -2144,7 +2153,10 @@ impl KiCadSchematicParser {
                 "separators" => {
                     while !self.at_right() {
                         self.need_left()?;
-                        match self.need_atom()?.as_str() {
+                        match self
+                            .need_unquoted_symbol_atom("rows, cols, or stroke")?
+                            .as_str()
+                        {
                             "rows" => {
                                 separators_rows = Some(self.parse_bool_atom("rows")?);
                                 self.need_right()?;
@@ -2197,7 +2209,7 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, scale, uuid or data")?;
             match head.as_str() {
                 "at" => {
                     at = Some(self.parse_xy2("image at")?);
