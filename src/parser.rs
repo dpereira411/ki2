@@ -425,7 +425,22 @@ impl KiCadSchematicParser {
     fn parse_embedded_files(&mut self) -> Result<(), Error> {
         self.require_version(VERSION_EMBEDDED_FILES, "embedded_files")?;
         let block_depth = self.current_nesting_depth();
-        match self.parse_embedded_files_block() {
+        match (|| -> Result<Vec<EmbeddedFile>, Error> {
+            let mut files = Vec::new();
+
+            while !self.at_right() {
+                self.need_left()?;
+                let head = self.need_unquoted_symbol_atom("file")?;
+                if head != "file" {
+                    return Err(self.expecting("file"));
+                }
+                let file = self.parse_embedded_file_body()?;
+                self.need_right()?;
+                files.push(file);
+            }
+
+            Ok(files)
+        })() {
             Ok(files) => self.screen.embedded_files.extend(files),
             Err(err) => {
                 self.screen.parse_warnings.push(err.to_string());
@@ -433,23 +448,6 @@ impl KiCadSchematicParser {
             }
         }
         Ok(())
-    }
-
-    fn parse_embedded_files_block(&mut self) -> Result<Vec<EmbeddedFile>, Error> {
-        let mut files = Vec::new();
-
-        while !self.at_right() {
-            self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("file")?;
-            if head != "file" {
-                return Err(self.expecting("file"));
-            }
-            let file = self.parse_embedded_file_body()?;
-            self.need_right()?;
-            files.push(file);
-        }
-
-        Ok(files)
     }
 
     fn parse_embedded_file_body(&mut self) -> Result<EmbeddedFile, Error> {
@@ -746,7 +744,22 @@ impl KiCadSchematicParser {
                 }
                 "embedded_files" => {
                     let block_depth = self.current_nesting_depth();
-                    match self.parse_embedded_files_block() {
+                    match (|| -> Result<Vec<EmbeddedFile>, Error> {
+                        let mut files = Vec::new();
+
+                        while !self.at_right() {
+                            self.need_left()?;
+                            let head = self.need_unquoted_symbol_atom("file")?;
+                            if head != "file" {
+                                return Err(self.expecting("file"));
+                            }
+                            let file = self.parse_embedded_file_body()?;
+                            self.need_right()?;
+                            files.push(file);
+                        }
+
+                        Ok(files)
+                    })() {
                         Ok(files) => embedded_files = files,
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
