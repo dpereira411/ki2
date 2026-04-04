@@ -361,7 +361,7 @@ impl KiCadSchematicParser {
                 "wire" => parsed_item = Some(SchItem::Wire(self.parse_sch_line(LineKind::Wire)?)),
                 "bus" => parsed_item = Some(SchItem::Bus(self.parse_sch_line(LineKind::Bus)?)),
                 "polyline" => {
-                    let shape = self.parse_polyline_shape()?;
+                    let shape = self.parse_sch_polyline()?;
                     if shape.points.len() < 2 {
                         return Err(self.error_here("Schematic polyline has too few points"));
                     }
@@ -2545,7 +2545,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_polyline_shape(&mut self) -> Result<Shape, Error> {
+    fn parse_sch_polyline(&mut self) -> Result<Shape, Error> {
         let mut points = Vec::new();
         let mut has_stroke = false;
         let mut has_fill = false;
@@ -2874,7 +2874,7 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "polyline" => {
-                    let polyline = self.parse_polyline_shape()?;
+                    let polyline = self.parse_sch_polyline()?;
                     shape.points = polyline.points;
                     shape.has_stroke = polyline.has_stroke;
                     shape.has_fill = polyline.has_fill;
