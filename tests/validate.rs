@@ -505,6 +505,53 @@ fn parser_resets_sheet_fields_autoplaced_before_branch_walk() {
 }
 
 #[test]
+fn text_box_and_table_cell_preserve_hidden_effects_state() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-hidden-textboxes")
+  (text_box "hidden box" (at 0 0 0) (size 5 5) (effects (hide)))
+  (table
+    (column_count 1)
+    (column_widths 5)
+    (row_heights 5)
+    (cells
+      (table_cell "hidden cell" (at 0 0 0) (size 5 5) (effects (hide)))))
+)"#;
+    let path = temp_schematic("hidden_text_box_and_table_cell", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let text_box = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::TextBox(text_box) => Some(text_box),
+            _ => None,
+        })
+        .expect("text box");
+    assert!(!text_box.visible);
+    assert!(text_box.has_effects);
+    assert!(text_box.effects.as_ref().expect("text box effects").hidden);
+
+    let table = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Table(table) => Some(table),
+            _ => None,
+        })
+        .expect("table");
+    let cell = table.first_cell().expect("table cell");
+    assert!(!cell.visible);
+    assert!(cell.has_effects);
+    assert!(cell.effects.as_ref().expect("table cell effects").hidden);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sorts_loaded_sheet_pages_numerically() {
     let dir = env::temp_dir().join(format!(
         "ki2_sheet_page_sort_{}",

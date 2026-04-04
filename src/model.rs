@@ -499,6 +499,7 @@ pub struct TextBox {
     pub angle: f64,
     pub end: [f64; 2],
     pub excluded_from_sim: bool,
+    pub visible: bool,
     pub has_effects: bool,
     pub effects: Option<TextEffects>,
     pub stroke: Option<Stroke>,
@@ -516,6 +517,7 @@ impl TextBox {
             angle: 0.0,
             end: [0.0, 0.0],
             excluded_from_sim: false,
+            visible: true,
             has_effects: false,
             effects: None,
             stroke: None,
@@ -534,6 +536,7 @@ pub struct TableCell {
     pub angle: f64,
     pub end: [f64; 2],
     pub excluded_from_sim: bool,
+    pub visible: bool,
     pub has_effects: bool,
     pub effects: Option<TextEffects>,
     pub stroke: Option<Stroke>,
@@ -551,6 +554,7 @@ impl TableCell {
             angle: 0.0,
             end: [0.0, 0.0],
             excluded_from_sim: false,
+            visible: true,
             has_effects: false,
             effects: None,
             stroke: None,
@@ -916,7 +920,7 @@ impl Sheet {
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldAutoplacement, LibSymbol, PropertyKind, Sheet, Symbol};
+    use super::{FieldAutoplacement, LibSymbol, PropertyKind, Sheet, Symbol, TableCell, TextBox};
 
     #[test]
     fn placed_symbols_start_with_mandatory_fields() {
@@ -952,6 +956,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![PropertyKind::SheetName, PropertyKind::SheetFile]
         );
+    }
+
+    #[test]
+    fn text_boxes_start_visible() {
+        assert!(TextBox::new().visible);
+        assert!(TableCell::new().visible);
     }
 
     #[test]

@@ -2673,7 +2673,6 @@ impl KiCadSchematicParser {
                     }
                 }
                 "effects" => {
-                    let mut visible = true;
                     let parsed_font_size;
                     match &mut owner {
                         ParsedTextBoxOwner::TextBox(text_box) => {
@@ -2681,7 +2680,7 @@ impl KiCadSchematicParser {
                                 ParsedEdaTextOwner::detached(
                                     Some(&mut text_box.text),
                                     &mut text_box.effects,
-                                    &mut visible,
+                                    &mut text_box.visible,
                                 ),
                                 false,
                                 true,
@@ -2697,7 +2696,7 @@ impl KiCadSchematicParser {
                                 ParsedEdaTextOwner::detached(
                                     Some(&mut text_box.text),
                                     &mut text_box.effects,
-                                    &mut visible,
+                                    &mut text_box.visible,
                                 ),
                                 false,
                                 true,
