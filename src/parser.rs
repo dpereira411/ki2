@@ -283,11 +283,18 @@ impl KiCadSchematicParser {
                 "generator_version" => self.parse_generator_version()?,
                 "uuid" => self.parse_uuid()?,
                 "paper" => {
-                    self.parse_paper()?;
+                    self.screen.paper = Some(self.parse_page_info()?);
                     section_consumed_right = true;
                 }
                 "page" => {
-                    self.parse_page_sniff()?;
+                    let page = self
+                        .need_symbol_or_number_atom("page number")
+                        .map_err(|_| self.error_here("missing page number"))?;
+                    let sheet = self
+                        .need_symbol_or_number_atom("page sheet")
+                        .map_err(|_| self.error_here("missing page sheet"))?;
+                    self.screen.page = Some(Page { page, sheet });
+                    self.need_right()?;
                     section_consumed_right = true;
                 }
                 "title_block" => self.parse_title_block()?,
@@ -362,23 +369,6 @@ impl KiCadSchematicParser {
         let uuid = self.need_symbol_atom("uuid")?;
         self.screen.uuid = Some(uuid.clone());
         self.root_uuid = Some(uuid);
-        Ok(())
-    }
-
-    fn parse_paper(&mut self) -> Result<(), Error> {
-        self.screen.paper = Some(self.parse_page_info()?);
-        Ok(())
-    }
-
-    fn parse_page_sniff(&mut self) -> Result<(), Error> {
-        let page = self
-            .need_symbol_or_number_atom("page number")
-            .map_err(|_| self.error_here("missing page number"))?;
-        let sheet = self
-            .need_symbol_or_number_atom("page sheet")
-            .map_err(|_| self.error_here("missing page sheet"))?;
-        self.screen.page = Some(Page { page, sheet });
-        self.need_right()?;
         Ok(())
     }
 
