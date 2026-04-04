@@ -291,7 +291,12 @@ impl KiCadSchematicParser {
                     }
                 }
                 "generator_version" => {
-                    self.require_version(VERSION_GENERATOR_VERSION, "generator_version")?;
+                    let version = self.require_known_version()?;
+                    if version < VERSION_GENERATOR_VERSION {
+                        return Err(self.error_here(format!(
+                            "generator_version requires schematic version {VERSION_GENERATOR_VERSION} or newer"
+                        )));
+                    }
                     self.generator_version = Some(
                         self.need_atom()
                             .map_err(|_| self.error_here("missing generator_version"))?,
@@ -322,7 +327,12 @@ impl KiCadSchematicParser {
                     self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                 }
                 "embedded_files" => {
-                    self.require_version(VERSION_EMBEDDED_FILES, "embedded_files")?;
+                    let version = self.require_known_version()?;
+                    if version < VERSION_EMBEDDED_FILES {
+                        return Err(self.error_here(format!(
+                            "embedded_files requires schematic version {VERSION_EMBEDDED_FILES} or newer"
+                        )));
+                    }
                     let block_depth = self.current_nesting_depth();
                     match (|| -> Result<Vec<EmbeddedFile>, Error> {
                         let mut files = Vec::new();
@@ -2405,7 +2415,12 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_table(&mut self) -> Result<Table, Error> {
-        self.require_version(VERSION_TABLES, "table")?;
+        let version = self.require_known_version()?;
+        if version < VERSION_TABLES {
+            return Err(self.error_here(format!(
+                "table requires schematic version {VERSION_TABLES} or newer"
+            )));
+        }
         let mut column_count = None;
         let mut column_widths = Vec::new();
         let mut row_heights = Vec::new();
@@ -2893,7 +2908,12 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_rule_area(&mut self) -> Result<Shape, Error> {
-        self.require_version(VERSION_RULE_AREAS, "rule_area")?;
+        let version = self.require_known_version()?;
+        if version < VERSION_RULE_AREAS {
+            return Err(self.error_here(format!(
+                "rule_area requires schematic version {VERSION_RULE_AREAS} or newer"
+            )));
+        }
         let mut shape = Shape {
             kind: ShapeKind::RuleArea,
             points: Vec::new(),
@@ -4607,16 +4627,6 @@ impl KiCadSchematicParser {
     fn require_known_version(&self) -> Result<i32, Error> {
         self.version
             .ok_or_else(|| self.error_here("version must appear before this section"))
-    }
-
-    fn require_version(&self, minimum: i32, section: &str) -> Result<(), Error> {
-        let version = self.require_known_version()?;
-        if version < minimum {
-            return Err(self.error_here(format!(
-                "{section} requires schematic version {minimum} or newer"
-            )));
-        }
-        Ok(())
     }
 
     fn need_left(&mut self) -> Result<(), Error> {
