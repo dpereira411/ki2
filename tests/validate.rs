@@ -3697,8 +3697,8 @@ fn converts_legacy_overbar_text_and_labels() {
   (generator "eeschema")
   (uuid "root-uuid")
   (paper "A4")
-  (text "~RST~" (at 1 2 180))
-  (global_label "~BUS~" (shape input) (at 5 6 180))
+  (text "~RST~" (at 1 2 180) (effects (font (size 1 1))))
+  (global_label "~BUS~" (shape input) (at 5 6 180) (effects (font (size 1 1))))
 )"#;
     let path = temp_schematic("legacy_overbar_text", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");

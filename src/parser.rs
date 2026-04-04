@@ -1322,9 +1322,6 @@ impl KiCadSchematicParser {
         let mut text = self
             .need_symbol_atom("text string")
             .map_err(|_| self.error_here("Invalid text string"))?;
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
-            text = self.convert_old_overbar_notation(text);
-        }
         let mut at = None;
         let mut angle = None;
         let mut visible = true;
@@ -2139,12 +2136,9 @@ impl KiCadSchematicParser {
             _ => return Err(self.error_here(format!("invalid schematic text kind `{kind}`"))),
         };
 
-        let mut text = self
+        let text = self
             .need_symbol_atom("text value")
             .map_err(|_| self.error_here("Invalid text string"))?;
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION {
-            text = self.convert_old_overbar_notation(text);
-        }
 
         match target {
             SchTextTarget::Text => {
