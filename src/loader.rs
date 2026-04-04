@@ -361,6 +361,10 @@ impl SchematicLoader {
             }
         }
 
+        if all_sheet_page_numbers_empty(sheet_paths) {
+            set_initial_page_numbers(sheet_paths);
+        }
+
         sort_loaded_sheet_paths(sheet_paths);
     }
 
@@ -746,5 +750,29 @@ fn compare_page_numbers(a: &str, b: &str) -> std::cmp::Ordering {
                 }
             }
         }
+    }
+}
+
+fn all_sheet_page_numbers_empty(sheet_paths: &[LoadedSheetPath]) -> bool {
+    sheet_paths
+        .iter()
+        .filter(|path| !path.instance_path.is_empty())
+        .all(|path| {
+            path.page
+                .as_deref()
+                .is_none_or(|page| page.trim().is_empty())
+        })
+}
+
+fn set_initial_page_numbers(sheet_paths: &mut [LoadedSheetPath]) {
+    let mut page_number = 1;
+
+    for sheet_path in sheet_paths.iter_mut() {
+        if sheet_path.instance_path.is_empty() {
+            continue;
+        }
+
+        sheet_path.page = Some(page_number.to_string());
+        page_number += 1;
     }
 }

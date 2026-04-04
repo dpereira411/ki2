@@ -470,6 +470,58 @@ fn sorts_loaded_sheet_pages_numerically() {
 }
 
 #[test]
+fn initializes_sheet_pages_when_all_sheet_instance_pages_are_missing() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_sheet_page_init_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let a_path = dir.join("a.kicad_sch");
+    let b_path = dir.join("b.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "child-root")
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-u")
+  (sheet
+    (uuid "sheet-a")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "a.kicad_sch"))
+  (sheet
+    (uuid "sheet-b")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "b.kicad_sch"))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&a_path, child_src).expect("write child a");
+    fs::write(&b_path, child_src).expect("write child b");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+
+    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
+    assert_eq!(loaded.sheet_paths[1].instance_path, "/root-u/sheet-b");
+    assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("2"));
+    assert_eq!(loaded.sheet_paths[2].instance_path, "");
+    assert_eq!(loaded.sheet_paths[2].page, None);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(a_path);
+    let _ = fs::remove_file(b_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
     let dir = env::temp_dir().join(format!(
         "ki2_sheet_path_virtual_sort_{}",
