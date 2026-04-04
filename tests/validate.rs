@@ -2101,6 +2101,7 @@ fn parses_property_metadata_semantics() {
         })
         .expect("property");
 
+    assert_eq!(property.id, Some(0));
     assert!(property.is_private);
     assert_eq!(property.at, Some([11.0, 22.0]));
     assert_eq!(property.angle, Some(90.0));
@@ -5408,6 +5409,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
   (lib_symbols
     (symbol "Device:R"
       (property private "UserField" "R1"
+        (id 7)
         (show_name)
         (do_not_autoplace)))))
 "#;
@@ -5419,6 +5421,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
         .iter()
         .find(|property| property.key == "UserField")
         .expect("user field");
+    assert_eq!(property.id, Some(7));
     assert!(property.is_private);
     assert!(property.show_name);
     assert!(!property.can_autoplace);

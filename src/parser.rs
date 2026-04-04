@@ -1795,6 +1795,7 @@ impl KiCadSchematicParser {
             _ => key,
         };
         let mut property = Property {
+            id: None,
             key,
             value,
             kind,
@@ -1815,7 +1816,7 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "id" => {
-                    let _ = self.parse_i32_atom("field ID")?;
+                    property.id = Some(self.parse_i32_atom("field ID")?);
                     self.need_right()?;
                 }
                 "at" => {
@@ -2279,6 +2280,7 @@ impl KiCadSchematicParser {
                                 label.iref_at = Some(self.parse_xy2("iref")?);
                                 self.need_right()?;
                                 let property = Property {
+                                    id: None,
                                     key: "Intersheet References".to_string(),
                                     value: String::new(),
                                     kind: PropertyKind::GlobalLabelIntersheetRefs,
@@ -3236,6 +3238,7 @@ impl KiCadSchematicParser {
                                             }
                                         };
                                         let property = Property {
+                                            id: None,
                                             key: "Value".to_string(),
                                             value: parsed.clone(),
                                             kind: PropertyKind::SymbolValue,
@@ -3275,6 +3278,7 @@ impl KiCadSchematicParser {
                                             }
                                         };
                                         let property = Property {
+                                            id: None,
                                             key: "Footprint".to_string(),
                                             value: parsed.clone(),
                                             kind: PropertyKind::SymbolFootprint,
@@ -3474,6 +3478,7 @@ impl KiCadSchematicParser {
                                     }
                                 };
                                 let property = Property {
+                                    id: None,
                                     key: "Value".to_string(),
                                     value: parsed.clone(),
                                     kind: PropertyKind::SymbolValue,
@@ -3513,6 +3518,7 @@ impl KiCadSchematicParser {
                                     }
                                 };
                                 let property = Property {
+                                    id: None,
                                     key: "Footprint".to_string(),
                                     value: parsed.clone(),
                                     kind: PropertyKind::SymbolFootprint,
@@ -4165,6 +4171,7 @@ impl KiCadSchematicParser {
             _ => key,
         };
         let mut property = Property {
+            id: None,
             key,
             value,
             kind,
@@ -4185,7 +4192,7 @@ impl KiCadSchematicParser {
             )?;
             match head.as_str() {
                 "id" => {
-                    let _ = self.parse_i32_atom("field ID")?;
+                    property.id = Some(self.parse_i32_atom("field ID")?);
                     self.need_right()?;
                 }
                 "at" => {

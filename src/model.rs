@@ -484,6 +484,7 @@ pub struct SymbolPin {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Property {
+    pub id: Option<i32>,
     pub key: String,
     pub value: String,
     pub kind: PropertyKind,
