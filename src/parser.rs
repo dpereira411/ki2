@@ -229,7 +229,14 @@ impl KiCadSchematicParser {
         self.need_right()?;
         self.expect_eof()?;
 
-        self.check_version(version, Some(self.current_span()))?;
+        if version > SEXPR_SCHEMATIC_FILE_VERSION {
+            return Err(self.validation(
+                Some(self.current_span()),
+                format!(
+                    "future schematic version `{version}` is newer than supported `{SEXPR_SCHEMATIC_FILE_VERSION}`"
+                ),
+            ));
+        }
         let generator = self
             .generator
             .clone()
@@ -4608,18 +4615,6 @@ impl KiCadSchematicParser {
             return Err(self.error_here(format!(
                 "{section} requires schematic version {minimum} or newer"
             )));
-        }
-        Ok(())
-    }
-
-    fn check_version(&self, version: i32, span: Option<Span>) -> Result<(), Error> {
-        if version > SEXPR_SCHEMATIC_FILE_VERSION {
-            return Err(self.validation(
-                span,
-                format!(
-                    "future schematic version `{version}` is newer than supported `{SEXPR_SCHEMATIC_FILE_VERSION}`"
-                ),
-            ));
         }
         Ok(())
     }
