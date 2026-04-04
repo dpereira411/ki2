@@ -3593,9 +3593,6 @@ impl KiCadSchematicParser {
                             property.id = PropertyKind::SheetFile.default_field_id();
                         }
                     }
-                    if property.kind == PropertyKind::SheetFile {
-                        property.value = property.value.replace('\\', "/");
-                    }
                     properties.push(property);
                     self.need_right()?;
                 }
@@ -3775,7 +3772,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        sheet.properties = properties;
+        sheet.set_properties(properties);
 
         if sheet.name().is_none() {
             return Err(self.error_here("Missing sheet name property"));

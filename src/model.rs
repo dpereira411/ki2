@@ -577,6 +577,16 @@ impl Sheet {
         self.instances = instances;
     }
 
+    pub fn set_properties(&mut self, mut properties: Vec<Property>) {
+        for property in &mut properties {
+            if property.kind == PropertyKind::SheetFile {
+                property.value = property.value.replace('\\', "/");
+            }
+        }
+
+        self.properties = properties;
+    }
+
     pub fn name(&self) -> Option<&str> {
         self.properties
             .iter()

@@ -352,6 +352,7 @@ Strict mode is the default for parser-parity work in this repository.
 - Keep owning-object field mutation on the model too. Symbol, sheet, and global-label field updates should go through object-owned mutation paths instead of repeated parser/loader-side vector surgery.
 - In `parseSchematicSymbol()` and loader-side symbol refresh, `Reference` / `Value` / `Footprint` updates should use the symbol’s owning field-mutation path so existing field metadata survives and canonical field identity stays local to the symbol object.
 - In `parseSheet()`, `Sheetname` / `Sheetfile` insertion should use the sheet’s owning field-mutation path too. That path should also normalize `Sheetfile` text to forward slashes like upstream `SCH_SHEET::SetFields()`.
+- In `parseSheet()`, keep that ownership on the final assignment path: accumulate parsed sheet properties locally, then hand the whole field list to the sheet’s owning setter for canonical `Sheetfile` normalization. Do not open-code `Sheetfile` slash normalization in the parser branch after the owning sheet path exists.
 - In `parseSchText()` and loader-side intersheet-ref recompute, global-label `Intersheet References` mutation should use the label’s owning mandatory-field path rather than open-coding mandatory-field construction/replacement at each call site.
 
 ## Expected Workflow
