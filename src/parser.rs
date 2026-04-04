@@ -1760,13 +1760,41 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let key = self
+        let name = self
             .need_symbol_atom("property name")
             .map_err(|_| self.error_here("Invalid property name"))?;
-        if key.is_empty() {
+        if name.is_empty() {
             return Err(self.error_here("Empty property name"));
         }
-        let value = self
+        let field_id = match name.to_ascii_lowercase().as_str() {
+            "reference" => PropertyKind::SymbolReference,
+            "value" => PropertyKind::SymbolValue,
+            "footprint" => PropertyKind::SymbolFootprint,
+            "datasheet" => PropertyKind::SymbolDatasheet,
+            _ => PropertyKind::User,
+        };
+        let mut property = Property {
+            id: field_id.default_field_id(),
+            key: match field_id {
+                PropertyKind::SymbolReference => "Reference".to_string(),
+                PropertyKind::SymbolValue => "Value".to_string(),
+                PropertyKind::SymbolFootprint => "Footprint".to_string(),
+                PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
+                _ => name.clone(),
+            },
+            value: String::new(),
+            kind: field_id,
+            is_private: matches!(field_id, PropertyKind::User) && is_private,
+            at: None,
+            angle: None,
+            visible: true,
+            show_name: true,
+            can_autoplace: true,
+            has_effects: false,
+            effects: None,
+        };
+
+        property.value = self
             .need_symbol_atom("property value")
             .map_err(|_| self.error_here("Invalid property value"))
             .map(|raw| {
@@ -1779,35 +1807,6 @@ impl KiCadSchematicParser {
                     raw
                 }
             })?;
-        let key_lower = key.to_ascii_lowercase();
-        let kind = match key_lower.as_str() {
-            "reference" => PropertyKind::SymbolReference,
-            "value" => PropertyKind::SymbolValue,
-            "footprint" => PropertyKind::SymbolFootprint,
-            "datasheet" => PropertyKind::SymbolDatasheet,
-            _ => PropertyKind::User,
-        };
-        let key = match kind {
-            PropertyKind::SymbolReference => "Reference".to_string(),
-            PropertyKind::SymbolValue => "Value".to_string(),
-            PropertyKind::SymbolFootprint => "Footprint".to_string(),
-            PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
-            _ => key,
-        };
-        let mut property = Property {
-            id: kind.default_field_id(),
-            key,
-            value,
-            kind,
-            is_private: matches!(kind, PropertyKind::User) && is_private,
-            at: None,
-            angle: None,
-            visible: true,
-            show_name: true,
-            can_autoplace: true,
-            has_effects: false,
-            effects: None,
-        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -4136,60 +4135,55 @@ impl KiCadSchematicParser {
 
     fn parse_sch_field(&mut self, parent: FieldParent) -> Result<Property, Error> {
         let mut is_private = false;
+
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let key = self
+
+        let name = self
             .need_symbol_atom("property name")
             .map_err(|_| self.error_here("Invalid property name"))?;
-        if key.is_empty() {
+
+        if name.is_empty() {
             return Err(self.error_here("Empty property name"));
         }
-        let mut value = self
-            .need_symbol_atom("property value")
-            .map_err(|_| self.error_here("Invalid property value"))?;
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
-            && value == "~"
-        {
-            value.clear();
-        }
-        let mut key = key;
-        let kind = match parent {
-            FieldParent::Symbol => match key.to_ascii_lowercase().as_str() {
+
+        let field_id = match parent {
+            FieldParent::Symbol => match name.to_ascii_lowercase().as_str() {
                 "reference" => PropertyKind::SymbolReference,
                 "value" => PropertyKind::SymbolValue,
                 "footprint" => PropertyKind::SymbolFootprint,
                 "datasheet" => PropertyKind::SymbolDatasheet,
                 _ => PropertyKind::User,
             },
-            FieldParent::Sheet => match key.to_ascii_lowercase().as_str() {
+            FieldParent::Sheet => match name.to_ascii_lowercase().as_str() {
                 "sheetname" | "sheet name" => PropertyKind::SheetName,
                 "sheetfile" | "sheet file" => PropertyKind::SheetFile,
                 _ => PropertyKind::SheetUser,
             },
-            FieldParent::GlobalLabel => match key.to_ascii_lowercase().as_str() {
+            FieldParent::GlobalLabel => match name.to_ascii_lowercase().as_str() {
                 "intersheet references" => PropertyKind::GlobalLabelIntersheetRefs,
                 _ => PropertyKind::User,
             },
             FieldParent::OtherLabel => PropertyKind::User,
         };
-        key = match kind {
-            PropertyKind::SymbolReference => "Reference".to_string(),
-            PropertyKind::SymbolValue => "Value".to_string(),
-            PropertyKind::SymbolFootprint => "Footprint".to_string(),
-            PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
-            PropertyKind::SheetName => "Sheetname".to_string(),
-            PropertyKind::SheetFile => "Sheetfile".to_string(),
-            PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References".to_string(),
-            _ => key,
-        };
+
         let mut property = Property {
-            id: kind.default_field_id(),
-            key,
-            value,
-            kind,
-            is_private: matches!(kind, PropertyKind::User) && is_private,
+            id: field_id.default_field_id(),
+            key: match field_id {
+                PropertyKind::SymbolReference => "Reference".to_string(),
+                PropertyKind::SymbolValue => "Value".to_string(),
+                PropertyKind::SymbolFootprint => "Footprint".to_string(),
+                PropertyKind::SymbolDatasheet => "Datasheet".to_string(),
+                PropertyKind::SheetName => "Sheetname".to_string(),
+                PropertyKind::SheetFile => "Sheetfile".to_string(),
+                PropertyKind::GlobalLabelIntersheetRefs => "Intersheet References".to_string(),
+                _ => name.clone(),
+            },
+            value: String::new(),
+            kind: field_id,
+            is_private: matches!(field_id, PropertyKind::User) && is_private,
             at: None,
             angle: None,
             visible: true,
@@ -4198,6 +4192,16 @@ impl KiCadSchematicParser {
             has_effects: false,
             effects: None,
         };
+
+        property.value = self
+            .need_symbol_atom("property value")
+            .map_err(|_| self.error_here("Invalid property value"))?;
+
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
+            && property.value == "~"
+        {
+            property.value.clear();
+        }
 
         while !self.at_right() {
             self.need_left()?;
