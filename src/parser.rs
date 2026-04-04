@@ -2527,7 +2527,7 @@ impl KiCadSchematicParser {
                         .decode(&encoded)
                         .map_err(|_| self.error_here("Failed to read image data."))?;
                     if self.require_known_version()? <= VERSION_IMAGE_PPI_SCALE_ADJUSTMENT {
-                        if let Some(ppi) = Self::png_ppi(&decoded) {
+                        if let Some(ppi) = Self::read_png_ppi(&decoded) {
                             scale *= ppi / 300.0;
                         }
                     }
@@ -4448,7 +4448,7 @@ impl KiCadSchematicParser {
         (stroke_width / 2.0) + (text_size_y * 0.75)
     }
 
-    fn png_ppi(data: &[u8]) -> Option<f64> {
+    fn read_png_ppi(data: &[u8]) -> Option<f64> {
         const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
         if data.len() < PNG_SIGNATURE.len() || &data[..8] != PNG_SIGNATURE {

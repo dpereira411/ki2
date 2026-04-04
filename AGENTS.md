@@ -93,6 +93,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - Keep those thin owning entrypoints named and shaped after upstream too: `parseSchTextBox()` and `parseSchTableCell()` should delegate into the shared content routine rather than staying on repo-local wrapper names.
 - In `parseSchTextBoxContent()`, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep KiCad's literal default `Expecting(...)` text: `at, size, stroke, fill, effects or uuid`, even though the routine also handles `exclude_from_sim`, legacy `start/end`, and `margins`.
+- Keep image-scaling helpers named after their upstream role too. Once a helper exists only to read PNG density for KiCad’s legacy image-scale behavior, it should not stay on a vague repo-local name.
 - In table-cell textbox parsing, keep KiCad's literal default `Expecting(...)` text: `at, size, stroke, fill, effects, span or uuid`, even though the routine also handles `exclude_from_sim`, legacy `start/end`, and `margins`.
 - In `parseSchTextBoxContent()`, do not add a repo-local post-loop requirement that `(at ...)` or legacy `(start ...)` must be present. Upstream leaves the text box at its default position if neither token appears, while still requiring `size` unless `end` was provided.
 - Keep the legacy textbox-margin helper named after its upstream role too. Once it only exists to mirror KiCad’s legacy text-box margin calculation, it should not stay on a repo-local helper name.
