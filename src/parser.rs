@@ -3749,8 +3749,21 @@ impl KiCadSchematicParser {
                                 self.need_left()?;
                                 match self.need_unquoted_symbol_atom("page or variant")?.as_str() {
                                     "page" => {
-                                        let raw_page = self.need_symbol_atom("page")?;
-                                        page = Some(self.normalize_instance_page(raw_page));
+                                        let mut parsed_page = self.need_symbol_atom("page")?;
+
+                                        if parsed_page.is_empty() {
+                                            parsed_page = "#".to_string();
+                                        } else {
+                                            parsed_page.retain(|ch| {
+                                                !matches!(ch, '\r' | '\n' | '\t' | ' ')
+                                            });
+
+                                            if parsed_page.is_empty() {
+                                                parsed_page = "#".to_string();
+                                            }
+                                        }
+
+                                        page = Some(parsed_page);
                                         self.need_right()?;
                                     }
                                     "variant" => {
@@ -4007,8 +4020,19 @@ impl KiCadSchematicParser {
                 let child = self.need_unquoted_symbol_atom("path or page")?;
                 match child.as_str() {
                     "page" => {
-                        let raw_page = self.need_symbol_atom("page")?;
-                        page = Some(self.normalize_instance_page(raw_page));
+                        let mut parsed_page = self.need_symbol_atom("page")?;
+
+                        if parsed_page.is_empty() {
+                            parsed_page = "#".to_string();
+                        } else {
+                            parsed_page.retain(|ch| !matches!(ch, '\r' | '\n' | '\t' | ' '));
+
+                            if parsed_page.is_empty() {
+                                parsed_page = "#".to_string();
+                            }
+                        }
+
+                        page = Some(parsed_page);
                     }
                     _ => return Err(self.expecting("path or page")),
                 }
@@ -4933,18 +4957,6 @@ impl KiCadSchematicParser {
 
     fn error_here(&self, message: impl Into<String>) -> Error {
         self.validation(Some(self.current_span()), message)
-    }
-
-    fn normalize_instance_page(&self, mut page: String) -> String {
-        if page.is_empty() {
-            return "#".to_string();
-        }
-        page.retain(|ch| !matches!(ch, '\r' | '\n' | '\t' | ' '));
-        if page.is_empty() {
-            "#".to_string()
-        } else {
-            page
-        }
     }
 
     fn find_standard_page_info(kind: &str) -> Option<StandardPageInfo> {

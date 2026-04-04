@@ -15,6 +15,21 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 7. Treat current parser code as transitional unless it clearly mirrors an upstream routine.
 8. Parser compatibility is judged by control flow, accepted grammar, error cases, version gates, and object construction timing, not only by whether files parse.
 
+## Strict Mode
+
+Strict mode is the default for parser-parity work in this repository.
+
+1. Do not stop while meaningful parser/loader parity work remains in `LOCAL_PARSER_PARITY_NOTES.md`.
+2. Stay in execution mode, not reporting mode. Do not treat summaries, green tests, or partial alignment as completion.
+3. Prefer whole functions or tightly related routine clusters over micro-patches.
+4. Do not spend a work unit on helper renames, isolated expect-string tweaks, or tiny local cleanups unless they are required to complete a larger upstream routine port already in progress.
+5. Each work unit should remove a meaningful structural/code-flow mismatch with upstream.
+6. If a routine is being ported, continue until the owning control flow is substantially closer to upstream, not just one branch cleaner.
+7. If the Rust model blocks parity, expand the model instead of preserving a repo-local shortcut.
+8. Remove duplicated local side state whenever upstream does not keep it.
+9. Do not treat passing tests as completion; tests only validate the larger port.
+10. Commits must correspond to substantial parser/loader parity work, not cosmetic cleanup.
+
 ## Specific Learnings
 
 - `bus_alias` must follow the KiCad form: `(<bus_alias> <name> (members ...))`, including old overbar conversion before `20210621`.
