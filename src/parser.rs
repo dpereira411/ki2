@@ -2424,11 +2424,19 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "column_widths" => {
-                    column_widths = self.parse_numeric_atom_list("column width")?;
+                    let mut values = Vec::new();
+                    while !self.at_right() {
+                        values.push(self.parse_f64_atom("column width")?);
+                    }
+                    column_widths = values;
                     self.need_right()?;
                 }
                 "row_heights" => {
-                    row_heights = self.parse_numeric_atom_list("row height")?;
+                    let mut values = Vec::new();
+                    while !self.at_right() {
+                        values.push(self.parse_f64_atom("row height")?);
+                    }
+                    row_heights = values;
                     self.need_right()?;
                 }
                 "cells" => {
@@ -4466,14 +4474,6 @@ impl KiCadSchematicParser {
             self.need_right()?;
         }
         Ok(points)
-    }
-
-    fn parse_numeric_atom_list(&mut self, field: &str) -> Result<Vec<f64>, Error> {
-        let mut out = Vec::new();
-        while !self.at_right() {
-            out.push(self.parse_f64_atom(field.to_string())?);
-        }
-        Ok(out)
     }
 
     fn parse_xy2(&mut self, context: &str) -> Result<[f64; 2], Error> {

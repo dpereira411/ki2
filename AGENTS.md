@@ -84,6 +84,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseSchTextBoxContent()`, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep the branch-head token and fallback `Expecting(...)` text aligned with the full routine body too. This parser branch also owns `exclude_from_sim`, legacy `start/end`, and `margins`, so do not leave those out of the local head/fallback text.
 - In `parseSchTextBoxContent()`, do not add a repo-local post-loop requirement that `(at ...)` or legacy `(start ...)` must be present. Upstream leaves the text box at its default position if neither token appears, while still requiring `size` unless `end` was provided.
+- In `parseSchTable()`, keep `column_widths` and `row_heights` list walks inline in the owning routine once they have shrunk to direct numeric loops. Do not hide those table-specific branches behind a shared `parse_numeric_atom_list()` helper.
 - In `parseImage()`, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseImage()`, base64 `data` chunks should also stay on the symbol-token path and fail as `Expecting( "base64 image data" )` for invalid nested tokens, not through the generic string parser.
 - In `parseImage()`, do not add a repo-local requirement that `(at ...)` must be present. Upstream leaves the bitmap position at its default if no `at` token appears.
