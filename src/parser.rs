@@ -224,7 +224,9 @@ impl KiCadSchematicParser {
 
         self.resolve_groups();
         self.need_right()?;
-        self.expect_eof()?;
+        if !matches!(self.current().kind, TokKind::Eof) {
+            return Err(self.expecting("end of file"));
+        }
 
         if version > SEXPR_SCHEMATIC_FILE_VERSION {
             return Err(self.validation(
@@ -4859,14 +4861,6 @@ impl KiCadSchematicParser {
                 Ok(out)
             }
             _ => Err(self.expecting(expected)),
-        }
-    }
-
-    fn expect_eof(&self) -> Result<(), Error> {
-        if matches!(self.current().kind, TokKind::Eof) {
-            Ok(())
-        } else {
-            Err(self.expecting("end of file"))
         }
     }
 
