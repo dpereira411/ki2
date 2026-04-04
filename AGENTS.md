@@ -69,6 +69,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In that same shared `parseSchText()` path, do not add a repo-local post-loop requirement that `(at ...)` must be present for labels. Upstream leaves the label at its default position and orientation if no `at` token appears.
 - In the shared `parseSchText()` path, legacy `iref` only parses payload for global labels. For other text/label kinds, it should fall straight into the shared close handling so malformed payloads fail at the same point KiCad does.
 - In that same non-global `iref` branch, do not eagerly consume the closing `)` locally. Upstream leaves close handling to the shared outer loop, so malformed non-global `iref` payloads fail later in shared parser flow rather than through a local `NeedRIGHT()` branch.
+- In that same shared `parseSchText()` path, global-label `Intersheet References` accumulation should stay inline in the owning routine for both `iref` and explicit `property` branches, not behind a repo-local `upsert_global_label_property()` helper.
 - In that shared `parseSchText()` path, keep the leading text payload on a strict symbol-token path with its own `Invalid text string` branch before any type-specific body parsing runs.
 - In that same shared `parseSchText()` path, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
 - In `parseSchTextBoxContent()`, keep the text payload on the same strict `Invalid text string` symbol-token path as upstream before any textbox body parsing runs.

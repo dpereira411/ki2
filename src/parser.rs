@@ -1915,22 +1915,27 @@ impl KiCadSchematicParser {
                     if matches!(target, SchTextTarget::Label(LabelKind::Global)) {
                         iref_at = Some(self.parse_xy2("iref")?);
                         self.need_right()?;
-                        Self::upsert_global_label_property(
-                            &mut properties,
-                            Property {
-                                key: "Intersheet References".to_string(),
-                                value: String::new(),
-                                kind: PropertyKind::GlobalLabelIntersheetRefs,
-                                is_private: false,
-                                at: iref_at,
-                                angle: None,
-                                visible: true,
-                                show_name: true,
-                                can_autoplace: true,
-                                has_effects: false,
-                                effects: None,
-                            },
-                        );
+                        let property = Property {
+                            key: "Intersheet References".to_string(),
+                            value: String::new(),
+                            kind: PropertyKind::GlobalLabelIntersheetRefs,
+                            is_private: false,
+                            at: iref_at,
+                            angle: None,
+                            visible: true,
+                            show_name: true,
+                            can_autoplace: true,
+                            has_effects: false,
+                            effects: None,
+                        };
+                        if let Some(existing) = properties
+                            .iter_mut()
+                            .find(|p| p.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                        {
+                            *existing = property;
+                        } else {
+                            properties.push(property);
+                        }
                     }
                 }
                 "uuid" => {
@@ -1943,7 +1948,13 @@ impl KiCadSchematicParser {
                     };
                     if matches!(label_kind, LabelKind::Global) {
                         let property = self.parse_property_body(FieldParent::GlobalLabel)?;
-                        Self::upsert_global_label_property(&mut properties, property);
+                        if let Some(existing) =
+                            properties.iter_mut().find(|p| p.kind == property.kind)
+                        {
+                            *existing = property;
+                        } else {
+                            properties.push(property);
+                        }
                     } else {
                         let property = self.parse_property_body(FieldParent::OtherLabel)?;
                         properties.push(property);
@@ -4713,19 +4724,6 @@ impl KiCadSchematicParser {
         } else {
             properties.push(property);
         }
-    }
-
-    fn upsert_global_label_property(properties: &mut Vec<Property>, property: Property) {
-        if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
-            if let Some(existing) = properties
-                .iter_mut()
-                .find(|p| p.kind == PropertyKind::GlobalLabelIntersheetRefs)
-            {
-                *existing = property;
-                return;
-            }
-        }
-        properties.push(property);
     }
 
     fn parse_label_shape(&mut self) -> Result<LabelShape, Error> {
