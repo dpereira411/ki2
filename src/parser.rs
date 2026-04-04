@@ -460,12 +460,10 @@ impl KiCadSchematicParser {
                     self.parse_bus_alias()?
                 }
                 "symbol" => {
-                    let _ = self.need_unquoted_symbol_atom("symbol")?;
                     let symbol = self.parse_schematic_symbol()?;
                     self.screen.items.push(SchItem::Symbol(symbol));
                 }
                 "sheet" => {
-                    let _ = self.need_unquoted_symbol_atom("sheet")?;
                     let sheet = self.parse_sch_sheet()?;
                     self.screen.items.push(SchItem::Sheet(sheet));
                 }
@@ -3211,6 +3209,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
+        let _ = self.need_unquoted_symbol_atom("symbol")?;
         let mut symbol = Symbol {
             lib_id: String::new(),
             lib_name: None,
@@ -3724,6 +3723,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_sch_sheet(&mut self) -> Result<Sheet, Error> {
+        let _ = self.need_unquoted_symbol_atom("sheet")?;
         let mut sheet = Sheet {
             at: [0.0, 0.0],
             size: [0.0, 0.0],
