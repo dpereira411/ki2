@@ -129,6 +129,11 @@ enum SchTextTarget {
     Label(LabelKind),
 }
 
+enum ParsedSchText {
+    Text(Text),
+    Label(Label),
+}
+
 pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
     let raw = std::fs::read_to_string(path).map_err(|source| Error::Io {
         path: path.to_path_buf(),
@@ -2632,79 +2637,18 @@ impl KiCadSchematicParser {
         let text = self
             .need_symbol_atom("text value")
             .map_err(|_| self.error_here("Invalid text string"))?;
-
-        match target {
-            SchTextTarget::Text => {
-                let mut text = Text {
-                    kind: TextKind::Text,
-                    text,
-                    at: None,
-                    excluded_from_sim: false,
-                    fields_autoplaced: FieldAutoplacement::None,
-                    visible: true,
-                    has_effects: false,
-                    effects: None,
-                    uuid: None,
-                };
-
-                while !self.at_right() {
-                    self.need_left()?;
-                    let head = match &self.current().kind {
-                        TokKind::Atom(value)
-                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
-                        {
-                            value.clone()
-                        }
-                        _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
-                    };
-                    match head.as_str() {
-                        "exclude_from_sim" => {
-                            let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
-                            text.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
-                            self.need_right()?;
-                        }
-                        "at" => {
-                            let _ = self.need_unquoted_symbol_atom("at")?;
-                            let parsed = self.parse_xy3("text at")?;
-                            text.at =
-                                Some([parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])]);
-                            self.need_right()?;
-                        }
-                        "fields_autoplaced" => {
-                            let _ = self.need_unquoted_symbol_atom("fields_autoplaced")?;
-                            if self.parse_maybe_absent_bool(true)? {
-                                text.fields_autoplaced = FieldAutoplacement::Auto;
-                            }
-                            self.need_right()?;
-                        }
-                        "effects" => {
-                            let mut parsed_effects = TextEffects::default();
-                            self.parse_eda_text(
-                                Some(&mut text.text),
-                                &mut parsed_effects,
-                                &mut text.visible,
-                                true,
-                                true,
-                            )?;
-                            text.has_effects = true;
-                            text.effects = Some(parsed_effects);
-                            text.visible = true;
-                        }
-                        "shape" => return Err(self.unexpected("shape")),
-                        "length" => return Err(self.unexpected("length")),
-                        "iref" => {}
-                        "uuid" => {
-                            let _ = self.need_unquoted_symbol_atom("uuid")?;
-                            text.uuid = Some(self.need_symbol_atom("uuid")?);
-                            self.need_right()?;
-                        }
-                        "property" => return Err(self.unexpected("property")),
-                        _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
-                    }
-                }
-
-                Ok(SchItem::Text(text))
-            }
+        let mut item = match target {
+            SchTextTarget::Text => ParsedSchText::Text(Text {
+                kind: TextKind::Text,
+                text,
+                at: None,
+                excluded_from_sim: false,
+                fields_autoplaced: FieldAutoplacement::None,
+                visible: true,
+                has_effects: false,
+                effects: None,
+                uuid: None,
+            }),
             SchTextTarget::Label(kind) => {
                 let mut label = Label {
                     kind,
@@ -2743,140 +2687,190 @@ impl KiCadSchematicParser {
                     });
                 }
 
-                while !self.at_right() {
-                    self.need_left()?;
-                    let head = match &self.current().kind {
-                        TokKind::Atom(value)
-                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
-                        {
-                            value.clone()
+                ParsedSchText::Label(label)
+            }
+        };
+
+        while !self.at_right() {
+            self.need_left()?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
+            };
+            match head.as_str() {
+                "exclude_from_sim" => {
+                    let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
+                    let excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
+                    match &mut item {
+                        ParsedSchText::Text(text) => text.excluded_from_sim = excluded_from_sim,
+                        ParsedSchText::Label(label) => label.excluded_from_sim = excluded_from_sim,
+                    }
+                    self.need_right()?;
+                }
+                "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
+                    let parsed = self.parse_xy3("text at")?;
+                    match &mut item {
+                        ParsedSchText::Text(text) => {
+                            text.at =
+                                Some([parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])]);
                         }
-                        _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
-                    };
-                    match head.as_str() {
-                        "exclude_from_sim" => {
-                            let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
-                            label.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
-                            self.need_right()?;
-                        }
-                        "at" => {
-                            let _ = self.need_unquoted_symbol_atom("at")?;
-                            let parsed = self.parse_xy3("text at")?;
+                        ParsedSchText::Label(label) => {
                             label.at = [parsed[0], parsed[1]];
                             label.angle = Self::normalize_text_angle(parsed[2]);
                             label.spin = Self::get_label_spin_style(label.angle);
-                            self.need_right()?;
                         }
-                        "shape" => {
-                            let _ = self.need_unquoted_symbol_atom("shape")?;
-                            if matches!(label.kind, LabelKind::Local) {
-                                return Err(self.unexpected("shape"));
+                    }
+                    self.need_right()?;
+                }
+                "shape" => {
+                    let _ = self.need_unquoted_symbol_atom("shape")?;
+                    let ParsedSchText::Label(label) = &mut item else {
+                        return Err(self.unexpected("shape"));
+                    };
+                    if matches!(label.kind, LabelKind::Local) {
+                        return Err(self.unexpected("shape"));
+                    }
+                    label.shape = Some(match self.need_unquoted_symbol_atom("shape")?.as_str() {
+                        "input" => LabelShape::Input,
+                        "output" => LabelShape::Output,
+                        "bidirectional" => LabelShape::Bidirectional,
+                        "tri_state" => LabelShape::TriState,
+                        "passive" => LabelShape::Passive,
+                        "dot" => LabelShape::Dot,
+                        "round" => LabelShape::Round,
+                        "diamond" => LabelShape::Diamond,
+                        "rectangle" => LabelShape::Rectangle,
+                        _ => {
+                            return Err(self.expecting(
+                                "input, output, bidirectional, tri_state, passive, dot, round, diamond or rectangle",
+                            ))
+                        }
+                    });
+                    self.need_right()?;
+                }
+                "length" => {
+                    let _ = self.need_unquoted_symbol_atom("length")?;
+                    let ParsedSchText::Label(label) = &mut item else {
+                        return Err(self.unexpected("length"));
+                    };
+                    if !matches!(label.kind, LabelKind::Directive | LabelKind::NetclassFlag) {
+                        return Err(self.unexpected("length"));
+                    }
+                    label.pin_length = Some(self.parse_f64_atom("pin length")?);
+                    self.need_right()?;
+                }
+                "fields_autoplaced" => {
+                    let _ = self.need_unquoted_symbol_atom("fields_autoplaced")?;
+                    if self.parse_maybe_absent_bool(true)? {
+                        match &mut item {
+                            ParsedSchText::Text(text) => {
+                                text.fields_autoplaced = FieldAutoplacement::Auto;
                             }
-                            label.shape = Some(
-                                match self
-                                    .need_unquoted_symbol_atom("shape")?
-                                    .as_str()
-                                {
-                                    "input" => LabelShape::Input,
-                                    "output" => LabelShape::Output,
-                                    "bidirectional" => LabelShape::Bidirectional,
-                                    "tri_state" => LabelShape::TriState,
-                                    "passive" => LabelShape::Passive,
-                                    "dot" => LabelShape::Dot,
-                                    "round" => LabelShape::Round,
-                                    "diamond" => LabelShape::Diamond,
-                                    "rectangle" => LabelShape::Rectangle,
-                                    _ => {
-                                        return Err(self.expecting(
-                                            "input, output, bidirectional, tri_state, passive, dot, round, diamond or rectangle",
-                                        ))
-                                    }
-                                },
-                            );
-                            self.need_right()?;
-                        }
-                        "length" => {
-                            let _ = self.need_unquoted_symbol_atom("length")?;
-                            if !matches!(label.kind, LabelKind::Directive | LabelKind::NetclassFlag)
-                            {
-                                return Err(self.unexpected("length"));
-                            }
-                            label.pin_length = Some(self.parse_f64_atom("pin length")?);
-                            self.need_right()?;
-                        }
-                        "fields_autoplaced" => {
-                            let _ = self.need_unquoted_symbol_atom("fields_autoplaced")?;
-                            if self.parse_maybe_absent_bool(true)? {
+                            ParsedSchText::Label(label) => {
                                 label.fields_autoplaced = FieldAutoplacement::Auto;
                             }
-                            self.need_right()?;
                         }
-                        "effects" => {
-                            let mut parsed_effects = TextEffects::default();
-                            self.parse_eda_text(
-                                Some(&mut label.text),
-                                &mut parsed_effects,
-                                &mut label.visible,
-                                true,
-                                true,
-                            )?;
-                            label.has_effects = true;
-                            label.effects = Some(parsed_effects);
-                        }
-                        "iref" => {
-                            let _ = self.need_unquoted_symbol_atom("iref")?;
-                            if matches!(label.kind, LabelKind::Global) {
-                                label.iref_at = Some(self.parse_xy2("iref")?);
-                                self.need_right()?;
-                                let iref_at = label.iref_at;
-                                let intersheet_refs = label
-                                    .properties
-                                    .iter_mut()
-                                    .find(|property| {
-                                        property.kind == PropertyKind::GlobalLabelIntersheetRefs
-                                    })
-                                    .expect("global labels start with intersheet refs property");
-                                intersheet_refs.at = iref_at;
-                                intersheet_refs.visible = true;
-                            }
-                        }
-                        "uuid" => {
-                            let _ = self.need_unquoted_symbol_atom("uuid")?;
-                            label.uuid = Some(self.need_symbol_atom("uuid")?);
-                            self.need_right()?;
-                        }
-                        "property" => {
-                            let property = if matches!(label.kind, LabelKind::Global) {
-                                self.parse_sch_field(FieldParent::GlobalLabel)?
-                            } else {
-                                self.parse_sch_field(FieldParent::OtherLabel)?
-                            };
-
-                            if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
-                                let existing = label
-                                    .properties
-                                    .iter_mut()
-                                    .find(|existing| {
-                                        existing.kind == PropertyKind::GlobalLabelIntersheetRefs
-                                    })
-                                    .expect("global labels start with intersheet refs property");
-                                *existing = property;
-                            } else {
-                                label.properties.push(property);
-                            }
-                            self.need_right()?;
-                        }
-                        _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
+                    }
+                    self.need_right()?;
+                }
+                "effects" => match &mut item {
+                    ParsedSchText::Text(text) => {
+                        let mut parsed_effects = TextEffects::default();
+                        self.parse_eda_text(
+                            Some(&mut text.text),
+                            &mut parsed_effects,
+                            &mut text.visible,
+                            true,
+                            true,
+                        )?;
+                        text.has_effects = true;
+                        text.effects = Some(parsed_effects);
+                        text.visible = true;
+                    }
+                    ParsedSchText::Label(label) => {
+                        let mut parsed_effects = TextEffects::default();
+                        self.parse_eda_text(
+                            Some(&mut label.text),
+                            &mut parsed_effects,
+                            &mut label.visible,
+                            true,
+                            true,
+                        )?;
+                        label.has_effects = true;
+                        label.effects = Some(parsed_effects);
+                    }
+                },
+                "iref" => {
+                    let _ = self.need_unquoted_symbol_atom("iref")?;
+                    let ParsedSchText::Label(label) = &mut item else {
+                        continue;
+                    };
+                    if matches!(label.kind, LabelKind::Global) {
+                        label.iref_at = Some(self.parse_xy2("iref")?);
+                        self.need_right()?;
+                        let iref_at = label.iref_at;
+                        let intersheet_refs = label
+                            .properties
+                            .iter_mut()
+                            .find(|property| {
+                                property.kind == PropertyKind::GlobalLabelIntersheetRefs
+                            })
+                            .expect("global labels start with intersheet refs property");
+                        intersheet_refs.at = iref_at;
+                        intersheet_refs.visible = true;
                     }
                 }
+                "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
+                    let uuid = self.need_symbol_atom("uuid")?;
+                    match &mut item {
+                        ParsedSchText::Text(text) => text.uuid = Some(uuid),
+                        ParsedSchText::Label(label) => label.uuid = Some(uuid),
+                    }
+                    self.need_right()?;
+                }
+                "property" => {
+                    let ParsedSchText::Label(label) = &mut item else {
+                        return Err(self.unexpected("property"));
+                    };
+                    let property = if matches!(label.kind, LabelKind::Global) {
+                        self.parse_sch_field(FieldParent::GlobalLabel)?
+                    } else {
+                        self.parse_sch_field(FieldParent::OtherLabel)?
+                    };
 
+                    if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+                        let existing = label
+                            .properties
+                            .iter_mut()
+                            .find(|existing| {
+                                existing.kind == PropertyKind::GlobalLabelIntersheetRefs
+                            })
+                            .expect("global labels start with intersheet refs property");
+                        *existing = property;
+                    } else {
+                        label.properties.push(property);
+                    }
+                    self.need_right()?;
+                }
+                _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
+            }
+        }
+
+        Ok(match item {
+            ParsedSchText::Text(text) => SchItem::Text(text),
+            ParsedSchText::Label(mut label) => {
                 if label.properties.is_empty() {
                     label.fields_autoplaced = FieldAutoplacement::Auto;
                 }
-
-                Ok(SchItem::Label(label))
+                SchItem::Label(label)
             }
-        }
+        })
     }
 
     fn parse_sch_text_box(&mut self) -> Result<TextBox, Error> {
