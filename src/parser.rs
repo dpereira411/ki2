@@ -3151,6 +3151,7 @@ impl KiCadSchematicParser {
             )));
         }
         let mut table = Table {
+            default_line_width: DEFAULT_LINE_WIDTH_MM,
             column_count: None,
             column_widths: Vec::new(),
             row_heights: Vec::new(),
@@ -3180,25 +3181,25 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "column_count" => {
                     let _ = self.need_unquoted_symbol_atom("column_count")?;
-                    table.column_count = Some(self.parse_i32_atom("column count")?);
+                    table.set_column_count(self.parse_i32_atom("column count")?);
                     self.need_right()?;
                 }
                 "column_widths" => {
                     let _ = self.need_unquoted_symbol_atom("column_widths")?;
-                    let mut values = Vec::new();
+                    let mut col = 0usize;
                     while !self.at_right() {
-                        values.push(self.parse_f64_atom("column width")?);
+                        table.set_column_width(col, self.parse_f64_atom("column width")?);
+                        col += 1;
                     }
-                    table.column_widths = values;
                     self.need_right()?;
                 }
                 "row_heights" => {
                     let _ = self.need_unquoted_symbol_atom("row_heights")?;
-                    let mut values = Vec::new();
+                    let mut row = 0usize;
                     while !self.at_right() {
-                        values.push(self.parse_f64_atom("row height")?);
+                        table.set_row_height(row, self.parse_f64_atom("row height")?);
+                        row += 1;
                     }
-                    table.row_heights = values;
                     self.need_right()?;
                 }
                 "cells" => {
@@ -3207,7 +3208,7 @@ impl KiCadSchematicParser {
                         self.need_left()?;
                         let cell = self.parse_sch_table_cell()?;
                         self.need_right()?;
-                        table.cells.push(cell);
+                        table.add_cell(cell);
                     }
                     self.need_right()?;
                 }
@@ -3287,7 +3288,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        if table.cells.is_empty() {
+        if table.first_cell().is_none() {
             return Err(self.error_here("Invalid table: no cells defined"));
         }
         Ok(table)

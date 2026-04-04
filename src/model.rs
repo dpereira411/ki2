@@ -384,6 +384,7 @@ pub enum TextVJustify {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Table {
+    pub default_line_width: f64,
     pub column_count: Option<i32>,
     pub column_widths: Vec<f64>,
     pub row_heights: Vec<f64>,
@@ -395,6 +396,36 @@ pub struct Table {
     pub separators_cols: Option<bool>,
     pub separators_stroke: Option<Stroke>,
     pub uuid: Option<String>,
+}
+
+impl Table {
+    pub fn set_column_count(&mut self, count: i32) {
+        self.column_count = Some(count);
+    }
+
+    pub fn set_column_width(&mut self, col: usize, width: f64) {
+        if self.column_widths.len() <= col {
+            self.column_widths.resize(col + 1, 0.0);
+        }
+
+        self.column_widths[col] = width;
+    }
+
+    pub fn set_row_height(&mut self, row: usize, height: f64) {
+        if self.row_heights.len() <= row {
+            self.row_heights.resize(row + 1, 0.0);
+        }
+
+        self.row_heights[row] = height;
+    }
+
+    pub fn add_cell(&mut self, cell: TableCell) {
+        self.cells.push(cell);
+    }
+
+    pub fn first_cell(&self) -> Option<&TableCell> {
+        self.cells.first()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

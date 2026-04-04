@@ -3,3 +3,4 @@ target/
 .env
 .envrc
 LOCAL_PARSER_PARITY_NOTES.md
+LOCAL_FUNCTION_PARITY_MAP.md
