@@ -2215,18 +2215,28 @@ impl KiCadSchematicParser {
         let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, diameter, color or uuid")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, diameter, color or uuid")),
+            };
             match head.as_str() {
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     junction.at = self.parse_xy2("junction at")?;
                     has_at = true;
                     self.need_right()?;
                 }
                 "diameter" => {
+                    let _ = self.need_unquoted_symbol_atom("diameter")?;
                     junction.diameter = Some(self.parse_f64_atom("junction diameter")?);
                     self.need_right()?;
                 }
                 "color" => {
+                    let _ = self.need_unquoted_symbol_atom("color")?;
                     junction.color = Some([
                         f64::from(self.parse_i32_atom("red")?) / 255.0,
                         f64::from(self.parse_i32_atom("green")?) / 255.0,
@@ -2236,6 +2246,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     junction.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
@@ -2257,14 +2268,23 @@ impl KiCadSchematicParser {
         let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at or uuid")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at or uuid")),
+            };
             match head.as_str() {
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     no_connect.at = self.parse_xy2("no_connect at")?;
                     has_at = true;
                     self.need_right()?;
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     no_connect.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
@@ -2290,19 +2310,29 @@ impl KiCadSchematicParser {
         let mut has_size = false;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, size, uuid or stroke")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, size, uuid or stroke")),
+            };
             match head.as_str() {
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     bus_entry.at = self.parse_xy2("bus_entry at")?;
                     has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
+                    let _ = self.need_unquoted_symbol_atom("size")?;
                     bus_entry.size = self.parse_xy2("bus_entry size")?;
                     has_size = true;
                     self.need_right()?;
                 }
                 "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
                     bus_entry.has_stroke = true;
                     let mut parsed_stroke = self.parse_stroke()?;
                     if self.require_known_version()? <= 20211123
@@ -2313,6 +2343,7 @@ impl KiCadSchematicParser {
                     bus_entry.stroke = Some(parsed_stroke);
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     bus_entry.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
@@ -2344,9 +2375,17 @@ impl KiCadSchematicParser {
         let mut has_pts = false;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, uuid or stroke")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, uuid or stroke")),
+            };
             match head.as_str() {
                 "pts" => {
+                    let _ = self.need_unquoted_symbol_atom("pts")?;
                     self.need_left()?;
                     if self.need_unquoted_symbol_atom("xy")? != "xy" {
                         return Err(self.expecting("xy"));
@@ -2364,10 +2403,12 @@ impl KiCadSchematicParser {
                     has_pts = true;
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     line.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
                     line.has_stroke = true;
                     let mut parsed_stroke = self.parse_stroke()?;
                     if self.require_known_version()? <= 20211123
