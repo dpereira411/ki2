@@ -467,9 +467,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "id, at, hide, show_name, do_not_autoplace or effects",
-            )?;
+            let head = self.need_unquoted_symbol_atom("name or data")?;
             match head.as_str() {
                 "name" => name = Some(self.parse_string_atom("name")?),
                 "data" => data = Some(self.parse_string_atom("data")?),
@@ -4136,7 +4134,7 @@ impl KiCadSchematicParser {
         let mut points = Vec::new();
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("xy")?;
             if head != "xy" {
                 return Err(self.expecting("xy"));
             }

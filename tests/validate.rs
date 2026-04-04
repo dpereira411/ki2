@@ -2302,6 +2302,42 @@ fn rejects_quoted_lib_symbols_top_level_symbol_head() {
 }
 
 #[test]
+fn rejects_quoted_pts_and_embedded_file_keyword_heads() {
+    let quoted_polyline_xy = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-pts-xy")
+  (polyline (pts ("xy" 0 0) (xy 1 1)))
+)"#;
+    let quoted_polyline_xy_path = temp_schematic("quoted_pts_xy", quoted_polyline_xy);
+    let err = parse_schematic_file(Path::new(&quoted_polyline_xy_path))
+        .expect_err("must reject quoted pts xy head");
+    assert!(err.to_string().contains("expecting xy"));
+
+    let quoted_embedded_file_name = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-embedded-file-name")
+  (embedded_files (file ("name" "A.bin") (data "abc")))
+)"#;
+    let quoted_embedded_file_name_path =
+        temp_schematic("quoted_embedded_file_name", quoted_embedded_file_name);
+    let schematic = parse_schematic_file(Path::new(&quoted_embedded_file_name_path))
+        .expect("quoted embedded file head should record a warning and continue");
+    assert!(schematic.screen.embedded_files.is_empty());
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("expecting name or data"))
+    );
+
+    let _ = fs::remove_file(quoted_polyline_xy_path);
+    let _ = fs::remove_file(quoted_embedded_file_name_path);
+}
+
+#[test]
 fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_symbol_head = r#"(kicad_sch
   (version 20260306)
