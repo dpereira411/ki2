@@ -1816,7 +1816,7 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "id" => {
-                    property.id = Some(self.parse_i32_atom("field ID")?);
+                    let _ = self.parse_i32_atom("field ID")?;
                     self.need_right()?;
                 }
                 "at" => {
@@ -4206,7 +4206,7 @@ impl KiCadSchematicParser {
             )?;
             match head.as_str() {
                 "id" => {
-                    property.id = Some(self.parse_i32_atom("field ID")?);
+                    let _ = self.parse_i32_atom("field ID")?;
                     self.need_right()?;
                 }
                 "at" => {

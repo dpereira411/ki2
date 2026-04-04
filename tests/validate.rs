@@ -2134,7 +2134,7 @@ fn parses_property_metadata_semantics() {
         })
         .expect("property");
 
-    assert_eq!(property.id, Some(0));
+    assert_eq!(property.id, None);
     assert!(property.is_private);
     assert_eq!(property.at, Some([11.0, 22.0]));
     assert_eq!(property.angle, Some(90.0));
@@ -5497,7 +5497,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
         .iter()
         .find(|property| property.key == "UserField")
         .expect("user field");
-    assert_eq!(property.id, Some(7));
+    assert_eq!(property.id, None);
     assert!(property.is_private);
     assert!(property.show_name);
     assert!(!property.can_autoplace);
@@ -6877,7 +6877,7 @@ fn mandatory_properties_keep_default_kicad_field_ids() {
   (symbol
     (lib_id "Device:R")
     (at 5 6 0)
-    (property "Reference" "R1")
+    (property "Reference" "R1" (id 0))
     (property "Value" "10k")
     (property "Footprint" "Resistor_SMD:R_0603_1608Metric")
     (property "Datasheet" "ds")))
