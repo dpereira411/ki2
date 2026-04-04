@@ -389,9 +389,11 @@ impl KiCadSchematicParser {
                 "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_rectangle_shape()?)),
                 "bezier" => parsed_item = Some(SchItem::Shape(self.parse_bezier_shape()?)),
                 "rule_area" => parsed_item = Some(SchItem::Shape(self.parse_rule_area_shape()?)),
-                "sheet_instances" => self.screen.sheet_instances = self.parse_sheet_instances()?,
+                "sheet_instances" => {
+                    self.screen.sheet_instances = self.parse_sch_sheet_instances()?
+                }
                 "symbol_instances" => {
-                    self.screen.symbol_instances = self.parse_symbol_instances()?
+                    self.screen.symbol_instances = self.parse_sch_symbol_instances()?
                 }
                 "group" => self.parse_group()?,
                 _ => return Err(self.expecting_known_section(&head)),
@@ -3823,7 +3825,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_sheet_instances(&mut self) -> Result<Vec<SheetInstance>, Error> {
+    fn parse_sch_sheet_instances(&mut self) -> Result<Vec<SheetInstance>, Error> {
         let mut out = Vec::new();
         while !self.at_right() {
             self.need_left()?;
@@ -3860,7 +3862,7 @@ impl KiCadSchematicParser {
         Ok(out)
     }
 
-    fn parse_symbol_instances(&mut self) -> Result<Vec<SymbolInstance>, Error> {
+    fn parse_sch_symbol_instances(&mut self) -> Result<Vec<SymbolInstance>, Error> {
         let mut out = Vec::new();
         while !self.at_right() {
             self.need_left()?;
