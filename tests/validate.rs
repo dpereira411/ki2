@@ -3343,7 +3343,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
             .screen
             .parse_warnings
             .iter()
-            .any(|warning| warning.contains("expecting start, end, radius, stroke, or fill"))
+            .any(|warning| warning.contains("expecting start, end, stroke, or fill"))
     );
 
     let quoted_lib_rectangle_radius = r#"(kicad_sch
@@ -3364,7 +3364,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
             .screen
             .parse_warnings
             .iter()
-            .any(|warning| { warning.contains("expecting start, end, radius, stroke, or fill") })
+            .any(|warning| { warning.contains("expecting start, end, stroke, or fill") })
     );
 
     let quoted_lib_text_at = r#"(kicad_sch
