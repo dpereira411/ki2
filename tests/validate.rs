@@ -2796,7 +2796,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_text_box_head_path))
         .expect_err("must reject quoted schematic text_box head");
     assert!(err.to_string().contains(
-        "expecting exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid"
+        "expecting exclude_from_sim, start, end, at, size, stroke, fill, effects, margins or uuid"
     ));
 
     let quoted_text_box_margins_head = r#"(kicad_sch
@@ -2810,7 +2810,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let err = parse_schematic_file(Path::new(&quoted_text_box_margins_head_path))
         .expect_err("must reject quoted schematic text_box margins head");
     assert!(err.to_string().contains(
-        "expecting exclude_from_sim, start, end, at, size, stroke, fill, margins, effects or uuid"
+        "expecting exclude_from_sim, start, end, at, size, stroke, fill, effects, margins or uuid"
     ));
 
     let quoted_table_head = r#"(kicad_sch
