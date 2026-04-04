@@ -195,6 +195,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseLibSymbol()`, the top-level lib symbol name should use a distinct `Invalid symbol name` header branch before library-identifier validation. Do not route that header through the generic library-ID helper.
 - In `parseLibSymbol()`, keep KiCad's literal fallback `Expecting(...)` text even where it is narrower than the real accepted branch set. Upstream still says `pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text` there.
 - In `parseLibSymbol()`, `extends` should use its own `Invalid parent symbol name` `NeedSYMBOL()` branch too, instead of being routed through the generic library-ID helper.
+- Keep the legacy lib-symbol body-style fixup helpers named after their upstream role too. Once they mirror KiCad `HasLegacyAlternateBodyStyle()` behavior, they should not stay on vague repo-local names.
 - In nested `parseLibSymbol()` unit parsing, the unit name should use its own `Invalid symbol unit name` `NeedSYMBOL()` branch before prefix/suffix validation. Do not start that branch from the generic string parser.
 - In that same nested lib-symbol unit parser, keep KiCad's literal fallback `Expecting(...)` text too: `arc, bezier, circle, pin, polyline, rectangle, or text`, even though `unit_name` and `text_box` are also valid branches there.
 - In nested library `unit_name` parsing, only real symbol tokens should be consumed. Non-symbol atoms like numbers should fall through to the closing-paren path and fail there, like upstream.

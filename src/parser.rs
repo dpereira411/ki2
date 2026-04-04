@@ -211,7 +211,7 @@ impl KiCadSchematicParser {
             .version
             .ok_or_else(|| self.error_here("missing version"))?;
         self.update_local_lib_symbol_links();
-        self.fixup_legacy_lib_symbol_body_styles();
+        self.fixup_legacy_lib_symbol_alternate_body_styles();
         self.fixup_embedded_data();
 
         if version < VERSION_SET_LEGACY_SYMBOL_INSTANCE_DATA {
@@ -4952,7 +4952,7 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn fixup_legacy_lib_symbol_body_styles(&mut self) {
+    fn fixup_legacy_lib_symbol_alternate_body_styles(&mut self) {
         let Some(version) = self.version else {
             return;
         };
@@ -4972,7 +4972,7 @@ impl KiCadSchematicParser {
         let mut cache = std::collections::HashMap::new();
 
         for idx in 0..self.screen.lib_symbols.len() {
-            let has_demorgan = Self::legacy_symbol_has_alternate_body_style(
+            let has_demorgan = Self::has_legacy_alternate_body_style(
                 idx,
                 &self.screen.lib_symbols,
                 &symbol_index,
@@ -4982,7 +4982,7 @@ impl KiCadSchematicParser {
         }
     }
 
-    fn legacy_symbol_has_alternate_body_style(
+    fn has_legacy_alternate_body_style(
         idx: usize,
         symbols: &[LibSymbol],
         symbol_index: &std::collections::HashMap<String, usize>,
@@ -5001,7 +5001,7 @@ impl KiCadSchematicParser {
 
         if let Some(parent_name) = symbol.extends.as_ref() {
             if let Some(parent_idx) = symbol_index.get(parent_name) {
-                let inherited = Self::legacy_symbol_has_alternate_body_style(
+                let inherited = Self::has_legacy_alternate_body_style(
                     *parent_idx,
                     symbols,
                     symbol_index,
