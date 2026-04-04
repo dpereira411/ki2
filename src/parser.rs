@@ -3574,7 +3574,7 @@ impl KiCadSchematicParser {
         while !self.at_right() {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom(
-                "at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, fill, instances, uuid, property, or pin",
+                "at, size, stroke, background, instances, uuid, property, or pin",
             )?;
             match head.as_str() {
                 "at" => {
@@ -3815,7 +3815,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "at, size, exclude_from_sim, in_bom, on_board, dnp, fields_autoplaced, stroke, fill, instances, uuid, property, or pin",
+                        "at, size, stroke, background, instances, uuid, property, or pin",
                     ));
                 }
             }
