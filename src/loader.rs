@@ -226,12 +226,13 @@ impl SchematicLoader {
             schematic_path: root_path.to_path_buf(),
             instance_path: String::new(),
             symbol_path: format!("/{root_uuid}"),
-            page: root
-                .screen
-                .sheet_instances
-                .iter()
-                .find(|instance| instance.path.is_empty())
-                .and_then(|instance| instance.page.clone()),
+            page: root.screen.root_sheet_page.clone().or_else(|| {
+                root.screen
+                    .sheet_instances
+                    .iter()
+                    .find(|instance| instance.path.is_empty())
+                    .and_then(|instance| instance.page.clone())
+            }),
             sheet_number: 0,
             sheet_count: 0,
         }];

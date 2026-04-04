@@ -461,7 +461,7 @@ fn sorts_loaded_sheet_pages_numerically() {
     assert_eq!(loaded.sheet_paths[1].instance_path, "/root-u/sheet-a");
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("10"));
     assert_eq!(loaded.sheet_paths[2].instance_path, "");
-    assert_eq!(loaded.sheet_paths[2].page, None);
+    assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("99"));
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(a_path);
@@ -578,7 +578,7 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
     );
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("1"));
     assert_eq!(loaded.sheet_paths[2].instance_path, "");
-    assert_eq!(loaded.sheet_paths[2].page, None);
+    assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("2"));
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
@@ -2240,6 +2240,7 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert!(sheet.dnp);
     assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::Auto);
 
+    assert_eq!(schematic.screen.root_sheet_page, None);
     assert_eq!(schematic.screen.sheet_instances.len(), 2);
     assert_eq!(schematic.screen.sheet_instances[0].path, "");
     assert_eq!(
@@ -2259,6 +2260,33 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert_eq!(
         schematic.screen.symbol_instances[0].footprint.as_deref(),
         Some("")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn modern_root_sheet_instance_page_is_stored_on_screen_root_page() {
+    let src = r#"(kicad_sch
+  (version 20221110)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "7"))
+    (path "/child" (page "2")))
+)"#;
+    let path = temp_schematic("modern_root_sheet_page", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    assert_eq!(schematic.screen.root_sheet_page.as_deref(), Some("7"));
+    assert_eq!(schematic.screen.sheet_instances.len(), 1);
+    assert_eq!(schematic.screen.sheet_instances[0].path, "/child");
+    assert_eq!(
+        schematic.screen.sheet_instances[0].page.as_deref(),
+        Some("2")
     );
 
     let _ = fs::remove_file(path);

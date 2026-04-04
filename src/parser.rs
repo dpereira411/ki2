@@ -174,6 +174,7 @@ impl KiCadSchematicParser {
                     portrait: false,
                 }),
                 page: None,
+                root_sheet_page: None,
                 title_block: None,
                 embedded_fonts: None,
                 embedded_files: Vec::new(),
@@ -3909,9 +3910,10 @@ impl KiCadSchematicParser {
             if self.require_known_version()? >= VERSION_SKIP_EMPTY_ROOT_SHEET_INSTANCE_PATH
                 && instance.path.is_empty()
             {
-                continue;
+                self.screen.root_sheet_page = instance.page;
+            } else {
+                self.screen.sheet_instances.push(instance);
             }
-            self.screen.sheet_instances.push(instance);
         }
         Ok(())
     }
