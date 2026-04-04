@@ -253,7 +253,7 @@ impl KiCadSchematicParser {
     fn parse_schematic_body(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
             let mut effective_head = head.as_str();
 
             if effective_head == "page"
@@ -376,7 +376,7 @@ impl KiCadSchematicParser {
         let mut title_block = TitleBlock::default();
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
             match head.as_str() {
                 "title" => title_block.title = Some(self.parse_string_atom("title")?),
                 "date" => title_block.date = Some(self.parse_string_atom("date")?),
@@ -440,7 +440,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "id, at, hide, show_name, do_not_autoplace or effects",
+            )?;
             if head != "file" {
                 return Err(self.expecting("file"));
             }
@@ -465,7 +467,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "id, at, hide, show_name, do_not_autoplace or effects",
+            )?;
             match head.as_str() {
                 "name" => name = Some(self.parse_string_atom("name")?),
                 "data" => data = Some(self.parse_string_atom("data")?),
@@ -764,7 +768,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
             match head.as_str() {
                 "unit_name" => {
                     if matches!(
@@ -1616,7 +1620,9 @@ impl KiCadSchematicParser {
         let mut uuid = None;
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "id, at, hide, show_name, do_not_autoplace or effects",
+            )?;
             match head.as_str() {
                 "at" => {
                     at = Some(self.parse_xy2("junction at")?);
@@ -1822,7 +1828,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -3568,7 +3574,9 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_atom()?;
+            let head = self.need_unquoted_symbol_atom(
+                "id, at, hide, show_name, do_not_autoplace or effects",
+            )?;
             match head.as_str() {
                 "id" => {
                     let _ = self.parse_i32_atom("field ID")?;

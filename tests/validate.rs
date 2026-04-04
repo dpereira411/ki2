@@ -1642,6 +1642,24 @@ fn rejects_invalid_property_header_tokens() {
         .expect_err("must reject invalid property value");
     assert!(err.to_string().contains("Invalid property value"));
     let _ = fs::remove_file(invalid_value_path);
+
+    let quoted_field_head_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-field-head")
+  (symbol
+    (lib_id "Device:R")
+    (property "User" "v"
+      ("at" 1 2 0)))
+)"#;
+    let quoted_field_head_path = temp_schematic("quoted_sch_field_head", quoted_field_head_src);
+    let err = parse_schematic_file(Path::new(&quoted_field_head_path))
+        .expect_err("must reject quoted sch field head token");
+    assert!(
+        err.to_string()
+            .contains("expecting id, at, hide, show_name, do_not_autoplace or effects")
+    );
+    let _ = fs::remove_file(quoted_field_head_path);
 }
 
 #[test]
@@ -2048,6 +2066,22 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
         .expect_err("empty legacy iref on local label should fall out to shared parser flow");
     assert!(err.to_string().contains("expecting end of file"));
     let _ = fs::remove_file(empty_local_iref_path);
+
+    let quoted_text_head_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text "hello" ("at" 1 2 0))
+)"#;
+    let quoted_text_head_path = temp_schematic("quoted_sch_text_head", quoted_text_head_src);
+    let err = parse_schematic_file(Path::new(&quoted_text_head_path))
+        .expect_err("must reject quoted shared sch text head token");
+    assert!(
+        err.to_string()
+            .contains("expecting at, shape, iref, uuid or effects")
+    );
+    let _ = fs::remove_file(quoted_text_head_path);
 }
 
 #[test]
