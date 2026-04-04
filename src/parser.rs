@@ -1529,20 +1529,38 @@ impl KiCadSchematicParser {
                 "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
             ));
         };
-        let mut at = None;
-        let mut angle = None;
-        let mut length = None;
-        let mut visible = true;
-        let mut name = None;
-        let mut number = None;
-        let mut name_effects = None;
-        let mut number_effects = None;
-        let mut alternates = Vec::new();
+        let mut item = LibDrawItem {
+            kind: "pin".to_string(),
+            is_private: false,
+            unit_number,
+            body_style,
+            visible: true,
+            at: None,
+            angle: None,
+            points: Vec::new(),
+            end: None,
+            radius: None,
+            arc_center: None,
+            arc_start_angle: None,
+            arc_end_angle: None,
+            length: None,
+            text: None,
+            name: None,
+            number: None,
+            name_effects: None,
+            number_effects: None,
+            electrical_type: Some(electrical_type),
+            graphic_shape: Some(graphic_shape),
+            alternates: Vec::new(),
+            stroke: None,
+            fill: None,
+            effects: None,
+        };
 
         while !self.at_right() {
             if self.at_unquoted_symbol_with("hide") {
                 let _ = self.need_unquoted_symbol_atom("hide")?;
-                visible = false;
+                item.visible = false;
                 continue;
             }
 
@@ -1557,16 +1575,16 @@ impl KiCadSchematicParser {
                         0 | 90 | 180 | 270 => {}
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }
-                    at = Some([parsed[0], parsed[1]]);
-                    angle = Some(parsed[2]);
+                    item.at = Some([parsed[0], parsed[1]]);
+                    item.angle = Some(parsed[2]);
                     self.need_right()?;
                 }
                 "length" => {
-                    length = Some(self.parse_f64_atom("pin length")?);
+                    item.length = Some(self.parse_f64_atom("pin length")?);
                     self.need_right()?;
                 }
                 "hide" => {
-                    visible = !self.parse_bool_atom("hide")?;
+                    item.visible = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
                 "name" => {
@@ -1583,7 +1601,7 @@ impl KiCadSchematicParser {
                     {
                         parsed = self.convert_old_overbar_notation(parsed);
                     }
-                    name = Some(parsed);
+                    item.name = Some(parsed);
                     if self.at_right() {
                         self.need_right()?;
                         continue;
@@ -1594,14 +1612,8 @@ impl KiCadSchematicParser {
                     }
                     let mut parsed = TextEffects::default();
                     let mut visible = true;
-                    self.parse_eda_text(
-                        Some(name.get_or_insert_with(String::new)),
-                        &mut parsed,
-                        &mut visible,
-                        true,
-                        true,
-                    )?;
-                    name_effects = Some(parsed);
+                    self.parse_eda_text(item.name.as_mut(), &mut parsed, &mut visible, true, true)?;
+                    item.name_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
                 }
@@ -1619,7 +1631,7 @@ impl KiCadSchematicParser {
                     {
                         parsed = self.convert_old_overbar_notation(parsed);
                     }
-                    number = Some(parsed);
+                    item.number = Some(parsed);
                     if self.at_right() {
                         self.need_right()?;
                         continue;
@@ -1631,13 +1643,13 @@ impl KiCadSchematicParser {
                     let mut parsed = TextEffects::default();
                     let mut visible = true;
                     self.parse_eda_text(
-                        Some(number.get_or_insert_with(String::new)),
+                        item.number.as_mut(),
                         &mut parsed,
                         &mut visible,
                         true,
                         true,
                     )?;
-                    number_effects = Some(parsed);
+                    item.number_effects = Some(parsed);
                     self.need_right()?;
                     self.need_right()?;
                 }
@@ -1698,7 +1710,7 @@ impl KiCadSchematicParser {
                             "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
                         ));
                     };
-                    alternates.push(LibPinAlternate {
+                    item.alternates.push(LibPinAlternate {
                         name: alt_name,
                         electrical_type: alt_type,
                         graphic_shape: alt_shape,
@@ -1709,33 +1721,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        Ok(LibDrawItem {
-            kind: "pin".to_string(),
-            is_private: false,
-            unit_number,
-            body_style,
-            visible,
-            at,
-            angle,
-            points: Vec::new(),
-            end: None,
-            radius: None,
-            arc_center: None,
-            arc_start_angle: None,
-            arc_end_angle: None,
-            length,
-            text: None,
-            name,
-            number,
-            name_effects,
-            number_effects,
-            electrical_type: Some(electrical_type),
-            graphic_shape: Some(graphic_shape),
-            alternates,
-            stroke: None,
-            fill: None,
-            effects: None,
-        })
+        Ok(item)
     }
 
     fn parse_lib_property(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
@@ -3646,15 +3632,21 @@ impl KiCadSchematicParser {
             "bidirectional" => SheetPinShape::Bidirectional,
             "tri_state" => SheetPinShape::TriState,
             "passive" => SheetPinShape::Passive,
-            _ => return Err(self.expecting("input, output, bidirectional, tri_state, or passive")),
+            _ => {
+                return Err(self.expecting("input, output, bidirectional, tri_state, or passive"));
+            }
         };
 
-        let mut at = None;
-        let mut side = None;
-        let mut visible = true;
-        let mut has_effects = false;
-        let mut effects = None;
-        let mut uuid = None;
+        let mut sheet_pin = SheetPin {
+            name,
+            shape,
+            at: None,
+            side: None,
+            visible: true,
+            has_effects: false,
+            effects: None,
+            uuid: None,
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -3669,35 +3661,32 @@ impl KiCadSchematicParser {
                         270 => SheetSide::Bottom,
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     };
-                    at = Some([parsed[0], parsed[1]]);
-                    side = Some(parsed_side);
+                    sheet_pin.at = Some([parsed[0], parsed[1]]);
+                    sheet_pin.side = Some(parsed_side);
                     self.need_right()?;
                 }
                 "uuid" => {
-                    uuid = Some(self.need_symbol_atom("uuid")?);
+                    sheet_pin.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
                 "effects" => {
                     let mut parsed_effects = TextEffects::default();
-                    self.parse_eda_text(None, &mut parsed_effects, &mut visible, true, true)?;
-                    has_effects = true;
-                    effects = Some(parsed_effects);
+                    self.parse_eda_text(
+                        None,
+                        &mut parsed_effects,
+                        &mut sheet_pin.visible,
+                        true,
+                        true,
+                    )?;
+                    sheet_pin.has_effects = true;
+                    sheet_pin.effects = Some(parsed_effects);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, uuid or effects")),
             }
         }
 
-        Ok(SheetPin {
-            name,
-            shape,
-            at,
-            side,
-            visible,
-            has_effects,
-            effects,
-            uuid,
-        })
+        Ok(sheet_pin)
     }
 
     fn parse_sch_sheet_instances(&mut self) -> Result<Vec<SheetInstance>, Error> {

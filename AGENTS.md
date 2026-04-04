@@ -30,6 +30,8 @@ Strict mode is the default for parser-parity work in this repository.
 9. Do not treat passing tests as completion; tests only validate the larger port.
 10. Commits must correspond to substantial parser/loader parity work, not cosmetic cleanup.
 11. When a work unit is committed and meaningful backlog still remains, continue directly into the next work unit instead of sending a status reply. Only surface a reply if the backlog is exhausted or a real blocker is hit.
+12. A successful commit is not, by itself, a valid reason to reply. After `cargo fmt --all`, `cargo test -q`, and commit succeed, immediately start the next backlog item unless the backlog is exhausted or a real blocker prevents further local progress.
+13. If the user has explicitly asked for continuous execution, any reply without exhausted backlog or a real blocker is a behavior failure. In that mode, prefer doing more work over sending a summary.
 
 ## Specific Learnings
 
@@ -305,6 +307,7 @@ Strict mode is the default for parser-parity work in this repository.
 - In library `parseSymbolText()` / `parse_lib_text_draw_item()` and `parseImage()`, construct the owning item up front and mutate it through the branch loop. Do not drift back to gather-locals-first / assemble-at-return flow in those routines.
 - In `parseSchTable()` and the schematic shape family (`parseSchPolyLine()`, `parseSchArc()`, `parseSchCircle()`, `parseSchRectangle()`, `parseSchBezier()`), construct the owning object up front and mutate it through the branch loop. Do not drift back to gather-locals-first / assemble-at-return flow in those routines.
 - In the connectivity-item family (`parseJunction()`, `parseNoConnect()`, `parseBusEntry()`, and `parseLine()` / `parse_sch_line()`), construct the owning object up front and mutate it through the branch loop too. Do not drift back to gather-locals-first / assemble-at-return flow there.
+- In the pin-parser family (`parseSymbolPin()` / `parse_symbol_pin()` and `parseSchSheetPin()` / `parse_sch_sheet_pin()`), construct the owning pin object up front and mutate it through the branch loop too. Do not drift back to gather-locals-first / assemble-at-return flow there.
 - In library `parseSymbolTextBox()` / `parse_lib_text_box_content()`, keep the text payload on that same `Invalid text string` symbol-token path before entering the body parser.
 - In library `text_box` parsing, keep the body walk and `LibDrawItem` construction in `parseSymbolTextBox()` / `parse_lib_text_box_draw_item()` itself. Do not hide that routine behind a separate `parse_lib_text_box_content()` helper.
 - In library `parseSymbolTextBox()` / `parse_lib_text_box_draw_item()`, keep KiCad's literal fallback `Expecting(...)` text: `at, size, stroke, fill or effects`, even though the routine also handles legacy `start/end` and `margins`.
