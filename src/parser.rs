@@ -386,7 +386,7 @@ impl KiCadSchematicParser {
                 "image" => parsed_item = Some(SchItem::Image(self.parse_sch_image()?)),
                 "arc" => parsed_item = Some(SchItem::Shape(self.parse_sch_arc()?)),
                 "circle" => parsed_item = Some(SchItem::Shape(self.parse_sch_circle()?)),
-                "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_rectangle_shape()?)),
+                "rectangle" => parsed_item = Some(SchItem::Shape(self.parse_sch_rectangle()?)),
                 "bezier" => parsed_item = Some(SchItem::Shape(self.parse_bezier_shape()?)),
                 "rule_area" => parsed_item = Some(SchItem::Shape(self.parse_rule_area_shape()?)),
                 "sheet_instances" => {
@@ -2731,7 +2731,7 @@ impl KiCadSchematicParser {
         })
     }
 
-    fn parse_rectangle_shape(&mut self) -> Result<Shape, Error> {
+    fn parse_sch_rectangle(&mut self) -> Result<Shape, Error> {
         let mut start = [0.0, 0.0];
         let mut end = [0.0, 0.0];
         let mut corner_radius = None;
