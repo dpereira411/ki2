@@ -138,6 +138,73 @@ enum ParsedTextBoxOwner<'a> {
     TableCell(&'a mut TableCell),
 }
 
+struct ParsedEdaTextOwner<'a> {
+    text: Option<&'a mut String>,
+    visible: &'a mut bool,
+    has_effects: Option<&'a mut bool>,
+    effects: &'a mut Option<TextEffects>,
+}
+
+impl<'a> ParsedEdaTextOwner<'a> {
+    fn text(text: &'a mut Text) -> Self {
+        Self {
+            text: Some(&mut text.text),
+            visible: &mut text.visible,
+            has_effects: Some(&mut text.has_effects),
+            effects: &mut text.effects,
+        }
+    }
+
+    fn label(label: &'a mut Label) -> Self {
+        Self {
+            text: Some(&mut label.text),
+            visible: &mut label.visible,
+            has_effects: Some(&mut label.has_effects),
+            effects: &mut label.effects,
+        }
+    }
+
+    fn property(property: &'a mut Property) -> Self {
+        Self {
+            text: Some(&mut property.value),
+            visible: &mut property.visible,
+            has_effects: Some(&mut property.has_effects),
+            effects: &mut property.effects,
+        }
+    }
+
+    fn sheet_pin(pin: &'a mut SheetPin) -> Self {
+        Self {
+            text: None,
+            visible: &mut pin.visible,
+            has_effects: Some(&mut pin.has_effects),
+            effects: &mut pin.effects,
+        }
+    }
+
+    fn lib_item_text(item: &'a mut LibDrawItem) -> Self {
+        Self {
+            text: item.text.as_mut(),
+            visible: &mut item.visible,
+            has_effects: None,
+            effects: &mut item.effects,
+        }
+    }
+
+    fn detached(
+        text: Option<&'a mut String>,
+        effects: &'a mut Option<TextEffects>,
+        visible: &'a mut bool,
+    ) -> Self {
+        Self {
+            text,
+            visible,
+            has_effects: None,
+            effects,
+        }
+    }
+}
+
 pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
     let raw = std::fs::read_to_string(path).map_err(|source| Error::Io {
         path: path.to_path_buf(),
@@ -1466,15 +1533,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let mut parsed = TextEffects::default();
-                    self.parse_eda_text(
-                        item.text.as_mut(),
-                        &mut parsed,
-                        &mut item.visible,
-                        true,
-                        false,
-                    )?;
-                    item.effects = Some(parsed);
+                    self.parse_eda_text(ParsedEdaTextOwner::lib_item_text(&mut item), true, false)?;
                 }
                 _ => return Err(self.expecting("at or effects")),
             }
@@ -1560,12 +1619,17 @@ impl KiCadSchematicParser {
                     item.fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
-                    let mut parsed_effects = TextEffects::default();
                     let mut visible = item.visible;
-                    self.parse_eda_text(None, &mut parsed_effects, &mut visible, false, true)?;
-                    text_size_y = parsed_effects.font_size.map(|size| size[1]);
+                    self.parse_eda_text(
+                        ParsedEdaTextOwner::detached(None, &mut item.effects, &mut visible),
+                        false,
+                        true,
+                    )?;
+                    text_size_y = item
+                        .effects
+                        .as_ref()
+                        .and_then(|effects| effects.font_size.map(|size| size[1]));
                     item.visible = visible;
-                    item.effects = Some(parsed_effects);
                 }
                 "margins" => {
                     let _ = self.need_unquoted_symbol_atom("margins")?;
@@ -1716,10 +1780,16 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
-                    let mut parsed = TextEffects::default();
                     let mut visible = true;
-                    self.parse_eda_text(item.name.as_mut(), &mut parsed, &mut visible, true, true)?;
-                    item.name_effects = Some(parsed);
+                    self.parse_eda_text(
+                        ParsedEdaTextOwner::detached(
+                            item.name.as_mut(),
+                            &mut item.name_effects,
+                            &mut visible,
+                        ),
+                        true,
+                        true,
+                    )?;
                     self.need_right()?;
                 }
                 "number" => {
@@ -1743,16 +1813,16 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
-                    let mut parsed = TextEffects::default();
                     let mut visible = true;
                     self.parse_eda_text(
-                        item.number.as_mut(),
-                        &mut parsed,
-                        &mut visible,
+                        ParsedEdaTextOwner::detached(
+                            item.number.as_mut(),
+                            &mut item.number_effects,
+                            &mut visible,
+                        ),
                         true,
                         true,
                     )?;
-                    item.number_effects = Some(parsed);
                     self.need_right()?;
                 }
                 "alternate" => {
@@ -1911,16 +1981,12 @@ impl KiCadSchematicParser {
                     property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
                 }
                 "effects" => {
-                    let mut effects = TextEffects::default();
+                    let convert_overbar = property.kind == PropertyKind::SymbolValue;
                     self.parse_eda_text(
-                        Some(&mut property.value),
-                        &mut effects,
-                        &mut property.visible,
-                        property.kind == PropertyKind::SymbolValue,
+                        ParsedEdaTextOwner::property(&mut property),
+                        convert_overbar,
                         true,
                     )?;
-                    property.has_effects = true;
-                    property.effects = Some(effects);
                 }
                 _ => {
                     return Err(
@@ -2398,29 +2464,11 @@ impl KiCadSchematicParser {
                 }
                 "effects" => match &mut item {
                     ParsedSchText::Text(text) => {
-                        let mut parsed_effects = TextEffects::default();
-                        self.parse_eda_text(
-                            Some(&mut text.text),
-                            &mut parsed_effects,
-                            &mut text.visible,
-                            true,
-                            true,
-                        )?;
-                        text.has_effects = true;
-                        text.effects = Some(parsed_effects);
+                        self.parse_eda_text(ParsedEdaTextOwner::text(text), true, true)?;
                         text.visible = true;
                     }
                     ParsedSchText::Label(label) => {
-                        let mut parsed_effects = TextEffects::default();
-                        self.parse_eda_text(
-                            Some(&mut label.text),
-                            &mut parsed_effects,
-                            &mut label.visible,
-                            true,
-                            true,
-                        )?;
-                        label.has_effects = true;
-                        label.effects = Some(parsed_effects);
+                        self.parse_eda_text(ParsedEdaTextOwner::label(label), true, true)?;
                     }
                 },
                 "iref" => {
@@ -2628,33 +2676,40 @@ impl KiCadSchematicParser {
                     }
                 }
                 "effects" => {
-                    let mut parsed_effects = TextEffects::default();
                     let mut visible = true;
                     let parsed_font_size;
                     match &mut owner {
                         ParsedTextBoxOwner::TextBox(text_box) => {
                             self.parse_eda_text(
-                                Some(&mut text_box.text),
-                                &mut parsed_effects,
-                                &mut visible,
+                                ParsedEdaTextOwner::detached(
+                                    Some(&mut text_box.text),
+                                    &mut text_box.effects,
+                                    &mut visible,
+                                ),
                                 false,
                                 true,
                             )?;
                             text_box.has_effects = true;
-                            parsed_font_size = parsed_effects.font_size;
-                            text_box.effects = Some(parsed_effects);
+                            parsed_font_size = text_box
+                                .effects
+                                .as_ref()
+                                .and_then(|effects| effects.font_size);
                         }
                         ParsedTextBoxOwner::TableCell(text_box) => {
                             self.parse_eda_text(
-                                Some(&mut text_box.text),
-                                &mut parsed_effects,
-                                &mut visible,
+                                ParsedEdaTextOwner::detached(
+                                    Some(&mut text_box.text),
+                                    &mut text_box.effects,
+                                    &mut visible,
+                                ),
                                 false,
                                 true,
                             )?;
                             text_box.has_effects = true;
-                            parsed_font_size = parsed_effects.font_size;
-                            text_box.effects = Some(parsed_effects);
+                            parsed_font_size = text_box
+                                .effects
+                                .as_ref()
+                                .and_then(|effects| effects.font_size);
                         }
                     }
                     text_size_y = parsed_font_size.map(|size| size[1]);
@@ -4212,16 +4267,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    let mut parsed_effects = TextEffects::default();
-                    self.parse_eda_text(
-                        None,
-                        &mut parsed_effects,
-                        &mut sheet_pin.visible,
-                        true,
-                        true,
-                    )?;
-                    sheet_pin.has_effects = true;
-                    sheet_pin.effects = Some(parsed_effects);
+                    self.parse_eda_text(ParsedEdaTextOwner::sheet_pin(&mut sheet_pin), true, true)?;
                 }
                 _ => return Err(self.expecting("at, uuid or effects")),
             }
@@ -4567,16 +4613,12 @@ impl KiCadSchematicParser {
                     property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
                 }
                 "effects" => {
-                    let mut parsed_effects = TextEffects::default();
+                    let convert_overbar = property.kind == PropertyKind::SymbolValue;
                     self.parse_eda_text(
-                        Some(&mut property.value),
-                        &mut parsed_effects,
-                        &mut property.visible,
-                        property.kind == PropertyKind::SymbolValue,
+                        ParsedEdaTextOwner::property(&mut property),
+                        convert_overbar,
                         true,
                     )?;
-                    property.has_effects = true;
-                    property.effects = Some(parsed_effects);
                 }
                 _ => {
                     return Err(
@@ -4746,9 +4788,7 @@ impl KiCadSchematicParser {
 
     fn parse_eda_text(
         &mut self,
-        text: Option<&mut String>,
-        effects: &mut TextEffects,
-        visible: &mut bool,
+        mut owner: ParsedEdaTextOwner<'_>,
         convert_overbar_syntax: bool,
         _enforce_min_text_size: bool,
     ) -> Result<(), Error> {
@@ -4756,11 +4796,12 @@ impl KiCadSchematicParser {
         if convert_overbar_syntax
             && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION
         {
-            if let Some(text) = text {
-                *text = self.convert_old_overbar_notation(text.clone());
+            if let Some(text) = owner.text.as_mut() {
+                **text = self.convert_old_overbar_notation((**text).clone());
             }
         }
 
+        let mut effects = owner.effects.take().unwrap_or_default();
         effects.h_justify = TextHJustify::Center;
         effects.v_justify = TextVJustify::Center;
 
@@ -4881,12 +4922,16 @@ impl KiCadSchematicParser {
                 }
                 "hide" => {
                     effects.hidden = self.parse_maybe_absent_bool(true)?;
-                    *visible = !effects.hidden;
+                    *owner.visible = !effects.hidden;
                 }
                 _ => return Err(self.expecting("font, justify, hide or href")),
             }
         }
 
+        if let Some(has_effects) = owner.has_effects {
+            *has_effects = true;
+        }
+        *owner.effects = Some(effects);
         self.need_right()?;
         Ok(())
     }
