@@ -191,6 +191,24 @@ impl<'a> ParsedEdaTextOwner<'a> {
         }
     }
 
+    fn text_box(text_box: &'a mut TextBox) -> Self {
+        Self {
+            text: Some(&mut text_box.text),
+            visible: &mut text_box.visible,
+            has_effects: Some(&mut text_box.has_effects),
+            effects: &mut text_box.effects,
+        }
+    }
+
+    fn table_cell(cell: &'a mut TableCell) -> Self {
+        Self {
+            text: Some(&mut cell.text),
+            visible: &mut cell.visible,
+            has_effects: Some(&mut cell.has_effects),
+            effects: &mut cell.effects,
+        }
+    }
+
     fn detached(
         text: Option<&'a mut String>,
         effects: &'a mut Option<TextEffects>,
@@ -1619,17 +1637,11 @@ impl KiCadSchematicParser {
                     item.fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
-                    let mut visible = item.visible;
-                    self.parse_eda_text(
-                        ParsedEdaTextOwner::detached(None, &mut item.effects, &mut visible),
-                        false,
-                        true,
-                    )?;
+                    self.parse_eda_text(ParsedEdaTextOwner::lib_item_text(&mut item), false, true)?;
                     text_size_y = item
                         .effects
                         .as_ref()
                         .and_then(|effects| effects.font_size.map(|size| size[1]));
-                    item.visible = visible;
                 }
                 "margins" => {
                     let _ = self.need_unquoted_symbol_atom("margins")?;
@@ -2679,15 +2691,10 @@ impl KiCadSchematicParser {
                     match &mut owner {
                         ParsedTextBoxOwner::TextBox(text_box) => {
                             self.parse_eda_text(
-                                ParsedEdaTextOwner::detached(
-                                    Some(&mut text_box.text),
-                                    &mut text_box.effects,
-                                    &mut text_box.visible,
-                                ),
+                                ParsedEdaTextOwner::text_box(text_box),
                                 false,
                                 true,
                             )?;
-                            text_box.has_effects = true;
                             parsed_font_size = text_box
                                 .effects
                                 .as_ref()
@@ -2695,15 +2702,10 @@ impl KiCadSchematicParser {
                         }
                         ParsedTextBoxOwner::TableCell(text_box) => {
                             self.parse_eda_text(
-                                ParsedEdaTextOwner::detached(
-                                    Some(&mut text_box.text),
-                                    &mut text_box.effects,
-                                    &mut text_box.visible,
-                                ),
+                                ParsedEdaTextOwner::table_cell(text_box),
                                 false,
                                 true,
                             )?;
-                            text_box.has_effects = true;
                             parsed_font_size = text_box
                                 .effects
                                 .as_ref()
