@@ -31,6 +31,25 @@ pub fn prescan_version(input: &str) -> Option<i32> {
     while i < bytes.len() {
         match bytes[i] {
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            b'"' => {
+                i += 1;
+                while i < bytes.len() {
+                    match bytes[i] {
+                        b'\\' => {
+                            i += 1;
+                            if i >= bytes.len() {
+                                return None;
+                            }
+                            i += 1;
+                        }
+                        b'"' => {
+                            i += 1;
+                            break;
+                        }
+                        _ => i += 1,
+                    }
+                }
+            }
             b'(' => {
                 i += 1;
 
@@ -194,4 +213,15 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
         },
     });
     Ok(tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prescan_version;
+
+    #[test]
+    fn prescan_version_skips_fake_version_text_inside_quotes() {
+        let input = "(kicad_sch \"(version 1)\"   (version 20260306))";
+        assert_eq!(prescan_version(input), Some(20260306));
+    }
 }
