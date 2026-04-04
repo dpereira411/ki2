@@ -2339,7 +2339,20 @@ impl KiCadSchematicParser {
                             } else {
                                 self.parse_sch_field(FieldParent::OtherLabel)?
                             };
-                            label.upsert_property(property);
+
+                            if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+                                if let Some(existing) =
+                                    label.properties.iter_mut().find(|existing| {
+                                        existing.kind == PropertyKind::GlobalLabelIntersheetRefs
+                                    })
+                                {
+                                    *existing = property;
+                                } else {
+                                    label.properties.push(property);
+                                }
+                            } else {
+                                label.properties.push(property);
+                            }
                             self.need_right()?;
                         }
                         _ => return Err(self.expecting("at, shape, iref, uuid or effects")),

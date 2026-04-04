@@ -266,22 +266,6 @@ impl Label {
             .to_string();
         property
     }
-
-    pub fn upsert_property(&mut self, property: Property) {
-        if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
-            if let Some(existing) = self
-                .properties
-                .iter_mut()
-                .find(|existing| existing.kind == property.kind)
-            {
-                *existing = property;
-            } else {
-                self.properties.push(property);
-            }
-        } else {
-            self.properties.push(property);
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
