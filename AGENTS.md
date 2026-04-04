@@ -106,7 +106,6 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 - In `parseLine()`, keep KiCad's literal stale fallback `Expecting(...)` text too: `at, uuid or stroke`, even though the real accepted geometry branch is `pts`.
 - In `parseLine()`, do not add a repo-local post-loop requirement that a `pts` block must appear. Upstream leaves wires and buses at their default start/end geometry if no `pts` token was parsed.
 - In that same `parseLine()` `pts` branch, keep the explicit two-point control flow inline like upstream instead of routing through the generic point-list parser. Missing or extra points should fail through the same `NeedLEFT` / `NeedRIGHT` sequence as KiCad.
-- In `parseLine()`, keep the local branch-head token and fallback `Expecting(...)` text aligned with the real child set too: `pts, uuid or stroke`. Do not leave stale copied names like `at` in the line branch.
 - In `parseJunction()`, `parseNoConnect()`, and `parseBusEntry()`, keep the local branch-head token and fallback `Expecting(...)` text aligned with each routine’s own children. Do not leave those small item parsers on copied head strings from unrelated symbol/field parsers.
 - In `parseBusEntry()`, keep KiCad's literal fallback `Expecting(...)` text: `at, size, uuid or stroke`, even though the local branch may match `stroke` before `uuid` in source order.
 - In top-level schematic `polyline` handling, keep the too-few-points failure text capitalized exactly like upstream: `Schematic polyline has too few points`.
