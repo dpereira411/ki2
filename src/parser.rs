@@ -531,13 +531,12 @@ impl KiCadSchematicParser {
                         return Err(self.error_here("Schematic polyline has too few points"));
                     }
                     if shape.points.len() == 2 {
-                        self.screen.items.push(SchItem::Polyline(Line {
-                            kind: LineKind::Polyline,
-                            points: shape.points,
-                            has_stroke: shape.has_stroke,
-                            stroke: shape.stroke,
-                            uuid: shape.uuid,
-                        }));
+                        let mut line = Line::new(LineKind::Polyline);
+                        line.points = shape.points;
+                        line.has_stroke = shape.has_stroke;
+                        line.stroke = shape.stroke;
+                        line.uuid = shape.uuid;
+                        self.screen.items.push(SchItem::Polyline(line));
                     } else {
                         self.screen.items.push(SchItem::Shape(shape));
                     }
@@ -2311,12 +2310,7 @@ impl KiCadSchematicParser {
 
     fn parse_junction(&mut self) -> Result<Junction, Error> {
         let _ = self.need_unquoted_symbol_atom("junction")?;
-        let mut junction = Junction {
-            at: [0.0, 0.0],
-            diameter: None,
-            color: None,
-            uuid: None,
-        };
+        let mut junction = Junction::new();
         let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
@@ -2366,10 +2360,7 @@ impl KiCadSchematicParser {
 
     fn parse_no_connect(&mut self) -> Result<NoConnect, Error> {
         let _ = self.need_unquoted_symbol_atom("no_connect")?;
-        let mut no_connect = NoConnect {
-            at: [0.0, 0.0],
-            uuid: None,
-        };
+        let mut no_connect = NoConnect::new();
         let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
@@ -2404,13 +2395,7 @@ impl KiCadSchematicParser {
 
     fn parse_bus_entry(&mut self) -> Result<BusEntry, Error> {
         let _ = self.need_unquoted_symbol_atom("bus_entry")?;
-        let mut bus_entry = BusEntry {
-            at: [0.0, 0.0],
-            size: [0.0, 0.0],
-            has_stroke: false,
-            stroke: None,
-            uuid: None,
-        };
+        let mut bus_entry = BusEntry::new();
         let mut has_at = false;
         let mut has_size = false;
         while !self.at_right() {
@@ -2484,13 +2469,8 @@ impl KiCadSchematicParser {
             }
             _ => return Err(self.error_here("invalid schematic line kind")),
         };
-        let mut line = Line {
-            kind,
-            points: vec![[0.0, 0.0], [0.0, 0.0]],
-            has_stroke: false,
-            stroke: None,
-            uuid: None,
-        };
+        let mut line = Line::new(kind);
+        line.points = vec![[0.0, 0.0], [0.0, 0.0]];
         let mut has_pts = false;
         while !self.at_right() {
             self.need_left()?;
@@ -2584,35 +2564,9 @@ impl KiCadSchematicParser {
             .need_symbol_atom("text value")
             .map_err(|_| self.error_here("Invalid text string"))?;
         let mut item = match target {
-            SchTextTarget::Text => ParsedSchText::Text(Text {
-                kind: TextKind::Text,
-                text,
-                at: None,
-                excluded_from_sim: false,
-                fields_autoplaced: FieldAutoplacement::None,
-                visible: true,
-                has_effects: false,
-                effects: None,
-                uuid: None,
-            }),
+            SchTextTarget::Text => ParsedSchText::Text(Text::new(TextKind::Text, text)),
             SchTextTarget::Label(kind) => {
-                let mut label = Label {
-                    kind,
-                    text,
-                    at: [0.0, 0.0],
-                    angle: 0.0,
-                    spin: Some(LabelSpin::Right),
-                    shape: None,
-                    pin_length: None,
-                    iref_at: None,
-                    excluded_from_sim: false,
-                    fields_autoplaced: FieldAutoplacement::None,
-                    visible: true,
-                    has_effects: false,
-                    effects: None,
-                    uuid: None,
-                    properties: Vec::new(),
-                };
+                let mut label = Label::new(kind, text);
 
                 if matches!(label.kind, LabelKind::Global) {
                     label.properties.push(Property {
@@ -2820,40 +2774,14 @@ impl KiCadSchematicParser {
 
     fn parse_sch_text_box(&mut self) -> Result<TextBox, Error> {
         let _ = self.need_unquoted_symbol_atom("text_box")?;
-        let mut text_box = TextBox {
-            text: String::new(),
-            at: [0.0, 0.0],
-            angle: 0.0,
-            end: [0.0, 0.0],
-            excluded_from_sim: false,
-            has_effects: false,
-            effects: None,
-            stroke: None,
-            fill: None,
-            span: None,
-            margins: None,
-            uuid: None,
-        };
+        let mut text_box = TextBox::new();
         self.parse_sch_text_box_content(ParsedTextBoxOwner::TextBox(&mut text_box), false)?;
         Ok(text_box)
     }
 
     fn parse_sch_table_cell(&mut self) -> Result<TableCell, Error> {
         let _ = self.need_unquoted_symbol_atom("table_cell")?;
-        let mut text_box = TableCell {
-            text: String::new(),
-            at: [0.0, 0.0],
-            angle: 0.0,
-            end: [0.0, 0.0],
-            excluded_from_sim: false,
-            has_effects: false,
-            effects: None,
-            stroke: None,
-            fill: None,
-            span: None,
-            margins: None,
-            uuid: None,
-        };
+        let mut text_box = TableCell::new();
         self.parse_sch_text_box_content(ParsedTextBoxOwner::TableCell(&mut text_box), true)?;
         Ok(text_box)
     }
@@ -3091,20 +3019,7 @@ impl KiCadSchematicParser {
                 "table requires schematic version {VERSION_TABLES} or newer"
             )));
         }
-        let mut table = Table {
-            default_line_width: DEFAULT_LINE_WIDTH_MM,
-            column_count: None,
-            column_widths: Vec::new(),
-            row_heights: Vec::new(),
-            cells: Vec::new(),
-            border_external: None,
-            border_header: None,
-            border_stroke: None,
-            separators_rows: None,
-            separators_cols: None,
-            separators_stroke: None,
-            uuid: None,
-        };
+        let mut table = Table::new(DEFAULT_LINE_WIDTH_MM);
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3237,12 +3152,7 @@ impl KiCadSchematicParser {
 
     fn parse_sch_image(&mut self) -> Result<Image, Error> {
         let _ = self.need_unquoted_symbol_atom("image")?;
-        let mut image = Image {
-            at: [0.0, 0.0],
-            scale: 1.0,
-            data: None,
-            uuid: None,
-        };
+        let mut image = Image::new();
         let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
@@ -3309,21 +3219,7 @@ impl KiCadSchematicParser {
 
     fn parse_sch_polyline(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("polyline")?;
-        let mut shape = Shape {
-            kind: ShapeKind::Polyline,
-            points: Vec::new(),
-            radius: None,
-            corner_radius: None,
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid: None,
-        };
+        let mut shape = Shape::new(ShapeKind::Polyline);
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3391,21 +3287,8 @@ impl KiCadSchematicParser {
 
     fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("arc")?;
-        let mut shape = Shape {
-            kind: ShapeKind::Arc,
-            points: vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
-            radius: None,
-            corner_radius: None,
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid: None,
-        };
+        let mut shape = Shape::new(ShapeKind::Arc);
+        shape.points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3457,21 +3340,9 @@ impl KiCadSchematicParser {
 
     fn parse_sch_circle(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("circle")?;
-        let mut shape = Shape {
-            kind: ShapeKind::Circle,
-            points: vec![[0.0, 0.0]],
-            radius: Some(0.0),
-            corner_radius: None,
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid: None,
-        };
+        let mut shape = Shape::new(ShapeKind::Circle);
+        shape.points = vec![[0.0, 0.0]];
+        shape.radius = Some(0.0);
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3518,21 +3389,8 @@ impl KiCadSchematicParser {
 
     fn parse_sch_rectangle(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("rectangle")?;
-        let mut shape = Shape {
-            kind: ShapeKind::Rectangle,
-            points: vec![[0.0, 0.0], [0.0, 0.0]],
-            radius: None,
-            corner_radius: None,
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid: None,
-        };
+        let mut shape = Shape::new(ShapeKind::Rectangle);
+        shape.points = vec![[0.0, 0.0], [0.0, 0.0]];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3584,21 +3442,8 @@ impl KiCadSchematicParser {
 
     fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("bezier")?;
-        let mut shape = Shape {
-            kind: ShapeKind::Bezier,
-            points: vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
-            radius: None,
-            corner_radius: None,
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid: None,
-        };
+        let mut shape = Shape::new(ShapeKind::Bezier);
+        shape.points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3667,21 +3512,7 @@ impl KiCadSchematicParser {
                 "rule_area requires schematic version {VERSION_RULE_AREAS} or newer"
             )));
         }
-        let mut shape = Shape {
-            kind: ShapeKind::RuleArea,
-            points: Vec::new(),
-            radius: None,
-            corner_radius: None,
-            has_stroke: false,
-            has_fill: false,
-            stroke: None,
-            fill: None,
-            excluded_from_sim: false,
-            in_bom: true,
-            on_board: true,
-            dnp: false,
-            uuid: None,
-        };
+        let mut shape = Shape::new(ShapeKind::RuleArea);
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -4620,16 +4451,7 @@ impl KiCadSchematicParser {
             }
         };
 
-        let mut sheet_pin = SheetPin {
-            name,
-            shape,
-            at: None,
-            side: None,
-            visible: true,
-            has_effects: false,
-            effects: None,
-            uuid: None,
-        };
+        let mut sheet_pin = SheetPin::new(name, shape);
 
         while !self.at_right() {
             self.need_left()?;
@@ -4698,10 +4520,7 @@ impl KiCadSchematicParser {
             }
             let _ = self.need_unquoted_symbol_atom("path")?;
             let raw_path = self.need_symbol_atom("sheet instance path")?;
-            let mut instance = SheetInstance {
-                path: raw_path,
-                page: None,
-            };
+            let mut instance = SheetInstance::new(raw_path);
 
             if self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH {
                 if let Some(root_uuid) = self.root_uuid.as_ref() {
@@ -4799,13 +4618,7 @@ impl KiCadSchematicParser {
             } else {
                 raw_path
             };
-            let mut instance = SymbolInstance {
-                path,
-                reference: None,
-                unit: None,
-                value: None,
-                footprint: None,
-            };
+            let mut instance = SymbolInstance::new(path);
             while !self.at_right() {
                 self.need_left()?;
                 let child = match &self.current().kind {
@@ -5071,11 +4884,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_stroke(&mut self) -> Result<Stroke, Error> {
-        let mut stroke = Stroke {
-            width: None,
-            style: StrokeStyle::Default,
-            color: None,
-        };
+        let mut stroke = Stroke::new();
 
         while !self.at_right() {
             self.need_left()?;
@@ -5134,10 +4943,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_fill(&mut self) -> Result<Fill, Error> {
-        let mut fill = Fill {
-            fill_type: FillType::None,
-            color: None,
-        };
+        let mut fill = Fill::new();
 
         while !self.at_right() {
             self.need_left()?;

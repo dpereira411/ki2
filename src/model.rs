@@ -314,10 +314,30 @@ pub struct Junction {
     pub uuid: Option<String>,
 }
 
+impl Junction {
+    pub fn new() -> Self {
+        Self {
+            at: [0.0, 0.0],
+            diameter: None,
+            color: None,
+            uuid: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoConnect {
     pub at: [f64; 2],
     pub uuid: Option<String>,
+}
+
+impl NoConnect {
+    pub fn new() -> Self {
+        Self {
+            at: [0.0, 0.0],
+            uuid: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,6 +349,18 @@ pub struct BusEntry {
     pub uuid: Option<String>,
 }
 
+impl BusEntry {
+    pub fn new() -> Self {
+        Self {
+            at: [0.0, 0.0],
+            size: [0.0, 0.0],
+            has_stroke: false,
+            stroke: None,
+            uuid: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Line {
     pub kind: LineKind,
@@ -336,6 +368,18 @@ pub struct Line {
     pub has_stroke: bool,
     pub stroke: Option<Stroke>,
     pub uuid: Option<String>,
+}
+
+impl Line {
+    pub fn new(kind: LineKind) -> Self {
+        Self {
+            kind,
+            points: Vec::new(),
+            has_stroke: false,
+            stroke: None,
+            uuid: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -362,6 +406,28 @@ pub struct Label {
     pub effects: Option<TextEffects>,
     pub uuid: Option<String>,
     pub properties: Vec<Property>,
+}
+
+impl Label {
+    pub fn new(kind: LabelKind, text: String) -> Self {
+        Self {
+            kind,
+            text,
+            at: [0.0, 0.0],
+            angle: 0.0,
+            spin: Some(LabelSpin::Right),
+            shape: None,
+            pin_length: None,
+            iref_at: None,
+            excluded_from_sim: false,
+            fields_autoplaced: FieldAutoplacement::None,
+            visible: true,
+            has_effects: false,
+            effects: None,
+            uuid: None,
+            properties: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -407,6 +473,22 @@ pub struct Text {
     pub uuid: Option<String>,
 }
 
+impl Text {
+    pub fn new(kind: TextKind, text: String) -> Self {
+        Self {
+            kind,
+            text,
+            at: None,
+            excluded_from_sim: false,
+            fields_autoplaced: FieldAutoplacement::None,
+            visible: true,
+            has_effects: false,
+            effects: None,
+            uuid: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextKind {
     Text,
@@ -429,6 +511,25 @@ pub struct TextBox {
     pub uuid: Option<String>,
 }
 
+impl TextBox {
+    pub fn new() -> Self {
+        Self {
+            text: String::new(),
+            at: [0.0, 0.0],
+            angle: 0.0,
+            end: [0.0, 0.0],
+            excluded_from_sim: false,
+            has_effects: false,
+            effects: None,
+            stroke: None,
+            fill: None,
+            span: None,
+            margins: None,
+            uuid: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableCell {
     pub text: String,
@@ -443,6 +544,25 @@ pub struct TableCell {
     pub span: Option<[i32; 2]>,
     pub margins: Option<[f64; 4]>,
     pub uuid: Option<String>,
+}
+
+impl TableCell {
+    pub fn new() -> Self {
+        Self {
+            text: String::new(),
+            at: [0.0, 0.0],
+            angle: 0.0,
+            end: [0.0, 0.0],
+            excluded_from_sim: false,
+            has_effects: false,
+            effects: None,
+            stroke: None,
+            fill: None,
+            span: None,
+            margins: None,
+            uuid: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -462,6 +582,16 @@ pub struct Stroke {
     pub color: Option<[f64; 4]>,
 }
 
+impl Stroke {
+    pub fn new() -> Self {
+        Self {
+            width: None,
+            style: StrokeStyle::Default,
+            color: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FillType {
     None,
@@ -477,6 +607,15 @@ pub enum FillType {
 pub struct Fill {
     pub fill_type: FillType,
     pub color: Option<[f64; 4]>,
+}
+
+impl Fill {
+    pub fn new() -> Self {
+        Self {
+            fill_type: FillType::None,
+            color: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -527,6 +666,23 @@ pub struct Table {
 }
 
 impl Table {
+    pub fn new(default_line_width: f64) -> Self {
+        Self {
+            default_line_width,
+            column_count: None,
+            column_widths: Vec::new(),
+            row_heights: Vec::new(),
+            cells: Vec::new(),
+            border_external: None,
+            border_header: None,
+            border_stroke: None,
+            separators_rows: None,
+            separators_cols: None,
+            separators_stroke: None,
+            uuid: None,
+        }
+    }
+
     pub fn set_column_count(&mut self, count: i32) {
         self.column_count = Some(count);
     }
@@ -564,6 +720,17 @@ pub struct Image {
     pub uuid: Option<String>,
 }
 
+impl Image {
+    pub fn new() -> Self {
+        Self {
+            at: [0.0, 0.0],
+            scale: 1.0,
+            data: None,
+            uuid: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Shape {
     pub kind: ShapeKind,
@@ -579,6 +746,26 @@ pub struct Shape {
     pub on_board: bool,
     pub dnp: bool,
     pub uuid: Option<String>,
+}
+
+impl Shape {
+    pub fn new(kind: ShapeKind) -> Self {
+        Self {
+            kind,
+            points: Vec::new(),
+            radius: None,
+            corner_radius: None,
+            has_stroke: false,
+            has_fill: false,
+            stroke: None,
+            fill: None,
+            excluded_from_sim: false,
+            in_bom: true,
+            on_board: true,
+            dnp: false,
+            uuid: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -856,6 +1043,21 @@ pub struct SheetPin {
     pub uuid: Option<String>,
 }
 
+impl SheetPin {
+    pub fn new(name: String, shape: SheetPinShape) -> Self {
+        Self {
+            name,
+            shape,
+            at: None,
+            side: None,
+            visible: true,
+            has_effects: false,
+            effects: None,
+            uuid: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SheetPinShape {
     Input,
@@ -879,6 +1081,12 @@ pub struct SheetInstance {
     pub page: Option<String>,
 }
 
+impl SheetInstance {
+    pub fn new(path: String) -> Self {
+        Self { path, page: None }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SymbolInstance {
     pub path: String,
@@ -886,6 +1094,18 @@ pub struct SymbolInstance {
     pub unit: Option<i32>,
     pub value: Option<String>,
     pub footprint: Option<String>,
+}
+
+impl SymbolInstance {
+    pub fn new(path: String) -> Self {
+        Self {
+            path,
+            reference: None,
+            unit: None,
+            value: None,
+            footprint: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
