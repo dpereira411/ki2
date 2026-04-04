@@ -7,10 +7,10 @@ use uuid::Uuid;
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    BusAlias, BusEntry, EmbeddedFile, FieldAutoplacement, Fill, FillType, Group, Image,
-    ItemVariant, Junction, Label, LabelKind, LabelShape, LabelSpin, LibDrawItem, LibPinAlternate,
-    LibSymbol, Line, LineKind, MirrorAxis, NoConnect, Page, Paper, Property, PropertyKind,
-    RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet, SheetInstance,
+    BusAlias, BusEntry, EmbeddedFile, EmbeddedFileType, FieldAutoplacement, Fill, FillType, Group,
+    Image, ItemVariant, Junction, Label, LabelKind, LabelShape, LabelSpin, LibDrawItem,
+    LibPinAlternate, LibSymbol, Line, LineKind, MirrorAxis, NoConnect, Page, Paper, Property,
+    PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet, SheetInstance,
     SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle, Symbol,
     SymbolInstance, SymbolLocalInstance, SymbolPin, Table, Text, TextBox, TextEffects,
     TextHJustify, TextKind, TextVJustify, TitleBlock, VariantField,
@@ -338,38 +338,79 @@ impl KiCadSchematicParser {
                             if head != "file" {
                                 return Err(self.expecting("file"));
                             }
-                            let mut name = None;
-                            let mut data = None;
-
-                            if self.at_atom() {
-                                name = Some(self.need_atom()?);
-                            }
-                            if self.at_atom() {
-                                data = Some(self.need_atom()?);
-                            }
+                            let mut file = EmbeddedFile {
+                                name: None,
+                                checksum: None,
+                                file_type: None,
+                                data: None,
+                            };
 
                             while !self.at_right() {
                                 self.need_left()?;
-                                let head = self.need_unquoted_symbol_atom("name or data")?;
+                                let head =
+                                    self.need_unquoted_symbol_atom("checksum, data or name")?;
                                 match head.as_str() {
                                     "name" => {
-                                        name = Some(
-                                            self.need_atom()
-                                                .map_err(|_| self.error_here("missing name"))?,
-                                        )
+                                        file.name = Some(self.need_symbol_or_number_atom("name")?);
+                                    }
+                                    "checksum" => {
+                                        if file.name.is_none() {
+                                            return Err(self.expecting("name"));
+                                        }
+                                        file.checksum =
+                                            Some(self.need_symbol_or_number_atom("checksum data")?);
+                                    }
+                                    "type" => {
+                                        if file.name.is_none() {
+                                            return Err(self.expecting("name"));
+                                        }
+                                        file.file_type = Some(
+                                            match self
+                                                .need_unquoted_symbol_atom(
+                                                    "datasheet, font, model, worksheet or other",
+                                                )?
+                                                .as_str()
+                                            {
+                                                "datasheet" => EmbeddedFileType::Datasheet,
+                                                "font" => EmbeddedFileType::Font,
+                                                "model" => EmbeddedFileType::Model,
+                                                "worksheet" => EmbeddedFileType::Worksheet,
+                                                "other" => EmbeddedFileType::Other,
+                                                _ => return Err(self.expecting(
+                                                    "datasheet, font, model, worksheet or other",
+                                                )),
+                                            },
+                                        );
                                     }
                                     "data" => {
-                                        data = Some(
-                                            self.need_atom()
-                                                .map_err(|_| self.error_here("missing data"))?,
-                                        )
+                                        if file.name.is_none() {
+                                            return Err(self.expecting("name"));
+                                        }
+                                        if self.at_right() {
+                                            self.need_right()?;
+                                            continue;
+                                        }
+                                        let bar = self.need_unquoted_symbol_atom("|")?;
+                                        if bar != "|" {
+                                            return Err(self.expecting("|"));
+                                        }
+                                        let mut encoded = String::new();
+                                        while !self.at_unquoted_symbol_with("|") {
+                                            encoded.push_str(
+                                                &self.need_symbol_atom("base64 file data")?,
+                                            );
+                                        }
+                                        let bar = self.need_unquoted_symbol_atom("|")?;
+                                        if bar != "|" {
+                                            return Err(self.expecting("|"));
+                                        }
+                                        file.data = Some(encoded);
                                     }
-                                    _ => return Err(self.expecting("name or data")),
+                                    _ => return Err(self.expecting("checksum, data or name")),
                                 }
                                 self.need_right()?;
                             }
 
-                            let file = EmbeddedFile { name, data };
                             self.need_right()?;
                             files.push(file);
                         }
@@ -898,38 +939,79 @@ impl KiCadSchematicParser {
                             if head != "file" {
                                 return Err(self.expecting("file"));
                             }
-                            let mut name = None;
-                            let mut data = None;
-
-                            if self.at_atom() {
-                                name = Some(self.need_atom()?);
-                            }
-                            if self.at_atom() {
-                                data = Some(self.need_atom()?);
-                            }
+                            let mut file = EmbeddedFile {
+                                name: None,
+                                checksum: None,
+                                file_type: None,
+                                data: None,
+                            };
 
                             while !self.at_right() {
                                 self.need_left()?;
-                                let head = self.need_unquoted_symbol_atom("name or data")?;
+                                let head =
+                                    self.need_unquoted_symbol_atom("checksum, data or name")?;
                                 match head.as_str() {
                                     "name" => {
-                                        name = Some(
-                                            self.need_atom()
-                                                .map_err(|_| self.error_here("missing name"))?,
-                                        )
+                                        file.name = Some(self.need_symbol_or_number_atom("name")?);
+                                    }
+                                    "checksum" => {
+                                        if file.name.is_none() {
+                                            return Err(self.expecting("name"));
+                                        }
+                                        file.checksum =
+                                            Some(self.need_symbol_or_number_atom("checksum data")?);
+                                    }
+                                    "type" => {
+                                        if file.name.is_none() {
+                                            return Err(self.expecting("name"));
+                                        }
+                                        file.file_type =
+                                            Some(match self.need_unquoted_symbol_atom(
+                                                "datasheet, font, model, worksheet or other",
+                                            )?
+                                            .as_str()
+                                            {
+                                                "datasheet" => EmbeddedFileType::Datasheet,
+                                                "font" => EmbeddedFileType::Font,
+                                                "model" => EmbeddedFileType::Model,
+                                                "worksheet" => EmbeddedFileType::Worksheet,
+                                                "other" => EmbeddedFileType::Other,
+                                                _ => {
+                                                    return Err(self.expecting(
+                                                        "datasheet, font, model, worksheet or other",
+                                                    ))
+                                                }
+                                            });
                                     }
                                     "data" => {
-                                        data = Some(
-                                            self.need_atom()
-                                                .map_err(|_| self.error_here("missing data"))?,
-                                        )
+                                        if file.name.is_none() {
+                                            return Err(self.expecting("name"));
+                                        }
+                                        if self.at_right() {
+                                            self.need_right()?;
+                                            continue;
+                                        }
+                                        let bar = self.need_unquoted_symbol_atom("|")?;
+                                        if bar != "|" {
+                                            return Err(self.expecting("|"));
+                                        }
+                                        let mut encoded = String::new();
+                                        while !self.at_unquoted_symbol_with("|") {
+                                            encoded.push_str(&self.need_symbol_atom(
+                                                "base64 file data",
+                                            )?);
+                                        }
+                                        let bar = self.need_unquoted_symbol_atom("|")?;
+                                        if bar != "|" {
+                                            return Err(self.expecting("|"));
+                                        }
+                                        file.data = Some(encoded);
                                     }
-                                    _ => return Err(self.expecting("name or data")),
+                                    _ => return Err(self.expecting("checksum, data or name")),
                                 }
                                 self.need_right()?;
                             }
 
-                            let file = EmbeddedFile { name, data };
                             self.need_right()?;
                             files.push(file);
                         }

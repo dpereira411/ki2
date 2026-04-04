@@ -6,9 +6,9 @@ use ki2::core::SchematicProject;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
-    FieldAutoplacement, FillType, Group, LabelKind, LabelSpin, LineKind, MirrorAxis, PropertyKind,
-    SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle, TextHJustify, TextKind,
-    TextVJustify,
+    EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelSpin, LineKind,
+    MirrorAxis, PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle,
+    TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 
@@ -1080,7 +1080,9 @@ fn parses_extended_top_level_sections() {
   (title_block (title "Demo") (date "2026-02-25") (rev "A") (company "Acme") (comment 1 "c1"))
   (bus_alias "ADDR" (members "A0" "A1" "A2"))
   (embedded_fonts no)
-  (embedded_files (file "A.bin" "abc") (file (name "B.bin") (data "def")))
+  (embedded_files
+    (file (name "A.bin") (data |abc|))
+    (file (name "B.bin") (data |def|)))
   (lib_symbols
     (symbol "Device:R"
       (power local)
@@ -1112,7 +1114,7 @@ fn parses_extended_top_level_sections() {
           (number "1" (effects (font (size 1.1 1.2))))
           (alternate "ALT" output clock)))
       (embedded_fonts yes)
-      (embedded_files (file "sym.bin" "xyz"))))
+      (embedded_files (file (name "sym.bin") (data |xyz|)))))
   (text "hello" (at 10 20 0) (uuid "t-1"))
   (text_box "box" (at 0 0 0) (size 5 5) (margins 1 2 3 4) (uuid "tb-1"))
   (table
@@ -3402,7 +3404,7 @@ fn rejects_quoted_pts_and_embedded_file_keyword_heads() {
             .screen
             .parse_warnings
             .iter()
-            .any(|warning| warning.contains("expecting name or data"))
+            .any(|warning| warning.contains("expecting checksum, data or name"))
     );
 
     let _ = fs::remove_file(quoted_polyline_xy_path);
@@ -4842,7 +4844,7 @@ fn records_warning_for_invalid_top_level_embedded_files() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
     assert!(schematic.screen.embedded_files.is_empty());
     assert_eq!(schematic.screen.parse_warnings.len(), 1);
-    assert!(schematic.screen.parse_warnings[0].contains("expecting name or data"));
+    assert!(schematic.screen.parse_warnings[0].contains("expecting checksum, data or name"));
     let _ = fs::remove_file(path);
 }
 
@@ -4872,8 +4874,8 @@ fn repeated_embedded_and_lib_symbol_sections_follow_upstream_accumulation_rules(
   (paper "A4")
   (embedded_fonts no)
   (embedded_fonts yes)
-  (embedded_files (file "A.bin" "aaa"))
-  (embedded_files (file "B.bin" "bbb"))
+  (embedded_files (file (name "A.bin") (data |aaa|)))
+  (embedded_files (file (name "B.bin") (data |bbb|)))
   (lib_symbols
     (symbol "First:R"))
   (lib_symbols
@@ -4895,6 +4897,31 @@ fn repeated_embedded_and_lib_symbol_sections_follow_upstream_accumulation_rules(
     assert_eq!(schematic.screen.lib_symbols.len(), 2);
     assert_eq!(schematic.screen.lib_symbols[0].name, "First:R");
     assert_eq!(schematic.screen.lib_symbols[1].name, "Second:R");
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn parses_embedded_file_checksum_type_and_bar_data() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "A.bin")
+      (checksum deadbeef)
+      (type font)
+      (data |abc123|)))
+)"#;
+    let path = temp_schematic("embedded_file_checksum_type", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    assert_eq!(schematic.screen.embedded_files.len(), 1);
+    let file = &schematic.screen.embedded_files[0];
+    assert_eq!(file.name.as_deref(), Some("A.bin"));
+    assert_eq!(file.checksum.as_deref(), Some("deadbeef"));
+    assert_eq!(file.file_type, Some(EmbeddedFileType::Font));
+    assert_eq!(file.data.as_deref(), Some("abc123"));
     let _ = fs::remove_file(path);
 }
 
@@ -6998,7 +7025,7 @@ fn links_symbols_to_local_lib_symbols_and_hydrates_embedded_files() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (embedded_files (file "shared.bin" "abc123"))
+  (embedded_files (file (name "shared.bin") (data |abc123|)))
   (lib_symbols
     (symbol "Local:R"
       (embedded_files (file (name "shared.bin")))))
@@ -7038,7 +7065,7 @@ fn records_warning_for_invalid_lib_symbol_embedded_files() {
     let path = temp_schematic("invalid_lib_embedded_files", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
     assert_eq!(schematic.screen.parse_warnings.len(), 1);
-    assert!(schematic.screen.parse_warnings[0].contains("expecting name or data"));
+    assert!(schematic.screen.parse_warnings[0].contains("expecting checksum, data or name"));
     assert!(schematic.screen.lib_symbols[0].embedded_files.is_empty());
     let _ = fs::remove_file(path);
 }

@@ -778,7 +778,18 @@ pub struct BusAlias {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmbeddedFile {
     pub name: Option<String>,
+    pub checksum: Option<String>,
+    pub file_type: Option<EmbeddedFileType>,
     pub data: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddedFileType {
+    Datasheet,
+    Font,
+    Model,
+    Worksheet,
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq)]
