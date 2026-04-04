@@ -4734,9 +4734,14 @@ impl KiCadSchematicParser {
 
     fn parse_i32_atom(&mut self, field: impl Into<String>) -> Result<i32, Error> {
         let field = field.into();
-        let value = self
-            .need_number_atom(field.as_str())
-            .map_err(|_| self.error_here(format!("missing {field}")))?;
+        let value = match &self.current().kind {
+            TokKind::Atom(value) if self.current().atom_class == Some(AtomClass::Number) => {
+                let out = value.clone();
+                self.idx += 1;
+                out
+            }
+            _ => return Err(self.error_here(format!("missing {field}"))),
+        };
         value
             .parse::<i32>()
             .map_err(|_| self.error_here(format!("missing {field}")))
@@ -4744,9 +4749,14 @@ impl KiCadSchematicParser {
 
     fn parse_f64_atom(&mut self, field: impl Into<String>) -> Result<f64, Error> {
         let field = field.into();
-        let value = self
-            .need_number_atom(field.as_str())
-            .map_err(|_| self.error_here(format!("missing {field}")))?;
+        let value = match &self.current().kind {
+            TokKind::Atom(value) if self.current().atom_class == Some(AtomClass::Number) => {
+                let out = value.clone();
+                self.idx += 1;
+                out
+            }
+            _ => return Err(self.error_here(format!("missing {field}"))),
+        };
         value
             .parse::<f64>()
             .map_err(|_| self.error_here(format!("missing {field}")))
@@ -4844,17 +4854,6 @@ impl KiCadSchematicParser {
                     Some(AtomClass::Symbol | AtomClass::Number | AtomClass::Quoted)
                 ) =>
             {
-                let out = value.clone();
-                self.idx += 1;
-                Ok(out)
-            }
-            _ => Err(self.expecting(expected)),
-        }
-    }
-
-    fn need_number_atom(&mut self, expected: &str) -> Result<String, Error> {
-        match &self.current().kind {
-            TokKind::Atom(value) if self.current().atom_class == Some(AtomClass::Number) => {
                 let out = value.clone();
                 self.idx += 1;
                 Ok(out)
