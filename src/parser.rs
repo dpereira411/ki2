@@ -413,13 +413,35 @@ impl KiCadSchematicParser {
             self.need_left()?;
             let head = self.need_unquoted_symbol_atom("title, date, rev, company, or comment")?;
             match head.as_str() {
-                "title" => title_block.title = Some(self.parse_string_atom("title")?),
-                "date" => title_block.date = Some(self.parse_string_atom("date")?),
-                "rev" => title_block.revision = Some(self.parse_string_atom("rev")?),
-                "company" => title_block.company = Some(self.parse_string_atom("company")?),
+                "title" => {
+                    title_block.title = Some(
+                        self.need_atom()
+                            .map_err(|_| self.error_here("missing title"))?,
+                    )
+                }
+                "date" => {
+                    title_block.date = Some(
+                        self.need_atom()
+                            .map_err(|_| self.error_here("missing date"))?,
+                    )
+                }
+                "rev" => {
+                    title_block.revision = Some(
+                        self.need_atom()
+                            .map_err(|_| self.error_here("missing rev"))?,
+                    )
+                }
+                "company" => {
+                    title_block.company = Some(
+                        self.need_atom()
+                            .map_err(|_| self.error_here("missing company"))?,
+                    )
+                }
                 "comment" => {
                     let idx = self.parse_i32_atom("comment index")?;
-                    let value = self.parse_string_atom("comment value")?;
+                    let value = self
+                        .need_atom()
+                        .map_err(|_| self.error_here("missing comment value"))?;
 
                     let comment_number = match idx {
                         1 => 1,
