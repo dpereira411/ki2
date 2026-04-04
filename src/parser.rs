@@ -4497,15 +4497,11 @@ impl KiCadSchematicParser {
             .map_err(|_| self.error_here(format!("missing {field}")))
     }
 
-    fn parse_number_atom(&mut self, field: impl Into<String>) -> Result<String, Error> {
-        let field = field.into();
-        self.need_number_atom(field.as_str())
-            .map_err(|_| self.error_here(format!("missing {field}")))
-    }
-
     fn parse_i32_atom(&mut self, field: impl Into<String>) -> Result<i32, Error> {
         let field = field.into();
-        let value = self.parse_number_atom(field.clone())?;
+        let value = self
+            .need_number_atom(field.as_str())
+            .map_err(|_| self.error_here(format!("missing {field}")))?;
         value
             .parse::<i32>()
             .map_err(|_| self.error_here(format!("missing {field}")))
@@ -4513,7 +4509,9 @@ impl KiCadSchematicParser {
 
     fn parse_f64_atom(&mut self, field: impl Into<String>) -> Result<f64, Error> {
         let field = field.into();
-        let value = self.parse_number_atom(field.clone())?;
+        let value = self
+            .need_number_atom(field.as_str())
+            .map_err(|_| self.error_here(format!("missing {field}")))?;
         value
             .parse::<f64>()
             .map_err(|_| self.error_here(format!("missing {field}")))
