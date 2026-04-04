@@ -2797,7 +2797,7 @@ fn canonicalizes_and_replaces_mandatory_properties() {
 }
 
 #[test]
-fn symbol_preserves_duplicate_user_properties_in_parse_order() {
+fn symbol_duplicate_user_properties_overwrite_by_name() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -2821,15 +2821,13 @@ fn symbol_preserves_duplicate_user_properties_in_parse_order() {
         })
         .expect("symbol");
 
-    assert_eq!(
-        symbol
-            .properties
-            .iter()
-            .filter(|property| property.key == "UserField")
-            .map(|property| property.value.as_str())
-            .collect::<Vec<_>>(),
-        vec!["First", "Second"]
-    );
+    let matching = symbol
+        .properties
+        .iter()
+        .filter(|property| property.key == "UserField")
+        .collect::<Vec<_>>();
+    assert_eq!(matching.len(), 1);
+    assert_eq!(matching[0].value, "Second");
 
     let _ = fs::remove_file(path);
 }
@@ -5311,7 +5309,7 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
 }
 
 #[test]
-fn symbol_duplicate_user_properties_are_appended() {
+fn symbol_duplicate_user_properties_overwrite_existing_field() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -5339,11 +5337,9 @@ fn symbol_duplicate_user_properties_are_appended() {
         .iter()
         .filter(|property| property.key == "MPN")
         .collect::<Vec<_>>();
-    assert_eq!(mpn_properties.len(), 2);
-    assert_eq!(mpn_properties[0].value, "first");
-    assert_eq!(mpn_properties[0].at, Some([0.0, 0.0]));
-    assert_eq!(mpn_properties[1].value, "second");
-    assert_eq!(mpn_properties[1].at, Some([1.0, 2.0]));
+    assert_eq!(mpn_properties.len(), 1);
+    assert_eq!(mpn_properties[0].value, "second");
+    assert_eq!(mpn_properties[0].at, Some([1.0, 2.0]));
 
     let _ = fs::remove_file(path);
 }

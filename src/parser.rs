@@ -3220,7 +3220,15 @@ impl KiCadSchematicParser {
                             symbol.properties.push(property);
                         }
                     } else {
-                        symbol.properties.push(property);
+                        if let Some(existing) = symbol
+                            .properties
+                            .iter_mut()
+                            .find(|existing| existing.key == property.key)
+                        {
+                            *existing = property;
+                        } else {
+                            symbol.properties.push(property);
+                        }
                     }
                     self.need_right()?;
                 }
