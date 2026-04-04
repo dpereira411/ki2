@@ -918,7 +918,7 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.units[1].unit_name.as_deref(), Some("Amplifier"));
     assert_eq!(
         lib_symbol.units[1].draw_item_kinds,
-        vec!["arc", "text", "text_box", "pin"]
+        vec!["arc", "field", "text_box", "pin"]
     );
     assert_eq!(lib_symbol.units[1].draw_items.len(), 4);
     assert_eq!(lib_symbol.units[1].draw_items[0].points.len(), 3);
@@ -935,7 +935,7 @@ fn parses_extended_top_level_sections() {
     );
     assert_eq!(lib_symbol.units[1].draw_items[1].at, Some([3.0, 4.0]));
     assert_eq!(lib_symbol.units[1].draw_items[1].angle, Some(9.0));
-    assert!(lib_symbol.units[1].draw_items[1].converted_to_field);
+    assert_eq!(lib_symbol.units[1].draw_items[1].kind, "field");
     assert!(lib_symbol.units[1].draw_items[2].is_private);
     assert_eq!(
         lib_symbol.units[1].draw_items[2].text.as_deref(),

@@ -148,7 +148,6 @@ pub struct LibDrawItem {
     pub stroke: Option<Stroke>,
     pub fill: Option<Fill>,
     pub effects: Option<TextEffects>,
-    pub converted_to_field: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

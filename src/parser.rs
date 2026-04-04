@@ -822,7 +822,7 @@ impl KiCadSchematicParser {
                                 let item =
                                     self.parse_symbol_draw_item(head.as_str(), unit_number, body_style)?;
                                 self.need_right()?;
-                                draw_item_kinds.push(head.to_string());
+                                draw_item_kinds.push(item.kind.clone());
                                 draw_items.push(item);
                             }
                             _ => {
@@ -974,7 +974,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
-            converted_to_field: false,
         };
         let mut saw_start = false;
         let mut saw_mid = false;
@@ -1078,7 +1077,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
-            converted_to_field: false,
         };
 
         while !self.at_right() {
@@ -1148,7 +1146,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
-            converted_to_field: false,
         };
 
         while !self.at_right() {
@@ -1210,7 +1207,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
-            converted_to_field: false,
         };
 
         while !self.at_right() {
@@ -1278,7 +1274,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
-            converted_to_field: false,
         };
 
         while !self.at_right() {
@@ -1347,7 +1342,7 @@ impl KiCadSchematicParser {
         }
 
         Ok(LibDrawItem {
-            kind: "text".to_string(),
+            kind: if visible { "text" } else { "field" }.to_string(),
             is_private,
             unit_number,
             body_style,
@@ -1372,7 +1367,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects,
-            converted_to_field: !visible,
         })
     }
 
@@ -1501,7 +1495,6 @@ impl KiCadSchematicParser {
             stroke,
             fill,
             effects,
-            converted_to_field: false,
         })
     }
 
@@ -1758,7 +1751,6 @@ impl KiCadSchematicParser {
             stroke: None,
             fill: None,
             effects: None,
-            converted_to_field: false,
         })
     }
 
