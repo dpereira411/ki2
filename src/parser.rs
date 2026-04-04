@@ -278,7 +278,10 @@ impl KiCadSchematicParser {
                 }
                 "generator_version" => {
                     self.require_version(VERSION_GENERATOR_VERSION, "generator_version")?;
-                    self.generator_version = Some(self.parse_string_atom("generator_version")?);
+                    self.generator_version = Some(
+                        self.need_atom()
+                            .map_err(|_| self.error_here("missing generator_version"))?,
+                    );
                 }
                 "uuid" => {
                     let uuid = self.need_symbol_atom("uuid")?;
@@ -330,8 +333,18 @@ impl KiCadSchematicParser {
                                 self.need_left()?;
                                 let head = self.need_unquoted_symbol_atom("name or data")?;
                                 match head.as_str() {
-                                    "name" => name = Some(self.parse_string_atom("name")?),
-                                    "data" => data = Some(self.parse_string_atom("data")?),
+                                    "name" => {
+                                        name = Some(
+                                            self.need_atom()
+                                                .map_err(|_| self.error_here("missing name"))?,
+                                        )
+                                    }
+                                    "data" => {
+                                        data = Some(
+                                            self.need_atom()
+                                                .map_err(|_| self.error_here("missing data"))?,
+                                        )
+                                    }
                                     _ => return Err(self.expecting("name or data")),
                                 }
                                 self.need_right()?;
@@ -891,8 +904,18 @@ impl KiCadSchematicParser {
                                 self.need_left()?;
                                 let head = self.need_unquoted_symbol_atom("name or data")?;
                                 match head.as_str() {
-                                    "name" => name = Some(self.parse_string_atom("name")?),
-                                    "data" => data = Some(self.parse_string_atom("data")?),
+                                    "name" => {
+                                        name = Some(
+                                            self.need_atom()
+                                                .map_err(|_| self.error_here("missing name"))?,
+                                        )
+                                    }
+                                    "data" => {
+                                        data = Some(
+                                            self.need_atom()
+                                                .map_err(|_| self.error_here("missing data"))?,
+                                        )
+                                    }
                                     _ => return Err(self.expecting("name or data")),
                                 }
                                 self.need_right()?;
@@ -4319,7 +4342,10 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "face" => {
-                                effects.font_face = Some(self.parse_string_atom("font face")?);
+                                effects.font_face = Some(
+                                    self.need_atom()
+                                        .map_err(|_| self.error_here("missing font face"))?,
+                                );
                                 self.need_right()?;
                             }
                             "size" => {
@@ -4382,7 +4408,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "href" => {
-                    let href = self.parse_string_atom("hyperlink url")?;
+                    let href = self
+                        .need_atom()
+                        .map_err(|_| self.error_here("missing hyperlink url"))?;
                     if !Self::validate_hyperlink(&href) {
                         return Err(self.error_here(format!("invalid hyperlink url `{href}`")));
                     }
@@ -4500,12 +4528,6 @@ impl KiCadSchematicParser {
             self.parse_f64_atom(format!("{context} y"))?,
             self.parse_f64_atom(format!("{context} angle"))?,
         ])
-    }
-
-    fn parse_string_atom(&mut self, field: impl Into<String>) -> Result<String, Error> {
-        let field = field.into();
-        self.need_atom()
-            .map_err(|_| self.error_here(format!("missing {field}")))
     }
 
     fn parse_i32_atom(&mut self, field: impl Into<String>) -> Result<i32, Error> {
