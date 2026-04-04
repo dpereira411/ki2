@@ -709,8 +709,38 @@ impl KiCadSchematicParser {
                 }
                 kind @ ("arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle"
                 | "text" | "text_box") => {
-                    let item = self.parse_lib_draw_item(kind, 1, 1)?;
-                    Self::push_lib_draw_item(&mut units, &name, 1, 1, item);
+                    let item = match kind {
+                        "arc" => self.parse_lib_arc_draw_item(1, 1),
+                        "bezier" => self.parse_lib_bezier_draw_item(1, 1),
+                        "circle" => self.parse_lib_circle_draw_item(1, 1),
+                        "polyline" => self.parse_lib_polyline_draw_item(1, 1),
+                        "rectangle" => self.parse_lib_rectangle_draw_item(1, 1),
+                        "text" => self.parse_lib_text_draw_item(1, 1),
+                        "text_box" => self.parse_lib_text_box_draw_item(1, 1),
+                        "pin" => self.parse_lib_pin_draw_item(1, 1),
+                        _ => Err(self.expecting(
+                            "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
+                        )),
+                    }?;
+                    self.need_right()?;
+
+                    if let Some(unit) = units.iter_mut().find(|unit| {
+                        unit.unit_number == 1
+                            && unit.body_style == 1
+                            && unit.name == format!("{name}_{}_{}", 1, 1)
+                    }) {
+                        unit.draw_item_kinds.push(item.kind.clone());
+                        unit.draw_items.push(item);
+                    } else {
+                        units.push(crate::model::LibSymbolUnit {
+                            name: format!("{name}_{}_{}", 1, 1),
+                            unit_number: 1,
+                            body_style: 1,
+                            unit_name: None,
+                            draw_item_kinds: vec![item.kind.clone()],
+                            draw_items: vec![item],
+                        });
+                    }
                 }
                 "embedded_fonts" => {
                     embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
@@ -816,7 +846,20 @@ impl KiCadSchematicParser {
                 }
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
-                    let item = self.parse_lib_draw_item(&head, unit_number, body_style)?;
+                    let item = match head.as_str() {
+                        "arc" => self.parse_lib_arc_draw_item(unit_number, body_style),
+                        "bezier" => self.parse_lib_bezier_draw_item(unit_number, body_style),
+                        "circle" => self.parse_lib_circle_draw_item(unit_number, body_style),
+                        "polyline" => self.parse_lib_polyline_draw_item(unit_number, body_style),
+                        "rectangle" => self.parse_lib_rectangle_draw_item(unit_number, body_style),
+                        "text" => self.parse_lib_text_draw_item(unit_number, body_style),
+                        "text_box" => self.parse_lib_text_box_draw_item(unit_number, body_style),
+                        "pin" => self.parse_lib_pin_draw_item(unit_number, body_style),
+                        _ => Err(self.expecting(
+                            "arc, bezier, circle, pin, polyline, rectangle, text, or text_box",
+                        )),
+                    }?;
+                    self.need_right()?;
                     draw_item_kinds.push(head.to_string());
                     draw_items.push(item);
                 }
@@ -836,57 +879,6 @@ impl KiCadSchematicParser {
             draw_item_kinds,
             draw_items,
         })
-    }
-
-    fn push_lib_draw_item(
-        units: &mut Vec<crate::model::LibSymbolUnit>,
-        parent_name: &str,
-        unit_number: i32,
-        body_style: i32,
-        item: LibDrawItem,
-    ) {
-        if let Some(unit) = units.iter_mut().find(|unit| {
-            unit.unit_number == unit_number
-                && unit.body_style == body_style
-                && unit.name == format!("{parent_name}_{unit_number}_{body_style}")
-        }) {
-            unit.draw_item_kinds.push(item.kind.clone());
-            unit.draw_items.push(item);
-            return;
-        }
-
-        units.push(crate::model::LibSymbolUnit {
-            name: format!("{parent_name}_{unit_number}_{body_style}"),
-            unit_number,
-            body_style,
-            unit_name: None,
-            draw_item_kinds: vec![item.kind.clone()],
-            draw_items: vec![item],
-        });
-    }
-
-    fn parse_lib_draw_item(
-        &mut self,
-        kind: &str,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
-        let item =
-            match kind {
-                "arc" => self.parse_lib_arc_draw_item(unit_number, body_style),
-                "bezier" => self.parse_lib_bezier_draw_item(unit_number, body_style),
-                "circle" => self.parse_lib_circle_draw_item(unit_number, body_style),
-                "polyline" => self.parse_lib_polyline_draw_item(unit_number, body_style),
-                "rectangle" => self.parse_lib_rectangle_draw_item(unit_number, body_style),
-                "text" => self.parse_lib_text_draw_item(unit_number, body_style),
-                "text_box" => self.parse_lib_text_box_draw_item(unit_number, body_style),
-                "pin" => self.parse_lib_pin_draw_item(unit_number, body_style),
-                _ => Err(self
-                    .expecting("arc, bezier, circle, pin, polyline, rectangle, text, or text_box")),
-            }?;
-
-        self.need_right()?;
-        Ok(item)
     }
 
     fn empty_lib_draw_item(
