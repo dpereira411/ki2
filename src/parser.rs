@@ -2218,9 +2218,7 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "exclude_from_sim, start, end, at, size, stroke, fill, effects, margins or uuid",
-            )?;
+            let head = self.need_unquoted_symbol_atom("at, size, stroke, fill, effects or uuid")?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -2272,11 +2270,7 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => {
-                    return Err(self.expecting(
-                        "exclude_from_sim, start, end, at, size, stroke, fill, effects, margins or uuid",
-                    ))
-                }
+                _ => return Err(self.expecting("at, size, stroke, fill, effects or uuid")),
             }
         }
 
@@ -2331,9 +2325,8 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "exclude_from_sim, start, end, at, size, span, stroke, fill, effects, margins or uuid",
-            )?;
+            let head =
+                self.need_unquoted_symbol_atom("at, size, stroke, fill, effects, span or uuid")?;
             match head.as_str() {
                 "exclude_from_sim" => {
                     excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
@@ -2392,11 +2385,7 @@ impl KiCadSchematicParser {
                     uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
-                _ => {
-                    return Err(self.expecting(
-                        "exclude_from_sim, start, end, at, size, span, stroke, fill, effects, margins or uuid",
-                    ))
-                }
+                _ => return Err(self.expecting("at, size, stroke, fill, effects, span or uuid")),
             }
         }
 

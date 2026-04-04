@@ -2797,9 +2797,10 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_text_box_head_path = temp_schematic("quoted_text_box_head", quoted_text_box_head);
     let err = parse_schematic_file(Path::new(&quoted_text_box_head_path))
         .expect_err("must reject quoted schematic text_box head");
-    assert!(err.to_string().contains(
-        "expecting exclude_from_sim, start, end, at, size, stroke, fill, effects, margins or uuid"
-    ));
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, stroke, fill, effects or uuid")
+    );
 
     let quoted_text_box_margins_head = r#"(kicad_sch
   (version 20260306)
@@ -2811,9 +2812,10 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
         temp_schematic("quoted_text_box_margins_head", quoted_text_box_margins_head);
     let err = parse_schematic_file(Path::new(&quoted_text_box_margins_head_path))
         .expect_err("must reject quoted schematic text_box margins head");
-    assert!(err.to_string().contains(
-        "expecting exclude_from_sim, start, end, at, size, stroke, fill, effects, margins or uuid"
-    ));
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, stroke, fill, effects or uuid")
+    );
 
     let quoted_table_head = r#"(kicad_sch
   (version 20260306)
@@ -2856,9 +2858,10 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
         temp_schematic("quoted_table_cell_span_head", quoted_table_cell_span_head);
     let err = parse_schematic_file(Path::new(&quoted_table_cell_span_head_path))
         .expect_err("must reject quoted table_cell span head");
-    assert!(err.to_string().contains(
-        "expecting exclude_from_sim, start, end, at, size, span, stroke, fill, effects, margins or uuid"
-    ));
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, stroke, fill, effects, span or uuid")
+    );
 
     let quoted_image_head = r#"(kicad_sch
   (version 20260306)
