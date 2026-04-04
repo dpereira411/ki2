@@ -451,7 +451,7 @@ fn placed_symbols_start_with_mandatory_fields() {
         })
         .expect("symbol");
 
-    assert_eq!(symbol.properties.len(), 4);
+    assert_eq!(symbol.properties.len(), 5);
     assert_eq!(
         symbol
             .properties
@@ -463,6 +463,7 @@ fn placed_symbols_start_with_mandatory_fields() {
             PropertyKind::SymbolValue,
             PropertyKind::SymbolFootprint,
             PropertyKind::SymbolDatasheet,
+            PropertyKind::SymbolDescription,
         ]
     );
     assert!(
@@ -1436,7 +1437,7 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.fp_filters, vec!["R_*", "0603"]);
     assert!(lib_symbol.locked_units);
     assert_eq!(lib_symbol.extends.as_deref(), Some("Device:Base"));
-    assert_eq!(lib_symbol.properties.len(), 4);
+    assert_eq!(lib_symbol.properties.len(), 5);
     assert!(
         !lib_symbol
             .properties
@@ -2533,8 +2534,8 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
     assert_eq!(symbols.len(), 2);
     assert!(symbols[0].excluded_from_sim);
     assert!(symbols[1].excluded_from_sim);
-    assert_eq!(symbols[0].properties.len(), 4);
-    assert_eq!(symbols[1].properties.len(), 4);
+    assert_eq!(symbols[0].properties.len(), 5);
+    assert_eq!(symbols[1].properties.len(), 5);
     assert!(
         symbols[0]
             .properties
@@ -7648,7 +7649,7 @@ fn lib_symbol_duplicate_user_properties_follow_upstream_renaming() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
 
-    assert_eq!(lib_symbol.properties.len(), 7);
+    assert_eq!(lib_symbol.properties.len(), 8);
     assert_eq!(
         lib_symbol
             .properties
@@ -7690,7 +7691,7 @@ fn lib_symbol_private_is_preserved_on_mandatory_and_user_fields() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
 
-    assert_eq!(lib_symbol.properties.len(), 5);
+    assert_eq!(lib_symbol.properties.len(), 6);
     assert!(
         lib_symbol
             .properties
@@ -8055,6 +8056,14 @@ fn mandatory_properties_keep_default_kicad_field_ids() {
             .find(|property| property.kind == PropertyKind::SymbolDatasheet)
             .and_then(|property| property.id),
         Some(4)
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolDescription)
+            .and_then(|property| property.id),
+        Some(5)
     );
 
     let _ = fs::remove_file(path);

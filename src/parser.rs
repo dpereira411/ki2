@@ -1920,6 +1920,7 @@ impl KiCadSchematicParser {
             "value" => PropertyKind::SymbolValue,
             "footprint" => PropertyKind::SymbolFootprint,
             "datasheet" => PropertyKind::SymbolDatasheet,
+            "description" => PropertyKind::SymbolDescription,
             _ => PropertyKind::User,
         };
 
@@ -2002,6 +2003,7 @@ impl KiCadSchematicParser {
                 | PropertyKind::SymbolValue
                 | PropertyKind::SymbolFootprint
                 | PropertyKind::SymbolDatasheet
+                | PropertyKind::SymbolDescription
         ) {
             let existing = symbol
                 .properties
@@ -3470,6 +3472,7 @@ impl KiCadSchematicParser {
                             | PropertyKind::SymbolValue
                             | PropertyKind::SymbolFootprint
                             | PropertyKind::SymbolDatasheet
+                            | PropertyKind::SymbolDescription
                     ) {
                         let existing = symbol
                             .properties
@@ -4546,6 +4549,7 @@ impl KiCadSchematicParser {
                 "value" => PropertyKind::SymbolValue,
                 "footprint" => PropertyKind::SymbolFootprint,
                 "datasheet" => PropertyKind::SymbolDatasheet,
+                "description" => PropertyKind::SymbolDescription,
                 _ => PropertyKind::User,
             },
             FieldParent::Sheet => match name.to_ascii_lowercase().as_str() {

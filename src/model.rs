@@ -134,9 +134,11 @@ impl LibSymbol {
             Property::new(PropertyKind::SymbolValue, String::new()),
             Property::new(PropertyKind::SymbolFootprint, String::new()),
             Property::new(PropertyKind::SymbolDatasheet, String::new()),
+            Property::new(PropertyKind::SymbolDescription, String::new()),
         ];
         properties[2].visible = false;
         properties[3].visible = false;
+        properties[4].visible = false;
 
         Self {
             units: vec![LibSymbolUnit {
@@ -824,6 +826,7 @@ impl Symbol {
                 Property::new(PropertyKind::SymbolValue, String::new()),
                 Property::new(PropertyKind::SymbolFootprint, String::new()),
                 Property::new(PropertyKind::SymbolDatasheet, String::new()),
+                Property::new(PropertyKind::SymbolDescription, String::new()),
             ],
             instances: Vec::new(),
             pins: Vec::new(),
@@ -939,6 +942,7 @@ mod tests {
                 PropertyKind::SymbolValue,
                 PropertyKind::SymbolFootprint,
                 PropertyKind::SymbolDatasheet,
+                PropertyKind::SymbolDescription,
             ]
         );
     }
@@ -980,6 +984,7 @@ mod tests {
                 (PropertyKind::SymbolValue, true),
                 (PropertyKind::SymbolFootprint, false),
                 (PropertyKind::SymbolDatasheet, false),
+                (PropertyKind::SymbolDescription, false),
             ]
         );
     }
@@ -1068,6 +1073,7 @@ pub enum PropertyKind {
     SymbolValue,
     SymbolFootprint,
     SymbolDatasheet,
+    SymbolDescription,
     SheetName,
     SheetFile,
     SheetUser,
@@ -1082,6 +1088,7 @@ impl PropertyKind {
             PropertyKind::SymbolValue => "Value",
             PropertyKind::SymbolFootprint => "Footprint",
             PropertyKind::SymbolDatasheet => "Datasheet",
+            PropertyKind::SymbolDescription => "Description",
             PropertyKind::SheetName => "Sheetname",
             PropertyKind::SheetFile => "Sheetfile",
             PropertyKind::SheetUser => "",
@@ -1096,6 +1103,7 @@ impl PropertyKind {
             PropertyKind::SymbolValue => Some(2),
             PropertyKind::SymbolFootprint => Some(3),
             PropertyKind::SymbolDatasheet => Some(4),
+            PropertyKind::SymbolDescription => Some(5),
             PropertyKind::GlobalLabelIntersheetRefs => Some(6),
             PropertyKind::SheetName => Some(7),
             PropertyKind::SheetFile => Some(8),
