@@ -1974,7 +1974,22 @@ impl KiCadSchematicParser {
                     if matches!(label_kind, LabelKind::Local) {
                         return Err(self.unexpected("shape"));
                     }
-                    shape = Some(self.parse_label_shape()?);
+                    shape = Some(match self.need_unquoted_symbol_atom("shape")?.as_str() {
+                        "input" => LabelShape::Input,
+                        "output" => LabelShape::Output,
+                        "bidirectional" => LabelShape::Bidirectional,
+                        "tri_state" => LabelShape::TriState,
+                        "passive" => LabelShape::Passive,
+                        "dot" => LabelShape::Dot,
+                        "round" => LabelShape::Round,
+                        "diamond" => LabelShape::Diamond,
+                        "rectangle" => LabelShape::Rectangle,
+                        _ => {
+                            return Err(self.expecting(
+                                "input, output, bidirectional, tri_state, passive, dot, round, diamond or rectangle",
+                            ))
+                        }
+                    });
                     self.need_right()?;
                 }
                 "length" => {
@@ -4924,23 +4939,6 @@ impl KiCadSchematicParser {
         }
 
         out
-    }
-
-    fn parse_label_shape(&mut self) -> Result<LabelShape, Error> {
-        match self.need_unquoted_symbol_atom("shape")?.as_str() {
-            "input" => Ok(LabelShape::Input),
-            "output" => Ok(LabelShape::Output),
-            "bidirectional" => Ok(LabelShape::Bidirectional),
-            "tri_state" => Ok(LabelShape::TriState),
-            "passive" => Ok(LabelShape::Passive),
-            "dot" => Ok(LabelShape::Dot),
-            "round" => Ok(LabelShape::Round),
-            "diamond" => Ok(LabelShape::Diamond),
-            "rectangle" => Ok(LabelShape::Rectangle),
-            _ => Err(self.expecting(
-                "input, output, bidirectional, tri_state, passive, dot, round, diamond or rectangle",
-            )),
-        }
     }
 
     fn update_local_lib_symbol_links(&mut self) {
