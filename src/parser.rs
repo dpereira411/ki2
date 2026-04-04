@@ -3150,7 +3150,19 @@ impl KiCadSchematicParser {
                                         self.need_right()?;
                                     }
                                     "value" => {
-                                        let parsed = self.parse_symbol_text_atom("value")?;
+                                        let parsed = {
+                                            let value = self.need_symbol_atom("value")?;
+                                            if self
+                                                .require_known_version()
+                                                .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                                < VERSION_EMPTY_TILDE_IS_EMPTY
+                                                && value == "~"
+                                            {
+                                                String::new()
+                                            } else {
+                                                value
+                                            }
+                                        };
                                         let property = Property {
                                             key: "Value".to_string(),
                                             value: parsed.clone(),
@@ -3176,7 +3188,19 @@ impl KiCadSchematicParser {
                                         self.need_right()?;
                                     }
                                     "footprint" => {
-                                        let parsed = self.parse_symbol_text_atom("footprint")?;
+                                        let parsed = {
+                                            let value = self.need_symbol_atom("footprint")?;
+                                            if self
+                                                .require_known_version()
+                                                .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                                < VERSION_EMPTY_TILDE_IS_EMPTY
+                                                && value == "~"
+                                            {
+                                                String::new()
+                                            } else {
+                                                value
+                                            }
+                                        };
                                         let property = Property {
                                             key: "Footprint".to_string(),
                                             value: parsed.clone(),
@@ -3360,7 +3384,19 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "value" => {
-                                let parsed = self.parse_symbol_text_atom("value")?;
+                                let parsed = {
+                                    let value = self.need_symbol_atom("value")?;
+                                    if self
+                                        .require_known_version()
+                                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                        < VERSION_EMPTY_TILDE_IS_EMPTY
+                                        && value == "~"
+                                    {
+                                        String::new()
+                                    } else {
+                                        value
+                                    }
+                                };
                                 let property = Property {
                                     key: "Value".to_string(),
                                     value: parsed.clone(),
@@ -3386,7 +3422,19 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "footprint" => {
-                                let parsed = self.parse_symbol_text_atom("footprint")?;
+                                let parsed = {
+                                    let value = self.need_symbol_atom("footprint")?;
+                                    if self
+                                        .require_known_version()
+                                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                        < VERSION_EMPTY_TILDE_IS_EMPTY
+                                        && value == "~"
+                                    {
+                                        String::new()
+                                    } else {
+                                        value
+                                    }
+                                };
                                 let property = Property {
                                     key: "Footprint".to_string(),
                                     value: parsed.clone(),
@@ -3915,8 +3963,36 @@ impl KiCadSchematicParser {
                 match child.as_str() {
                     "reference" => reference = Some(self.need_symbol_atom("reference")?),
                     "unit" => unit = Some(self.parse_i32_atom("unit")?),
-                    "value" => value = Some(self.parse_symbol_text_atom("value")?),
-                    "footprint" => footprint = Some(self.parse_symbol_text_atom("footprint")?),
+                    "value" => {
+                        value = Some({
+                            let value = self.need_symbol_atom("value")?;
+                            if self
+                                .require_known_version()
+                                .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                < VERSION_EMPTY_TILDE_IS_EMPTY
+                                && value == "~"
+                            {
+                                String::new()
+                            } else {
+                                value
+                            }
+                        })
+                    }
+                    "footprint" => {
+                        footprint = Some({
+                            let value = self.need_symbol_atom("footprint")?;
+                            if self
+                                .require_known_version()
+                                .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                < VERSION_EMPTY_TILDE_IS_EMPTY
+                                && value == "~"
+                            {
+                                String::new()
+                            } else {
+                                value
+                            }
+                        })
+                    }
                     _ => return Err(self.expecting("reference, unit, value or footprint")),
                 }
                 self.need_right()?;
@@ -4548,20 +4624,6 @@ impl KiCadSchematicParser {
                 self.parse_bool_atom("boolean")
             }
             TokKind::Atom(_) => Ok(default),
-        }
-    }
-
-    fn parse_symbol_text_atom(&mut self, field: &str) -> Result<String, Error> {
-        let value = self.need_symbol_atom(field)?;
-        if self
-            .require_known_version()
-            .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
-            < VERSION_EMPTY_TILDE_IS_EMPTY
-            && value == "~"
-        {
-            Ok(String::new())
-        } else {
-            Ok(value)
         }
     }
 
