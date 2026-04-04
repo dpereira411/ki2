@@ -92,6 +92,48 @@ fn rejects_quoted_core_grammar_keyword_heads() {
 }
 
 #[test]
+fn rejects_true_false_boolean_tokens() {
+    let embedded_fonts_true = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bool-embedded-fonts")
+  (embedded_fonts true)
+)"#;
+    let embedded_fonts_true_path =
+        temp_schematic("embedded_fonts_true_keyword", embedded_fonts_true);
+    let err = parse_schematic_file(Path::new(&embedded_fonts_true_path))
+        .expect_err("must reject true/false for embedded_fonts");
+    assert!(err.to_string().contains("expecting yes or no"));
+
+    let symbol_in_bom_false = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bool-symbol")
+  (symbol (lib_id "Device:R") (in_bom false))
+)"#;
+    let symbol_in_bom_false_path =
+        temp_schematic("symbol_in_bom_false_keyword", symbol_in_bom_false);
+    let err = parse_schematic_file(Path::new(&symbol_in_bom_false_path))
+        .expect_err("must reject true/false for symbol in_bom");
+    assert!(err.to_string().contains("expecting yes or no"));
+
+    let bold_true = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bool-bold")
+  (text "note" (effects (font (bold true))))
+)"#;
+    let bold_true_path = temp_schematic("effects_bold_true_keyword", bold_true);
+    let err = parse_schematic_file(Path::new(&bold_true_path))
+        .expect_err("must reject true/false for effects bold");
+    assert!(err.to_string().contains("expecting yes or no"));
+
+    let _ = fs::remove_file(embedded_fonts_true_path);
+    let _ = fs::remove_file(symbol_in_bom_false_path);
+    let _ = fs::remove_file(bold_true_path);
+}
+
+#[test]
 fn validates_hierarchical_tree_fixture() {
     let loaded = load_schematic_tree(&fixture("hierarchical.kicad_sch")).expect("tree must load");
     assert_eq!(loaded.schematics.len(), 2);

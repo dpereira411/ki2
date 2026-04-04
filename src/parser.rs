@@ -4204,10 +4204,11 @@ impl KiCadSchematicParser {
     }
 
     fn parse_bool_atom(&mut self, field: &str) -> Result<bool, Error> {
-        match self.parse_string_atom(field.to_string())?.as_str() {
-            "yes" | "true" => Ok(true),
-            "no" | "false" => Ok(false),
-            _ => Err(self.error_here(format!("invalid boolean for {field}"))),
+        let _ = field;
+        match self.need_unquoted_symbol_atom("yes or no")?.as_str() {
+            "yes" => Ok(true),
+            "no" => Ok(false),
+            _ => Err(self.expecting("yes or no")),
         }
     }
 
@@ -4222,7 +4223,7 @@ impl KiCadSchematicParser {
     fn parse_inline_optional_bool(&mut self, default: bool) -> Result<bool, Error> {
         match &self.current().kind {
             TokKind::Right | TokKind::Left | TokKind::Eof => Ok(default),
-            TokKind::Atom(value) if matches!(value.as_str(), "yes" | "no" | "true" | "false") => {
+            TokKind::Atom(value) if matches!(value.as_str(), "yes" | "no") => {
                 self.parse_bool_atom("boolean")
             }
             TokKind::Atom(_) => Ok(default),
