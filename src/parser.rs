@@ -1517,8 +1517,17 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self.need_unquoted_symbol_atom("at or effects")?.as_str() {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at or effects")),
+            };
+            match head.as_str() {
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("text at")?;
                     item.at = Some([parsed[0], parsed[1]]);
                     item.angle = Some(parsed[2] / 10.0);
@@ -1534,7 +1543,6 @@ impl KiCadSchematicParser {
                         false,
                     )?;
                     item.effects = Some(parsed);
-                    self.need_right()?;
                 }
                 _ => return Err(self.expecting("at or effects")),
             }
@@ -1598,34 +1606,47 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, size, stroke, fill or effects")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, size, stroke, fill or effects")),
+            };
             match head.as_str() {
                 "start" => {
+                    let _ = self.need_unquoted_symbol_atom("start")?;
                     pos = Some(self.parse_xy2("text_box start")?);
                     self.need_right()?;
                 }
                 "end" => {
+                    let _ = self.need_unquoted_symbol_atom("end")?;
                     end = Some(self.parse_xy2("text_box end")?);
                     found_end = true;
                     self.need_right()?;
                 }
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("text_box at")?;
                     pos = Some([parsed[0], parsed[1]]);
                     item.angle = Some(parsed[2]);
                     self.need_right()?;
                 }
                 "size" => {
+                    let _ = self.need_unquoted_symbol_atom("size")?;
                     size = Some(self.parse_xy2("text_box size")?);
                     found_size = true;
                     self.need_right()?;
                 }
                 "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
                     let parsed_stroke = self.parse_stroke()?;
                     stroke_width = parsed_stroke.width;
                     item.stroke = Some(parsed_stroke);
                 }
                 "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
                     item.fill = Some(self.parse_fill()?);
                 }
                 "effects" => {
@@ -1635,9 +1656,9 @@ impl KiCadSchematicParser {
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
                     item.visible = visible;
                     item.effects = Some(parsed_effects);
-                    self.need_right()?;
                 }
                 "margins" => {
+                    let _ = self.need_unquoted_symbol_atom("margins")?;
                     let _margins = [
                         self.parse_f64_atom("margin left")?,
                         self.parse_f64_atom("margin top")?,
@@ -1801,14 +1822,10 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
-                    if self.need_unquoted_symbol_atom("effects")? != "effects" {
-                        return Err(self.expecting("effects"));
-                    }
                     let mut parsed = TextEffects::default();
                     let mut visible = true;
                     self.parse_eda_text(item.name.as_mut(), &mut parsed, &mut visible, true, true)?;
                     item.name_effects = Some(parsed);
-                    self.need_right()?;
                     self.need_right()?;
                 }
                 "number" => {
@@ -1831,9 +1848,6 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
-                    if self.need_unquoted_symbol_atom("effects")? != "effects" {
-                        return Err(self.expecting("effects"));
-                    }
                     let mut parsed = TextEffects::default();
                     let mut visible = true;
                     self.parse_eda_text(
@@ -1844,7 +1858,6 @@ impl KiCadSchematicParser {
                         true,
                     )?;
                     item.number_effects = Some(parsed);
-                    self.need_right()?;
                     self.need_right()?;
                 }
                 "alternate" => {
@@ -1975,29 +1988,43 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            match self
-                .need_unquoted_symbol_atom("id, at, hide, show_name, do_not_autoplace, or effects")?
-                .as_str()
-            {
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => {
+                    return Err(
+                        self.expecting("id, at, hide, show_name, do_not_autoplace, or effects")
+                    );
+                }
+            };
+            match head.as_str() {
                 "id" => {
+                    let _ = self.need_unquoted_symbol_atom("id")?;
                     let _ = self.parse_i32_atom("field ID")?;
                     self.need_right()?;
                 }
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("property at")?;
                     property.at = Some([parsed[0], parsed[1]]);
                     property.angle = Some(parsed[2]);
                     self.need_right()?;
                 }
                 "hide" => {
+                    let _ = self.need_unquoted_symbol_atom("hide")?;
                     property.visible = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
                 "show_name" => {
+                    let _ = self.need_unquoted_symbol_atom("show_name")?;
                     property.show_name = self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
                 "do_not_autoplace" => {
+                    let _ = self.need_unquoted_symbol_atom("do_not_autoplace")?;
                     property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
@@ -2012,7 +2039,6 @@ impl KiCadSchematicParser {
                     )?;
                     property.has_effects = true;
                     property.effects = Some(effects);
-                    self.need_right()?;
                 }
                 _ => {
                     return Err(
@@ -2330,20 +2356,29 @@ impl KiCadSchematicParser {
 
                 while !self.at_right() {
                     self.need_left()?;
-                    let head =
-                        self.need_unquoted_symbol_atom("at, shape, iref, uuid or effects")?;
+                    let head = match &self.current().kind {
+                        TokKind::Atom(value)
+                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                        {
+                            value.clone()
+                        }
+                        _ => return Err(self.expecting("at, shape, iref, uuid or effects")),
+                    };
                     match head.as_str() {
                         "exclude_from_sim" => {
+                            let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
                             text.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                             self.need_right()?;
                         }
                         "at" => {
+                            let _ = self.need_unquoted_symbol_atom("at")?;
                             let parsed = self.parse_xy3("text at")?;
                             text.at =
                                 Some([parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])]);
                             self.need_right()?;
                         }
                         "fields_autoplaced" => {
+                            let _ = self.need_unquoted_symbol_atom("fields_autoplaced")?;
                             if self.parse_maybe_absent_bool(true)? {
                                 text.fields_autoplaced = FieldAutoplacement::Auto;
                             }
@@ -2361,12 +2396,12 @@ impl KiCadSchematicParser {
                             text.has_effects = true;
                             text.effects = Some(parsed_effects);
                             text.visible = true;
-                            self.need_right()?;
                         }
                         "shape" => return Err(self.unexpected("shape")),
                         "length" => return Err(self.unexpected("length")),
                         "iref" => {}
                         "uuid" => {
+                            let _ = self.need_unquoted_symbol_atom("uuid")?;
                             text.uuid = Some(self.need_symbol_atom("uuid")?);
                             self.need_right()?;
                         }
@@ -2484,7 +2519,6 @@ impl KiCadSchematicParser {
                             self.need_right()?;
                         }
                         "effects" => {
-                            let _ = self.need_unquoted_symbol_atom("effects")?;
                             let mut parsed_effects = TextEffects::default();
                             self.parse_eda_text(
                                 Some(&mut label.text),
@@ -2495,7 +2529,6 @@ impl KiCadSchematicParser {
                             )?;
                             label.has_effects = true;
                             label.effects = Some(parsed_effects);
-                            self.need_right()?;
                         }
                         "iref" => {
                             let _ = self.need_unquoted_symbol_atom("iref")?;
@@ -2591,37 +2624,52 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(if table_cell {
-                "at, size, stroke, fill, effects, span or uuid"
-            } else {
-                "at, size, stroke, fill, effects or uuid"
-            })?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => {
+                    return Err(self.expecting(if table_cell {
+                        "at, size, stroke, fill, effects, span or uuid"
+                    } else {
+                        "at, size, stroke, fill, effects or uuid"
+                    }));
+                }
+            };
             match head.as_str() {
                 "exclude_from_sim" => {
+                    let _ = self.need_unquoted_symbol_atom("exclude_from_sim")?;
                     text_box.excluded_from_sim = self.parse_bool_atom("exclude_from_sim")?;
                     self.need_right()?;
                 }
                 "start" => {
+                    let _ = self.need_unquoted_symbol_atom("start")?;
                     pos = Some(self.parse_xy2("text_box start")?);
                     self.need_right()?;
                 }
                 "end" => {
+                    let _ = self.need_unquoted_symbol_atom("end")?;
                     end = Some(self.parse_xy2("text_box end")?);
                     found_end = true;
                     self.need_right()?;
                 }
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("text_box at")?;
                     pos = Some([parsed[0], parsed[1]]);
                     text_box.angle = parsed[2];
                     self.need_right()?;
                 }
                 "size" => {
+                    let _ = self.need_unquoted_symbol_atom("size")?;
                     size = Some(self.parse_xy2("text_box size")?);
                     found_size = true;
                     self.need_right()?;
                 }
                 "span" if table_cell => {
+                    let _ = self.need_unquoted_symbol_atom("span")?;
                     text_box.span = Some([
                         self.parse_i32_atom("column span")?,
                         self.parse_i32_atom("row span")?,
@@ -2629,11 +2677,13 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "stroke" => {
+                    let _ = self.need_unquoted_symbol_atom("stroke")?;
                     let parsed_stroke = self.parse_stroke()?;
                     stroke_width = parsed_stroke.width;
                     text_box.stroke = Some(parsed_stroke);
                 }
                 "fill" => {
+                    let _ = self.need_unquoted_symbol_atom("fill")?;
                     text_box.fill = Some(self.parse_fill()?);
                     Self::fixup_sch_fill_mode(&mut text_box.fill, &text_box.stroke);
                 }
@@ -2650,9 +2700,9 @@ impl KiCadSchematicParser {
                     text_box.has_effects = true;
                     text_size_y = parsed_effects.font_size.map(|size| size[1]);
                     text_box.effects = Some(parsed_effects);
-                    self.need_right()?;
                 }
                 "margins" => {
+                    let _ = self.need_unquoted_symbol_atom("margins")?;
                     text_box.margins = Some([
                         self.parse_f64_atom("margin left")?,
                         self.parse_f64_atom("margin top")?,
@@ -2663,6 +2713,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     text_box.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
@@ -4100,9 +4151,17 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("at, uuid or effects")?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("at, uuid or effects")),
+            };
             match head.as_str() {
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("sheet pin at")?;
                     let parsed_side = match parsed[2] as i32 {
                         0 => SheetSide::Right,
@@ -4116,6 +4175,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "uuid" => {
+                    let _ = self.need_unquoted_symbol_atom("uuid")?;
                     sheet_pin.uuid = Some(self.need_symbol_atom("uuid")?);
                     self.need_right()?;
                 }
@@ -4130,7 +4190,6 @@ impl KiCadSchematicParser {
                     )?;
                     sheet_pin.has_effects = true;
                     sheet_pin.effects = Some(parsed_effects);
-                    self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, uuid or effects")),
             }
@@ -4419,29 +4478,43 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             self.need_left()?;
-            let head = self.need_unquoted_symbol_atom(
-                "id, at, hide, show_name, do_not_autoplace or effects",
-            )?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => {
+                    return Err(
+                        self.expecting("id, at, hide, show_name, do_not_autoplace or effects")
+                    );
+                }
+            };
             match head.as_str() {
                 "id" => {
+                    let _ = self.need_unquoted_symbol_atom("id")?;
                     let _ = self.parse_i32_atom("field ID")?;
                     self.need_right()?;
                 }
                 "at" => {
+                    let _ = self.need_unquoted_symbol_atom("at")?;
                     let parsed = self.parse_xy3("property at")?;
                     property.at = Some([parsed[0], parsed[1]]);
                     property.angle = Some(parsed[2]);
                     self.need_right()?;
                 }
                 "hide" => {
+                    let _ = self.need_unquoted_symbol_atom("hide")?;
                     property.visible = !self.parse_bool_atom("hide")?;
                     self.need_right()?;
                 }
                 "show_name" => {
+                    let _ = self.need_unquoted_symbol_atom("show_name")?;
                     property.show_name = self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
                 "do_not_autoplace" => {
+                    let _ = self.need_unquoted_symbol_atom("do_not_autoplace")?;
                     property.can_autoplace = !self.parse_maybe_absent_bool(true)?;
                     self.need_right()?;
                 }
@@ -4456,7 +4529,6 @@ impl KiCadSchematicParser {
                     )?;
                     property.has_effects = true;
                     property.effects = Some(parsed_effects);
-                    self.need_right()?;
                 }
                 _ => {
                     return Err(
@@ -4620,6 +4692,7 @@ impl KiCadSchematicParser {
         convert_overbar_syntax: bool,
         _enforce_min_text_size: bool,
     ) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("effects")?;
         if convert_overbar_syntax
             && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION
         {
@@ -4785,6 +4858,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        self.need_right()?;
         Ok(())
     }
 
