@@ -1172,7 +1172,17 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "pts" => {
-                    item.points = self.parse_pts()?;
+                    let mut points = Vec::new();
+                    while !self.at_right() {
+                        self.need_left()?;
+                        let head = self.need_unquoted_symbol_atom("xy")?;
+                        if head != "xy" {
+                            return Err(self.expecting("xy"));
+                        }
+                        points.push(self.parse_xy2("xy")?);
+                        self.need_right()?;
+                    }
+                    item.points = points;
                     self.need_right()?;
                 }
                 "stroke" => item.stroke = Some(self.parse_stroke()?),
@@ -2596,7 +2606,17 @@ impl KiCadSchematicParser {
                 .need_unquoted_symbol_atom("pts, start, mid, end, center, uuid, stroke, or fill")?;
             match head.as_str() {
                 "pts" => {
-                    points = self.parse_pts()?;
+                    let mut parsed_points = Vec::new();
+                    while !self.at_right() {
+                        self.need_left()?;
+                        let head = self.need_unquoted_symbol_atom("xy")?;
+                        if head != "xy" {
+                            return Err(self.expecting("xy"));
+                        }
+                        parsed_points.push(self.parse_xy2("xy")?);
+                        self.need_right()?;
+                    }
+                    points = parsed_points;
                     self.need_right()?;
                 }
                 "start" => {
@@ -4460,20 +4480,6 @@ impl KiCadSchematicParser {
         }
 
         None
-    }
-
-    fn parse_pts(&mut self) -> Result<Vec<[f64; 2]>, Error> {
-        let mut points = Vec::new();
-        while !self.at_right() {
-            self.need_left()?;
-            let head = self.need_unquoted_symbol_atom("xy")?;
-            if head != "xy" {
-                return Err(self.expecting("xy"));
-            }
-            points.push(self.parse_xy2("xy")?);
-            self.need_right()?;
-        }
-        Ok(points)
     }
 
     fn parse_xy2(&mut self, context: &str) -> Result<[f64; 2], Error> {
