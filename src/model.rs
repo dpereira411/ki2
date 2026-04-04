@@ -334,6 +334,7 @@ impl Junction {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoConnect {
     pub at: [f64; 2],
+    pub size: f64,
     pub uuid: Option<String>,
 }
 
@@ -341,6 +342,7 @@ impl NoConnect {
     pub fn new() -> Self {
         Self {
             at: [0.0, 0.0],
+            size: 1.2192,
             uuid: None,
         }
     }
@@ -357,11 +359,14 @@ pub struct BusEntry {
 
 impl BusEntry {
     pub fn new() -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             at: [0.0, 0.0],
-            size: [0.0, 0.0],
+            size: [2.54, 2.54],
             has_stroke: false,
-            stroke: None,
+            stroke: Some(stroke),
             uuid: None,
         }
     }
@@ -378,11 +383,14 @@ pub struct Line {
 
 impl Line {
     pub fn new(kind: LineKind) -> Self {
+        let mut stroke = Stroke::new();
+        stroke.width = Some(0.0);
+
         Self {
             kind,
             points: Vec::new(),
             has_stroke: false,
-            stroke: None,
+            stroke: Some(stroke),
             uuid: None,
         }
     }
@@ -976,8 +984,9 @@ impl Sheet {
 #[cfg(test)]
 mod tests {
     use super::{
-        FieldAutoplacement, LibSymbol, PropertyKind, Shape, ShapeKind, Sheet, SheetPin,
-        SheetPinShape, SheetSide, StrokeStyle, Symbol, Table, TableCell, TextBox,
+        BusEntry, FieldAutoplacement, LibSymbol, Line, LineKind, NoConnect, PropertyKind, Shape,
+        ShapeKind, Sheet, SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol, Table,
+        TableCell, TextBox,
     };
 
     #[test]
@@ -1122,6 +1131,23 @@ mod tests {
         );
         assert!(!shape.has_stroke);
         assert!(!shape.has_fill);
+    }
+
+    #[test]
+    fn connectivity_items_start_with_constructor_defaults() {
+        let no_connect = NoConnect::new();
+        let bus_entry = BusEntry::new();
+        let line = Line::new(LineKind::Wire);
+
+        assert_eq!(no_connect.size, 1.2192);
+        assert_eq!(bus_entry.size, [2.54, 2.54]);
+        assert_eq!(
+            bus_entry.stroke.as_ref().expect("bus entry stroke").width,
+            Some(0.0)
+        );
+        assert_eq!(line.stroke.as_ref().expect("line stroke").width, Some(0.0));
+        assert!(!bus_entry.has_stroke);
+        assert!(!line.has_stroke);
     }
 }
 

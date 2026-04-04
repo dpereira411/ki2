@@ -7290,6 +7290,7 @@ fn junction_no_connect_and_bus_entry_do_not_require_geometry_tokens() {
         })
         .expect("no_connect");
     assert_eq!(no_connect.at, [0.0, 0.0]);
+    assert_eq!(no_connect.size, 1.2192);
 
     let bus_entry = schematic
         .screen
@@ -7301,7 +7302,15 @@ fn junction_no_connect_and_bus_entry_do_not_require_geometry_tokens() {
         })
         .expect("bus_entry");
     assert_eq!(bus_entry.at, [0.0, 0.0]);
-    assert_eq!(bus_entry.size, [0.0, 0.0]);
+    assert_eq!(bus_entry.size, [2.54, 2.54]);
+    assert_eq!(
+        bus_entry
+            .stroke
+            .as_ref()
+            .expect("default bus_entry stroke")
+            .width,
+        Some(0.0)
+    );
 
     let _ = fs::remove_file(path);
 }

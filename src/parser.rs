@@ -2195,7 +2195,6 @@ impl KiCadSchematicParser {
         let _ = self.need_unquoted_symbol_atom("bus_entry")?;
         let mut bus_entry = BusEntry::new();
         let mut has_at = false;
-        let mut has_size = false;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -2216,7 +2215,6 @@ impl KiCadSchematicParser {
                 "size" => {
                     let _ = self.need_unquoted_symbol_atom("size")?;
                     bus_entry.size = self.parse_xy2("bus_entry size")?;
-                    has_size = true;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -2240,9 +2238,6 @@ impl KiCadSchematicParser {
         }
         if !has_at {
             bus_entry.at = [0.0, 0.0];
-        }
-        if !has_size {
-            bus_entry.size = [0.0, 0.0];
         }
         Ok(bus_entry)
     }
