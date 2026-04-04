@@ -1153,23 +1153,21 @@ impl KiCadSchematicParser {
                                         if file.name.is_none() {
                                             return Err(self.expecting("name"));
                                         }
-                                        file.file_type =
-                                            Some(match self.need_unquoted_symbol_atom(
-                                                "datasheet, font, model, worksheet or other",
-                                            )?
-                                            .as_str()
-                                            {
-                                                "datasheet" => EmbeddedFileType::Datasheet,
-                                                "font" => EmbeddedFileType::Font,
-                                                "model" => EmbeddedFileType::Model,
-                                                "worksheet" => EmbeddedFileType::Worksheet,
-                                                "other" => EmbeddedFileType::Other,
-                                                _ => {
-                                                    return Err(self.expecting(
-                                                        "datasheet, font, model, worksheet or other",
-                                                    ))
-                                                }
-                                            });
+                                        let file_type = self.need_unquoted_symbol_atom(
+                                            "datasheet, font, model, worksheet or other",
+                                        )?;
+                                        file.file_type = Some(match file_type.as_str() {
+                                            "datasheet" => EmbeddedFileType::Datasheet,
+                                            "font" => EmbeddedFileType::Font,
+                                            "model" => EmbeddedFileType::Model,
+                                            "worksheet" => EmbeddedFileType::Worksheet,
+                                            "other" => EmbeddedFileType::Other,
+                                            _ => {
+                                                return Err(self.expecting(
+                                                    "datasheet, font, model, worksheet or other",
+                                                ))
+                                            }
+                                        });
                                     }
                                     "data" => {
                                         let _ = self.need_unquoted_symbol_atom("data")?;
@@ -1398,9 +1396,18 @@ impl KiCadSchematicParser {
                     let mut points = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_unquoted_symbol_atom("xy")? != "xy" {
+                        let head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("xy")),
+                        };
+                        if head != "xy" {
                             return Err(self.expecting("xy"));
                         }
+                        let _ = self.need_unquoted_symbol_atom("xy")?;
                         if points.len() >= 4 {
                             return Err(self.error_here("unexpected control point"));
                         }
@@ -1553,10 +1560,18 @@ impl KiCadSchematicParser {
                     let mut points = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
-                        let head = self.need_unquoted_symbol_atom("xy")?;
+                        let head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("xy")),
+                        };
                         if head != "xy" {
                             return Err(self.expecting("xy"));
                         }
+                        let _ = self.need_unquoted_symbol_atom("xy")?;
                         points.push(self.parse_xy2("xy")?);
                         self.need_right()?;
                     }
@@ -3254,10 +3269,18 @@ impl KiCadSchematicParser {
                     let mut parsed_points = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
-                        let head = self.need_unquoted_symbol_atom("xy")?;
+                        let head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("xy")),
+                        };
                         if head != "xy" {
                             return Err(self.expecting("xy"));
                         }
+                        let _ = self.need_unquoted_symbol_atom("xy")?;
                         parsed_points.push(self.parse_xy2("xy")?);
                         self.need_right()?;
                     }
@@ -3517,9 +3540,18 @@ impl KiCadSchematicParser {
                     let mut ii = 0;
                     while !self.at_right() {
                         self.need_left()?;
-                        if self.need_unquoted_symbol_atom("xy")? != "xy" {
+                        let head = match &self.current().kind {
+                            TokKind::Atom(value)
+                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                            {
+                                value.clone()
+                            }
+                            _ => return Err(self.expecting("xy")),
+                        };
+                        if head != "xy" {
                             return Err(self.expecting("xy"));
                         }
+                        let _ = self.need_unquoted_symbol_atom("xy")?;
                         match ii {
                             0..=3 => shape.points[ii] = self.parse_xy2("xy")?,
                             _ => return Err(self.unexpected("control point")),
