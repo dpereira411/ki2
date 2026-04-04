@@ -497,7 +497,7 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
   (symbol
     (lib_id "Device:R")
     (uuid "sym-u")
-    (property "Reference" "R?")
+    (property "Reference" "R?" (at 1 2 90) (hide yes) (show_name no))
     (property "Value" "seed")
     (property "Footprint" "seed-footprint")
     (at 10 10 0)
@@ -553,6 +553,15 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
             .map(|property| property.value.as_str()),
         Some("R11")
     );
+    let reference = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolReference)
+        .expect("reference");
+    assert_eq!(reference.at, Some([1.0, 2.0]));
+    assert_eq!(reference.angle, Some(90.0));
+    assert!(!reference.visible);
+    assert!(!reference.show_name);
     assert_eq!(
         symbol
             .properties
@@ -569,7 +578,6 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
             .map(|property| property.value.as_str()),
         Some("Resistor_SMD:R_0402")
     );
-
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
     let _ = fs::remove_dir(dir);

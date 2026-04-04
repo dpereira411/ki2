@@ -583,28 +583,28 @@ impl SchematicLoader {
 }
 
 fn upsert_symbol_property(symbol: &mut Symbol, key: &str, value: String, kind: PropertyKind) {
-    let property = Property {
-        id: kind.default_field_id(),
-        key: key.to_string(),
-        value,
-        kind,
-        is_private: false,
-        at: None,
-        angle: None,
-        visible: true,
-        show_name: true,
-        can_autoplace: true,
-        has_effects: false,
-        effects: None,
-    };
-
     if let Some(existing) = symbol
         .properties
         .iter_mut()
         .find(|property| property.kind == kind)
     {
-        *existing = property;
+        existing.id = kind.default_field_id().or(existing.id);
+        existing.key = key.to_string();
+        existing.value = value;
     } else {
-        symbol.properties.push(property);
+        symbol.properties.push(Property {
+            id: kind.default_field_id(),
+            key: key.to_string(),
+            value,
+            kind,
+            is_private: false,
+            at: None,
+            angle: None,
+            visible: true,
+            show_name: true,
+            can_autoplace: true,
+            has_effects: false,
+            effects: None,
+        });
     }
 }
