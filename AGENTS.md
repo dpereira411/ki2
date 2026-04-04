@@ -44,6 +44,7 @@ Strict mode is the default for parser-parity work in this repository.
 - In `parseBusAlias()`, keep the alias name itself on the shared `NeedSYMBOL()` path, like upstream. The members loop can still report `quoted string`, but the leading alias token should not go through the generic string parser.
 - In `parseBusAlias()`, do not add a repo-local non-empty-members validation. Upstream accepts an empty `(members)` list and still adds the alias.
 - In `parseBusAlias()`, invalid member tokens should fail as `Expecting( "quoted string" )`, not through the generic missing-atom path.
+- In `parseBusAlias()`, keep the nested `members` child head on the same local token-owned path too: peek `members`, then consume that exact token inside the branch instead of flattening it through a one-shot equality check.
 - `group` declarations are parsed first and resolved after the rest of the file. Do not eagerly fold them into generic item parsing.
 - In `parseGroup()`, the optional pre-list group name should only accept a quoted string, with bare `locked` as the only non-string token allowed before the first nested list. Do not accept an unquoted group name there.
 - In `parseGroup()`, keep the `lib_id` branch separate from the symbol/library helper. Upstream uses the same parse rules but a group-specific invalid-character diagnostic: `Group library link ... contains invalid character ...`.
@@ -53,6 +54,7 @@ Strict mode is the default for parser-parity work in this repository.
 - Keep the shared wire/bus line routine on an upstream-shaped schematic-line entrypoint too. Once it owns the real line body, it should not stay on a vague local `parse_line()` name.
 - Keep `parseLine()` / `parse_sch_line()` token-driven too: once the shared wire/bus routine owns the line body, it should derive `wire` vs `bus` from the consumed section head itself rather than from a caller-supplied local kind enum.
 - Keep the remaining simple enum-token branches on that same local ownership pattern too: `parseSchLine()` should peek and consume `wire` / `bus` itself, `parseSchematicSymbol()` mirror should peek and consume `x` / `y`, `parseSchSheetPin()` should peek and consume its shape token itself, and `parseBool()` should keep `yes` / `no` on the same local token-owned path instead of flattening them through direct `need_unquoted_symbol_atom(...).as_str()` matches.
+- Apply that same local token-owned pattern inside the shared schematic-line `pts` branch too: the nested two-point `xy` heads should be peeked and then consumed inside the branch rather than flattened through direct equality checks.
 - `rule_area` grammar is specialized and wraps a nested `polyline`; it is not just another generic point-list shape.
 - Keep schematic shape routine boundaries named after their upstream roles too. Once a routine owns schematic `arc` / `circle` / `rectangle` / `bezier` parsing, it should not stay on a generic `*_shape` local helper name.
 - In `parseSchRuleArea()`, keep KiCad's literal fallback `Expecting(...)` text: `exclude_from_sim, on_board, in_bom, dnp, or polyline`.

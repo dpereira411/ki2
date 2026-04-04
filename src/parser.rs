@@ -2332,9 +2332,18 @@ impl KiCadSchematicParser {
         }
 
         self.need_left()?;
-        if self.need_unquoted_symbol_atom("members")? != "members" {
+        let members_head = match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+            {
+                value.clone()
+            }
+            _ => return Err(self.expecting("members")),
+        };
+        if members_head != "members" {
             return Err(self.expecting("members"));
         }
+        let _ = self.need_unquoted_symbol_atom("members")?;
 
         while !self.at_right() {
             let mut member = self.need_quoted_atom("quoted string")?;
@@ -2545,15 +2554,33 @@ impl KiCadSchematicParser {
                 "pts" => {
                     let _ = self.need_unquoted_symbol_atom("pts")?;
                     self.need_left()?;
-                    if self.need_unquoted_symbol_atom("xy")? != "xy" {
+                    let start_head = match &self.current().kind {
+                        TokKind::Atom(value)
+                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                        {
+                            value.clone()
+                        }
+                        _ => return Err(self.expecting("xy")),
+                    };
+                    if start_head != "xy" {
                         return Err(self.expecting("xy"));
                     }
+                    let _ = self.need_unquoted_symbol_atom("xy")?;
                     let start = self.parse_xy2("xy")?;
                     self.need_right()?;
                     self.need_left()?;
-                    if self.need_unquoted_symbol_atom("xy")? != "xy" {
+                    let end_head = match &self.current().kind {
+                        TokKind::Atom(value)
+                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                        {
+                            value.clone()
+                        }
+                        _ => return Err(self.expecting("xy")),
+                    };
+                    if end_head != "xy" {
                         return Err(self.expecting("xy"));
                     }
+                    let _ = self.need_unquoted_symbol_atom("xy")?;
                     let end = self.parse_xy2("xy")?;
                     self.need_right()?;
                     self.need_right()?;
