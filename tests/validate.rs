@@ -8333,6 +8333,33 @@ fn resolves_groups_after_items_and_drops_unknown_members() {
 }
 
 #[test]
+fn group_members_accept_number_tokens_and_drop_unknown_entries_later() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-number-member")
+  (wire (pts (xy 0 0) (xy 1 0)) (uuid "wire-u"))
+  (group "G1" (uuid "g1") (members 123 "wire-u"))
+)"#;
+    let path = temp_schematic("group_number_member", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let group = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Group(group) => Some(group),
+            _ => None,
+        })
+        .expect("group");
+
+    assert_eq!(group.members, vec!["wire-u"]);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_symbol_duplicate_user_properties_follow_upstream_renaming() {
     let src = r#"(kicad_sch
   (version 20250114)

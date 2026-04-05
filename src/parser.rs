@@ -4525,7 +4525,11 @@ impl KiCadSchematicParser {
 
     fn parse_group_members(&mut self, group: &mut PendingGroupInfo) -> Result<(), Error> {
         while !self.at_right() {
-            let member = self.need_symbol_atom("group member uuid")?;
+            let member = match &self.current().kind {
+                TokKind::Atom(value) => value.clone(),
+                _ => return Err(self.expecting("group member uuid")),
+            };
+            self.idx += 1;
             group.member_uuids.push(member);
         }
 
