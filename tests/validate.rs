@@ -4197,6 +4197,8 @@ fn parsed_kiid_branches_still_increment_duplicate_uuids() {
   (paper "A4")
   (junction (at 0 0) (uuid "00000000-0000-0000-0000-000000000011"))
   (junction (at 1 1) (uuid "00000000-0000-0000-0000-000000000011"))
+  (polyline (pts (xy 0 0) (xy 1 1) (xy 2 0)) (uuid "00000000-0000-0000-0000-000000000012"))
+  (polyline (pts (xy 3 0) (xy 4 1) (xy 5 0)) (uuid "00000000-0000-0000-0000-000000000012"))
 )"#;
     let path = temp_schematic("parsed_kiid_duplicate_junction_uuids", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -4207,6 +4209,7 @@ fn parsed_kiid_branches_still_increment_duplicate_uuids() {
         .iter()
         .filter_map(|item| match item {
             SchItem::Junction(junction) => junction.uuid.clone(),
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Polyline => shape.uuid.clone(),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -4216,6 +4219,8 @@ fn parsed_kiid_branches_still_increment_duplicate_uuids() {
         vec![
             "00000000-0000-0000-0000-000000000011".to_string(),
             "00000000-0000-0000-0000-000000000012".to_string(),
+            "00000000-0000-0000-0000-000000000013".to_string(),
+            "00000000-0000-0000-0000-000000000014".to_string(),
         ]
     );
 
