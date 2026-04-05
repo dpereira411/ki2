@@ -3937,9 +3937,10 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "uuid" => {
-                                let parsed = self.parse_kiid()?;
                                 if self.require_known_version()? >= VERSION_SYMBOL_PIN_UUID {
-                                    pin.uuid = Some(parsed);
+                                    pin.uuid = Some(self.parse_kiid()?);
+                                } else {
+                                    let _ = self.need_symbol_atom("uuid")?;
                                 }
                                 self.need_right()?;
                             }

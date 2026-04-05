@@ -7263,6 +7263,49 @@ fn rejects_invalid_symbol_pin_uuid_token() {
 }
 
 #[test]
+fn legacy_symbol_pin_uuid_tokens_do_not_consume_shared_uuid_uniqueness() {
+    let src = r#"(kicad_sch
+  (version 20210125)
+  (generator "eeschema")
+  (uuid "root-pin-uuid-legacy")
+  (symbol
+    (lib_id "Device:R")
+    (at 1 2 0)
+    (pin "1" (uuid "1")))
+  (junction (uuid "1"))
+)"#;
+    let path = temp_schematic("legacy_symbol_pin_uuid_ignored", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert_eq!(symbol.pins[0].uuid, None);
+
+    let junction = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction),
+            _ => None,
+        })
+        .expect("junction");
+    assert_eq!(
+        junction.uuid.as_deref(),
+        Some("00000000-0000-0000-0000-000000000001")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_symbol_pin_alternate_token() {
     let src = r#"(kicad_sch
   (version 20260306)
