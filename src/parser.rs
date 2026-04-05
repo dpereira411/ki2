@@ -4272,11 +4272,7 @@ impl KiCadSchematicParser {
         if name.is_empty() {
             return Err(self.error_here("Empty sheet pin name"));
         }
-        let mut sheet_pin = SheetPin::new(
-            name,
-            SheetPinShape::Passive,
-            sheet.is_vertical_orientation(),
-        );
+        let mut sheet_pin = SheetPin::new(name, sheet.is_vertical_orientation());
 
         match self.need_unquoted_symbol_atom("sheet pin shape")?.as_str() {
             "input" => sheet_pin.shape = SheetPinShape::Input,

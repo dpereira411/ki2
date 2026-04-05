@@ -1329,10 +1329,11 @@ mod tests {
 
     #[test]
     fn sheet_pins_start_with_default_geometry() {
-        let pin = SheetPin::new("IN".to_string(), SheetPinShape::Input, false);
+        let pin = SheetPin::new("IN".to_string(), false);
 
         assert_eq!(pin.at, [0.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Left);
+        assert_eq!(pin.shape, SheetPinShape::Input);
         assert!(pin.visible);
     }
 
@@ -1347,7 +1348,7 @@ mod tests {
 
     #[test]
     fn vertical_sheet_pins_start_on_top_side() {
-        let pin = SheetPin::new("IN".to_string(), SheetPinShape::Input, true);
+        let pin = SheetPin::new("IN".to_string(), true);
 
         assert_eq!(pin.at, [0.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Top);
@@ -1659,10 +1660,10 @@ pub struct SheetPin {
 }
 
 impl SheetPin {
-    pub fn new(name: String, shape: SheetPinShape, vertical_sheet: bool) -> Self {
+    pub fn new(name: String, vertical_sheet: bool) -> Self {
         Self {
             name,
-            shape,
+            shape: SheetPinShape::Input,
             at: [0.0, 0.0],
             side: if vertical_sheet {
                 SheetSide::Top
