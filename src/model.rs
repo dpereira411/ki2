@@ -1099,6 +1099,12 @@ impl Sheet {
         self.pins.push(pin);
     }
 
+    pub fn add_instance(&mut self, instance: SheetLocalInstance) {
+        self.instances
+            .retain(|existing| existing.path != instance.path);
+        self.instances.push(instance);
+    }
+
     pub fn is_vertical_orientation(&self) -> bool {
         self.size[1] > self.size[0]
     }
@@ -1114,8 +1120,8 @@ impl Sheet {
 mod tests {
     use super::{
         BusEntry, FieldAutoplacement, LibDrawItem, LibSymbol, Line, LineKind, NoConnect,
-        PropertyKind, Shape, ShapeKind, Sheet, SheetPin, SheetPinShape, SheetSide, StrokeStyle,
-        Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, TextBox,
+        PropertyKind, Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape,
+        SheetSide, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, TextBox,
     };
 
     #[test]
@@ -1219,6 +1225,21 @@ mod tests {
         );
         assert!(sheet.properties.iter().all(|property| !property.show_name));
         assert_eq!(sheet.next_field_ordinal(), 42);
+    }
+
+    #[test]
+    fn sheet_instances_overwrite_by_path() {
+        let mut sheet = Sheet::new();
+        let mut first = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
+        first.page = Some("2".to_string());
+        let mut second = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
+        second.page = Some("3".to_string());
+
+        sheet.add_instance(first);
+        sheet.add_instance(second);
+
+        assert_eq!(sheet.instances.len(), 1);
+        assert_eq!(sheet.instances[0].page.as_deref(), Some("3"));
     }
 
     #[test]

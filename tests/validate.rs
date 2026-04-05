@@ -6125,6 +6125,39 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
 }
 
 #[test]
+fn duplicate_local_sheet_instance_paths_overwrite_like_kicad() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-duplicate-local-sheet-instance")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/A" (page "2"))
+        (path "/A" (page "3")))))
+)"#;
+    let path = temp_schematic("duplicate_local_sheet_instance_paths", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    assert_eq!(sheet.instances.len(), 1);
+    assert_eq!(sheet.instances[0].page.as_deref(), Some("3"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_symbol_draw_items_sort_like_kicad_before_return() {
     let src = r#"(kicad_sch
   (version 20260306)
