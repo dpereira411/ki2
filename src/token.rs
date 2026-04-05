@@ -22,11 +22,18 @@ pub struct Token {
     pub span: Span,
 }
 
+fn skip_utf8_bom(bytes: &[u8], i: &mut usize) {
+    if bytes.get(*i..(*i + 3)) == Some(&[0xEF, 0xBB, 0xBF]) {
+        *i += 3;
+    }
+}
+
 /// Pre-scan the raw file to extract the `(version NNNNN)` number before full tokenization.
 /// Returns the version number if found, or `None`.
 pub fn prescan_version(input: &str) -> Option<i32> {
     let bytes = input.as_bytes();
     let mut i = 0usize;
+    skip_utf8_bom(bytes, &mut i);
     loop {
         skip_whitespace_and_line_comments(bytes, &mut i);
 
@@ -289,6 +296,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
     let bytes = input.as_bytes();
     let mut i = 0usize;
     let mut tokens = Vec::new();
+    skip_utf8_bom(bytes, &mut i);
 
     while i < bytes.len() {
         if is_line_comment_start(bytes, i) {
@@ -442,6 +450,12 @@ mod tests {
     }
 
     #[test]
+    fn prescan_version_skips_utf8_bom() {
+        let input = "\u{feff}(kicad_sch (version 20260306))";
+        assert_eq!(prescan_version(input), Some(20260306));
+    }
+
+    #[test]
     fn lex_decodes_kicad_quoted_escape_sequences() {
         let tokens = lex("(text \"a\\\\b\\\"c\\n\\r\\t\\a\\b\\f\\v\\x41\\101\")").expect("lex");
         assert_eq!(
@@ -539,6 +553,27 @@ mod tests {
     #[test]
     fn lex_treats_nul_as_whitespace_like_kicad() {
         let tokens = lex("(kicad_sch\0(uuid\0\"root\"))").expect("lex");
+        let atoms: Vec<(String, Option<AtomClass>)> = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokKind::Atom(value) => Some((value, token.atom_class)),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            atoms,
+            vec![
+                ("kicad_sch".to_string(), Some(AtomClass::Symbol)),
+                ("uuid".to_string(), Some(AtomClass::Symbol)),
+                ("root".to_string(), Some(AtomClass::Quoted)),
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_skips_utf8_bom() {
+        let tokens = lex("\u{feff}(kicad_sch (uuid \"root\"))").expect("lex");
         let atoms: Vec<(String, Option<AtomClass>)> = tokens
             .into_iter()
             .filter_map(|token| match token.kind {

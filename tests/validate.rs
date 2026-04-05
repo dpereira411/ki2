@@ -7449,6 +7449,17 @@ fn rejects_invalid_lib_symbol_name_token() {
 }
 
 #[test]
+fn parses_bom_prefixed_schematic_header() {
+    let src = "\u{feff}(kicad_sch\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"bom-root\")\n  (paper \"A4\")\n)";
+    let path = temp_schematic("bom_prefixed_schematic", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse UTF-8 BOM");
+
+    assert_eq!(schematic.screen.uuid.as_deref(), Some("bom-root"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_lib_symbol_parent_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
