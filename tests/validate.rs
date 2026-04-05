@@ -2722,7 +2722,7 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert_eq!(schematic.screen.root_sheet_page, None);
     assert!(schematic.screen.content_modified);
     assert_eq!(schematic.screen.sheet_instances.len(), 2);
-    assert_eq!(schematic.screen.sheet_instances[0].path, "");
+    assert_eq!(schematic.screen.sheet_instances[0].path, "/root-uuid");
     assert_eq!(
         schematic.screen.sheet_instances[0].page.as_deref(),
         Some("1")

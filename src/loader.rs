@@ -234,7 +234,9 @@ impl SchematicLoader {
                 root.screen
                     .sheet_instances
                     .iter()
-                    .find(|instance| instance.path.is_empty())
+                    .find(|instance| {
+                        instance.path.is_empty() || instance.path == format!("/{root_uuid}")
+                    })
                     .and_then(|instance| instance.page.clone())
             }),
             sheet_number: 0,

@@ -4376,19 +4376,19 @@ impl KiCadSchematicParser {
 
             if self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH {
                 if let Some(root_uuid) = self.root_uuid.as_ref() {
-                    if !instance.path.is_empty() {
-                        let prefix = format!("/{root_uuid}");
+                    let prefix = format!("/{root_uuid}");
 
-                        instance.path = if instance.path == prefix
-                            || instance.path.starts_with(&(prefix.clone() + "/"))
-                        {
-                            instance.path
-                        } else if instance.path.starts_with('/') {
-                            format!("{prefix}{}", instance.path)
-                        } else {
-                            format!("{prefix}/{}", instance.path)
-                        };
-                    }
+                    instance.path = if instance.path.is_empty() {
+                        prefix
+                    } else if instance.path == prefix
+                        || instance.path.starts_with(&(prefix.clone() + "/"))
+                    {
+                        instance.path
+                    } else if instance.path.starts_with('/') {
+                        format!("{prefix}{}", instance.path)
+                    } else {
+                        format!("{prefix}/{}", instance.path)
+                    };
                 }
             }
 
