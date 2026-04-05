@@ -5708,13 +5708,138 @@ impl KiCadSchematicParser {
             .cloned()
             .map(|symbol| (symbol.lib_id.clone(), symbol))
             .collect();
+        let mut flattened = std::collections::HashMap::new();
 
         for item in &mut self.screen.items {
             if let SchItem::Symbol(symbol) = item {
                 let lib_name = symbol.lib_name.as_deref().unwrap_or(&symbol.lib_id);
-                symbol.lib_symbol = lib_symbols.get(lib_name).cloned();
+                symbol.lib_symbol = Self::flatten_local_lib_symbol(
+                    lib_name,
+                    &lib_symbols,
+                    &mut flattened,
+                    &mut std::collections::BTreeSet::new(),
+                );
             }
         }
+    }
+
+    fn flatten_local_lib_symbol(
+        lib_id: &str,
+        symbols: &std::collections::HashMap<String, LibSymbol>,
+        cache: &mut std::collections::HashMap<String, LibSymbol>,
+        stack: &mut std::collections::BTreeSet<String>,
+    ) -> Option<LibSymbol> {
+        if let Some(symbol) = cache.get(lib_id) {
+            return Some(symbol.clone());
+        }
+
+        let symbol = symbols.get(lib_id)?.clone();
+
+        if !stack.insert(lib_id.to_string()) {
+            return Some(symbol);
+        }
+
+        let mut flattened = if let Some(parent_name) = symbol.extends.as_deref() {
+            if let Some(mut parent) =
+                Self::flatten_local_lib_symbol(parent_name, symbols, cache, stack)
+            {
+                parent.lib_id = symbol.lib_id.clone();
+                parent.name = symbol.name.clone();
+                parent.extends = None;
+
+                for unit in &mut parent.units {
+                    unit.name =
+                        format!("{}_{}_{}", parent.lib_id, unit.unit_number, unit.body_style);
+                }
+
+                for property in &symbol.properties {
+                    if property.kind.is_mandatory() && !property.value.is_empty() {
+                        if let Some(existing) = parent
+                            .properties
+                            .iter_mut()
+                            .find(|existing| existing.kind == property.kind)
+                        {
+                            *existing = property.clone();
+                        }
+                    }
+                }
+
+                for unit in &symbol.units {
+                    for item in &unit.draw_items {
+                        if item.kind != "field" {
+                            continue;
+                        }
+
+                        if let Some(field_name) = item.name.as_deref() {
+                            for existing_unit in &mut parent.units {
+                                existing_unit.draw_items.retain(|existing| {
+                                    !(existing.kind == "field"
+                                        && existing.name.as_deref() == Some(field_name))
+                                });
+                                existing_unit.draw_item_kinds = existing_unit
+                                    .draw_items
+                                    .iter()
+                                    .map(|existing| existing.kind.clone())
+                                    .collect();
+                            }
+                        }
+
+                        parent.add_draw_item(item.clone());
+                    }
+                }
+
+                if let Some(keywords) = symbol.keywords.as_ref()
+                    && !keywords.is_empty()
+                {
+                    parent.keywords = Some(keywords.clone());
+                }
+
+                if !symbol.fp_filters.is_empty() {
+                    parent.fp_filters = symbol.fp_filters.clone();
+                }
+
+                if !symbol.embedded_files.is_empty() {
+                    let mut named_files = std::collections::BTreeMap::new();
+                    let mut unnamed_files = Vec::new();
+
+                    for file in parent.embedded_files {
+                        if let Some(name) = file.name.as_ref() {
+                            named_files.insert(name.clone(), file);
+                        } else {
+                            unnamed_files.push(file);
+                        }
+                    }
+
+                    for file in &symbol.embedded_files {
+                        if let Some(name) = file.name.as_ref() {
+                            named_files.insert(name.clone(), file.clone());
+                        } else {
+                            unnamed_files.push(file.clone());
+                        }
+                    }
+
+                    parent.embedded_files =
+                        named_files.into_values().chain(unnamed_files).collect();
+                }
+
+                if let Some(immediate_parent) = symbols.get(parent_name) {
+                    parent.excluded_from_sim = immediate_parent.excluded_from_sim;
+                    parent.in_bom = immediate_parent.in_bom;
+                    parent.on_board = immediate_parent.on_board;
+                }
+
+                parent
+            } else {
+                symbol.clone()
+            }
+        } else {
+            symbol.clone()
+        };
+
+        flattened.refresh_library_tree_caches();
+        stack.remove(lib_id);
+        cache.insert(lib_id.to_string(), flattened.clone());
+        Some(flattened)
     }
 
     fn has_legacy_alternate_body_style(

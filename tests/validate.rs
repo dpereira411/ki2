@@ -1869,6 +1869,20 @@ fn parser_links_symbols_after_lib_cache_fixups() {
         Some(EmbeddedFileType::Font)
     );
     assert_eq!(linked.embedded_files[0].data.as_deref(), Some("abc123"));
+    assert_eq!(linked.lib_id, "Child:R");
+    assert_eq!(linked.name, "R");
+    assert_eq!(linked.units.len(), 2);
+    let inherited_unit = linked
+        .units
+        .iter()
+        .find(|unit| unit.unit_number == 1 && unit.body_style == 2)
+        .expect("flattened inherited unit");
+    let inherited_text = inherited_unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "text")
+        .expect("flattened inherited text");
+    assert_eq!(inherited_text.text.as_deref(), Some("ALT"));
 
     let _ = fs::remove_file(path);
 }
