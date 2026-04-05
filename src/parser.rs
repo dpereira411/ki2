@@ -3451,6 +3451,7 @@ impl KiCadSchematicParser {
     fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
         let _ = self.need_unquoted_symbol_atom("symbol")?;
         let mut symbol = Symbol::new();
+        let mut lib_name = None;
         symbol.fields_autoplaced = FieldAutoplacement::None;
 
         while !self.at_right() {
@@ -3468,6 +3469,15 @@ impl KiCadSchematicParser {
                 }
             };
             match head.as_str() {
+                "lib_name" => {
+                    let _ = self.need_unquoted_symbol_atom("lib_name")?;
+                    lib_name = Some(
+                        self.need_symbol_atom("lib_name")
+                            .map_err(|_| self.error_here("Invalid symbol library name"))?
+                            .replace("{slash}", "/"),
+                    );
+                    self.need_right()?;
+                }
                 "lib_id" => {
                     let _ = self.need_unquoted_symbol_atom("lib_id")?;
                     let raw = self.need_symbol_or_number_atom("symbol|number")?;
@@ -3484,15 +3494,6 @@ impl KiCadSchematicParser {
                     }
 
                     symbol.lib_id = normalized;
-                    self.need_right()?;
-                }
-                "lib_name" => {
-                    let _ = self.need_unquoted_symbol_atom("lib_name")?;
-                    symbol.lib_name = Some(
-                        self.need_symbol_atom("lib_name")
-                            .map_err(|_| self.error_here("Invalid symbol library name"))?
-                            .replace("{slash}", "/"),
-                    );
                     self.need_right()?;
                 }
                 "at" => {
@@ -3563,44 +3564,62 @@ impl KiCadSchematicParser {
                     symbol.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
-                "property" => {
-                    let property = self.parse_sch_field(FieldParent::Symbol(&symbol))?;
-                    if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
-                        symbol.excluded_from_sim = property.value == "0";
-                        continue;
-                    }
-                    if property.key == SIM_LEGACY_ENABLE_FIELD {
-                        symbol.excluded_from_sim = property.value == "N";
-                        continue;
-                    }
-
-                    if matches!(
-                        property.kind,
-                        PropertyKind::SymbolReference
-                            | PropertyKind::SymbolValue
-                            | PropertyKind::SymbolFootprint
-                            | PropertyKind::SymbolDatasheet
-                            | PropertyKind::SymbolDescription
-                    ) {
-                        let existing = symbol
-                            .properties
-                            .iter_mut()
-                            .find(|existing| existing.kind == property.kind)
-                            .expect("placed symbols start with mandatory fields");
-                        let kind = property.kind;
-                        *existing = property;
-                        if kind == PropertyKind::SymbolReference {
-                            symbol.update_prefix_from_reference();
+                "default_instance" => {
+                    let _ = self.need_unquoted_symbol_atom("default_instance")?;
+                    while !self.at_right() {
+                        self.need_left()?;
+                        match self
+                            .need_unquoted_symbol_atom("reference, unit, value or footprint")?
+                            .as_str()
+                        {
+                            "reference" => {
+                                let _ = self.need_symbol_atom("reference")?;
+                                self.need_right()?;
+                            }
+                            "unit" => {
+                                let _ = self.parse_i32_atom("symbol unit")?;
+                                self.need_right()?;
+                            }
+                            "value" => {
+                                let parsed = {
+                                    let value = self.need_symbol_atom("value")?;
+                                    if self
+                                        .require_known_version()
+                                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                        < VERSION_EMPTY_TILDE_IS_EMPTY
+                                        && value == "~"
+                                    {
+                                        String::new()
+                                    } else {
+                                        value
+                                    }
+                                };
+                                symbol.set_field_text(PropertyKind::SymbolValue, parsed);
+                                self.need_right()?;
+                            }
+                            "footprint" => {
+                                let parsed = {
+                                    let value = self.need_symbol_atom("footprint")?;
+                                    if self
+                                        .require_known_version()
+                                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                                        < VERSION_EMPTY_TILDE_IS_EMPTY
+                                        && value == "~"
+                                    {
+                                        String::new()
+                                    } else {
+                                        value
+                                    }
+                                };
+                                symbol.set_field_text(PropertyKind::SymbolFootprint, parsed);
+                                self.need_right()?;
+                            }
+                            _ => {
+                                return Err(self.expecting("reference, unit, value or footprint"));
+                            }
                         }
-                    } else if let Some(existing) = symbol
-                        .properties
-                        .iter_mut()
-                        .find(|existing| existing.key == property.key)
-                    {
-                        *existing = property;
-                    } else {
-                        symbol.properties.push(property);
                     }
+                    self.need_right()?;
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
@@ -3873,62 +3892,44 @@ impl KiCadSchematicParser {
                     }
                     self.need_right()?;
                 }
-                "default_instance" => {
-                    let _ = self.need_unquoted_symbol_atom("default_instance")?;
-                    while !self.at_right() {
-                        self.need_left()?;
-                        match self
-                            .need_unquoted_symbol_atom("reference, unit, value or footprint")?
-                            .as_str()
-                        {
-                            "reference" => {
-                                let _ = self.need_symbol_atom("reference")?;
-                                self.need_right()?;
-                            }
-                            "unit" => {
-                                let _ = self.parse_i32_atom("symbol unit")?;
-                                self.need_right()?;
-                            }
-                            "value" => {
-                                let parsed = {
-                                    let value = self.need_symbol_atom("value")?;
-                                    if self
-                                        .require_known_version()
-                                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
-                                        < VERSION_EMPTY_TILDE_IS_EMPTY
-                                        && value == "~"
-                                    {
-                                        String::new()
-                                    } else {
-                                        value
-                                    }
-                                };
-                                symbol.set_field_text(PropertyKind::SymbolValue, parsed);
-                                self.need_right()?;
-                            }
-                            "footprint" => {
-                                let parsed = {
-                                    let value = self.need_symbol_atom("footprint")?;
-                                    if self
-                                        .require_known_version()
-                                        .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
-                                        < VERSION_EMPTY_TILDE_IS_EMPTY
-                                        && value == "~"
-                                    {
-                                        String::new()
-                                    } else {
-                                        value
-                                    }
-                                };
-                                symbol.set_field_text(PropertyKind::SymbolFootprint, parsed);
-                                self.need_right()?;
-                            }
-                            _ => {
-                                return Err(self.expecting("reference, unit, value or footprint"));
-                            }
-                        }
+                "property" => {
+                    let property = self.parse_sch_field(FieldParent::Symbol(&symbol))?;
+                    if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
+                        symbol.excluded_from_sim = property.value == "0";
+                        continue;
                     }
-                    self.need_right()?;
+                    if property.key == SIM_LEGACY_ENABLE_FIELD {
+                        symbol.excluded_from_sim = property.value == "N";
+                        continue;
+                    }
+
+                    if matches!(
+                        property.kind,
+                        PropertyKind::SymbolReference
+                            | PropertyKind::SymbolValue
+                            | PropertyKind::SymbolFootprint
+                            | PropertyKind::SymbolDatasheet
+                            | PropertyKind::SymbolDescription
+                    ) {
+                        let existing = symbol
+                            .properties
+                            .iter_mut()
+                            .find(|existing| existing.kind == property.kind)
+                            .expect("placed symbols start with mandatory fields");
+                        let kind = property.kind;
+                        *existing = property;
+                        if kind == PropertyKind::SymbolReference {
+                            symbol.update_prefix_from_reference();
+                        }
+                    } else if let Some(existing) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|existing| existing.key == property.key)
+                    {
+                        *existing = property;
+                    } else {
+                        symbol.properties.push(property);
+                    }
                 }
                 "pin" => {
                     let _ = self.need_unquoted_symbol_atom("pin")?;
@@ -3965,7 +3966,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        symbol.lib_name = symbol.lib_name.take().filter(|name| name != &symbol.lib_id);
+        symbol.lib_name = lib_name.filter(|name| name != &symbol.lib_id);
         self.need_right()?;
         Ok(symbol)
     }
