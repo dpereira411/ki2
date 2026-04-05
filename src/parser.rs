@@ -4880,35 +4880,21 @@ impl KiCadSchematicParser {
 
         while !self.at_right() {
             let section_is_list = matches!(self.current().kind, TokKind::Left);
-            let head = if section_is_list {
+            if section_is_list {
                 self.need_left()?;
-                self.need_unquoted_symbol_atom("font, justify, hide or href")?
-            } else if self.at_unquoted_symbol_with("hide") {
-                self.need_unquoted_symbol_atom("hide")?
-            } else if self.at_unquoted_symbol_with("href") {
-                self.need_unquoted_symbol_atom("href")?
-            } else {
-                return Err(self.expecting("font, justify, hide or href"));
-            };
+            }
+            let head = self.need_unquoted_symbol_atom("font, justify, hide or href")?;
 
             match head.as_str() {
                 "font" => {
                     while !self.at_right() {
                         let font_is_list = matches!(self.current().kind, TokKind::Left);
-                        let head = if font_is_list {
+                        if font_is_list {
                             self.need_left()?;
-                            self.need_unquoted_symbol_atom(
-                                "face, size, thickness, line_spacing, bold, or italic",
-                            )?
-                        } else if self.at_unquoted_symbol_with("bold") {
-                            self.need_unquoted_symbol_atom("bold")?
-                        } else if self.at_unquoted_symbol_with("italic") {
-                            self.need_unquoted_symbol_atom("italic")?
-                        } else {
-                            return Err(self.expecting(
-                                "face, size, thickness, line_spacing, bold, or italic",
-                            ));
-                        };
+                        }
+                        let head = self.need_unquoted_symbol_atom(
+                            "face, size, thickness, line_spacing, bold, or italic",
+                        )?;
 
                         match head.as_str() {
                             "face" => {
@@ -4916,18 +4902,24 @@ impl KiCadSchematicParser {
                                     self.need_symbol_atom("font face")
                                         .map_err(|_| self.error_here("missing font face"))?,
                                 );
-                                self.need_right()?;
+                                if font_is_list {
+                                    self.need_right()?;
+                                }
                             }
                             "size" => {
                                 effects.font_size = Some([
                                     self.parse_f64_atom("font width")?,
                                     self.parse_f64_atom("font height")?,
                                 ]);
-                                self.need_right()?;
+                                if font_is_list {
+                                    self.need_right()?;
+                                }
                             }
                             "thickness" => {
                                 effects.thickness = Some(self.parse_f64_atom("text thickness")?);
-                                self.need_right()?;
+                                if font_is_list {
+                                    self.need_right()?;
+                                }
                             }
                             "color" => {
                                 effects.color = Some([
@@ -4936,11 +4928,15 @@ impl KiCadSchematicParser {
                                     f64::from(self.parse_i32_atom("blue")?) / 255.0,
                                     self.parse_f64_atom("alpha")?.clamp(0.0, 1.0),
                                 ]);
-                                self.need_right()?;
+                                if font_is_list {
+                                    self.need_right()?;
+                                }
                             }
                             "line_spacing" => {
                                 effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
-                                self.need_right()?;
+                                if font_is_list {
+                                    self.need_right()?;
+                                }
                             }
                             "bold" => {
                                 effects.bold = self.parse_maybe_absent_bool(true)?;
@@ -4956,7 +4952,9 @@ impl KiCadSchematicParser {
                         }
                     }
 
-                    self.need_right()?;
+                    if section_is_list {
+                        self.need_right()?;
+                    }
                 }
                 "justify" => {
                     while !self.at_right() {
@@ -4983,7 +4981,9 @@ impl KiCadSchematicParser {
                         }
                     }
 
-                    self.need_right()?;
+                    if section_is_list {
+                        self.need_right()?;
+                    }
                 }
                 "href" => {
                     let href = self

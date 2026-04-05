@@ -4443,7 +4443,7 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
-fn rejects_bare_font_effects_heads_and_accepts_bare_href() {
+fn accepts_bare_effects_font_justify_and_href_heads() {
     let bare_font_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -4451,29 +4451,70 @@ fn rejects_bare_font_effects_heads_and_accepts_bare_href() {
   (text "note" (effects font (size 1 1)))
 )"#;
     let bare_font_head_path = temp_schematic("bare_effects_font_head", bare_font_head);
-    let err = parse_schematic_file(Path::new(&bare_font_head_path))
-        .expect_err("must reject bare font effects head");
-    assert!(
-        err.to_string()
-            .contains("expecting font, justify, hide or href")
+    let schematic =
+        parse_schematic_file(Path::new(&bare_font_head_path)).expect("must accept bare font head");
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert_eq!(
+        text.effects.as_ref().and_then(|effects| effects.font_size),
+        Some([1.0, 1.0])
     );
 
-    let bare_font_size = r#"(kicad_sch
+    let bare_font_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-font-size")
-  (text "note" (effects (font size 1 1)))
+  (uuid "root-bare-font-color")
+  (text "note" (effects (font color 10 20 30 0.5)))
 )"#;
-    let bare_font_size_path = temp_schematic("bare_effects_font_size", bare_font_size);
-    let err = parse_schematic_file(Path::new(&bare_font_size_path))
-        .expect_err("must reject bare font child");
-    assert!(
-        err.to_string()
-            .contains("expecting face, size, thickness, line_spacing, bold, or italic")
+    let bare_font_color_path = temp_schematic("bare_effects_font_color", bare_font_color);
+    let schematic = parse_schematic_file(Path::new(&bare_font_color_path))
+        .expect("must accept bare font color child");
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert_eq!(
+        text.effects.as_ref().and_then(|effects| effects.color),
+        Some([10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 0.5])
     );
 
+    let bare_justify_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-justify-head")
+  (text "note" (effects justify left top))
+)"#;
+    let bare_justify_head_path = temp_schematic("bare_effects_justify_head", bare_justify_head);
+    let schematic = parse_schematic_file(Path::new(&bare_justify_head_path))
+        .expect("must accept bare justify head");
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    let effects = text.effects.as_ref().expect("effects");
+    assert_eq!(effects.h_justify, TextHJustify::Left);
+    assert_eq!(effects.v_justify, TextVJustify::Top);
+
     let _ = fs::remove_file(bare_font_head_path);
-    let _ = fs::remove_file(bare_font_size_path);
+    let _ = fs::remove_file(bare_font_color_path);
+    let _ = fs::remove_file(bare_justify_head_path);
 
     let bare_href_head = r#"(kicad_sch
   (version 20260306)
