@@ -4011,10 +4011,6 @@ impl KiCadSchematicParser {
                                             parsed_page.retain(|ch| {
                                                 !matches!(ch, '\r' | '\n' | '\t' | ' ')
                                             });
-
-                                            if parsed_page.is_empty() {
-                                                parsed_page = "#".to_string();
-                                            }
                                         }
 
                                         instance.page = Some(parsed_page);
@@ -4328,10 +4324,6 @@ impl KiCadSchematicParser {
                             parsed_page = "#".to_string();
                         } else {
                             parsed_page.retain(|ch| !matches!(ch, '\r' | '\n' | '\t' | ' '));
-
-                            if parsed_page.is_empty() {
-                                parsed_page = "#".to_string();
-                            }
                         }
 
                         instance.page = Some(parsed_page);

@@ -2640,6 +2640,42 @@ fn modern_root_sheet_instance_page_is_stored_on_screen_root_page() {
 }
 
 #[test]
+fn sheet_page_normalization_only_hashes_truly_empty_tokens() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-pages")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S" (page "   ")))))
+  (sheet_instances
+    (path "/S2" (page "")))
+)"#;
+    let path = temp_schematic("sheet_page_normalization_whitespace", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.instances[0].page.as_deref(), Some(""));
+    assert_eq!(
+        schematic.screen.sheet_instances[0].page.as_deref(),
+        Some("#")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
     let src = r#"(kicad_sch
   (version 20231120)
