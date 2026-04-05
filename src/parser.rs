@@ -1126,7 +1126,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        symbol.sort_draw_items();
+        symbol.refresh_library_tree_caches();
         self.need_right()?;
         Ok(symbol)
     }
@@ -5676,6 +5676,17 @@ impl KiCadSchematicParser {
         let mut cache = std::collections::HashMap::new();
 
         for idx in 0..self.screen.lib_symbols.len() {
+            if self.screen.lib_symbols[idx].extends.is_none() {
+                self.screen.lib_symbols[idx].has_demorgan = if version < VERSION_CUSTOM_BODY_STYLES
+                {
+                    self.screen.lib_symbols[idx].has_legacy_alternate_body_style()
+                } else {
+                    self.screen.lib_symbols[idx].has_demorgan
+                };
+                cache.insert(idx, self.screen.lib_symbols[idx].has_demorgan);
+                continue;
+            }
+
             let has_demorgan = Self::has_legacy_alternate_body_style(
                 idx,
                 &self.screen.lib_symbols,
@@ -5715,7 +5726,7 @@ impl KiCadSchematicParser {
 
         let symbol = &symbols[idx];
 
-        if symbol.units.iter().any(|unit| unit.body_style > 1) {
+        if symbol.has_legacy_alternate_body_style() {
             cache.insert(idx, true);
             return true;
         }

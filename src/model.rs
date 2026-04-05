@@ -281,6 +281,14 @@ impl LibSymbol {
         }
     }
 
+    pub fn has_legacy_alternate_body_style(&self) -> bool {
+        self.units.iter().any(|unit| unit.body_style > 1)
+    }
+
+    pub fn refresh_library_tree_caches(&mut self) {
+        self.sort_draw_items();
+    }
+
     pub fn next_field_ordinal(&self) -> i32 {
         let property_ordinal = self.properties.iter().fold(42, |ordinal, property| {
             ordinal.max(property.sort_ordinal() + 1)
@@ -1489,6 +1497,29 @@ mod tests {
             &table.cells[0]
         ));
         assert_eq!(table.row_count(), 3);
+    }
+
+    #[test]
+    fn lib_symbol_refresh_updates_draw_item_caches() {
+        let mut symbol = LibSymbol::new("Device:R".to_string());
+
+        symbol.add_draw_item(LibDrawItem {
+            kind: "text".to_string(),
+            unit_number: 1,
+            body_style: 2,
+            ..LibDrawItem::new("text", 1, 2)
+        });
+        symbol.add_draw_item(LibDrawItem {
+            kind: "arc".to_string(),
+            unit_number: 1,
+            body_style: 2,
+            ..LibDrawItem::new("arc", 1, 2)
+        });
+
+        symbol.refresh_library_tree_caches();
+
+        assert_eq!(symbol.units[1].body_style, 2);
+        assert_eq!(symbol.units[1].draw_item_kinds, vec!["arc", "text"]);
     }
 
     #[test]
