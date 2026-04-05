@@ -2578,6 +2578,48 @@ fn defaults_missing_header_version_and_rejects_late_version_section() {
 }
 
 #[test]
+fn parser_accepts_leading_full_line_comments() {
+    let src = "# generated comment\n  # another comment\n(kicad_sch\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"root-comment\")\n  (text \"note\" (at 1 2 0)))\n";
+    let path = temp_schematic("leading_comment_lines", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse commented schematic");
+
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert_eq!(text.text, "note");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn parser_accepts_nul_as_whitespace() {
+    let src = "(kicad_sch\0(version\020260306)\0(generator\0\"eeschema\")\0(uuid\0\"root-nul\")\0(text\0\"note\"\0(at\01\02\00)))";
+    let path = temp_schematic("nul_whitespace", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must parse NUL-separated schematic");
+
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert_eq!(text.text, "note");
+    assert_eq!(text.at, [1.0, 2.0, 0.0]);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn accepts_legacy_host_and_generates_root_uuid_for_old_files() {
     let src = r#"(kicad_sch
   (version 20200826)
