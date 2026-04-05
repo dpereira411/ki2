@@ -716,6 +716,7 @@ impl KiCadSchematicParser {
                 }
                 "comment" => {
                     let _ = self.need_unquoted_symbol_atom("comment")?;
+                    let index_span = self.current_span();
                     let idx = self.parse_i32_atom("comment index")?;
                     let value = match &self.current().kind {
                         TokKind::Atom(value) => {
@@ -736,7 +737,12 @@ impl KiCadSchematicParser {
                         7 => 7,
                         8 => 8,
                         9 => 9,
-                        _ => return Err(self.error_here("Invalid title block comment number")),
+                        _ => {
+                            return Err(self.validation(
+                                Some(index_span),
+                                "Invalid title block comment number",
+                            ));
+                        }
                     };
 
                     if let Some(existing) = title_block

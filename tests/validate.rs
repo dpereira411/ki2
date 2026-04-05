@@ -1382,6 +1382,13 @@ fn rejects_invalid_title_block_comment_number() {
         err.to_string()
             .contains("Invalid title block comment number")
     );
+    match &err {
+        Error::Validation { diagnostic, .. } => {
+            let span = diagnostic.span.expect("diagnostic span");
+            assert_eq!(&src[span.start..span.end], "10");
+        }
+        other => panic!("expected validation error, got {other:?}"),
+    }
     let _ = fs::remove_file(path);
 
     let valid_src = r#"(kicad_sch
