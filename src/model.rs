@@ -817,7 +817,6 @@ pub enum ShapeKind {
 pub struct Symbol {
     pub lib_id: String,
     pub lib_name: Option<String>,
-    pub linked_lib_symbol_name: Option<String>,
     pub prefix: String,
     pub in_netlist: bool,
     pub at: [f64; 2],
@@ -842,7 +841,6 @@ impl Symbol {
         Self {
             lib_id: String::new(),
             lib_name: None,
-            linked_lib_symbol_name: None,
             prefix: "U".to_string(),
             in_netlist: true,
             at: [0.0, 0.0],

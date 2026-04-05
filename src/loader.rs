@@ -391,11 +391,7 @@ impl SchematicLoader {
                     continue;
                 };
 
-                let lib_symbol_name = symbol
-                    .linked_lib_symbol_name
-                    .as_deref()
-                    .or(symbol.lib_name.as_deref())
-                    .unwrap_or(symbol.lib_id.as_str());
+                let lib_symbol_name = symbol.lib_name.as_deref().unwrap_or(symbol.lib_id.as_str());
 
                 let Some(lib_symbol) = power_infos.get(lib_symbol_name) else {
                     continue;
@@ -432,11 +428,7 @@ impl SchematicLoader {
                     continue;
                 };
 
-                let lib_symbol_name = symbol
-                    .linked_lib_symbol_name
-                    .as_deref()
-                    .or(symbol.lib_name.as_deref())
-                    .unwrap_or(symbol.lib_id.as_str());
+                let lib_symbol_name = symbol.lib_name.as_deref().unwrap_or(symbol.lib_id.as_str());
 
                 let Some(lib_symbol) = power_infos.get(lib_symbol_name) else {
                     continue;

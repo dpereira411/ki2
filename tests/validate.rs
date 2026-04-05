@@ -7777,7 +7777,6 @@ fn omits_redundant_symbol_lib_name_but_keeps_overrides() {
         })
         .expect("symbol");
     assert_eq!(symbol.lib_name, None);
-    assert_eq!(symbol.linked_lib_symbol_name.as_deref(), None);
     let _ = fs::remove_file(redundant_path);
 
     let override_src = r#"(kicad_sch
@@ -7799,7 +7798,6 @@ fn omits_redundant_symbol_lib_name_but_keeps_overrides() {
         })
         .expect("symbol");
     assert_eq!(symbol.lib_name.as_deref(), Some("Local/R"));
-    assert_eq!(symbol.linked_lib_symbol_name.as_deref(), None);
     let _ = fs::remove_file(override_path);
 }
 
@@ -7818,17 +7816,6 @@ fn links_symbols_to_local_lib_symbols_and_hydrates_embedded_files() {
 )"#;
     let path = temp_schematic("linked_local_lib_symbol", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
-
-    let symbol = schematic
-        .screen
-        .items
-        .iter()
-        .find_map(|item| match item {
-            SchItem::Symbol(symbol) => Some(symbol),
-            _ => None,
-        })
-        .expect("symbol");
-    assert_eq!(symbol.linked_lib_symbol_name.as_deref(), Some("Local:R"));
 
     let lib_symbol = &schematic.screen.lib_symbols[0];
     assert_eq!(lib_symbol.embedded_files[0].data.as_deref(), Some("abc123"));

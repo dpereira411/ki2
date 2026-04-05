@@ -313,7 +313,6 @@ impl KiCadSchematicParser {
         let version = self
             .version
             .ok_or_else(|| self.error_here("missing version"))?;
-        self.update_local_lib_symbol_links();
         self.fixup_legacy_lib_symbol_alternate_body_styles();
         self.fixup_embedded_data();
 
@@ -5381,28 +5380,6 @@ impl KiCadSchematicParser {
         }
 
         out
-    }
-
-    fn update_local_lib_symbol_links(&mut self) {
-        let known_symbols: std::collections::HashSet<String> = self
-            .screen
-            .lib_symbols
-            .iter()
-            .map(|symbol| symbol.lib_id.clone())
-            .collect();
-
-        for item in &mut self.screen.items {
-            if let SchItem::Symbol(symbol) = item {
-                let lookup_name = symbol
-                    .lib_name
-                    .as_deref()
-                    .unwrap_or(symbol.lib_id.as_str())
-                    .to_string();
-
-                symbol.linked_lib_symbol_name =
-                    known_symbols.contains(&lookup_name).then_some(lookup_name);
-            }
-        }
     }
 
     fn fixup_legacy_lib_symbol_alternate_body_styles(&mut self) {
