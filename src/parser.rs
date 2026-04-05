@@ -792,9 +792,10 @@ impl KiCadSchematicParser {
                 let _ = self.need_unquoted_symbol_atom("demorgan")?;
                 symbol.has_demorgan = true;
             } else {
-                symbol
-                    .body_style_names
-                    .push(self.need_symbol_atom("property value")?);
+                symbol.body_style_names.push(
+                    self.need_symbol_atom("property value")
+                        .map_err(|_| self.error_here("Invalid property value"))?,
+                );
             }
         }
 
