@@ -1049,7 +1049,7 @@ fn fixes_legacy_global_power_symbol_value_after_load() {
     (symbol "power:VCC"
       (power global)
       (property "Value" "OLDLIB")
-      (symbol "power:VCC_1_1"
+      (symbol "VCC_1_1"
         (pin power_in line
           hide
           (at 0 0 0)
@@ -1126,7 +1126,7 @@ fn preserves_power_symbol_reference_metadata_during_annotation() {
   (lib_symbols
     (symbol "power:VCC"
       (power global)
-      (symbol "power:VCC_1_1"
+      (symbol "VCC_1_1"
         (pin power_in line
           hide
           (at 0 0 0)
@@ -1242,7 +1242,7 @@ fn annotates_power_symbol_references_after_load() {
     (symbol "power:VCC"
       (power global)
       (property "Reference" "VCC")
-      (symbol "power:VCC_1_1"
+      (symbol "VCC_1_1"
         (pin power_in line
           hide
           (at 0 0 0)
@@ -1508,7 +1508,7 @@ fn parses_extended_top_level_sections() {
       (property "Reference" "U" (id 0) (at 1 2 0) (hide yes) (effects (font (size 1 1))))
       (extends "Device:Base")
       (circle)
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (unit_name "Amplifier")
         (arc (start 0 0) (mid 1 1) (end 2 0) (stroke (width 0.1)))
         (text "AMP" (at 3 4 90) (effects (font (size 1.2 1.3)) (hide)))
@@ -1804,7 +1804,7 @@ fn parser_links_placed_symbols_to_local_lib_symbols_after_parse() {
   (lib_symbols
     (symbol "Device:R"
       (property "Reference" "R")
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (pin passive line (at 0 0 0) (length 2.54) (name "P") (number "1")))))
   (symbol
     (lib_id "Device:R")
@@ -1844,7 +1844,7 @@ fn parser_links_symbols_after_lib_cache_fixups() {
   (lib_symbols
     (symbol "Root:R"
       (embedded_files (file (name "shared.bin")))
-      (symbol "Root:R_1_2"
+      (symbol "R_1_2"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1))))))
     (symbol "Child:R"
       (extends "Root:R")
@@ -1927,7 +1927,7 @@ fn lib_symbol_text_uses_decidegree_angles_like_upstream() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (text "AMP" (at 3 4 90) (effects (font (size 1 1)))))))
 )"#;
     let path = temp_schematic("lib_text_decidegrees", src);
@@ -1947,7 +1947,7 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (text_box "TB" (start 1 2) (end 4 6) (effects (font (size 1 1)))))))
 )"#;
     let legacy_path = temp_schematic("lib_text_box_legacy", legacy_src);
@@ -1971,7 +1971,7 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (text_box "TB" (at 1 2 0) (size 3 4) (uuid "tb")))))
 )"#;
     let bad_path = temp_schematic("lib_text_box_bad_uuid", bad_src);
@@ -1993,7 +1993,7 @@ fn rejects_invalid_lib_pin_orientation() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (pin input line (at 1 2 45)))))
 )"#;
     let path = temp_schematic("bad_lib_pin_orientation", src);
@@ -2013,7 +2013,7 @@ fn rejects_invalid_lib_symbol_unit_name_suffix() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_bad" (arc))))
+      (symbol "R_bad" (arc))))
 )"#;
     let path = temp_schematic("bad_lib_unit_suffix", src);
     let schematic =
@@ -3771,7 +3771,7 @@ fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_2_1"
+      (symbol "R_2_1"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
 )"#;
     let path = temp_schematic("lib_symbol_default_root_unit", src);
@@ -3779,11 +3779,11 @@ fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
 
     let lib_symbol = &schematic.screen.lib_symbols[0];
     assert_eq!(lib_symbol.units.len(), 2);
-    assert_eq!(lib_symbol.units[0].name, "Device:R_1_1");
+    assert_eq!(lib_symbol.units[0].name, "R_1_1");
     assert_eq!(lib_symbol.units[0].unit_number, 1);
     assert_eq!(lib_symbol.units[0].body_style, 1);
     assert!(lib_symbol.units[0].draw_items.is_empty());
-    assert_eq!(lib_symbol.units[1].name, "Device:R_2_1");
+    assert_eq!(lib_symbol.units[1].name, "R_2_1");
 
     let _ = fs::remove_file(path);
 }
@@ -3797,7 +3797,7 @@ fn lib_symbol_materializes_missing_body_style_slots_from_nested_units() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_2_2"
+      (symbol "R_2_2"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
 )"#;
     let path = temp_schematic("lib_symbol_materialize_body_style_slots", src);
@@ -3805,10 +3805,10 @@ fn lib_symbol_materializes_missing_body_style_slots_from_nested_units() {
 
     let lib_symbol = &schematic.screen.lib_symbols[0];
     assert_eq!(lib_symbol.units.len(), 4);
-    assert_eq!(lib_symbol.units[0].name, "Device:R_1_1");
-    assert_eq!(lib_symbol.units[1].name, "Device:R_1_2");
-    assert_eq!(lib_symbol.units[2].name, "Device:R_2_1");
-    assert_eq!(lib_symbol.units[3].name, "Device:R_2_2");
+    assert_eq!(lib_symbol.units[0].name, "R_1_1");
+    assert_eq!(lib_symbol.units[1].name, "R_1_2");
+    assert_eq!(lib_symbol.units[2].name, "R_2_1");
+    assert_eq!(lib_symbol.units[3].name, "R_2_2");
     assert!(lib_symbol.units[0].draw_items.is_empty());
     assert!(lib_symbol.units[1].draw_items.is_empty());
     assert!(lib_symbol.units[2].draw_items.is_empty());
@@ -5361,7 +5361,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
   (uuid "root-quoted-lib-text-private")
   (lib_symbols
     (symbol "MyLib:U"
-      (symbol "MyLib:U_1_1"
+      (symbol "U_1_1"
         (text "private" (at 0 0 0) (effects (font (size 1 1)))))))
 )"#;
     let quoted_lib_text_private_path =
@@ -5643,7 +5643,7 @@ fn library_text_clamps_but_pin_name_and_number_effects_do_not() {
   (uuid "root-lib-unclamped-text-size")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (text "TXT" (at 0 0 0) (effects (font (size 0 999))))
         (pin input line
           (name "N" (effects (font (size 0 999))))
@@ -5839,7 +5839,7 @@ fn converts_legacy_overbar_library_text_when_effects_are_parsed() {
   (uuid "root-overbar-lib-text")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (text "~LIBTXT~" (at 0 0 0) (effects (font (size 1 1)))))))
 )"#;
     let path = temp_schematic("legacy_overbar_lib_text_effects", src);
@@ -7655,7 +7655,7 @@ fn ignores_numeric_lib_unit_name_token() {
   (uuid "root-lib-unit-name")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (unit_name 123))))
 )"#;
     let path = temp_schematic("bad_lib_unit_name_token", src);
@@ -7664,7 +7664,7 @@ fn ignores_numeric_lib_unit_name_token() {
     assert_eq!(schematic.screen.lib_symbols[0].units.len(), 1);
     assert_eq!(
         schematic.screen.lib_symbols[0].units[0].name,
-        "Device:R_1_1"
+        "R_1_1"
     );
     assert_eq!(schematic.screen.lib_symbols[0].units[0].unit_name, None);
     assert!(schematic.screen.parse_warnings.is_empty());
@@ -7679,9 +7679,9 @@ fn lib_unit_name_applies_across_body_styles_of_same_unit() {
   (uuid "root-lib-unit-display-name")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (unit_name "Amplifier"))
-      (symbol "Device:R_1_2"
+      (symbol "R_1_2"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
 )"#;
     let path = temp_schematic("lib_unit_name_shared_across_body_styles", src);
@@ -8339,7 +8339,7 @@ fn rejects_unexpected_lib_symbol_unit_child_with_upstream_expect_list() {
   (uuid "root-lib-unit-unexpected")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (bogus 1))))
 )"#;
     let path = temp_schematic("bad_lib_symbol_unit_child", src);
@@ -9028,7 +9028,7 @@ fn records_warning_and_skips_invalid_lib_symbol_block() {
   (paper "A4")
   (lib_symbols
     (symbol "Bad:R"
-      (symbol "Bad:R_1_1"
+      (symbol "R_1_1"
         (pin input line
           (at 0 0 45))))
     (symbol "Good:R"))
@@ -9257,7 +9257,7 @@ fn lib_property_name_collision_checks_all_symbol_units() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_2_1"
+      (symbol "R_2_1"
         (text "HIDDEN" (at 1 2 90) (effects (font (size 1 1)) (hide))))
       (property "Field" "PROP"))))
 "#;
@@ -9284,7 +9284,7 @@ fn rejects_invalid_lib_pin_alternate_type_and_shape() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (pin input line
           (at 0 0 0)
           (length 2.54)
@@ -9306,7 +9306,7 @@ fn rejects_invalid_lib_pin_alternate_type_and_shape() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (pin input line
           (at 0 0 0)
           (length 2.54)
@@ -9331,7 +9331,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (arc
           (start 0 0)
           (end 2 0)
@@ -9359,7 +9359,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (arc)))) 
 )"#;
     let default_arc_path = temp_schematic("lib_arc_default_geometry", default_arc_src);
@@ -9379,7 +9379,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (arc (center 0 0)))))
 )"#;
     let bad_arc_path = temp_schematic("lib_arc_bad_token", bad_arc_src);
@@ -9399,7 +9399,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (bezier (pts (xy 0 0) (xy 1 1) (xy 2 2) (xy 3 3) (xy 4 4))))))
 )"#;
     let bad_bezier_path = temp_schematic("lib_bezier_too_many_points", bad_bezier_src);
@@ -9416,7 +9416,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (bezier (pts ("xy" 0 0) (xy 1 1) (xy 2 2) (xy 3 3))))))
 )"#;
     let quoted_bezier_xy_path = temp_schematic("lib_bezier_quoted_xy", quoted_bezier_xy_src);
@@ -9436,7 +9436,7 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_1"
+      (symbol "R_1_1"
         (arc (radius (angles 0 90)))
         (circle))))
 )"#;
@@ -9492,7 +9492,7 @@ fn legacy_lib_symbols_infer_demorgan_body_style_from_units() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_2"
+      (symbol "R_1_2"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
 )"#;
     let legacy_path = temp_schematic("legacy_demorgan_inferred", legacy_src);
@@ -9507,7 +9507,7 @@ fn legacy_lib_symbols_infer_demorgan_body_style_from_units() {
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
-      (symbol "Device:R_1_2"
+      (symbol "R_1_2"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
 )"#;
     let modern_path = temp_schematic("modern_demorgan_not_inferred", modern_src);
@@ -9525,7 +9525,7 @@ fn legacy_derived_lib_symbols_inherit_demorgan_state_from_root() {
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
-      (symbol "Root:R_1_2"
+      (symbol "R_1_2"
         (text "ALT" (at 1 2 0) (effects (font (size 1 1))))))
     (symbol "Child:R"
       (extends "Root:R"))))

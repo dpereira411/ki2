@@ -1030,14 +1030,14 @@ impl KiCadSchematicParser {
                         .map_err(|_| self.error_here("Invalid symbol unit name"))?;
                     let unit_full_name = unit_name_raw.replace("{slash}", "/");
 
-                    if !unit_full_name.starts_with(&symbol.lib_id) {
+                    if !unit_full_name.starts_with(&symbol.name) {
                         return Err(self.error_here(format!(
                             "invalid symbol unit name prefix {unit_full_name}"
                         )));
                     }
 
                     let suffix = unit_full_name
-                        .strip_prefix(&symbol.lib_id)
+                        .strip_prefix(&symbol.name)
                         .and_then(|rest| rest.strip_prefix('_'))
                         .ok_or_else(|| {
                             self.error_here(format!(

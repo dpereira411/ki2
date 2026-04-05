@@ -178,7 +178,7 @@ impl LibSymbol {
 
         Self {
             units: vec![LibSymbolUnit {
-                name: format!("{lib_id}_1_1"),
+                name: format!("{name}_1_1"),
                 unit_number: 1,
                 body_style: 1,
                 unit_name: None,
@@ -230,7 +230,7 @@ impl LibSymbol {
                     .and_then(|existing| existing.unit_name.clone());
 
                 self.units.push(LibSymbolUnit {
-                    name: format!("{}_{}_{}", self.lib_id, unit_number, body_style),
+                    name: format!("{}_{}_{}", self.name, unit_number, body_style),
                     unit_number,
                     body_style,
                     unit_name,
@@ -1376,7 +1376,7 @@ mod tests {
     #[test]
     fn lib_symbol_add_draw_item_routes_by_unit_and_body_style() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.ensure_unit_index("Device:R_2_1".to_string(), 2, 1);
+        symbol.ensure_unit_index("R_2_1".to_string(), 2, 1);
 
         symbol.add_draw_item(LibDrawItem::new("text", 2, 1));
 
@@ -1389,7 +1389,7 @@ mod tests {
     fn lib_symbol_materializes_missing_unit_and_body_style_slots() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
 
-        symbol.ensure_unit_index("Device:R_2_2".to_string(), 2, 2);
+        symbol.ensure_unit_index("R_2_2".to_string(), 2, 2);
 
         assert_eq!(
             symbol
@@ -1398,10 +1398,10 @@ mod tests {
                 .map(|unit| (unit.name.as_str(), unit.unit_number, unit.body_style))
                 .collect::<Vec<_>>(),
             vec![
-                ("Device:R_1_1", 1, 1),
-                ("Device:R_1_2", 1, 2),
-                ("Device:R_2_1", 2, 1),
-                ("Device:R_2_2", 2, 2),
+                ("R_1_1", 1, 1),
+                ("R_1_2", 1, 2),
+                ("R_2_1", 2, 1),
+                ("R_2_2", 2, 2),
             ]
         );
     }
@@ -1541,7 +1541,7 @@ mod tests {
     #[test]
     fn lib_symbol_unit_display_names_are_shared_across_body_styles() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.ensure_unit_index("Device:R_1_2".to_string(), 1, 2);
+        symbol.ensure_unit_index("R_1_2".to_string(), 1, 2);
         symbol.set_unit_display_name(1, "Amplifier".to_string());
 
         assert_eq!(symbol.units[0].unit_name.as_deref(), Some("Amplifier"));
