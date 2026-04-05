@@ -1574,8 +1574,12 @@ pub enum PropertyKind {
 }
 
 impl PropertyKind {
+    pub fn is_user_field(self) -> bool {
+        matches!(self, PropertyKind::User | PropertyKind::SheetUser)
+    }
+
     pub fn is_mandatory(self) -> bool {
-        !matches!(self, PropertyKind::User | PropertyKind::SheetUser)
+        !self.is_user_field()
     }
 
     pub fn canonical_key(self) -> &'static str {

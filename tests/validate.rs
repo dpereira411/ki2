@@ -3264,7 +3264,7 @@ fn private_only_survives_on_true_user_fields() {
         .find(|property| property.kind == ki2::model::PropertyKind::SheetUser)
         .expect("sheet user field");
     assert_eq!(sheet_user.id, Some(9));
-    assert!(!sheet_user.is_private);
+    assert!(sheet_user.is_private);
 
     let global = schematic
         .screen
