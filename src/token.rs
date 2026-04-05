@@ -27,11 +27,13 @@ pub struct Token {
 pub fn prescan_version(input: &str) -> Option<i32> {
     let bytes = input.as_bytes();
     let mut i = 0usize;
+    loop {
+        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+            i += 1;
+        }
 
-    while i < bytes.len() {
-        match bytes[i] {
-            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
-            b'"' => {
+        match bytes.get(i).copied() {
+            Some(b'"') => {
                 i += 1;
                 while i < bytes.len() {
                     match bytes[i] {
@@ -50,44 +52,85 @@ pub fn prescan_version(input: &str) -> Option<i32> {
                     }
                 }
             }
-            b'(' => {
-                i += 1;
-
-                while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-                    i += 1;
-                }
-
-                let symbol_start = i;
-                while i < bytes.len()
-                    && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')')
-                {
-                    i += 1;
-                }
-
-                if symbol_start == i || &input[symbol_start..i] != "version" {
-                    continue;
-                }
-
-                while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-                    i += 1;
-                }
-
-                let number_start = i;
-                while i < bytes.len() && bytes[i].is_ascii_digit() {
-                    i += 1;
-                }
-
-                if number_start == i {
-                    continue;
-                }
-
-                return input[number_start..i].parse::<i32>().ok();
-            }
-            _ => i += 1,
+            Some(b'(') => break,
+            _ => return None,
         }
     }
 
-    None
+    i += 1;
+
+    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+        i += 1;
+    }
+
+    let root_start = i;
+    while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')') {
+        i += 1;
+    }
+
+    if root_start == i || &input[root_start..i] != "kicad_sch" {
+        return None;
+    }
+
+    loop {
+        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+            i += 1;
+        }
+
+        match bytes.get(i).copied() {
+            Some(b'"') => {
+                i += 1;
+                while i < bytes.len() {
+                    match bytes[i] {
+                        b'\\' => {
+                            i += 1;
+                            if i >= bytes.len() {
+                                return None;
+                            }
+                            i += 1;
+                        }
+                        b'"' => {
+                            i += 1;
+                            break;
+                        }
+                        _ => i += 1,
+                    }
+                }
+            }
+            Some(b'(') => break,
+            _ => return None,
+        }
+    }
+
+    i += 1;
+
+    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+        i += 1;
+    }
+
+    let symbol_start = i;
+    while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')') {
+        i += 1;
+    }
+
+    if symbol_start == i || &input[symbol_start..i] != "version" {
+        return None;
+    }
+
+    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+        i += 1;
+    }
+
+    let number_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+
+    if number_start == i {
+        return None;
+    }
+
+    input[number_start..i].parse::<i32>().ok()
 }
 
 /// The version at which `|` became an s-expression separator in KiCad.
@@ -291,6 +334,18 @@ mod tests {
     fn prescan_version_skips_fake_version_text_inside_quotes() {
         let input = "(kicad_sch \"(version 1)\"   (version 20260306))";
         assert_eq!(prescan_version(input), Some(20260306));
+    }
+
+    #[test]
+    fn prescan_version_ignores_late_or_nested_version_sections() {
+        assert_eq!(
+            prescan_version("(kicad_sch (generator \"eeschema\") (version 20260306))"),
+            None
+        );
+        assert_eq!(
+            prescan_version("(kicad_sch (sheet (property \"Version\" \"1\")) (version 20260306))"),
+            None
+        );
     }
 
     #[test]
