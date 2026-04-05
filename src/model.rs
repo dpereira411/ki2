@@ -1128,6 +1128,30 @@ impl Symbol {
         }
     }
 
+    pub fn set_value_field_text(&mut self, value: String) {
+        let existing = self
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .expect("placed symbols start with mandatory fields");
+        existing.id = PropertyKind::SymbolValue.default_field_id().or(existing.id);
+        existing.key = PropertyKind::SymbolValue.canonical_key().to_string();
+        existing.value = value;
+    }
+
+    pub fn set_footprint_field_text(&mut self, value: String) {
+        let existing = self
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .expect("placed symbols start with mandatory fields");
+        existing.id = PropertyKind::SymbolFootprint
+            .default_field_id()
+            .or(existing.id);
+        existing.key = PropertyKind::SymbolFootprint.canonical_key().to_string();
+        existing.value = value;
+    }
+
     pub fn add_pin(&mut self, pin: SymbolPin) {
         self.pins.push(pin);
     }
@@ -1318,6 +1342,32 @@ mod tests {
         symbol.set_field_text(PropertyKind::SymbolReference, "".to_string());
         assert_eq!(symbol.prefix, "#PWR");
         assert!(symbol.in_netlist);
+    }
+
+    #[test]
+    fn dedicated_symbol_value_and_footprint_setters_preserve_mandatory_identity() {
+        let mut symbol = Symbol::new();
+
+        symbol.set_value_field_text("10k".to_string());
+        symbol.set_footprint_field_text("Resistor_SMD:R_0603".to_string());
+
+        let value = symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .expect("value field");
+        assert_eq!(value.id, Some(2));
+        assert_eq!(value.key, "Value");
+        assert_eq!(value.value, "10k");
+
+        let footprint = symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .expect("footprint field");
+        assert_eq!(footprint.id, Some(3));
+        assert_eq!(footprint.key, "Footprint");
+        assert_eq!(footprint.value, "Resistor_SMD:R_0603");
     }
 
     #[test]

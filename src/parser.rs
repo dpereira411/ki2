@@ -3574,7 +3574,7 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                symbol.set_field_text(PropertyKind::SymbolValue, parsed);
+                                symbol.set_value_field_text(parsed);
                                 self.need_right()?;
                             }
                             "footprint" => {
@@ -3591,7 +3591,7 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                symbol.set_field_text(PropertyKind::SymbolFootprint, parsed);
+                                symbol.set_footprint_field_text(parsed);
                                 self.need_right()?;
                             }
                             _ => {
@@ -3681,7 +3681,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        symbol.set_field_text(PropertyKind::SymbolValue, parsed);
+                                        symbol.set_value_field_text(parsed);
                                         self.need_right()?;
                                     }
                                     "footprint" => {
@@ -3699,8 +3699,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        symbol
-                                            .set_field_text(PropertyKind::SymbolFootprint, parsed);
+                                        symbol.set_footprint_field_text(parsed);
                                         self.need_right()?;
                                     }
                                     "variant" => {
