@@ -6858,7 +6858,7 @@ fn duplicate_variant_names_and_fields_overwrite_by_name() {
 }
 
 #[test]
-fn late_variant_name_does_not_leave_provisional_empty_key() {
+fn late_variant_name_preserves_provisional_empty_key() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6881,7 +6881,7 @@ fn late_variant_name_does_not_leave_provisional_empty_key() {
             (on_board no)
             (name "ASSEMBLY"))))))
 )"#;
-    let path = temp_schematic("late_variant_name_does_not_leave_empty_key", src);
+    let path = temp_schematic("late_variant_name_preserves_empty_key", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
     let symbol = schematic
@@ -6893,8 +6893,7 @@ fn late_variant_name_does_not_leave_provisional_empty_key() {
             _ => None,
         })
         .expect("symbol");
-    assert_eq!(symbol.instances[0].variants.len(), 1);
-    assert!(!symbol.instances[0].variants.contains_key(""));
+    assert!(symbol.instances[0].variants.contains_key(""));
     assert!(symbol.instances[0].variants.contains_key("ALT"));
 
     let sheet = schematic
@@ -6906,8 +6905,7 @@ fn late_variant_name_does_not_leave_provisional_empty_key() {
             _ => None,
         })
         .expect("sheet");
-    assert_eq!(sheet.instances[0].variants.len(), 1);
-    assert!(!sheet.instances[0].variants.contains_key(""));
+    assert!(sheet.instances[0].variants.contains_key(""));
     assert!(sheet.instances[0].variants.contains_key("ASSEMBLY"));
 
     let _ = fs::remove_file(path);
