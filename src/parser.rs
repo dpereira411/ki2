@@ -499,9 +499,13 @@ impl KiCadSchematicParser {
                             "embedded_files requires schematic version {VERSION_EMBEDDED_FILES} or newer"
                         )));
                     }
+                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let block_depth = self.current_nesting_depth();
-                    match self.parse_embedded_files_block() {
-                        Ok(files) => self.screen.embedded_files.extend(files),
+                    match self.parse_embedded_files() {
+                        Ok(files) => {
+                            self.screen.embedded_files.extend(files);
+                            self.need_right()?;
+                        }
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
                             self.skip_to_block_right(block_depth);
@@ -1097,9 +1101,13 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "embedded_files" => {
+                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let block_depth = self.current_nesting_depth();
-                    match self.parse_embedded_files_block() {
-                        Ok(files) => symbol.embedded_files = files,
+                    match self.parse_embedded_files() {
+                        Ok(files) => {
+                            symbol.embedded_files = files;
+                            self.need_right()?;
+                        }
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
                             self.skip_to_block_right(block_depth);
@@ -1118,13 +1126,6 @@ impl KiCadSchematicParser {
         symbol.sort_draw_items();
         self.need_right()?;
         Ok(symbol)
-    }
-
-    fn parse_embedded_files_block(&mut self) -> Result<Vec<EmbeddedFile>, Error> {
-        let _ = self.need_unquoted_symbol_atom("embedded_files")?;
-        let files = self.parse_embedded_files()?;
-        self.need_right()?;
-        Ok(files)
     }
 
     fn parse_embedded_files(&mut self) -> Result<Vec<EmbeddedFile>, Error> {
