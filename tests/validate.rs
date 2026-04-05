@@ -4264,7 +4264,7 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
-fn rejects_bare_effects_list_heads_and_font_children() {
+fn rejects_bare_font_effects_heads_and_accepts_bare_href() {
     let bare_font_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -4293,6 +4293,9 @@ fn rejects_bare_effects_list_heads_and_font_children() {
             .contains("expecting face, size, thickness, line_spacing, bold, or italic")
     );
 
+    let _ = fs::remove_file(bare_font_head_path);
+    let _ = fs::remove_file(bare_font_size_path);
+
     let bare_href_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -4300,15 +4303,23 @@ fn rejects_bare_effects_list_heads_and_font_children() {
   (text "note" (effects href "https://example.com"))
 )"#;
     let bare_href_head_path = temp_schematic("bare_effects_href_head", bare_href_head);
-    let err = parse_schematic_file(Path::new(&bare_href_head_path))
-        .expect_err("must reject bare href effects head");
-    assert!(
-        err.to_string()
-            .contains("expecting font, justify, hide or href")
+    let schematic =
+        parse_schematic_file(Path::new(&bare_href_head_path)).expect("must accept bare href");
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert_eq!(
+        text.effects
+            .as_ref()
+            .and_then(|effects| effects.hyperlink.as_deref()),
+        Some("https://example.com")
     );
-
-    let _ = fs::remove_file(bare_font_head_path);
-    let _ = fs::remove_file(bare_font_size_path);
     let _ = fs::remove_file(bare_href_head_path);
 }
 

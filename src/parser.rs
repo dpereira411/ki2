@@ -4839,6 +4839,8 @@ impl KiCadSchematicParser {
                 self.need_unquoted_symbol_atom("font, justify, hide or href")?
             } else if self.at_unquoted_symbol_with("hide") {
                 self.need_unquoted_symbol_atom("hide")?
+            } else if self.at_unquoted_symbol_with("href") {
+                self.need_unquoted_symbol_atom("href")?
             } else {
                 return Err(self.expecting("font, justify, hide or href"));
             };
@@ -4945,7 +4947,9 @@ impl KiCadSchematicParser {
                         return Err(self.error_here(format!("invalid hyperlink url `{href}`")));
                     }
                     effects.hyperlink = Some(href);
-                    self.need_right()?;
+                    if section_is_list {
+                        self.need_right()?;
+                    }
                 }
                 "hide" => {
                     effects.hidden = self.parse_maybe_absent_bool(true)?;
