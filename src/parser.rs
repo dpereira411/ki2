@@ -37,6 +37,8 @@ const VERSION_CUSTOM_BODY_STYLES: i32 = 20250827;
 const VERSION_WRONG_SHEET_FIELD_IDS: i32 = 20200310;
 const DEFAULT_LINE_WIDTH_MM: f64 = 0.1524;
 const DEFAULT_TEXT_SIZE_MM: f64 = 1.27;
+const TEXT_MIN_SIZE_MM: f64 = 0.001;
+const TEXT_MAX_SIZE_MM: f64 = 250.0;
 const MIN_PAGE_SIZE_MM: f64 = 25.4;
 const MAX_PAGE_SIZE_EESCHEMA_MM: f64 = 120000.0 * 0.0254;
 const SIM_LEGACY_ENABLE_FIELD_V7: &str = "Sim.Enable";
@@ -4859,11 +4861,18 @@ impl KiCadSchematicParser {
         None
     }
 
+    fn clamp_text_size(size: [f64; 2]) -> [f64; 2] {
+        [
+            size[0].clamp(TEXT_MIN_SIZE_MM, TEXT_MAX_SIZE_MM),
+            size[1].clamp(TEXT_MIN_SIZE_MM, TEXT_MAX_SIZE_MM),
+        ]
+    }
+
     fn parse_eda_text(
         &mut self,
         mut owner: ParsedEdaTextOwner<'_>,
         convert_overbar_syntax: bool,
-        _enforce_min_text_size: bool,
+        enforce_min_text_size: bool,
     ) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("effects")?;
         if convert_overbar_syntax
@@ -4907,10 +4916,16 @@ impl KiCadSchematicParser {
                                 }
                             }
                             "size" => {
-                                effects.font_size = Some([
+                                let mut font_size = [
                                     self.parse_f64_atom("font width")?,
                                     self.parse_f64_atom("font height")?,
-                                ]);
+                                ];
+
+                                if enforce_min_text_size {
+                                    font_size = Self::clamp_text_size(font_size);
+                                }
+
+                                effects.font_size = Some(font_size);
                                 if font_is_list {
                                     self.need_right()?;
                                 }

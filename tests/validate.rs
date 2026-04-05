@@ -5287,6 +5287,73 @@ fn parses_shared_effects_payload_and_text_hide_override() {
 }
 
 #[test]
+fn clamps_minimum_effects_font_size_for_schematic_text_family() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-clamped-text-size")
+  (paper "A4")
+  (text "note" (effects (font (size 0 999))))
+)"#;
+    let path = temp_schematic("clamped_effects_text_size", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+
+    assert_eq!(
+        text.effects.as_ref().and_then(|effects| effects.font_size),
+        Some([0.001, 250.0])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn does_not_clamp_minimum_effects_font_size_for_library_text() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-unclamped-text-size")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (text "TXT" (at 0 0 0) (effects (font (size 0 999)))))))
+)"#;
+    let path = temp_schematic("lib_unclamped_effects_text_size", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let lib_text = schematic
+        .screen
+        .lib_symbols
+        .iter()
+        .find(|symbol| symbol.lib_id == "Device:R")
+        .expect("lib symbol")
+        .units
+        .iter()
+        .flat_map(|unit| unit.draw_items.iter())
+        .find(|item| item.kind == "text")
+        .expect("lib text");
+
+    assert_eq!(
+        lib_text
+            .effects
+            .as_ref()
+            .and_then(|effects| effects.font_size),
+        Some([0.0, 999.0])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn shared_text_family_forces_visible_after_effects_hide() {
     let src = r#"(kicad_sch
   (version 20231120)
