@@ -489,22 +489,27 @@ impl KiCadSchematicParser {
                 "junction" => {
                     let junction = self.parse_junction()?;
                     self.screen.items.push(SchItem::Junction(junction));
+                    section_consumed_right = true;
                 }
                 "no_connect" => {
                     let no_connect = self.parse_no_connect()?;
                     self.screen.items.push(SchItem::NoConnect(no_connect));
+                    section_consumed_right = true;
                 }
                 "bus_entry" => {
                     let bus_entry = self.parse_bus_entry()?;
                     self.screen.items.push(SchItem::BusEntry(bus_entry));
+                    section_consumed_right = true;
                 }
                 "wire" => {
                     let wire = self.parse_sch_line()?;
                     self.screen.items.push(SchItem::Wire(wire));
+                    section_consumed_right = true;
                 }
                 "bus" => {
                     let bus = self.parse_sch_line()?;
                     self.screen.items.push(SchItem::Bus(bus));
+                    section_consumed_right = true;
                 }
                 "polyline" => {
                     let shape = self.parse_sch_polyline()?;
@@ -2179,6 +2184,7 @@ impl KiCadSchematicParser {
         if !has_at {
             junction.at = [0.0, 0.0];
         }
+        self.need_right()?;
         Ok(junction)
     }
 
@@ -2214,6 +2220,7 @@ impl KiCadSchematicParser {
         if !has_at {
             no_connect.at = [0.0, 0.0];
         }
+        self.need_right()?;
         Ok(no_connect)
     }
 
@@ -2265,6 +2272,7 @@ impl KiCadSchematicParser {
         if !has_at {
             bus_entry.at = [0.0, 0.0];
         }
+        self.need_right()?;
         Ok(bus_entry)
     }
 
@@ -2360,6 +2368,7 @@ impl KiCadSchematicParser {
         if !has_pts {
             line.points = vec![[0.0, 0.0], [0.0, 0.0]];
         }
+        self.need_right()?;
         Ok(line)
     }
 
