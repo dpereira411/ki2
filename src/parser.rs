@@ -5753,18 +5753,6 @@ impl KiCadSchematicParser {
                     unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
                 }
 
-                if symbol.body_styles_specified {
-                    parent.body_styles_specified = true;
-                    parent.body_style_names = symbol.body_style_names.clone();
-                    parent.has_demorgan = symbol.has_demorgan;
-                }
-
-                for unit in &symbol.units {
-                    if let Some(unit_name) = unit.unit_name.as_ref() {
-                        parent.set_unit_display_name(unit.unit_number, unit_name.clone());
-                    }
-                }
-
                 for property in &symbol.properties {
                     if property.kind.is_mandatory() && !property.value.is_empty() {
                         if let Some(existing) = parent
@@ -5774,28 +5762,6 @@ impl KiCadSchematicParser {
                         {
                             *existing = property.clone();
                         }
-                    }
-                }
-
-                for unit in &symbol.units {
-                    for item in &unit.draw_items {
-                        if item.kind == "field"
-                            && let Some(field_name) = item.name.as_deref()
-                        {
-                            for existing_unit in &mut parent.units {
-                                existing_unit.draw_items.retain(|existing| {
-                                    !(existing.kind == "field"
-                                        && existing.name.as_deref() == Some(field_name))
-                                });
-                                existing_unit.draw_item_kinds = existing_unit
-                                    .draw_items
-                                    .iter()
-                                    .map(|existing| existing.kind.clone())
-                                    .collect();
-                            }
-                        }
-
-                        parent.add_draw_item(item.clone());
                     }
                 }
 
@@ -5810,30 +5776,6 @@ impl KiCadSchematicParser {
                         parent.fp_filters_specified = true;
                         parent.fp_filters = symbol.fp_filters.clone();
                     }
-                }
-
-                if !symbol.embedded_files.is_empty() {
-                    let mut named_files = std::collections::BTreeMap::new();
-                    let mut unnamed_files = Vec::new();
-
-                    for file in parent.embedded_files {
-                        if let Some(name) = file.name.as_ref() {
-                            named_files.insert(name.clone(), file);
-                        } else {
-                            unnamed_files.push(file);
-                        }
-                    }
-
-                    for file in &symbol.embedded_files {
-                        if let Some(name) = file.name.as_ref() {
-                            named_files.insert(name.clone(), file.clone());
-                        } else {
-                            unnamed_files.push(file.clone());
-                        }
-                    }
-
-                    parent.embedded_files =
-                        named_files.into_values().chain(unnamed_files).collect();
                 }
 
                 if let Some(immediate_parent) = symbols.get(parent_name) {

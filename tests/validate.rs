@@ -1946,8 +1946,7 @@ fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
         .filter_map(|item| item.text.as_deref())
         .collect();
 
-    assert!(texts.contains(&"PARENT"));
-    assert!(texts.contains(&"CHILD"));
+    assert_eq!(texts, vec!["PARENT"]);
 
     let _ = fs::remove_file(path);
 }
@@ -2031,7 +2030,7 @@ fn parser_links_derived_lib_symbols_with_child_unit_name_overrides() {
         .expect("placed symbol");
     let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
 
-    assert_eq!(linked.units[0].unit_name.as_deref(), Some("ChildUnit"));
+    assert_eq!(linked.units[0].unit_name.as_deref(), Some("ParentUnit"));
 
     let _ = fs::remove_file(path);
 }
@@ -2069,8 +2068,8 @@ fn parser_links_derived_lib_symbols_with_child_body_style_overrides() {
         .expect("placed symbol");
     let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
 
-    assert_eq!(linked.body_style_names, vec!["ChildOnly"]);
-    assert!(!linked.has_demorgan);
+    assert_eq!(linked.body_style_names, vec!["RootA", "RootB"]);
+    assert!(linked.has_demorgan);
 
     let _ = fs::remove_file(path);
 }
