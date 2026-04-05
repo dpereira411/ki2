@@ -3628,7 +3628,7 @@ fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
 }
 
 #[test]
-fn lib_property_keeps_suffixing_duplicate_user_fields() {
+fn lib_property_skips_user_field_after_nine_suffix_attempts() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -3648,7 +3648,7 @@ fn lib_property_keeps_suffixing_duplicate_user_fields() {
       (property "MPN" "9")
       (property "MPN" "10")))
 )"#;
-    let path = temp_schematic("lib_property_duplicate_suffixing", src);
+    let path = temp_schematic("lib_property_suffix_limit", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
     let lib_symbol = &schematic.screen.lib_symbols[0];
@@ -3661,8 +3661,7 @@ fn lib_property_keeps_suffixing_duplicate_user_fields() {
             .filter(|name| name.starts_with("MPN"))
             .collect::<Vec<_>>(),
         vec![
-            "MPN", "MPN_1", "MPN_2", "MPN_3", "MPN_4", "MPN_5", "MPN_6", "MPN_7", "MPN_8", "MPN_9",
-            "MPN_10"
+            "MPN", "MPN_1", "MPN_2", "MPN_3", "MPN_4", "MPN_5", "MPN_6", "MPN_7", "MPN_8", "MPN_9"
         ]
     );
 
