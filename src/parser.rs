@@ -1987,22 +1987,7 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Empty property name"));
         }
 
-        let field_id = match name.to_ascii_lowercase().as_str() {
-            "reference" => PropertyKind::SymbolReference,
-            "value" => PropertyKind::SymbolValue,
-            "footprint" => PropertyKind::SymbolFootprint,
-            "datasheet" => PropertyKind::SymbolDatasheet,
-            "description" => PropertyKind::SymbolDescription,
-            _ => PropertyKind::User,
-        };
-
-        let mut property = Property::new_named(field_id, &name, String::new(), is_private);
-
-        if matches!(property.kind, PropertyKind::User) {
-            property.ordinal = symbol.next_field_ordinal();
-        }
-
-        property.value = self
+        let value = self
             .need_symbol_atom("property value")
             .map_err(|_| self.error_here("Invalid property value"))
             .map(|raw| {
@@ -2015,6 +2000,21 @@ impl KiCadSchematicParser {
                     raw
                 }
             })?;
+
+        let field_id = match name.to_ascii_lowercase().as_str() {
+            "reference" => PropertyKind::SymbolReference,
+            "value" => PropertyKind::SymbolValue,
+            "footprint" => PropertyKind::SymbolFootprint,
+            "datasheet" => PropertyKind::SymbolDatasheet,
+            "description" => PropertyKind::SymbolDescription,
+            _ => PropertyKind::User,
+        };
+
+        let mut property = Property::new_named(field_id, &name, value, is_private);
+
+        if matches!(property.kind, PropertyKind::User) {
+            property.ordinal = symbol.next_field_ordinal();
+        }
 
         while !self.at_right() {
             self.need_left()?;
