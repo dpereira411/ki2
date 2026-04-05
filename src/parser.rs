@@ -2375,7 +2375,7 @@ impl KiCadSchematicParser {
                         at: Some([0.0, 0.0]),
                         angle: None,
                         visible: false,
-                        show_name: true,
+                        show_name: false,
                         can_autoplace: true,
                         has_effects: false,
                         effects: None,

@@ -2920,6 +2920,34 @@ fn parses_property_metadata_semantics() {
     assert_eq!(effects.h_justify, TextHJustify::Center);
     assert_eq!(effects.v_justify, TextVJustify::Center);
 
+    let default_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (at 10 20 0)
+    (property "UserField" "R1"))
+)"#;
+    let default_path = temp_schematic("property_metadata_default_show_name", default_src);
+    let schematic =
+        parse_schematic_file(Path::new(&default_path)).expect("must parse default property");
+    let property = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => symbol
+                .properties
+                .iter()
+                .find(|property| property.key == "UserField"),
+            _ => None,
+        })
+        .expect("property");
+    assert!(!property.show_name);
+    let _ = fs::remove_file(default_path);
+
     let bare_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")

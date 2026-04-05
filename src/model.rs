@@ -1055,6 +1055,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![PropertyKind::SheetName, PropertyKind::SheetFile]
         );
+        assert!(sheet.properties.iter().all(|property| !property.show_name));
     }
 
     #[test]
@@ -1129,6 +1130,7 @@ mod tests {
                 (PropertyKind::SymbolDescription, false),
             ]
         );
+        assert!(symbol.properties.iter().all(|property| !property.show_name));
     }
 
     #[test]
@@ -1149,6 +1151,7 @@ mod tests {
                 (PropertyKind::SymbolDescription, false),
             ]
         );
+        assert!(symbol.properties.iter().all(|property| !property.show_name));
     }
 
     #[test]
@@ -1271,7 +1274,7 @@ impl Property {
             at: None,
             angle: None,
             visible: true,
-            show_name: true,
+            show_name: false,
             can_autoplace: true,
             has_effects: false,
             effects: None,
@@ -1291,7 +1294,7 @@ impl Property {
             at: None,
             angle: None,
             visible: true,
-            show_name: true,
+            show_name: false,
             can_autoplace: true,
             has_effects: false,
             effects: None,
