@@ -2190,12 +2190,12 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
         (text_box "TB" (at 1 2 0) (size 3 4) (uuid "tb")))))
 )"#;
     let bad_path = temp_schematic("lib_text_box_bad_uuid", bad_src);
-    let schematic = parse_schematic_file(Path::new(&bad_path))
-        .expect("must warn and skip malformed lib symbol");
+    let err =
+        parse_schematic_file(Path::new(&bad_path)).expect_err("must reject malformed lib symbol");
     assert!(
-        schematic.screen.parse_warnings[0].contains("expecting at, size, stroke, fill or effects")
+        err.to_string()
+            .contains("expecting at, size, stroke, fill or effects")
     );
-    assert!(schematic.screen.lib_symbols.is_empty());
     let _ = fs::remove_file(bad_path);
 }
 
@@ -2212,10 +2212,8 @@ fn rejects_invalid_lib_pin_orientation() {
         (pin input line (at 1 2 45)))))
 )"#;
     let path = temp_schematic("bad_lib_pin_orientation", src);
-    let schematic =
-        parse_schematic_file(Path::new(&path)).expect("must warn and skip malformed lib symbol");
-    assert!(schematic.screen.parse_warnings[0].contains("expecting 0, 90, 180, or 270"));
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject malformed lib symbol");
+    assert!(err.to_string().contains("expecting 0, 90, 180, or 270"));
     let _ = fs::remove_file(path);
 }
 
@@ -2231,10 +2229,8 @@ fn rejects_invalid_lib_symbol_unit_name_suffix() {
       (symbol "R_bad" (arc))))
 )"#;
     let path = temp_schematic("bad_lib_unit_suffix", src);
-    let schematic =
-        parse_schematic_file(Path::new(&path)).expect("must warn and skip malformed lib symbol");
-    assert!(schematic.screen.parse_warnings[0].contains("invalid symbol unit number"));
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject malformed lib symbol");
+    assert!(err.to_string().contains("invalid symbol unit number"));
     let _ = fs::remove_file(path);
 }
 
@@ -4665,16 +4661,9 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
         (number "1"))))
 )"#;
     let quoted_lib_pin_type_path = temp_schematic("quoted_lib_pin_type", quoted_lib_pin_type);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_type_path))
-        .expect("quoted lib pin type should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting pin type"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_lib_pin_type_path))
+        .expect_err("must reject quoted lib pin type");
+    assert!(err.to_string().contains("expecting pin type"));
 
     let quoted_lib_pin_shape = r#"(kicad_sch
   (version 20260306)
@@ -4689,16 +4678,9 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
         (number "1"))))
 )"#;
     let quoted_lib_pin_shape_path = temp_schematic("quoted_lib_pin_shape", quoted_lib_pin_shape);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_shape_path))
-        .expect("quoted lib pin shape should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting pin shape"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_lib_pin_shape_path))
+        .expect_err("must reject quoted lib pin shape");
+    assert!(err.to_string().contains("expecting pin shape"));
 
     let _ = fs::remove_file(quoted_mirror_path);
     let _ = fs::remove_file(quoted_lib_pin_type_path);
@@ -4721,16 +4703,9 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
 )"#;
     let quoted_lib_pin_effects_path =
         temp_schematic("quoted_lib_pin_effects", quoted_lib_pin_effects);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_effects_path))
-        .expect("quoted lib pin effects head should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting effects"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_lib_pin_effects_path))
+        .expect_err("must reject quoted lib pin effects head");
+    assert!(err.to_string().contains("expecting effects"));
 
     let quoted_lib_property_head = r#"(kicad_sch
   (version 20260306)
@@ -4742,12 +4717,12 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
 )"#;
     let quoted_lib_property_head_path =
         temp_schematic("quoted_lib_property_head", quoted_lib_property_head);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_property_head_path))
-        .expect("quoted lib property head should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
-        warning.contains("expecting id, at, hide, show_name, do_not_autoplace, or effects")
-    }));
+    let err = parse_schematic_file(Path::new(&quoted_lib_property_head_path))
+        .expect_err("must reject quoted lib property head");
+    assert!(
+        err.to_string()
+            .contains("expecting id, at, hide, show_name, do_not_autoplace, or effects")
+    );
 
     let quoted_stroke_width = r#"(kicad_sch
   (version 20260306)
@@ -5435,16 +5410,9 @@ fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
       (power "local")))
 )"#;
     let quoted_power_scope_path = temp_schematic("quoted_power_scope", quoted_power_scope);
-    let schematic = parse_schematic_file(Path::new(&quoted_power_scope_path))
-        .expect("quoted lib power scope should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting global or local"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_power_scope_path))
+        .expect_err("must reject quoted lib power scope");
+    assert!(err.to_string().contains("expecting global or local"));
 
     let quoted_stroke_type = r#"(kicad_sch
   (version 20260306)
@@ -5489,16 +5457,9 @@ fn rejects_quoted_bare_hide_in_lib_pin_names_and_numbers() {
       (pin_names "hide")))
 )"#;
     let quoted_pin_names_hide_path = temp_schematic("quoted_pin_names_hide", quoted_pin_names_hide);
-    let schematic = parse_schematic_file(Path::new(&quoted_pin_names_hide_path))
-        .expect("quoted pin_names hide should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting ("))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_pin_names_hide_path))
+        .expect_err("must reject quoted pin_names hide");
+    assert!(err.to_string().contains("expecting ("));
 
     let quoted_pin_numbers_hide = r#"(kicad_sch
   (version 20260306)
@@ -5510,16 +5471,9 @@ fn rejects_quoted_bare_hide_in_lib_pin_names_and_numbers() {
 )"#;
     let quoted_pin_numbers_hide_path =
         temp_schematic("quoted_pin_numbers_hide", quoted_pin_numbers_hide);
-    let schematic = parse_schematic_file(Path::new(&quoted_pin_numbers_hide_path))
-        .expect("quoted pin_numbers hide should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting ("))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_pin_numbers_hide_path))
+        .expect_err("must reject quoted pin_numbers hide");
+    assert!(err.to_string().contains("expecting ("));
 
     let _ = fs::remove_file(quoted_pin_names_hide_path);
     let _ = fs::remove_file(quoted_pin_numbers_hide_path);
@@ -5560,16 +5514,9 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
       (pin_names ("hide" yes))))
 )"#;
     let quoted_pin_names_head_path = temp_schematic("quoted_pin_names_head", quoted_pin_names_head);
-    let schematic = parse_schematic_file(Path::new(&quoted_pin_names_head_path))
-        .expect("quoted pin_names list head should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting offset or hide"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_pin_names_head_path))
+        .expect_err("must reject quoted pin_names list head");
+    assert!(err.to_string().contains("expecting offset or hide"));
 
     let quoted_pin_numbers_head = r#"(kicad_sch
   (version 20260306)
@@ -5581,16 +5528,9 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
 )"#;
     let quoted_pin_numbers_head_path =
         temp_schematic("quoted_pin_numbers_head", quoted_pin_numbers_head);
-    let schematic = parse_schematic_file(Path::new(&quoted_pin_numbers_head_path))
-        .expect("quoted pin_numbers list head should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting hide"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_pin_numbers_head_path))
+        .expect_err("must reject quoted pin_numbers list head");
+    assert!(err.to_string().contains("expecting hide"));
 
     let quoted_pin_names_offset = r#"(kicad_sch
   (version 20260306)
@@ -5602,16 +5542,9 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
 )"#;
     let quoted_pin_names_offset_path =
         temp_schematic("quoted_pin_names_offset", quoted_pin_names_offset);
-    let schematic = parse_schematic_file(Path::new(&quoted_pin_names_offset_path))
-        .expect("quoted pin_names offset head should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting offset or hide"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_pin_names_offset_path))
+        .expect_err("must reject quoted pin_names offset head");
+    assert!(err.to_string().contains("expecting offset or hide"));
 
     let _ = fs::remove_file(quoted_pin_names_head_path);
     let _ = fs::remove_file(quoted_pin_numbers_head_path);
@@ -5695,16 +5628,9 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
       (pin input line "hide" (at 0 0 0) (length 2.54) (name "PIN") (number "1"))))
 )"#;
     let quoted_lib_pin_hide_path = temp_schematic("quoted_lib_pin_hide", quoted_lib_pin_hide);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_pin_hide_path))
-        .expect("quoted bare lib pin hide should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting ("))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_lib_pin_hide_path))
+        .expect_err("must reject quoted bare lib pin hide");
+    assert!(err.to_string().contains("expecting ("));
 
     let _ = fs::remove_file(quoted_group_locked_path);
     let _ = fs::remove_file(quoted_property_private_path);
@@ -5724,16 +5650,9 @@ fn rejects_unquoted_jumper_pin_group_names() {
         (A B))))
 )"#;
     let path = temp_schematic("unquoted_jumper_pin_groups", src);
-    let schematic = parse_schematic_file(Path::new(&path))
-        .expect("bad lib symbol should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting list of pin names"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject unquoted jumper pin groups");
+    assert!(err.to_string().contains("expecting list of pin names"));
     let _ = fs::remove_file(path);
 }
 
@@ -5749,15 +5668,11 @@ fn rejects_quoted_lib_draw_item_list_heads() {
 )"#;
     let quoted_lib_rectangle_start_path =
         temp_schematic("quoted_lib_rectangle_start", quoted_lib_rectangle_start);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_rectangle_start_path))
-        .expect("bad lib rectangle should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&quoted_lib_rectangle_start_path))
+        .expect_err("must reject bad lib rectangle");
     assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting start, end, stroke, or fill"))
+        err.to_string()
+            .contains("expecting start, end, stroke, or fill")
     );
 
     let quoted_lib_rectangle_radius = r#"(kicad_sch
@@ -5770,15 +5685,11 @@ fn rejects_quoted_lib_draw_item_list_heads() {
 )"#;
     let quoted_lib_rectangle_radius_path =
         temp_schematic("quoted_lib_rectangle_radius", quoted_lib_rectangle_radius);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_rectangle_radius_path))
-        .expect("bad lib rectangle radius should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&quoted_lib_rectangle_radius_path))
+        .expect_err("must reject bad lib rectangle radius");
     assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| { warning.contains("expecting start, end, stroke, or fill") })
+        err.to_string()
+            .contains("expecting start, end, stroke, or fill")
     );
 
     let quoted_lib_text_at = r#"(kicad_sch
@@ -5790,16 +5701,9 @@ fn rejects_quoted_lib_draw_item_list_heads() {
       (text "TXT" ("at" 0 0 90))))
 )"#;
     let quoted_lib_text_at_path = temp_schematic("quoted_lib_text_at", quoted_lib_text_at);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_text_at_path))
-        .expect("bad lib text should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting at or effects"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_lib_text_at_path))
+        .expect_err("must reject bad lib text");
+    assert!(err.to_string().contains("expecting at or effects"));
 
     let quoted_lib_text_box_effects = r#"(kicad_sch
   (version 20260306)
@@ -5811,15 +5715,11 @@ fn rejects_quoted_lib_draw_item_list_heads() {
 )"#;
     let quoted_lib_text_box_effects_path =
         temp_schematic("quoted_lib_textbox_effects", quoted_lib_text_box_effects);
-    let schematic = parse_schematic_file(Path::new(&quoted_lib_text_box_effects_path))
-        .expect("bad lib text_box should be skipped with a warning");
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&quoted_lib_text_box_effects_path))
+        .expect_err("must reject bad lib text_box");
     assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| { warning.contains("expecting at, size, stroke, fill or effects") })
+        err.to_string()
+            .contains("expecting at, size, stroke, fill or effects")
     );
 
     let _ = fs::remove_file(quoted_lib_rectangle_start_path);
@@ -7886,15 +7786,8 @@ fn rejects_invalid_lib_symbol_name_token() {
     (symbol (bogus)))
 )"#;
     let path = temp_schematic("bad_lib_symbol_name", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid symbol name"))
-    );
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib symbol name");
+    assert!(err.to_string().contains("Invalid symbol name"));
     let _ = fs::remove_file(path);
 }
 
@@ -7920,15 +7813,9 @@ fn rejects_invalid_lib_symbol_parent_name_token() {
       (extends (bogus))))
 )"#;
     let path = temp_schematic("bad_lib_symbol_parent_name", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid parent symbol name"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib parent symbol name");
+    assert!(err.to_string().contains("Invalid parent symbol name"));
     let _ = fs::remove_file(path);
 }
 
@@ -7943,15 +7830,8 @@ fn rejects_invalid_lib_symbol_unit_name_token() {
       (symbol (bogus))))
 )"#;
     let path = temp_schematic("bad_lib_symbol_unit_name", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid symbol unit name"))
-    );
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib unit name");
+    assert!(err.to_string().contains("Invalid symbol unit name"));
     let _ = fs::remove_file(path);
 }
 
@@ -8281,15 +8161,9 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
       (property (bogus) "R1")))
 )"#;
     let bad_name_path = temp_schematic("bad_lib_property_name", bad_name);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_name_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid property name"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&bad_name_path)).expect_err("must reject bad property name");
+    assert!(err.to_string().contains("Invalid property name"));
 
     let bad_value = r#"(kicad_sch
   (version 20260306)
@@ -8300,15 +8174,9 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
       (property "UserField" (bogus))))
 )"#;
     let bad_value_path = temp_schematic("bad_lib_property_value", bad_value);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_value_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid property value"))
-    );
+    let err = parse_schematic_file(Path::new(&bad_value_path))
+        .expect_err("must reject bad property value");
+    assert!(err.to_string().contains("Invalid property value"));
 
     let _ = fs::remove_file(bad_name_path);
     let _ = fs::remove_file(bad_value_path);
@@ -8326,15 +8194,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
         (name (bogus)))))
 )"#;
     let bad_name_path = temp_schematic("bad_lib_pin_name", bad_name);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_name_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid pin name"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&bad_name_path)).expect_err("must reject bad pin name");
+    assert!(err.to_string().contains("Invalid pin name"));
 
     let bad_number = r#"(kicad_sch
   (version 20260306)
@@ -8346,15 +8208,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
         (number (bogus)))))
 )"#;
     let bad_number_path = temp_schematic("bad_lib_pin_number", bad_number);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_number_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid pin number"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&bad_number_path)).expect_err("must reject bad pin number");
+    assert!(err.to_string().contains("Invalid pin number"));
 
     let bad_alternate = r#"(kicad_sch
   (version 20260306)
@@ -8366,15 +8222,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
         (alternate (bogus) passive line))))
 )"#;
     let bad_alternate_path = temp_schematic("bad_lib_pin_alternate_name", bad_alternate);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_alternate_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid alternate pin name"))
-    );
+    let err = parse_schematic_file(Path::new(&bad_alternate_path))
+        .expect_err("must reject bad alternate pin name");
+    assert!(err.to_string().contains("Invalid alternate pin name"));
 
     let bad_alternate_type = r#"(kicad_sch
   (version 20260306)
@@ -8386,15 +8236,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
         (alternate "ALT" (bogus) line))))
 )"#;
     let bad_alternate_type_path = temp_schematic("bad_lib_pin_alternate_type", bad_alternate_type);
-    let schematic = parse_schematic_file(Path::new(&bad_alternate_type_path))
-        .expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting alternate pin type"))
-    );
+    let err = parse_schematic_file(Path::new(&bad_alternate_type_path))
+        .expect_err("must reject bad alternate pin type");
+    assert!(err.to_string().contains("expecting alternate pin type"));
 
     let bad_alternate_shape = r#"(kicad_sch
   (version 20260306)
@@ -8407,15 +8251,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
 )"#;
     let bad_alternate_shape_path =
         temp_schematic("bad_lib_pin_alternate_shape", bad_alternate_shape);
-    let schematic = parse_schematic_file(Path::new(&bad_alternate_shape_path))
-        .expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting alternate pin shape"))
-    );
+    let err = parse_schematic_file(Path::new(&bad_alternate_shape_path))
+        .expect_err("must reject bad alternate pin shape");
+    assert!(err.to_string().contains("expecting alternate pin shape"));
 
     let _ = fs::remove_file(bad_name_path);
     let _ = fs::remove_file(bad_number_path);
@@ -8435,15 +8273,9 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
       (pin (bogus) line)))
 )"#;
     let bad_type_path = temp_schematic("bad_lib_pin_type", bad_type);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_type_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting pin type"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&bad_type_path)).expect_err("must reject bad pin type");
+    assert!(err.to_string().contains("expecting pin type"));
 
     let bad_shape = r#"(kicad_sch
   (version 20260306)
@@ -8454,15 +8286,9 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
       (pin passive (bogus))))
 )"#;
     let bad_shape_path = temp_schematic("bad_lib_pin_shape", bad_shape);
-    let schematic =
-        parse_schematic_file(Path::new(&bad_shape_path)).expect("schematic should recover");
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting pin shape"))
-    );
+    let err =
+        parse_schematic_file(Path::new(&bad_shape_path)).expect_err("must reject bad pin shape");
+    assert!(err.to_string().contains("expecting pin shape"));
 
     let _ = fs::remove_file(bad_type_path);
     let _ = fs::remove_file(bad_shape_path);
@@ -8503,15 +8329,8 @@ fn rejects_invalid_lib_text_string_token() {
       (text (bogus) (at 0 0 0))))
 )"#;
     let path = temp_schematic("bad_lib_text_string", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid text string"))
-    );
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib text");
+    assert!(err.to_string().contains("Invalid text string"));
     let _ = fs::remove_file(path);
 }
 
@@ -8526,15 +8345,8 @@ fn rejects_invalid_lib_text_box_string_token() {
       (text_box (bogus) (at 0 0 0) (size 1 1))))
 )"#;
     let path = temp_schematic("bad_lib_text_box_string", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("Invalid text string"))
-    );
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib text box");
+    assert!(err.to_string().contains("Invalid text string"));
     let _ = fs::remove_file(path);
 }
 
@@ -8549,15 +8361,8 @@ fn rejects_invalid_lib_jumper_pin_group_member_token() {
       (jumper_pin_groups ((bogus) "2"))))
 )"#;
     let path = temp_schematic("bad_lib_jumper_pin_group_member", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting list of pin names"))
-    );
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad jumper pin group");
+    assert!(err.to_string().contains("expecting list of pin names"));
     let _ = fs::remove_file(path);
 }
 
@@ -8597,17 +8402,10 @@ fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
       (bogus 1)))
 )"#;
     let path = temp_schematic("bad_lib_symbol_child", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains(
-                "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
-            ))
-    );
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject unexpected lib child");
+    assert!(err.to_string().contains(
+        "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
+    ));
     let _ = fs::remove_file(path);
 }
 
@@ -8622,17 +8420,11 @@ fn rejects_quoted_lib_symbol_top_level_child_head_with_upstream_expect_list() {
       ("power" local)))
 )"#;
     let path = temp_schematic("quoted_lib_symbol_child", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains(
-                "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
-            ))
-    );
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject quoted unexpected lib child");
+    assert!(err.to_string().contains(
+        "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
+    ));
     let _ = fs::remove_file(path);
 }
 
@@ -8648,11 +8440,12 @@ fn rejects_unexpected_lib_symbol_unit_child_with_upstream_expect_list() {
         (bogus 1))))
 )"#;
     let path = temp_schematic("bad_lib_symbol_unit_child", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should recover");
-    assert!(schematic.screen.lib_symbols.is_empty());
-    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
-        warning.contains("expecting arc, bezier, circle, pin, polyline, rectangle, or text")
-    }));
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject unexpected lib unit child");
+    assert!(
+        err.to_string()
+            .contains("expecting arc, bezier, circle, pin, polyline, rectangle, or text")
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -9339,12 +9132,8 @@ fn records_warning_and_skips_invalid_lib_symbol_block() {
     (symbol "Good:R"))
 )"#;
     let path = temp_schematic("invalid_lib_symbol_block", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
-    assert_eq!(schematic.screen.parse_warnings.len(), 1);
-    assert!(schematic.screen.parse_warnings[0].contains("Skipping symbol and continuing"));
-    assert_eq!(schematic.screen.lib_symbols.len(), 1);
-    assert_eq!(schematic.screen.lib_symbols[0].lib_id, "Good:R");
-    assert_eq!(schematic.screen.lib_symbols[0].name, "R");
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject malformed lib symbol");
+    assert!(err.to_string().contains("expecting 0, 90, 180, or 270"));
     let _ = fs::remove_file(path);
 }
 
@@ -9598,10 +9387,12 @@ fn rejects_invalid_lib_pin_alternate_type_and_shape() {
           (alternate "ALT" bogus line)))))
 )"#;
     let bad_type_path = temp_schematic("bad_lib_pin_alt_type", bad_alt_type);
-    let schematic = parse_schematic_file(Path::new(&bad_type_path))
-        .expect("must warn and skip malformed lib symbol");
-    assert!(schematic.screen.parse_warnings[0].contains("expecting input, output, bidirectional"));
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&bad_type_path))
+        .expect_err("must reject malformed lib symbol");
+    assert!(
+        err.to_string()
+            .contains("expecting input, output, bidirectional")
+    );
     let _ = fs::remove_file(bad_type_path);
 
     let bad_alt_shape = r#"(kicad_sch
@@ -9620,10 +9411,9 @@ fn rejects_invalid_lib_pin_alternate_type_and_shape() {
           (alternate "ALT" input bogus)))))
 )"#;
     let bad_shape_path = temp_schematic("bad_lib_pin_alt_shape", bad_alt_shape);
-    let schematic = parse_schematic_file(Path::new(&bad_shape_path))
-        .expect("must warn and skip malformed lib symbol");
-    assert!(schematic.screen.parse_warnings[0].contains("expecting line, inverted, clock"));
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&bad_shape_path))
+        .expect_err("must reject malformed lib symbol");
+    assert!(err.to_string().contains("expecting line, inverted, clock"));
     let _ = fs::remove_file(bad_shape_path);
 }
 
@@ -9688,13 +9478,12 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
         (arc (center 0 0)))))
 )"#;
     let bad_arc_path = temp_schematic("lib_arc_bad_token", bad_arc_src);
-    let schematic = parse_schematic_file(Path::new(&bad_arc_path))
-        .expect("must warn and skip malformed lib symbol");
+    let err = parse_schematic_file(Path::new(&bad_arc_path))
+        .expect_err("must reject malformed lib symbol");
     assert!(
-        schematic.screen.parse_warnings[0]
+        err.to_string()
             .contains("expecting start, mid, end, radius, stroke, or fill")
     );
-    assert!(schematic.screen.lib_symbols.is_empty());
     let _ = fs::remove_file(bad_arc_path);
 
     let bad_bezier_src = r#"(kicad_sch
@@ -9708,10 +9497,9 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
         (bezier (pts (xy 0 0) (xy 1 1) (xy 2 2) (xy 3 3) (xy 4 4))))))
 )"#;
     let bad_bezier_path = temp_schematic("lib_bezier_too_many_points", bad_bezier_src);
-    let schematic = parse_schematic_file(Path::new(&bad_bezier_path))
-        .expect("must warn and skip malformed lib symbol");
-    assert!(schematic.screen.parse_warnings[0].contains("unexpected control point"));
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&bad_bezier_path))
+        .expect_err("must reject malformed lib symbol");
+    assert!(err.to_string().contains("unexpected control point"));
     let _ = fs::remove_file(bad_bezier_path);
 
     let quoted_bezier_xy_src = r#"(kicad_sch
@@ -9725,10 +9513,9 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
         (bezier (pts ("xy" 0 0) (xy 1 1) (xy 2 2) (xy 3 3))))))
 )"#;
     let quoted_bezier_xy_path = temp_schematic("lib_bezier_quoted_xy", quoted_bezier_xy_src);
-    let schematic = parse_schematic_file(Path::new(&quoted_bezier_xy_path))
-        .expect("must warn and skip malformed lib symbol");
-    assert!(schematic.screen.parse_warnings[0].contains("expecting xy"));
-    assert!(schematic.screen.lib_symbols.is_empty());
+    let err = parse_schematic_file(Path::new(&quoted_bezier_xy_path))
+        .expect_err("must reject malformed lib symbol");
+    assert!(err.to_string().contains("expecting xy"));
     let _ = fs::remove_file(quoted_bezier_xy_path);
 }
 

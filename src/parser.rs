@@ -764,20 +764,8 @@ impl KiCadSchematicParser {
             if head != "symbol" {
                 return Err(self.expecting("symbol"));
             }
-            let block_depth = self.current_nesting_depth();
-            match self.parse_lib_symbol() {
-                Ok(symbol) => {
-                    self.screen.lib_symbols.push(symbol);
-                }
-                Err(err) => {
-                    self.screen.parse_warnings.push(format!(
-                        "Error parsing symbol: {}\nSkipping symbol and continuing.",
-                        err
-                    ));
-                    self.skip_to_block_right(block_depth);
-                    self.need_right()?;
-                }
-            }
+            let symbol = self.parse_lib_symbol()?;
+            self.screen.lib_symbols.push(symbol);
         }
         self.need_right()?;
         Ok(())
