@@ -504,8 +504,8 @@ pub struct Label {
     pub text: String,
     pub at: [f64; 2],
     pub angle: f64,
-    pub spin: Option<LabelSpin>,
-    pub shape: Option<LabelShape>,
+    pub spin: LabelSpin,
+    pub shape: LabelShape,
     pub pin_length: Option<f64>,
     pub iref_at: Option<[f64; 2]>,
     pub excluded_from_sim: bool,
@@ -520,10 +520,10 @@ pub struct Label {
 impl Label {
     pub fn new(kind: LabelKind, text: String) -> Self {
         let shape = match kind {
-            LabelKind::Local => Some(LabelShape::Input),
-            LabelKind::Global => Some(LabelShape::Bidirectional),
-            LabelKind::Hierarchical => Some(LabelShape::Input),
-            LabelKind::Directive | LabelKind::NetclassFlag => Some(LabelShape::Round),
+            LabelKind::Local => LabelShape::Input,
+            LabelKind::Global => LabelShape::Bidirectional,
+            LabelKind::Hierarchical => LabelShape::Input,
+            LabelKind::Directive | LabelKind::NetclassFlag => LabelShape::Round,
         };
 
         Self {
@@ -531,7 +531,7 @@ impl Label {
             text,
             at: [0.0, 0.0],
             angle: 0.0,
-            spin: Some(LabelSpin::Right),
+            spin: LabelSpin::Right,
             shape,
             pin_length: None,
             iref_at: None,
@@ -1307,23 +1307,23 @@ mod tests {
     fn labels_start_with_upstream_default_shapes() {
         assert_eq!(
             Label::new(LabelKind::Local, "L".to_string()).shape,
-            Some(LabelShape::Input)
+            LabelShape::Input
         );
         assert_eq!(
             Label::new(LabelKind::Global, "G".to_string()).shape,
-            Some(LabelShape::Bidirectional)
+            LabelShape::Bidirectional
         );
         assert_eq!(
             Label::new(LabelKind::Hierarchical, "H".to_string()).shape,
-            Some(LabelShape::Input)
+            LabelShape::Input
         );
         assert_eq!(
             Label::new(LabelKind::Directive, "D".to_string()).shape,
-            Some(LabelShape::Round)
+            LabelShape::Round
         );
         assert_eq!(
             Label::new(LabelKind::NetclassFlag, "N".to_string()).shape,
-            Some(LabelShape::Round)
+            LabelShape::Round
         );
     }
 

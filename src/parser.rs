@@ -2465,7 +2465,7 @@ impl KiCadSchematicParser {
                     if matches!(label.kind, LabelKind::Local) {
                         return Err(self.unexpected("shape"));
                     }
-                    label.shape = Some(match self.need_unquoted_symbol_atom("shape")?.as_str() {
+                    label.shape = match self.need_unquoted_symbol_atom("shape")?.as_str() {
                         "input" => LabelShape::Input,
                         "output" => LabelShape::Output,
                         "bidirectional" => LabelShape::Bidirectional,
@@ -2480,7 +2480,7 @@ impl KiCadSchematicParser {
                                 "input, output, bidirectional, tri_state, passive, dot, round, diamond or rectangle",
                             ))
                         }
-                    });
+                    };
                     self.need_right()?;
                 }
                 "length" => {
@@ -5030,13 +5030,13 @@ impl KiCadSchematicParser {
         false
     }
 
-    fn get_label_spin_style(angle: f64) -> Option<LabelSpin> {
+    fn get_label_spin_style(angle: f64) -> LabelSpin {
         match angle.rem_euclid(360.0) as i32 {
-            0 => Some(LabelSpin::Right),
-            90 => Some(LabelSpin::Up),
-            180 => Some(LabelSpin::Left),
-            270 => Some(LabelSpin::Bottom),
-            _ => None,
+            0 => LabelSpin::Right,
+            90 => LabelSpin::Up,
+            180 => LabelSpin::Left,
+            270 => LabelSpin::Bottom,
+            _ => LabelSpin::Right,
         }
     }
 

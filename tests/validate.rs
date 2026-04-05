@@ -3762,7 +3762,7 @@ fn parses_text_and_label_semantics() {
     assert!(global.has_effects);
     assert!(global.visible);
     assert_eq!(global.angle, 0.0);
-    assert_eq!(global.spin, Some(LabelSpin::Right));
+    assert_eq!(global.spin, LabelSpin::Right);
     assert_eq!(
         global.effects.as_ref().map(|effects| effects.h_justify),
         Some(TextHJustify::Center)
@@ -3973,8 +3973,8 @@ fn non_local_labels_do_not_require_shape() {
         })
         .collect();
     assert_eq!(labels.len(), 2);
-    assert_eq!(labels[0].shape, Some(LabelShape::Bidirectional));
-    assert_eq!(labels[1].shape, Some(LabelShape::Input));
+    assert_eq!(labels[0].shape, LabelShape::Bidirectional);
+    assert_eq!(labels[1].shape, LabelShape::Input);
     let _ = fs::remove_file(path);
 }
 
