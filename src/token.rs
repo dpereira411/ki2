@@ -28,9 +28,7 @@ pub fn prescan_version(input: &str) -> Option<i32> {
     let bytes = input.as_bytes();
     let mut i = 0usize;
     loop {
-        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-            i += 1;
-        }
+        skip_whitespace_and_line_comments(bytes, &mut i);
 
         match bytes.get(i).copied() {
             Some(b'"') => {
@@ -59,9 +57,7 @@ pub fn prescan_version(input: &str) -> Option<i32> {
 
     i += 1;
 
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-        i += 1;
-    }
+    skip_whitespace_and_line_comments(bytes, &mut i);
 
     let root_start = i;
     while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')') {
@@ -73,9 +69,7 @@ pub fn prescan_version(input: &str) -> Option<i32> {
     }
 
     loop {
-        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-            i += 1;
-        }
+        skip_whitespace_and_line_comments(bytes, &mut i);
 
         match bytes.get(i).copied() {
             Some(b'"') => {
@@ -104,9 +98,7 @@ pub fn prescan_version(input: &str) -> Option<i32> {
 
     i += 1;
 
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-        i += 1;
-    }
+    skip_whitespace_and_line_comments(bytes, &mut i);
 
     let symbol_start = i;
     while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')') {
@@ -117,9 +109,7 @@ pub fn prescan_version(input: &str) -> Option<i32> {
         return None;
     }
 
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-        i += 1;
-    }
+    skip_whitespace_and_line_comments(bytes, &mut i);
 
     let number_start = i;
     while i < bytes.len() && bytes[i].is_ascii_digit() {
@@ -135,6 +125,47 @@ pub fn prescan_version(input: &str) -> Option<i32> {
 
 /// The version at which `|` became an s-expression separator in KiCad.
 const VERSION_KNOWS_BAR: i32 = 20240620;
+
+fn is_line_comment_start(bytes: &[u8], i: usize) -> bool {
+    if bytes.get(i) != Some(&b'#') {
+        return false;
+    }
+
+    let mut j = i;
+
+    while j > 0 {
+        let prev = bytes[j - 1];
+
+        if prev == b'\n' {
+            break;
+        }
+
+        if !matches!(prev, b' ' | b'\t' | b'\r') {
+            return false;
+        }
+
+        j -= 1;
+    }
+
+    true
+}
+
+fn skip_whitespace_and_line_comments(bytes: &[u8], i: &mut usize) {
+    loop {
+        while *i < bytes.len() && matches!(bytes[*i], b' ' | b'\t' | b'\n' | b'\r') {
+            *i += 1;
+        }
+
+        if *i < bytes.len() && is_line_comment_start(bytes, *i) {
+            while *i < bytes.len() && bytes[*i] != b'\n' {
+                *i += 1;
+            }
+            continue;
+        }
+
+        break;
+    }
+}
 
 fn is_dsn_number(text: &str) -> bool {
     let bytes = text.as_bytes();
@@ -258,6 +289,13 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
     let mut tokens = Vec::new();
 
     while i < bytes.len() {
+        if is_line_comment_start(bytes, i) {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+
         match bytes[i] {
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
             b'(' => {
@@ -390,6 +428,12 @@ mod tests {
     }
 
     #[test]
+    fn prescan_version_skips_full_line_comments() {
+        let input = "# leading comment\n  # second comment\n(kicad_sch (version 20260306))";
+        assert_eq!(prescan_version(input), Some(20260306));
+    }
+
+    #[test]
     fn lex_decodes_kicad_quoted_escape_sequences() {
         let tokens = lex("(text \"a\\\\b\\\"c\\n\\r\\t\\a\\b\\f\\v\\x41\\101\")").expect("lex");
         assert_eq!(
@@ -455,5 +499,32 @@ mod tests {
                 Some(AtomClass::Number),
             ]
         );
+    }
+
+    #[test]
+    fn lex_skips_full_line_comments_but_keeps_hash_inside_atoms() {
+        let tokens =
+            lex("# comment line\n(kicad_sch\n  # another comment\n  (uuid \"#root\")\n  (text foo#bar))")
+                .expect("lex");
+        let atoms: Vec<(String, Option<AtomClass>)> = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokKind::Atom(value) => Some((value, token.atom_class)),
+                _ => None,
+            })
+            .collect();
+
+        assert!(atoms.iter().any(|(value, _)| value == "kicad_sch"));
+        assert!(
+            atoms
+                .iter()
+                .any(|(value, class)| value == "#root" && *class == Some(AtomClass::Quoted))
+        );
+        assert!(
+            atoms
+                .iter()
+                .any(|(value, class)| value == "foo#bar" && *class == Some(AtomClass::Symbol))
+        );
+        assert!(!atoms.iter().any(|(value, _)| value.contains("comment")));
     }
 }
