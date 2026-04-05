@@ -5708,78 +5708,8 @@ impl KiCadSchematicParser {
     }
 
     fn resolve_groups(&mut self) {
-        let mut known_uuids = std::collections::HashSet::new();
-
-        for item in &self.screen.items {
-            match item {
-                SchItem::Junction(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::NoConnect(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::BusEntry(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Wire(item) | SchItem::Bus(item) | SchItem::Polyline(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Label(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Text(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::TextBox(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Table(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Image(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Shape(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Symbol(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Sheet(item) => {
-                    if let Some(uuid) = item.uuid.as_ref() {
-                        known_uuids.insert(uuid.clone());
-                    }
-                }
-                SchItem::Group(_) => {}
-            }
-        }
-
-        for group_info in &self.pending_groups {
-            if let Some(uuid) = group_info.uuid.as_ref() {
-                known_uuids.insert(uuid.clone());
-            }
+        if self.pending_groups.is_empty() {
+            return;
         }
 
         for group_info in &self.pending_groups {
@@ -5790,39 +5720,62 @@ impl KiCadSchematicParser {
             self.screen.items.push(SchItem::Group(group));
         }
 
-        let groups = self
-            .screen
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, item)| match item {
-                SchItem::Group(group) => Some((idx, group.uuid.clone())),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let pending_groups = self.pending_groups.drain(..).collect::<Vec<_>>();
 
-        let group_indices = groups
-            .iter()
-            .filter_map(|(idx, uuid)| Some((uuid.as_ref()?.clone(), *idx)))
-            .collect::<std::collections::HashMap<_, _>>();
-
-        for group_info in self.pending_groups.drain(..) {
+        for group_info in pending_groups {
             let Some(group_uuid) = group_info.uuid.as_ref() else {
                 continue;
             };
-            let Some(group_index) = group_indices.get(group_uuid) else {
+
+            let Some(group_index) = self.get_item_index_by_uuid(group_uuid) else {
                 continue;
             };
-            let SchItem::Group(group) = &mut self.screen.items[*group_index] else {
-                continue;
-            };
-            group.members = group_info
+
+            let resolved_members = group_info
                 .member_uuids
                 .into_iter()
-                .filter(|member| known_uuids.contains(member))
-                .collect();
+                .filter(|member_uuid| self.get_item_index_by_uuid(member_uuid).is_some())
+                .collect::<Vec<_>>();
+
+            let SchItem::Group(group) = &mut self.screen.items[group_index] else {
+                continue;
+            };
+
+            group.members = resolved_members;
         }
 
+        self.groups_sanity_check();
+    }
+
+    fn get_item_index_by_uuid(&self, uuid: &str) -> Option<usize> {
+        self.screen
+            .items
+            .iter()
+            .enumerate()
+            .find_map(|(idx, item)| (Self::item_uuid(item) == Some(uuid)).then_some(idx))
+    }
+
+    fn item_uuid(item: &SchItem) -> Option<&str> {
+        match item {
+            SchItem::Junction(item) => item.uuid.as_deref(),
+            SchItem::NoConnect(item) => item.uuid.as_deref(),
+            SchItem::BusEntry(item) => item.uuid.as_deref(),
+            SchItem::Wire(item) | SchItem::Bus(item) | SchItem::Polyline(item) => {
+                item.uuid.as_deref()
+            }
+            SchItem::Label(item) => item.uuid.as_deref(),
+            SchItem::Text(item) => item.uuid.as_deref(),
+            SchItem::TextBox(item) => item.uuid.as_deref(),
+            SchItem::Table(item) => item.uuid.as_deref(),
+            SchItem::Image(item) => item.uuid.as_deref(),
+            SchItem::Shape(item) => item.uuid.as_deref(),
+            SchItem::Symbol(item) => item.uuid.as_deref(),
+            SchItem::Sheet(item) => item.uuid.as_deref(),
+            SchItem::Group(item) => item.uuid.as_deref(),
+        }
+    }
+
+    fn groups_sanity_check(&mut self) {
         loop {
             let groups = self
                 .screen
@@ -5910,23 +5863,8 @@ impl KiCadSchematicParser {
             .screen
             .items
             .iter()
-            .filter_map(|item| match item {
-                SchItem::Junction(item) => item.uuid.clone(),
-                SchItem::NoConnect(item) => item.uuid.clone(),
-                SchItem::BusEntry(item) => item.uuid.clone(),
-                SchItem::Wire(item) | SchItem::Bus(item) | SchItem::Polyline(item) => {
-                    item.uuid.clone()
-                }
-                SchItem::Label(item) => item.uuid.clone(),
-                SchItem::Text(item) => item.uuid.clone(),
-                SchItem::TextBox(item) => item.uuid.clone(),
-                SchItem::Table(item) => item.uuid.clone(),
-                SchItem::Image(item) => item.uuid.clone(),
-                SchItem::Shape(item) => item.uuid.clone(),
-                SchItem::Symbol(item) => item.uuid.clone(),
-                SchItem::Sheet(item) => item.uuid.clone(),
-                SchItem::Group(item) => item.uuid.clone(),
-            })
+            .filter_map(Self::item_uuid)
+            .map(str::to_string)
             .collect::<std::collections::HashSet<_>>();
 
         for item in &mut self.screen.items {
