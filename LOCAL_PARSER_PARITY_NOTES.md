@@ -35,13 +35,13 @@ Closest-to-upstream areas so far:
 
 4. Symbol parsing is still not 1:1
 
-- placed schematic symbol parsing is still reduced versus upstream `parseSchematicSymbol()`
-- some nested branches and exact token acceptance / error behavior remain simplified
+- direct comparison shows `parseSchematicSymbol()` is closer than earlier notes implied
+- remaining symbol work is now mostly exactness and parent-routine interaction, not a missing whole-routine shape
 
 5. Sheet parsing is still not 1:1
 
-- `parseSheet()` internals still need closer parity
-- required properties, pins, instances, and nested branches are not yet a literal structural port
+- direct comparison shows `parseSheet()` is closer than earlier notes implied
+- remaining sheet work is now mostly exactness and surrounding parser interaction, not a missing whole-routine shape
 
 6. Library-cache symbol parsing is still partial
 
@@ -74,6 +74,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 - token classes are better now, but parser-wide `NeedSYMBOL` / `NeedNUMBER` / keyword-token behavior is not yet uniformly ported
 - this still affects exact acceptance and exact failure points
+- direct upstream audit confirmed one non-gap here: KiCad `NeedSYMBOL()` and `NeedSYMBOLorNUMBER()` both accept quoted strings via `DSNLEXER::IsSymbol()`, so local shared symbol-token readers should not be tightened to reject quoted atoms
 
 10. Error behavior still is not 1:1
 
@@ -105,20 +106,20 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Finish `parseSheet()` as a full owning-object routine.
-2. Finish `parseSchematicSymbol()` in the same style.
-3. Tighten remaining exact `parseSchText()` semantics and failure timing.
-4. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics.
-5. Finish `parseLibSymbol()` / library draw-item routine parity.
+1. Tighten remaining exact `parseSchText()` semantics and failure timing.
+2. Finish `parseLibSymbol()` / library draw-item routine parity.
+3. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
+4. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
+5. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
 6. Do a parser-wide token/error parity pass.
 7. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
 1. Port `parseSchText()` and shared text/effects callers more literally.
-2. Tighten `parseSheet()` to upstream structure.
-3. Tighten `parseSchematicSymbol()` to upstream structure.
-4. Finish `parseLibSymbol()` / library draw-item routine parity.
+2. Finish `parseLibSymbol()` / library draw-item routine parity.
+3. Revisit `parseSheet()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
+4. Revisit `parseSchematicSymbol()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
 5. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
 6. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
 
@@ -129,8 +130,6 @@ The parser is still well short of 1:1 parity.
 The biggest remaining gaps are:
 
 - `parseSchText`
-- `parseSheet`
-- `parseSchematicSymbol`
 - `parseLibSymbol`
 - parser-wide token / error parity
 - library symbol parsing

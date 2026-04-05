@@ -215,6 +215,8 @@ of opportunistic branch chasing.
 - In loader-side `UpdateSheetInstanceData()`, if all non-root sheet page numbers are empty after applying parsed `sheet_instances`, initialize them sequentially before sorting, like KiCad `AllSheetPageNumbersEmpty()` / `SetInitialPageNumbers()`. Do not leave a fully empty page-number set uninitialized.
 - In that shared `parseSchText()` path, keep the leading text payload on a strict symbol-token path with its own `Invalid text string` branch before any type-specific body parsing runs.
 - In that same shared `parseSchText()` path, keep `uuid` on the shared `NeedSYMBOL()` path too, not on the generic string parser.
+- KiCad `NeedSYMBOL()` accepts both bare symbols/keywords and quoted strings because `DSNLEXER::IsSymbol()` returns true for `DSN_SYMBOL`, `DSN_STRING`, and keyword tokens. Do not tighten shared `NeedSYMBOL()`-equivalent readers to reject quoted atoms.
+- KiCad `NeedSYMBOLorNUMBER()` also accepts quoted strings for the same reason: it is `IsSymbol(tok) || IsNumber(tok)`, and `IsSymbol(tok)` already includes `DSN_STRING`.
 - In `parseSchTextBoxContent()`, keep the text payload on the same strict `Invalid text string` symbol-token path as upstream before any textbox body parsing runs.
 - Keep top-level schematic `text_box` and table-cell parsing on thin owning entrypoints, but share the real textbox body walk through one `parseSchTextBoxContent()`-equivalent routine like upstream. The table-cell-only `span` branch and fallback text can still stay conditional inside that shared body.
 - Keep those thin owning entrypoints named and shaped after upstream too: `parseSchTextBox()` and `parseSchTableCell()` should delegate into the shared content routine rather than staying on repo-local wrapper names.

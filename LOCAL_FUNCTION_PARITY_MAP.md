@@ -65,8 +65,8 @@ Boundary:
 
 | Upstream | Local | Status | Notes |
 | --- | --- | --- | --- |
-| `parseSchematicSymbol` | `parse_schematic_symbol` | partial | still one of the biggest remaining owner routines |
-| `parseSheet` | `parse_sch_sheet` | partial | still one of the biggest remaining owner routines |
+| `parseSchematicSymbol` | `parse_schematic_symbol` | partial | direct comparison shows the owning flow is closer than earlier notes implied; remaining work is narrower exactness and parent-routine interaction |
+| `parseSheet` | `parse_sch_sheet` | partial | direct comparison shows the owning flow is closer than earlier notes implied; remaining work is narrower exactness and surrounding parser interaction |
 | `parseSchText` | `parse_sch_text` | partial | shared family is unified now, but still not fully signed off |
 | `parseSchTextBox` | `parse_sch_text_box` | done | shared owner/body split, raw uuid path, and legacy start/end/size/margins flow now line up closely enough that it is no longer the current bottleneck |
 | `parseSchTableCell` | `parse_sch_table_cell` | done | distinct cell ownership and shared textbox-body routing now match upstream closely enough that it is no longer the current bottleneck |
@@ -117,10 +117,10 @@ These are still parent/owner-sensitive leaves that many higher routines depend o
 
 #### Layer 3: Big Owner Routines
 
-1. `parse_sch_sheet`
-2. `parse_schematic_symbol`
-3. `parse_sch_text`
-4. `parse_lib_symbol`
+1. `parse_sch_text`
+2. `parse_lib_symbol`
+3. `parse_sch_sheet`
+4. `parse_schematic_symbol`
 
 #### Layer 5: Top-Level Parser
 
@@ -130,10 +130,10 @@ These are still parent/owner-sensitive leaves that many higher routines depend o
 
 Pick the first routine cluster whose direct dependencies above are no longer the bottleneck:
 
-1. Revisit `parse_sch_sheet` against upstream `parseSheet()` as a full routine comparison.
-2. Revisit `parse_schematic_symbol` against upstream `parseSchematicSymbol()` as a full routine comparison.
-3. Revisit `parse_sch_text` against upstream `parseSchText()` for the remaining owner-flow and exactness edges.
-4. Revisit `parse_lib_symbol` against upstream `parseLibSymbol()` plus the remaining draw-item/finalization exactness.
+1. Revisit `parse_sch_text` against upstream `parseSchText()` for the remaining owner-flow and exactness edges.
+2. Revisit `parse_lib_symbol` against upstream `parseLibSymbol()` plus the remaining draw-item/finalization exactness.
+3. Revisit `parse_sch_sheet` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
+4. Revisit `parse_schematic_symbol` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
 5. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
 
 ### Explicitly Deferred Until After This Map Is Exhausted
