@@ -6398,6 +6398,53 @@ fn text_boxes_and_table_cells_keep_constructor_graphic_defaults() {
 }
 
 #[test]
+fn table_cells_materialize_grid_positions_from_row_spans() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-table-grid")
+  (table
+    (column_count 2)
+    (column_widths 5 5)
+    (row_heights 5 5 5)
+    (cells
+      (table_cell "a" (at 0 0 0) (size 5 10) (span 1 2))
+      (table_cell "b" (at 5 0 0) (size 5 5))
+      (table_cell "c" (at 5 5 0) (size 5 5))
+      (table_cell "d" (at 0 10 0) (size 5 5))))
+)"#;
+    let path = temp_schematic("table_grid_positions_from_row_spans", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let table = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Table(table) => Some(table),
+            _ => None,
+        })
+        .expect("table");
+
+    assert_eq!(table.row_count(), 3);
+    assert_eq!(table.cells[0].row, 0);
+    assert_eq!(table.cells[0].column, 0);
+    assert_eq!(table.cells[0].col_span, 1);
+    assert_eq!(table.cells[0].row_span, 2);
+    assert_eq!(table.cells[1].row, 0);
+    assert_eq!(table.cells[1].column, 1);
+    assert_eq!(table.cells[2].row, 1);
+    assert_eq!(table.cells[2].column, 1);
+    assert_eq!(table.cells[3].row, 2);
+    assert_eq!(table.cells[3].column, 0);
+    assert_eq!(
+        table.get_cell(1, 0).expect("row-spanned table cell").text,
+        "a"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     let src = r#"(kicad_sch
   (version 20250114)

@@ -932,6 +932,14 @@ impl Table {
         })
     }
 
+    pub fn row_count(&self) -> usize {
+        self.cells
+            .iter()
+            .map(|cell| cell.row + cell.row_span.max(1) as usize)
+            .max()
+            .unwrap_or(0)
+    }
+
     fn next_available_cell_slot(&self) -> (usize, usize) {
         let column_count = self.column_count.unwrap_or(1).max(1) as usize;
         let mut row = 0usize;
@@ -1447,6 +1455,40 @@ mod tests {
             table.get_cell(0, 2).expect("third column cell"),
             &table.cells[1]
         ));
+        assert_eq!(table.row_count(), 2);
+    }
+
+    #[test]
+    fn tables_place_cells_around_row_spans() {
+        let mut table = Table::new(0.0);
+        table.set_column_count(2);
+
+        let mut first = TableCell::new();
+        first.row_span = 2;
+        table.add_cell(first);
+
+        let second = TableCell::new();
+        table.add_cell(second);
+
+        let third = TableCell::new();
+        table.add_cell(third);
+
+        let fourth = TableCell::new();
+        table.add_cell(fourth);
+
+        assert_eq!(table.cells[0].row, 0);
+        assert_eq!(table.cells[0].column, 0);
+        assert_eq!(table.cells[1].row, 0);
+        assert_eq!(table.cells[1].column, 1);
+        assert_eq!(table.cells[2].row, 1);
+        assert_eq!(table.cells[2].column, 1);
+        assert_eq!(table.cells[3].row, 2);
+        assert_eq!(table.cells[3].column, 0);
+        assert!(std::ptr::eq(
+            table.get_cell(1, 0).expect("row-spanned cell"),
+            &table.cells[0]
+        ));
+        assert_eq!(table.row_count(), 3);
     }
 
     #[test]
