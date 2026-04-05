@@ -331,6 +331,23 @@ impl KiCadSchematicParser {
 
         self.screen.file_format_version_at_load = self.version;
 
+        let check_future_version = |version: i32| {
+            if version > SEXPR_SCHEMATIC_FILE_VERSION {
+                Err(self.validation(
+                    Some(self.current_span()),
+                    format!(
+                        "future schematic version `{version}` is newer than supported `{SEXPR_SCHEMATIC_FILE_VERSION}`"
+                    ),
+                ))
+            } else {
+                Ok(())
+            }
+        };
+
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_GENERATOR_VERSION {
+            check_future_version(self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION))?;
+        }
+
         self.parse_schematic_body()?;
         let version = self
             .version
@@ -344,7 +361,6 @@ impl KiCadSchematicParser {
         if !matches!(self.current().kind, TokKind::Eof) {
             return Err(self.expecting("end of file"));
         }
-
         if version > SEXPR_SCHEMATIC_FILE_VERSION {
             return Err(self.validation(
                 Some(self.current_span()),
@@ -353,6 +369,7 @@ impl KiCadSchematicParser {
                 ),
             ));
         }
+
         let generator = self
             .generator
             .clone()
@@ -432,6 +449,17 @@ impl KiCadSchematicParser {
                         }
                         _ => return Err(self.error_here("missing generator_version")),
                     });
+                    if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                        > SEXPR_SCHEMATIC_FILE_VERSION
+                    {
+                        return Err(self.validation(
+                            Some(self.current_span()),
+                            format!(
+                                "future schematic version `{}` is newer than supported `{SEXPR_SCHEMATIC_FILE_VERSION}`",
+                                self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+                            ),
+                        ));
+                    }
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;

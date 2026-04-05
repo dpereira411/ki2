@@ -2519,6 +2519,23 @@ fn rejects_future_schematic_version() {
 }
 
 #[test]
+fn rejects_future_schematic_version_at_generator_version_branch() {
+    let src = r#"(kicad_sch
+  (version 20990101)
+  (generator "eeschema")
+  (generator_version "9.0")
+  (bogus "later")
+)"#;
+    let path = temp_schematic("future_version_generator_version_branch", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject future version early");
+    assert!(
+        err.to_string()
+            .contains("future schematic version `20990101` is newer than supported `20260306`")
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn defaults_missing_header_version_and_rejects_late_version_section() {
     let missing_src = r#"(kicad_sch
   (generator "eeschema")
