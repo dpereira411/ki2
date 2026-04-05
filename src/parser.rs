@@ -408,7 +408,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
+                        "bitmap, bus, bus_alias, bus_entry, class_label, embedded_files, global_label, hierarchical_label, junction, label, line, no_connect, page, paper, rule_area, sheet, symbol, symbol_instances, text, title_block",
                     ))
                 }
             };
@@ -637,7 +637,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
+                        "bitmap, bus, bus_alias, bus_entry, class_label, embedded_files, global_label, hierarchical_label, junction, label, line, no_connect, page, paper, rule_area, sheet, symbol, symbol_instances, text, title_block",
                     ));
                 }
             }

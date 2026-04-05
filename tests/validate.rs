@@ -1340,7 +1340,7 @@ fn rejects_unknown_top_level_sections() {
     let message = err.to_string();
     assert!(
         message.contains(
-            "expecting generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group"
+            "expecting bitmap, bus, bus_alias, bus_entry, class_label, embedded_files, global_label, hierarchical_label, junction, label, line, no_connect, page, paper, rule_area, sheet, symbol, symbol_instances, text, title_block"
         )
     );
 }
@@ -2865,7 +2865,7 @@ fn defaults_missing_header_version_and_rejects_late_version_section() {
     assert!(
         err.to_string()
             .contains(
-                "expecting generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group"
+                "expecting bitmap, bus, bus_alias, bus_entry, class_label, embedded_files, global_label, hierarchical_label, junction, label, line, no_connect, page, paper, rule_area, sheet, symbol, symbol_instances, text, title_block"
             )
     );
     let _ = fs::remove_file(late_path);
@@ -5000,7 +5000,7 @@ fn rejects_quoted_top_level_section_head_with_dispatch_expect_list() {
     let err = parse_schematic_file(Path::new(&path))
         .expect_err("must reject quoted top-level section head");
     assert!(err.to_string().contains(
-        "expecting generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group"
+        "expecting bitmap, bus, bus_alias, bus_entry, class_label, embedded_files, global_label, hierarchical_label, junction, label, line, no_connect, page, paper, rule_area, sheet, symbol, symbol_instances, text, title_block"
     ));
     let _ = fs::remove_file(path);
 }
