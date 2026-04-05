@@ -913,6 +913,7 @@ pub enum ShapeKind {
 pub struct Symbol {
     pub lib_id: String,
     pub lib_name: Option<String>,
+    pub lib_symbol: Option<LibSymbol>,
     pub prefix: String,
     pub in_netlist: bool,
     pub at: [f64; 2],
@@ -948,6 +949,7 @@ impl Symbol {
         Self {
             lib_id: String::new(),
             lib_name: None,
+            lib_symbol: None,
             prefix: "U".to_string(),
             in_netlist: true,
             at: [0.0, 0.0],

@@ -313,6 +313,7 @@ impl KiCadSchematicParser {
         let version = self
             .version
             .ok_or_else(|| self.error_here("missing version"))?;
+        self.update_local_lib_symbol_links();
         self.fixup_legacy_lib_symbol_alternate_body_styles();
         self.fixup_embedded_data();
 
@@ -5511,6 +5512,23 @@ impl KiCadSchematicParser {
                 &mut cache,
             );
             self.screen.lib_symbols[idx].has_demorgan = has_demorgan;
+        }
+    }
+
+    fn update_local_lib_symbol_links(&mut self) {
+        let lib_symbols: std::collections::HashMap<String, LibSymbol> = self
+            .screen
+            .lib_symbols
+            .iter()
+            .cloned()
+            .map(|symbol| (symbol.lib_id.clone(), symbol))
+            .collect();
+
+        for item in &mut self.screen.items {
+            if let SchItem::Symbol(symbol) = item {
+                let lib_name = symbol.lib_name.as_deref().unwrap_or(&symbol.lib_id);
+                symbol.lib_symbol = lib_symbols.get(lib_name).cloned();
+            }
         }
     }
 

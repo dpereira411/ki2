@@ -1730,6 +1730,45 @@ fn parses_extended_top_level_sections() {
 }
 
 #[test]
+fn parser_links_placed_symbols_to_local_lib_symbols_after_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-symbol")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R")
+      (symbol "Device:R_1_1"
+        (pin passive line (at 0 0 0) (length 2.54) (name "P") (number "1")))))
+  (symbol
+    (lib_id "Device:R")
+    (lib_name "Device:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_link", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+    assert_eq!(linked.lib_id, "Device:R");
+    assert_eq!(linked.units[0].draw_items[0].kind, "pin");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
