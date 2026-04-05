@@ -878,6 +878,7 @@ impl KiCadSchematicParser {
 
     fn parse_symbol_draw_item(
         &mut self,
+        symbol: &LibSymbol,
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
@@ -900,7 +901,7 @@ impl KiCadSchematicParser {
             "pin" => self.parse_symbol_pin(unit_number, body_style),
             "polyline" => self.parse_symbol_polyline(unit_number, body_style),
             "rectangle" => self.parse_symbol_rectangle(unit_number, body_style),
-            "text" => self.parse_symbol_text(unit_number, body_style),
+            "text" => self.parse_symbol_text(symbol, unit_number, body_style),
             "text_box" => self.parse_symbol_text_box(unit_number, body_style),
             _ => Err(self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")),
         }
@@ -1085,10 +1086,8 @@ impl KiCadSchematicParser {
                             }
                             self.need_right()?;
                         } else {
-                            let mut item = self.parse_symbol_draw_item(unit_number, body_style)?;
-                            if item.kind == "field" && item.field_ordinal.is_none() {
-                                item.field_ordinal = Some(symbol.next_field_ordinal());
-                            }
+                            let item =
+                                self.parse_symbol_draw_item(&symbol, unit_number, body_style)?;
                             symbol.add_draw_item(item);
                         }
                     }
@@ -1096,10 +1095,7 @@ impl KiCadSchematicParser {
                 }
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
-                    let mut item = self.parse_symbol_draw_item(1, 1)?;
-                    if item.kind == "field" && item.field_ordinal.is_none() {
-                        item.field_ordinal = Some(symbol.next_field_ordinal());
-                    }
+                    let item = self.parse_symbol_draw_item(&symbol, 1, 1)?;
                     symbol.add_draw_item(item);
                 }
                 "embedded_fonts" => {
@@ -1576,6 +1572,7 @@ impl KiCadSchematicParser {
 
     fn parse_symbol_text(
         &mut self,
+        symbol: &LibSymbol,
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
@@ -1621,6 +1618,7 @@ impl KiCadSchematicParser {
         if !item.visible {
             item.kind = "field".to_string();
             item.field_id = PropertyKind::User.default_field_id();
+            item.field_ordinal = Some(symbol.next_field_ordinal());
             item.name = Some("Field".to_string());
         }
 

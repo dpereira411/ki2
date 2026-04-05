@@ -8903,9 +8903,11 @@ fn hidden_lib_text_converts_to_named_user_field() {
     assert_eq!(extra_fields[0].name.as_deref(), Some("Field"));
     assert_eq!(extra_fields[0].text.as_deref(), Some("A"));
     assert_eq!(extra_fields[0].field_id, Some(0));
+    assert_eq!(extra_fields[0].field_ordinal, Some(42));
     assert_eq!(extra_fields[1].name.as_deref(), Some("Field"));
     assert_eq!(extra_fields[1].text.as_deref(), Some("B"));
     assert_eq!(extra_fields[1].field_id, Some(0));
+    assert_eq!(extra_fields[1].field_ordinal, Some(43));
 
     let _ = fs::remove_file(path);
 }
