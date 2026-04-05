@@ -1896,11 +1896,14 @@ impl KiCadSchematicParser {
                             "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
                         ));
                     };
-                    item.alternates.push(LibPinAlternate {
-                        name: alt_name,
-                        electrical_type: alt_type,
-                        graphic_shape: alt_shape,
-                    });
+                    item.alternates.insert(
+                        alt_name.clone(),
+                        LibPinAlternate {
+                            name: alt_name,
+                            electrical_type: alt_type,
+                            graphic_shape: alt_shape,
+                        },
+                    );
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, name, number, hide, length, or alternate")),

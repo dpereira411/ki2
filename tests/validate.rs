@@ -1603,6 +1603,11 @@ fn parses_extended_top_level_sections() {
         Some([1.1, 1.2])
     );
     assert_eq!(lib_symbol.units[0].draw_items[4].alternates.len(), 1);
+    assert!(
+        lib_symbol.units[0].draw_items[4]
+            .alternates
+            .contains_key("ALT")
+    );
     assert_eq!(lib_symbol.embedded_fonts, Some(true));
     assert_eq!(lib_symbol.embedded_files.len(), 1);
     assert!(
@@ -7061,6 +7066,30 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
 
     let _ = fs::remove_file(bad_type_path);
     let _ = fs::remove_file(bad_shape_path);
+}
+
+#[test]
+fn duplicate_lib_pin_alternates_overwrite_by_name() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-duplicate-alt")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin input line
+        (alternate "ALT" output clock)
+        (alternate "ALT" passive inverted))))
+)"#;
+    let path = temp_schematic("duplicate_lib_pin_alternate", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let pin = &schematic.screen.lib_symbols[0].units[0].draw_items[0];
+
+    assert_eq!(pin.alternates.len(), 1);
+    let alternate = pin.alternates.get("ALT").expect("alternate");
+    assert_eq!(alternate.electrical_type, "passive");
+    assert_eq!(alternate.graphic_shape, "inverted");
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
