@@ -5727,12 +5727,6 @@ impl KiCadSchematicParser {
 
         for idx in 0..self.screen.lib_symbols.len() {
             if self.screen.lib_symbols[idx].extends.is_none() {
-                self.screen.lib_symbols[idx].has_demorgan = if version < VERSION_CUSTOM_BODY_STYLES
-                {
-                    self.screen.lib_symbols[idx].has_legacy_alternate_body_style()
-                } else {
-                    self.screen.lib_symbols[idx].has_demorgan
-                };
                 cache.insert(idx, self.screen.lib_symbols[idx].has_demorgan);
                 continue;
             }
