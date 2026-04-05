@@ -8525,6 +8525,26 @@ fn links_symbols_to_local_lib_symbols_and_hydrates_embedded_files() {
     );
     assert_eq!(lib_symbol.embedded_files[0].data.as_deref(), Some("abc123"));
 
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+    assert_eq!(
+        linked.embedded_files[0].checksum.as_deref(),
+        Some("sha256:123")
+    );
+    assert_eq!(
+        linked.embedded_files[0].file_type,
+        Some(EmbeddedFileType::Font)
+    );
+    assert_eq!(linked.embedded_files[0].data.as_deref(), Some("abc123"));
+
     let _ = fs::remove_file(path);
 }
 

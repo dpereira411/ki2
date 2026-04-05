@@ -353,8 +353,8 @@ impl KiCadSchematicParser {
             .version
             .ok_or_else(|| self.error_here("missing version"))?;
         self.fixup_legacy_lib_symbol_alternate_body_styles();
-        self.fixup_embedded_data();
         self.update_local_lib_symbol_links();
+        self.fixup_embedded_data();
 
         self.resolve_groups();
         self.need_right()?;
@@ -5676,8 +5676,8 @@ impl KiCadSchematicParser {
             .filter_map(|file| Some((file.name.clone()?, file.clone())))
             .collect();
 
-        for lib_symbol in &mut self.screen.lib_symbols {
-            for embedded_file in &mut lib_symbol.embedded_files {
+        let hydrate_files = |files: &mut Vec<EmbeddedFile>| {
+            for embedded_file in files {
                 if let Some(name) = embedded_file.name.as_ref() {
                     if let Some(file) = global_files.get(name) {
                         if embedded_file.checksum.is_none() {
@@ -5690,6 +5690,18 @@ impl KiCadSchematicParser {
                             embedded_file.data = file.data.clone();
                         }
                     }
+                }
+            }
+        };
+
+        for lib_symbol in &mut self.screen.lib_symbols {
+            hydrate_files(&mut lib_symbol.embedded_files);
+        }
+
+        for item in &mut self.screen.items {
+            if let SchItem::Symbol(symbol) = item {
+                if let Some(lib_symbol) = symbol.lib_symbol.as_mut() {
+                    hydrate_files(&mut lib_symbol.embedded_files);
                 }
             }
         }
