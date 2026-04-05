@@ -1618,10 +1618,11 @@ impl KiCadSchematicParser {
         }
 
         if !item.visible {
+            let field_ordinal = symbol.next_field_ordinal();
             item.kind = "field".to_string();
             item.field_id = PropertyKind::User.default_field_id();
-            item.field_ordinal = Some(symbol.next_field_ordinal());
-            item.name = Some("Field".to_string());
+            item.field_ordinal = Some(field_ordinal);
+            item.name = Some(format!("Field{field_ordinal}"));
         }
 
         self.need_right()?;
