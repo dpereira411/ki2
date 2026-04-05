@@ -244,7 +244,15 @@ struct KiCadSchematicParser {
     generator_version: Option<String>,
     root_uuid: Option<String>,
     screen: Screen,
-    pending_groups: Vec<Group>,
+    pending_groups: Vec<PendingGroupInfo>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingGroupInfo {
+    name: Option<String>,
+    uuid: Option<String>,
+    lib_id: Option<String>,
+    member_uuids: Vec<String>,
 }
 
 impl KiCadSchematicParser {
@@ -4459,7 +4467,12 @@ impl KiCadSchematicParser {
 
     fn parse_group(&mut self) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("group")?;
-        let mut group = Group::new();
+        let mut group = PendingGroupInfo {
+            name: None,
+            uuid: None,
+            lib_id: None,
+            member_uuids: Vec::new(),
+        };
 
         while !matches!(self.current().kind, TokKind::Left) {
             if self.at_unquoted_symbol_with("locked") {
@@ -4509,10 +4522,10 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_group_members(&mut self, group: &mut Group) -> Result<(), Error> {
+    fn parse_group_members(&mut self, group: &mut PendingGroupInfo) -> Result<(), Error> {
         while !self.at_right() {
             let member = self.need_symbol_atom("group member uuid")?;
-            group.members.push(member);
+            group.member_uuids.push(member);
         }
 
         self.need_right()?;
@@ -5662,18 +5675,52 @@ impl KiCadSchematicParser {
             }
         }
 
-        for group in &self.pending_groups {
-            if let Some(uuid) = group.uuid.as_ref() {
+        for group_info in &self.pending_groups {
+            if let Some(uuid) = group_info.uuid.as_ref() {
                 known_uuids.insert(uuid.clone());
             }
         }
 
-        self.screen
+        for group_info in &self.pending_groups {
+            let mut group = Group::new();
+            group.name = group_info.name.clone();
+            group.uuid = group_info.uuid.clone();
+            group.lib_id = group_info.lib_id.clone();
+            self.screen.items.push(SchItem::Group(group));
+        }
+
+        let groups = self
+            .screen
             .items
-            .extend(self.pending_groups.drain(..).map(|mut group| {
-                group.members.retain(|member| known_uuids.contains(member));
-                SchItem::Group(group)
-            }));
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, item)| match item {
+                SchItem::Group(group) => Some((idx, group.uuid.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let group_indices = groups
+            .iter()
+            .filter_map(|(idx, uuid)| Some((uuid.as_ref()?.clone(), *idx)))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        for group_info in self.pending_groups.drain(..) {
+            let Some(group_uuid) = group_info.uuid.as_ref() else {
+                continue;
+            };
+            let Some(group_index) = group_indices.get(group_uuid) else {
+                continue;
+            };
+            let SchItem::Group(group) = &mut self.screen.items[*group_index] else {
+                continue;
+            };
+            group.members = group_info
+                .member_uuids
+                .into_iter()
+                .filter(|member| known_uuids.contains(member))
+                .collect();
+        }
     }
 
     fn groups_sanity_check_repair(&mut self) {
