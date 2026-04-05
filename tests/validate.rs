@@ -7,8 +7,8 @@ use ki2::core::SchematicProject;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
-    EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelSpin, LineKind,
-    MirrorAxis, PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle,
+    EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelShape, LabelSpin,
+    LineKind, MirrorAxis, PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide, StrokeStyle,
     TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
@@ -3973,7 +3973,8 @@ fn non_local_labels_do_not_require_shape() {
         })
         .collect();
     assert_eq!(labels.len(), 2);
-    assert!(labels.iter().all(|label| label.shape.is_none()));
+    assert_eq!(labels[0].shape, Some(LabelShape::Bidirectional));
+    assert_eq!(labels[1].shape, Some(LabelShape::Input));
     let _ = fs::remove_file(path);
 }
 
