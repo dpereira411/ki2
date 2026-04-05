@@ -7519,6 +7519,30 @@ fn ignores_numeric_lib_unit_name_token() {
 }
 
 #[test]
+fn lib_unit_name_applies_across_body_styles_of_same_unit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-unit-display-name")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_1_1"
+        (unit_name "Amplifier"))
+      (symbol "Device:R_1_2"
+        (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
+)"#;
+    let path = temp_schematic("lib_unit_name_shared_across_body_styles", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+
+    assert_eq!(lib_symbol.units.len(), 2);
+    assert_eq!(lib_symbol.units[0].unit_name.as_deref(), Some("Amplifier"));
+    assert_eq!(lib_symbol.units[1].unit_name.as_deref(), Some("Amplifier"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_title_block_value_token() {
     let src = r#"(kicad_sch
   (version 20260306)

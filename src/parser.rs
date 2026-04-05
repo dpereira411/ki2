@@ -1078,7 +1078,7 @@ impl KiCadSchematicParser {
                     }
 
                     let unit_name = unit_full_name;
-                    let unit_index = symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
+                    symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
 
                     while !self.at_right() {
                         self.need_left()?;
@@ -1093,7 +1093,7 @@ impl KiCadSchematicParser {
                                     Some(AtomClass::Symbol | AtomClass::Quoted)
                                 )
                             {
-                                symbol.units[unit_index].unit_name = Some(value);
+                                symbol.set_unit_display_name(unit_number, value);
                             }
                             self.need_right()?;
                         } else {

@@ -223,11 +223,17 @@ impl LibSymbol {
                     continue;
                 }
 
+                let unit_name = self
+                    .units
+                    .iter()
+                    .find(|existing| existing.unit_number == unit_number)
+                    .and_then(|existing| existing.unit_name.clone());
+
                 self.units.push(LibSymbolUnit {
                     name: format!("{}_{}_{}", self.lib_id, unit_number, body_style),
                     unit_number,
                     body_style,
-                    unit_name: None,
+                    unit_name,
                     draw_item_kinds: Vec::new(),
                     draw_items: Vec::new(),
                 });
@@ -250,6 +256,16 @@ impl LibSymbol {
             .expect("materialized lib symbol unit must exist");
         self.units[index].name = name;
         index
+    }
+
+    pub fn set_unit_display_name(&mut self, unit_number: i32, unit_name: String) {
+        self.materialize_unit_counts(unit_number, 1);
+
+        for unit in &mut self.units {
+            if unit.unit_number == unit_number {
+                unit.unit_name = Some(unit_name.clone());
+            }
+        }
     }
 
     pub fn add_draw_item(&mut self, item: LibDrawItem) {
@@ -1520,6 +1536,16 @@ mod tests {
 
         assert_eq!(symbol.units[1].body_style, 2);
         assert_eq!(symbol.units[1].draw_item_kinds, vec!["arc", "text"]);
+    }
+
+    #[test]
+    fn lib_symbol_unit_display_names_are_shared_across_body_styles() {
+        let mut symbol = LibSymbol::new("Device:R".to_string());
+        symbol.ensure_unit_index("Device:R_1_2".to_string(), 1, 2);
+        symbol.set_unit_display_name(1, "Amplifier".to_string());
+
+        assert_eq!(symbol.units[0].unit_name.as_deref(), Some("Amplifier"));
+        assert_eq!(symbol.units[1].unit_name.as_deref(), Some("Amplifier"));
     }
 
     #[test]
