@@ -4542,6 +4542,16 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Empty property name"));
         }
 
+        let mut value = self
+            .need_symbol_atom("property value")
+            .map_err(|_| self.error_here("Invalid property value"))?;
+
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
+            && value == "~"
+        {
+            value.clear();
+        }
+
         let field_id = match parent {
             FieldParent::Symbol(_) => match name.to_ascii_lowercase().as_str() {
                 "reference" => PropertyKind::SymbolReference,
@@ -4584,15 +4594,7 @@ impl KiCadSchematicParser {
             _ => property.ordinal,
         };
 
-        property.value = self
-            .need_symbol_atom("property value")
-            .map_err(|_| self.error_here("Invalid property value"))?;
-
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
-            && property.value == "~"
-        {
-            property.value.clear();
-        }
+        property.value = value;
 
         while !self.at_right() {
             self.need_left()?;
