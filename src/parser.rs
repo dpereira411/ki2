@@ -825,38 +825,14 @@ impl KiCadSchematicParser {
             }
         };
         match head.as_str() {
-            "arc" => {
-                let _ = self.need_unquoted_symbol_atom("arc")?;
-                self.parse_symbol_arc(unit_number, body_style)
-            }
-            "bezier" => {
-                let _ = self.need_unquoted_symbol_atom("bezier")?;
-                self.parse_symbol_bezier(unit_number, body_style)
-            }
-            "circle" => {
-                let _ = self.need_unquoted_symbol_atom("circle")?;
-                self.parse_symbol_circle(unit_number, body_style)
-            }
-            "pin" => {
-                let _ = self.need_unquoted_symbol_atom("pin")?;
-                self.parse_symbol_pin(unit_number, body_style)
-            }
-            "polyline" => {
-                let _ = self.need_unquoted_symbol_atom("polyline")?;
-                self.parse_symbol_polyline(unit_number, body_style)
-            }
-            "rectangle" => {
-                let _ = self.need_unquoted_symbol_atom("rectangle")?;
-                self.parse_symbol_rectangle(unit_number, body_style)
-            }
-            "text" => {
-                let _ = self.need_unquoted_symbol_atom("text")?;
-                self.parse_symbol_text(unit_number, body_style)
-            }
-            "text_box" => {
-                let _ = self.need_unquoted_symbol_atom("text_box")?;
-                self.parse_symbol_text_box(unit_number, body_style)
-            }
+            "arc" => self.parse_symbol_arc(unit_number, body_style),
+            "bezier" => self.parse_symbol_bezier(unit_number, body_style),
+            "circle" => self.parse_symbol_circle(unit_number, body_style),
+            "pin" => self.parse_symbol_pin(unit_number, body_style),
+            "polyline" => self.parse_symbol_polyline(unit_number, body_style),
+            "rectangle" => self.parse_symbol_rectangle(unit_number, body_style),
+            "text" => self.parse_symbol_text(unit_number, body_style),
+            "text_box" => self.parse_symbol_text_box(unit_number, body_style),
             _ => Err(self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")),
         }
     }
@@ -1191,6 +1167,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("arc")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1289,6 +1266,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("bezier")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1355,6 +1333,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("circle")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1407,6 +1386,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("polyline")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1470,6 +1450,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("rectangle")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1525,6 +1506,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("text")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1576,6 +1558,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("text_box")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
@@ -1693,6 +1676,7 @@ impl KiCadSchematicParser {
         unit_number: i32,
         body_style: i32,
     ) -> Result<LibDrawItem, Error> {
+        let _ = self.need_unquoted_symbol_atom("pin")?;
         let electrical_type_token = self.need_unquoted_symbol_atom("pin type")?;
         let electrical_type = if matches!(
             electrical_type_token.as_str(),
