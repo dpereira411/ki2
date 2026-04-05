@@ -2505,6 +2505,20 @@ impl KiCadSchematicParser {
                             label.at = [parsed[0], parsed[1]];
                             label.angle = Self::normalize_text_angle(parsed[2]);
                             label.spin = Self::get_label_spin_style(label.angle);
+                            if matches!(label.kind, LabelKind::Global) {
+                                let intersheet_refs = label
+                                    .properties
+                                    .iter_mut()
+                                    .find(|property| {
+                                        property.kind == PropertyKind::GlobalLabelIntersheetRefs
+                                    })
+                                    .expect("global labels start with intersheet refs property");
+                                if !intersheet_refs.visible
+                                    && intersheet_refs.at == Some([0.0, 0.0])
+                                {
+                                    intersheet_refs.at = Some(label.at);
+                                }
+                            }
                         }
                     }
                     self.need_right()?;

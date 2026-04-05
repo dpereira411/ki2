@@ -3908,6 +3908,39 @@ fn global_label_starts_with_hidden_intersheet_refs_field() {
 }
 
 #[test]
+fn global_label_at_moves_default_intersheet_refs_field_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-global-at-field")
+  (paper "A4")
+  (global_label "GL" (at 10 20 0))
+)"#;
+    let path = temp_schematic("global_label_at_moves_default_iref_field", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let intersheet_refs = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("intersheet refs field");
+
+    assert_eq!(intersheet_refs.at, Some([10.0, 20.0]));
+    assert!(!intersheet_refs.visible);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let text_property_src = r#"(kicad_sch
   (version 20250114)
