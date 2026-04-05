@@ -60,7 +60,8 @@ pub fn prescan_version(input: &str) -> Option<i32> {
     skip_whitespace_and_line_comments(bytes, &mut i);
 
     let root_start = i;
-    while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')') {
+    while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'\0' | b'(' | b')')
+    {
         i += 1;
     }
 
@@ -101,7 +102,8 @@ pub fn prescan_version(input: &str) -> Option<i32> {
     skip_whitespace_and_line_comments(bytes, &mut i);
 
     let symbol_start = i;
-    while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')') {
+    while i < bytes.len() && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'\0' | b'(' | b')')
+    {
         i += 1;
     }
 
@@ -152,7 +154,7 @@ fn is_line_comment_start(bytes: &[u8], i: usize) -> bool {
 
 fn skip_whitespace_and_line_comments(bytes: &[u8], i: &mut usize) {
     loop {
-        while *i < bytes.len() && matches!(bytes[*i], b' ' | b'\t' | b'\n' | b'\r') {
+        while *i < bytes.len() && matches!(bytes[*i], b' ' | b'\t' | b'\n' | b'\r' | b'\0') {
             *i += 1;
         }
 
@@ -297,7 +299,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
         }
 
         match bytes[i] {
-            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            b' ' | b'\t' | b'\n' | b'\r' | b'\0' => i += 1,
             b'(' => {
                 tokens.push(Token {
                     kind: TokKind::Left,
@@ -370,7 +372,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
             _ => {
                 let start = i;
                 while i < bytes.len()
-                    && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'(' | b')')
+                    && !matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r' | b'\0' | b'(' | b')')
                     && !(knows_bar && bytes[i] == b'|')
                 {
                     i += 1;
@@ -430,6 +432,12 @@ mod tests {
     #[test]
     fn prescan_version_skips_full_line_comments() {
         let input = "# leading comment\n  # second comment\n(kicad_sch (version 20260306))";
+        assert_eq!(prescan_version(input), Some(20260306));
+    }
+
+    #[test]
+    fn prescan_version_treats_nul_as_whitespace_like_kicad() {
+        let input = "\0\0(kicad_sch\0(version\020260306))";
         assert_eq!(prescan_version(input), Some(20260306));
     }
 
@@ -526,5 +534,26 @@ mod tests {
                 .any(|(value, class)| value == "foo#bar" && *class == Some(AtomClass::Symbol))
         );
         assert!(!atoms.iter().any(|(value, _)| value.contains("comment")));
+    }
+
+    #[test]
+    fn lex_treats_nul_as_whitespace_like_kicad() {
+        let tokens = lex("(kicad_sch\0(uuid\0\"root\"))").expect("lex");
+        let atoms: Vec<(String, Option<AtomClass>)> = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokKind::Atom(value) => Some((value, token.atom_class)),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            atoms,
+            vec![
+                ("kicad_sch".to_string(), Some(AtomClass::Symbol)),
+                ("uuid".to_string(), Some(AtomClass::Symbol)),
+                ("root".to_string(), Some(AtomClass::Quoted)),
+            ]
+        );
     }
 }
