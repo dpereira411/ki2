@@ -252,6 +252,8 @@ struct KiCadSchematicParser {
     generator_version: Option<String>,
     root_uuid: Option<String>,
     used_uuids: HashSet<String>,
+    lib_unit: i32,
+    lib_body_style: i32,
     screen: Screen,
     pending_groups: Vec<PendingGroupInfo>,
 }
@@ -278,6 +280,8 @@ impl KiCadSchematicParser {
             generator_version: None,
             root_uuid: None,
             used_uuids: HashSet::new(),
+            lib_unit: 1,
+            lib_body_style: 1,
             screen: Screen {
                 file_format_version_at_load: None,
                 uuid: None,
@@ -859,12 +863,7 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_symbol_draw_item(
-        &mut self,
-        symbol: &LibSymbol,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_draw_item(&mut self, symbol: &LibSymbol) -> Result<LibDrawItem, Error> {
         let head = match &self.current().kind {
             TokKind::Atom(value)
                 if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
@@ -878,14 +877,14 @@ impl KiCadSchematicParser {
             }
         };
         match head.as_str() {
-            "arc" => self.parse_symbol_arc(unit_number, body_style),
-            "bezier" => self.parse_symbol_bezier(unit_number, body_style),
-            "circle" => self.parse_symbol_circle(unit_number, body_style),
-            "pin" => self.parse_symbol_pin(unit_number, body_style),
-            "polyline" => self.parse_symbol_polyline(unit_number, body_style),
-            "rectangle" => self.parse_symbol_rectangle(unit_number, body_style),
-            "text" => self.parse_symbol_text(symbol, unit_number, body_style),
-            "text_box" => self.parse_symbol_text_box(unit_number, body_style),
+            "arc" => self.parse_symbol_arc(),
+            "bezier" => self.parse_symbol_bezier(),
+            "circle" => self.parse_symbol_circle(),
+            "pin" => self.parse_symbol_pin(),
+            "polyline" => self.parse_symbol_polyline(),
+            "rectangle" => self.parse_symbol_rectangle(),
+            "text" => self.parse_symbol_text(symbol),
+            "text_box" => self.parse_symbol_text_box(),
             _ => Err(self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")),
         }
     }
@@ -1059,6 +1058,8 @@ impl KiCadSchematicParser {
 
                     let unit_name = unit_full_name;
                     symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
+                    self.lib_unit = unit_number;
+                    self.lib_body_style = body_style;
 
                     while !self.at_right() {
                         self.need_left()?;
@@ -1077,16 +1078,17 @@ impl KiCadSchematicParser {
                             }
                             self.need_right()?;
                         } else {
-                            let item =
-                                self.parse_symbol_draw_item(&symbol, unit_number, body_style)?;
+                            let item = self.parse_symbol_draw_item(&symbol)?;
                             symbol.add_draw_item(item);
                         }
                     }
                     self.need_right()?;
+                    self.lib_unit = 1;
+                    self.lib_body_style = 1;
                 }
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
-                    let item = self.parse_symbol_draw_item(&symbol, 1, 1)?;
+                    let item = self.parse_symbol_draw_item(&symbol)?;
                     symbol.add_draw_item(item);
                 }
                 "embedded_fonts" => {
@@ -1226,18 +1228,14 @@ impl KiCadSchematicParser {
         Ok(files)
     }
 
-    fn parse_symbol_arc(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_arc(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("arc")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = LibDrawItem::new("arc", unit_number, body_style);
+        let mut item = LibDrawItem::new("arc", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
         item.points = vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
         item.arc_center = Some([0.0, 0.0]);
@@ -1325,18 +1323,14 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_bezier(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_bezier(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("bezier")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = LibDrawItem::new("bezier", unit_number, body_style);
+        let mut item = LibDrawItem::new("bezier", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
 
         while !self.at_right() {
@@ -1392,18 +1386,14 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_circle(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_circle(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("circle")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = LibDrawItem::new("circle", unit_number, body_style);
+        let mut item = LibDrawItem::new("circle", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
         item.points = vec![[0.0, 0.0]];
         item.radius = Some(1.0);
@@ -1445,18 +1435,14 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_polyline(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_polyline(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("polyline")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = LibDrawItem::new("polyline", unit_number, body_style);
+        let mut item = LibDrawItem::new("polyline", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
 
         while !self.at_right() {
@@ -1509,18 +1495,14 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_rectangle(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_rectangle(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("rectangle")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = LibDrawItem::new("rectangle", unit_number, body_style);
+        let mut item = LibDrawItem::new("rectangle", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
 
         while !self.at_right() {
@@ -1565,12 +1547,7 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_text(
-        &mut self,
-        symbol: &LibSymbol,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_text(&mut self, symbol: &LibSymbol) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("text")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
@@ -1578,7 +1555,7 @@ impl KiCadSchematicParser {
             is_private = true;
         }
 
-        let mut item = LibDrawItem::new("text", unit_number, body_style);
+        let mut item = LibDrawItem::new("text", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
         item.text = Some(
             self.need_symbol_atom("text string")
@@ -1622,18 +1599,14 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_text_box(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_text_box(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("text_box")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
             let _ = self.need_unquoted_symbol_atom("private")?;
             is_private = true;
         }
-        let mut item = LibDrawItem::new("text_box", unit_number, body_style);
+        let mut item = LibDrawItem::new("text_box", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
         item.angle = Some(0.0);
         item.text = Some(
@@ -1740,11 +1713,7 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_pin(
-        &mut self,
-        unit_number: i32,
-        body_style: i32,
-    ) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_pin(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("pin")?;
         let electrical_type_token = self.need_unquoted_symbol_atom("pin type")?;
         let electrical_type = if matches!(
@@ -1788,7 +1757,7 @@ impl KiCadSchematicParser {
                 "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
             ));
         };
-        let mut item = LibDrawItem::new("pin", unit_number, body_style);
+        let mut item = LibDrawItem::new("pin", self.lib_unit, self.lib_body_style);
         item.electrical_type = Some(electrical_type);
         item.graphic_shape = Some(graphic_shape);
 
