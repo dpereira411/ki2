@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -251,6 +251,7 @@ struct KiCadSchematicParser {
     generator: Option<String>,
     generator_version: Option<String>,
     root_uuid: Option<String>,
+    used_uuids: HashSet<String>,
     screen: Screen,
     pending_groups: Vec<PendingGroupInfo>,
 }
@@ -276,6 +277,7 @@ impl KiCadSchematicParser {
             generator: None,
             generator_version: None,
             root_uuid: None,
+            used_uuids: HashSet::new(),
             screen: Screen {
                 file_format_version_at_load: None,
                 uuid: None,
@@ -469,7 +471,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    let uuid = self.need_symbol_atom("uuid")?;
+                    let uuid = self.parse_kiid()?;
                     self.screen.uuid = Some(uuid.clone());
                     self.root_uuid = Some(uuid);
                 }
@@ -2227,7 +2229,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    junction.uuid = Some(self.need_symbol_atom("uuid")?);
+                    junction.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, diameter, color or uuid")),
@@ -2263,7 +2265,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    no_connect.uuid = Some(self.need_symbol_atom("uuid")?);
+                    no_connect.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at or uuid")),
@@ -2315,7 +2317,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    bus_entry.uuid = Some(self.need_symbol_atom("uuid")?);
+                    bus_entry.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("at, size, uuid or stroke")),
@@ -2400,7 +2402,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    line.uuid = Some(self.need_symbol_atom("uuid")?);
+                    line.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -2605,7 +2607,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    let uuid = self.need_symbol_atom("uuid")?;
+                    let uuid = self.parse_kiid()?;
                     match &mut item {
                         ParsedSchText::Text(text) => text.uuid = Some(uuid),
                         ParsedSchText::Label(label) => label.uuid = Some(uuid),
@@ -2830,7 +2832,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    let uuid = Some(self.need_symbol_atom("uuid")?);
+                    let uuid = Some(self.parse_kiid()?);
                     match &mut owner {
                         ParsedTextBoxOwner::TextBox(text_box) => text_box.uuid = uuid,
                         ParsedTextBoxOwner::TableCell(text_box) => text_box.uuid = uuid,
@@ -3006,7 +3008,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    table.uuid = Some(self.need_symbol_atom("uuid")?);
+                    table.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => {
@@ -3056,7 +3058,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    image.uuid = Some(self.need_symbol_atom("uuid")?);
+                    image.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 "data" => {
@@ -3145,7 +3147,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => {
@@ -3200,7 +3202,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, mid, end, stroke, fill or uuid")),
@@ -3249,7 +3251,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("center, radius, stroke, fill or uuid")),
@@ -3302,7 +3304,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
@@ -3366,7 +3368,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.need_symbol_atom("uuid")?);
+                    shape.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("pts, stroke, fill or uuid")),
@@ -3553,7 +3555,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    symbol.uuid = Some(self.need_symbol_atom("uuid")?);
+                    symbol.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 "property" => {
@@ -3937,7 +3939,7 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "uuid" => {
-                                let parsed = self.need_symbol_atom("uuid")?;
+                                let parsed = self.parse_kiid()?;
                                 if self.require_known_version()? >= VERSION_SYMBOL_PIN_UUID {
                                     pin.uuid = Some(parsed);
                                 }
@@ -4031,7 +4033,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    sheet.uuid = Some(self.need_symbol_atom("uuid")?);
+                    sheet.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 "property" => {
@@ -4362,7 +4364,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    sheet_pin.uuid = Some(self.need_symbol_atom("uuid")?);
+                    sheet_pin.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 "effects" => {
@@ -4583,7 +4585,7 @@ impl KiCadSchematicParser {
                 .as_str()
             {
                 "uuid" => {
-                    group.uuid = Some(self.need_symbol_atom("uuid")?);
+                    group.uuid = Some(self.parse_kiid()?);
                     self.need_right()?;
                 }
                 "lib_id" => {
@@ -5234,6 +5236,45 @@ impl KiCadSchematicParser {
             }
             _ => Err(self.expecting("yes or no")),
         }
+    }
+
+    fn parse_kiid(&mut self) -> Result<String, Error> {
+        let raw = self.need_symbol_atom("uuid")?;
+        let mut bytes = if !raw.is_empty()
+            && raw.len() <= 8
+            && raw.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            let mut bytes = [0_u8; 16];
+            let padded = format!("{raw:0>8}");
+
+            for i in 0..4 {
+                bytes[12 + i] =
+                    u8::from_str_radix(&padded[i * 2..i * 2 + 2], 16).unwrap_or_default();
+            }
+
+            bytes
+        } else if let Ok(parsed) = Uuid::parse_str(&raw) {
+            *parsed.as_bytes()
+        } else {
+            return Ok(raw);
+        };
+
+        let mut normalized = Uuid::from_bytes(bytes).hyphenated().to_string();
+
+        while self.used_uuids.contains(&normalized) {
+            for byte in bytes.iter_mut().rev() {
+                *byte = byte.wrapping_add(1);
+
+                if *byte != 0 {
+                    break;
+                }
+            }
+
+            normalized = Uuid::from_bytes(bytes).hyphenated().to_string();
+        }
+
+        self.used_uuids.insert(normalized.clone());
+        Ok(normalized)
     }
 
     fn parse_maybe_absent_bool(&mut self, default: bool) -> Result<bool, Error> {

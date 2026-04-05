@@ -1423,6 +1423,55 @@ fn rejects_invalid_title_block_comment_number() {
 }
 
 #[test]
+fn parser_normalizes_legacy_short_uuids_and_increments_duplicates() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "1")
+  (paper "A4")
+  (junction (at 0 0) (uuid "1"))
+  (no_connect (at 1 1) (uuid "1"))
+)"#;
+    let path = temp_schematic("legacy_and_duplicate_uuids", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    assert_eq!(
+        schematic.screen.uuid.as_deref(),
+        Some("00000000-0000-0000-0000-000000000001")
+    );
+
+    let junction = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction),
+            _ => None,
+        })
+        .expect("junction");
+    assert_eq!(
+        junction.uuid.as_deref(),
+        Some("00000000-0000-0000-0000-000000000002")
+    );
+
+    let no_connect = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::NoConnect(no_connect) => Some(no_connect),
+            _ => None,
+        })
+        .expect("no_connect");
+    assert_eq!(
+        no_connect.uuid.as_deref(),
+        Some("00000000-0000-0000-0000-000000000003")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_extended_top_level_sections() {
     let src = r#"(kicad_sch
   (version 20250114)
