@@ -3855,9 +3855,7 @@ fn rejects_unexpected_sheet_child_with_upstream_expect_list() {
     let path = temp_schematic("unexpected_sheet_child", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad sheet child");
     let msg = err.to_string();
-    assert!(
-        msg.contains("expecting at, size, stroke, background, instances, uuid, property, or pin")
-    );
+    assert!(msg.contains("expecting at, size, stroke, fill, instances, uuid, property, or pin"));
     let _ = fs::remove_file(path);
 }
 
@@ -4966,7 +4964,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
         .expect_err("must reject quoted top-level sheet head token");
     assert!(
         err.to_string()
-            .contains("expecting at, size, stroke, background, instances, uuid, property, or pin")
+            .contains("expecting at, size, stroke, fill, instances, uuid, property, or pin")
     );
 
     let quoted_sheet_project = r#"(kicad_sch
@@ -5020,7 +5018,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
         .expect_err("must reject quoted sheet fields_autoplaced head");
     assert!(
         err.to_string()
-            .contains("expecting at, size, stroke, background, instances, uuid, property, or pin")
+            .contains("expecting at, size, stroke, fill, instances, uuid, property, or pin")
     );
 
     let quoted_sheet_pin_head = r#"(kicad_sch
