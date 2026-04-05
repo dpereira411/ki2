@@ -2113,7 +2113,7 @@ impl KiCadSchematicParser {
             if existing {
                 let base = property.key.clone();
 
-                for suffix in 1..10 {
+                for suffix in 1.. {
                     let candidate = format!("{base}_{suffix}");
 
                     if !field_name_in_use(&candidate, symbol) {
