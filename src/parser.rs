@@ -4460,18 +4460,16 @@ impl KiCadSchematicParser {
             let _ = self.need_unquoted_symbol_atom("path")?;
             let raw_path = self.need_symbol_atom("symbol instance path")?;
             let path = if let Some(root_uuid) = self.root_uuid.as_ref() {
-                if raw_path.is_empty() {
-                    String::new()
-                } else {
-                    let prefix = format!("/{root_uuid}");
+                let prefix = format!("/{root_uuid}");
 
-                    if raw_path == prefix || raw_path.starts_with(&(prefix.clone() + "/")) {
-                        raw_path
-                    } else if raw_path.starts_with('/') {
-                        format!("{prefix}{raw_path}")
-                    } else {
-                        format!("{prefix}/{raw_path}")
-                    }
+                if raw_path.is_empty() {
+                    prefix
+                } else if raw_path == prefix || raw_path.starts_with(&(prefix.clone() + "/")) {
+                    raw_path
+                } else if raw_path.starts_with('/') {
+                    format!("{prefix}{raw_path}")
+                } else {
+                    format!("{prefix}/{raw_path}")
                 }
             } else {
                 raw_path

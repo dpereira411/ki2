@@ -2775,6 +2775,29 @@ fn modern_root_sheet_instance_page_is_stored_on_screen_root_page() {
 }
 
 #[test]
+fn root_symbol_instance_paths_are_prefixed_with_root_uuid() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sym-inst")
+  (symbol_instances
+    (path "" (reference "R1") (unit 1))
+    (path "/child/R2" (reference "R2") (unit 2)))
+)"#;
+    let path = temp_schematic("root_symbol_instance_path", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    assert_eq!(schematic.screen.symbol_instances.len(), 2);
+    assert_eq!(schematic.screen.symbol_instances[0].path, "/root-sym-inst");
+    assert_eq!(
+        schematic.screen.symbol_instances[1].path,
+        "/root-sym-inst/child/R2"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sheet_page_normalization_only_hashes_truly_empty_tokens() {
     let src = r#"(kicad_sch
   (version 20260306)
