@@ -836,6 +836,17 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn new() -> Self {
+        let mut properties = vec![
+            Property::new(PropertyKind::SymbolReference, String::new()),
+            Property::new(PropertyKind::SymbolValue, String::new()),
+            Property::new(PropertyKind::SymbolFootprint, String::new()),
+            Property::new(PropertyKind::SymbolDatasheet, String::new()),
+            Property::new(PropertyKind::SymbolDescription, String::new()),
+        ];
+        properties[2].visible = false;
+        properties[3].visible = false;
+        properties[4].visible = false;
+
         Self {
             lib_id: String::new(),
             lib_name: None,
@@ -853,13 +864,7 @@ impl Symbol {
             dnp: false,
             fields_autoplaced: FieldAutoplacement::None,
             uuid: None,
-            properties: vec![
-                Property::new(PropertyKind::SymbolReference, String::new()),
-                Property::new(PropertyKind::SymbolValue, String::new()),
-                Property::new(PropertyKind::SymbolFootprint, String::new()),
-                Property::new(PropertyKind::SymbolDatasheet, String::new()),
-                Property::new(PropertyKind::SymbolDescription, String::new()),
-            ],
+            properties,
             instances: Vec::new(),
             pins: Vec::new(),
         }
@@ -1110,6 +1115,26 @@ mod tests {
         assert_eq!(symbol.lib_id, "Device:R");
         assert_eq!(symbol.name, "R");
         assert_eq!(symbol.pin_name_offset, Some(0.508));
+        assert_eq!(
+            symbol
+                .properties
+                .iter()
+                .map(|property| (property.kind, property.visible))
+                .collect::<Vec<_>>(),
+            vec![
+                (PropertyKind::SymbolReference, true),
+                (PropertyKind::SymbolValue, true),
+                (PropertyKind::SymbolFootprint, false),
+                (PropertyKind::SymbolDatasheet, false),
+                (PropertyKind::SymbolDescription, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn placed_symbols_start_with_mandatory_field_visibility() {
+        let symbol = Symbol::new();
+
         assert_eq!(
             symbol
                 .properties
