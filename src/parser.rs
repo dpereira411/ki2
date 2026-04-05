@@ -4586,7 +4586,7 @@ impl KiCadSchematicParser {
             field_id,
             &name,
             String::new(),
-            field_id.is_user_field() && is_private,
+            matches!(field_id, PropertyKind::User) && is_private,
         );
 
         property.ordinal = match parent {
