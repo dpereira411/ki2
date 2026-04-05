@@ -2036,10 +2036,16 @@ impl KiCadSchematicParser {
             symbol.locked_units = true;
         } else {
             let mut property = property;
-            let mut existing = symbol
-                .properties
-                .iter()
-                .any(|existing| existing.key == property.key);
+            let field_name_in_use = |name: &str, symbol: &LibSymbol| {
+                symbol
+                    .properties
+                    .iter()
+                    .any(|existing| existing.key == name)
+                    || symbol.units[0].draw_items.iter().any(|existing| {
+                        existing.kind == "field" && existing.name.as_deref() == Some(name)
+                    })
+            };
+            let mut existing = field_name_in_use(&property.key, symbol);
 
             if existing {
                 let base = property.key.clone();
@@ -2047,11 +2053,7 @@ impl KiCadSchematicParser {
                 for suffix in 1..10 {
                     let candidate = format!("{base}_{suffix}");
 
-                    if !symbol
-                        .properties
-                        .iter()
-                        .any(|existing| existing.key == candidate)
-                    {
+                    if !field_name_in_use(&candidate, symbol) {
                         property.key = candidate;
                         existing = false;
                         break;
@@ -2060,7 +2062,19 @@ impl KiCadSchematicParser {
             }
 
             if !existing {
-                symbol.properties.push(property);
+                let mut field = LibDrawItem::new("field", 1, 1);
+                field.field_ordinal = Some(property.ordinal);
+                field.field_id = property.id;
+                field.is_private = property.is_private;
+                field.visible = property.visible;
+                field.show_name = property.show_name;
+                field.can_autoplace = property.can_autoplace;
+                field.at = property.at;
+                field.angle = property.angle;
+                field.name = Some(property.key);
+                field.text = Some(property.value);
+                field.effects = property.effects;
+                symbol.push_root_draw_item(field);
             }
         }
 

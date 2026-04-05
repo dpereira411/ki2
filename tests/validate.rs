@@ -3464,11 +3464,12 @@ fn lib_property_skips_user_field_after_nine_suffix_attempts() {
 
     let lib_symbol = &schematic.screen.lib_symbols[0];
     assert_eq!(
-        lib_symbol
-            .properties
+        lib_symbol.units[0]
+            .draw_items
             .iter()
-            .filter(|property| property.key.starts_with("MPN"))
-            .map(|property| property.key.as_str())
+            .filter(|item| item.kind == "field")
+            .filter_map(|item| item.name.as_deref())
+            .filter(|name| name.starts_with("MPN"))
             .collect::<Vec<_>>(),
         vec![
             "MPN", "MPN_1", "MPN_2", "MPN_3", "MPN_4", "MPN_5", "MPN_6", "MPN_7", "MPN_8", "MPN_9"
@@ -7118,12 +7119,12 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
     let path = temp_schematic("lib_property_metadata", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
-    let property = lib_symbol
-        .properties
+    let property = lib_symbol.units[0]
+        .draw_items
         .iter()
-        .find(|property| property.key == "UserField")
+        .find(|item| item.kind == "field" && item.name.as_deref() == Some("UserField"))
         .expect("user field");
-    assert_eq!(property.id, Some(0));
+    assert_eq!(property.field_id, Some(0));
     assert!(property.is_private);
     assert!(property.show_name);
     assert!(!property.can_autoplace);
@@ -7143,13 +7144,13 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
     let hidden_path = temp_schematic("lib_property_hidden_effects", hidden_src);
     let schematic = parse_schematic_file(Path::new(&hidden_path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
-    let property = lib_symbol
-        .properties
+    let property = lib_symbol.units[0]
+        .draw_items
         .iter()
-        .find(|property| property.key == "UserField")
+        .find(|item| item.kind == "field" && item.name.as_deref() == Some("UserField"))
         .expect("user field");
     assert!(!property.visible);
-    assert!(property.has_effects);
+    assert!(property.effects.is_some());
     assert!(property.effects.as_ref().expect("effects").hidden);
     let _ = fs::remove_file(hidden_path);
 
@@ -8258,7 +8259,7 @@ fn lib_symbol_duplicate_user_properties_follow_upstream_renaming() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
 
-    assert_eq!(lib_symbol.properties.len(), 8);
+    assert_eq!(lib_symbol.properties.len(), 5);
     assert_eq!(
         lib_symbol
             .properties
@@ -8267,20 +8268,21 @@ fn lib_symbol_duplicate_user_properties_follow_upstream_renaming() {
             .map(|property| property.value.as_str()),
         Some("J")
     );
-    let extra_fields = lib_symbol
-        .properties
+    let extra_fields = lib_symbol.units[0]
+        .draw_items
         .iter()
-        .filter(|property| {
-            property.key == "Field" || property.key == "Field_1" || property.key == "Field_2"
+        .filter(|item| {
+            item.kind == "field"
+                && matches!(item.name.as_deref(), Some("Field" | "Field_1" | "Field_2"))
         })
         .collect::<Vec<_>>();
     assert_eq!(extra_fields.len(), 3);
-    assert_eq!(extra_fields[0].key, "Field");
-    assert_eq!(extra_fields[0].value, "A");
-    assert_eq!(extra_fields[1].key, "Field_1");
-    assert_eq!(extra_fields[1].value, "B");
-    assert_eq!(extra_fields[2].key, "Field_2");
-    assert_eq!(extra_fields[2].value, "C");
+    assert_eq!(extra_fields[0].name.as_deref(), Some("Field"));
+    assert_eq!(extra_fields[0].text.as_deref(), Some("A"));
+    assert_eq!(extra_fields[1].name.as_deref(), Some("Field_1"));
+    assert_eq!(extra_fields[1].text.as_deref(), Some("B"));
+    assert_eq!(extra_fields[2].name.as_deref(), Some("Field_2"));
+    assert_eq!(extra_fields[2].text.as_deref(), Some("C"));
 
     let _ = fs::remove_file(path);
 }
@@ -8300,7 +8302,7 @@ fn lib_symbol_private_is_preserved_on_mandatory_and_user_fields() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let lib_symbol = &schematic.screen.lib_symbols[0];
 
-    assert_eq!(lib_symbol.properties.len(), 6);
+    assert_eq!(lib_symbol.properties.len(), 5);
     assert!(
         lib_symbol
             .properties
@@ -8310,10 +8312,10 @@ fn lib_symbol_private_is_preserved_on_mandatory_and_user_fields() {
             .is_private
     );
     assert!(
-        lib_symbol
-            .properties
+        lib_symbol.units[0]
+            .draw_items
             .iter()
-            .find(|property| property.key == "UserField")
+            .find(|item| item.kind == "field" && item.name.as_deref() == Some("UserField"))
             .expect("user field")
             .is_private
     );
