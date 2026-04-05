@@ -986,7 +986,7 @@ mod tests {
     use super::{
         BusEntry, FieldAutoplacement, LibDrawItem, LibSymbol, Line, LineKind, NoConnect,
         PropertyKind, Shape, ShapeKind, Sheet, SheetPin, SheetPinShape, SheetSide, StrokeStyle,
-        Symbol, Table, TableCell, TextBox,
+        Symbol, SymbolPin, Table, TableCell, TextBox,
     };
 
     #[test]
@@ -1084,6 +1084,15 @@ mod tests {
         assert_eq!(pin.at, [0.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Left);
         assert!(pin.visible);
+    }
+
+    #[test]
+    fn symbol_pins_start_with_empty_optional_state() {
+        let pin = SymbolPin::new("1".to_string());
+
+        assert_eq!(pin.number, "1");
+        assert_eq!(pin.alternate, None);
+        assert_eq!(pin.uuid, None);
     }
 
     #[test]
@@ -1198,6 +1207,16 @@ pub struct SymbolPin {
     pub number: String,
     pub alternate: Option<String>,
     pub uuid: Option<String>,
+}
+
+impl SymbolPin {
+    pub fn new(number: String) -> Self {
+        Self {
+            number,
+            alternate: None,
+            uuid: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

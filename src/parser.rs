@@ -3824,9 +3824,7 @@ impl KiCadSchematicParser {
                 }
                 "pin" => {
                     let _ = self.need_unquoted_symbol_atom("pin")?;
-                    let number = self.need_symbol_atom("pin number")?;
-                    let mut alternate = None;
-                    let mut pin_uuid = None;
+                    let mut pin = SymbolPin::new(self.need_symbol_atom("pin number")?);
                     while !self.at_right() {
                         self.need_left()?;
                         match self
@@ -3834,13 +3832,13 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "alternate" => {
-                                alternate = Some(self.need_symbol_atom("alternate")?);
+                                pin.alternate = Some(self.need_symbol_atom("alternate")?);
                                 self.need_right()?;
                             }
                             "uuid" => {
                                 let parsed = self.need_symbol_atom("uuid")?;
                                 if self.require_known_version()? >= VERSION_SYMBOL_PIN_UUID {
-                                    pin_uuid = Some(parsed);
+                                    pin.uuid = Some(parsed);
                                 }
                                 self.need_right()?;
                             }
@@ -3848,11 +3846,7 @@ impl KiCadSchematicParser {
                         }
                     }
                     self.need_right()?;
-                    symbol.add_pin(SymbolPin {
-                        number,
-                        alternate,
-                        uuid: pin_uuid,
-                    });
+                    symbol.add_pin(pin);
                 }
                 _ => {
                     return Err(self.expecting(
