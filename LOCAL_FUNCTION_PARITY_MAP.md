@@ -47,7 +47,7 @@ Boundary:
 
 | Upstream | Local | Status | Notes |
 | --- | --- | --- | --- |
-| `parseLibSymbol` | `parse_lib_symbol` | partial | helper boundaries and parser-owned lib unit/body-style state are much closer; remaining work is finalization and exactness |
+| `parseLibSymbol` | `parse_lib_symbol` | partial | helper boundaries, parser-owned lib unit/body-style state, and derived-symbol flattening are much closer; remaining work is finalization and exactness |
 | `parseBodyStyles` | `parse_body_styles` | done | helper boundary restored |
 | `parsePinNames` | `parse_pin_names` | done | helper boundary restored |
 | `parsePinNumbers` | `parse_pin_numbers` | done | helper boundary restored |

@@ -47,7 +47,8 @@ Closest-to-upstream areas so far:
 
 - `lib_symbols` improved a lot, but it is still not a true routine-by-routine port of upstream library symbol parsing
 - draw items now run on parser-owned current unit/body-style state like upstream, and helper section-head ownership is closer too
-- remaining gaps are now more concentrated in `parseLibSymbol()` finalization, inherited / extended symbol behavior, and exact branch / error flow
+- derived-symbol flattening is also closer now: child local-lib overlays are limited to the upstream field/keyword/fp-filter subset instead of carrying a broader repo-local inheritance model
+- remaining gaps are now more concentrated in `parseLibSymbol()` finalization and exact branch / error flow
 
 7. Shape / image parsing still has gaps
 
