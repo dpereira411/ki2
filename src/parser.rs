@@ -5792,6 +5792,12 @@ impl KiCadSchematicParser {
                     unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
                 }
 
+                for unit in &symbol.units {
+                    if let Some(unit_name) = unit.unit_name.as_ref() {
+                        parent.set_unit_display_name(unit.unit_number, unit_name.clone());
+                    }
+                }
+
                 for property in &symbol.properties {
                     if property.kind.is_mandatory() && !property.value.is_empty() {
                         if let Some(existing) = parent
