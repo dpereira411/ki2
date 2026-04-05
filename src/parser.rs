@@ -2101,6 +2101,7 @@ impl KiCadSchematicParser {
         } else if name == "ki_description" {
             symbol.description = Some(property.value);
         } else if name == "ki_fp_filters" {
+            symbol.fp_filters_specified = true;
             symbol.fp_filters = property
                 .value
                 .split_whitespace()
@@ -5847,7 +5848,8 @@ impl KiCadSchematicParser {
                     parent.description = Some(description.clone());
                 }
 
-                if !symbol.fp_filters.is_empty() {
+                if symbol.fp_filters_specified {
+                    parent.fp_filters_specified = true;
                     parent.fp_filters = symbol.fp_filters.clone();
                 }
 

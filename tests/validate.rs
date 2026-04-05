@@ -2076,6 +2076,44 @@ fn parser_links_derived_lib_symbols_with_child_body_style_overrides() {
 }
 
 #[test]
+fn parser_links_derived_lib_symbols_with_child_fp_filter_overrides() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-child-fp-filters")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Root:R"
+      (property "ki_fp_filters" "SOIC* TSSOP*"))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (property "ki_fp_filters" "")))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_child_fp_filters", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    assert!(linked.fp_filters.is_empty());
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
