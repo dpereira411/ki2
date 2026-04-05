@@ -8003,7 +8003,7 @@ fn links_symbols_to_local_lib_symbols_and_hydrates_embedded_files() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (embedded_files (file (name "shared.bin") (data |abc123|)))
+  (embedded_files (file (name "shared.bin") (checksum "sha256:123") (type font) (data |abc123|)))
   (lib_symbols
     (symbol "Local:R"
       (embedded_files (file (name "shared.bin")))))
@@ -8013,6 +8013,14 @@ fn links_symbols_to_local_lib_symbols_and_hydrates_embedded_files() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
     let lib_symbol = &schematic.screen.lib_symbols[0];
+    assert_eq!(
+        lib_symbol.embedded_files[0].checksum.as_deref(),
+        Some("sha256:123")
+    );
+    assert_eq!(
+        lib_symbol.embedded_files[0].file_type,
+        Some(EmbeddedFileType::Font)
+    );
     assert_eq!(lib_symbol.embedded_files[0].data.as_deref(), Some("abc123"));
 
     let _ = fs::remove_file(path);

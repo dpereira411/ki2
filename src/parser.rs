@@ -5536,19 +5536,25 @@ impl KiCadSchematicParser {
     }
 
     fn fixup_embedded_data(&mut self) {
-        let global_files: std::collections::HashMap<String, String> = self
+        let global_files: std::collections::HashMap<String, EmbeddedFile> = self
             .screen
             .embedded_files
             .iter()
-            .filter_map(|file| Some((file.name.clone()?, file.data.clone()?)))
+            .filter_map(|file| Some((file.name.clone()?, file.clone())))
             .collect();
 
         for lib_symbol in &mut self.screen.lib_symbols {
             for embedded_file in &mut lib_symbol.embedded_files {
-                if embedded_file.data.is_none() {
-                    if let Some(name) = embedded_file.name.as_ref() {
-                        if let Some(data) = global_files.get(name) {
-                            embedded_file.data = Some(data.clone());
+                if let Some(name) = embedded_file.name.as_ref() {
+                    if let Some(file) = global_files.get(name) {
+                        if embedded_file.checksum.is_none() {
+                            embedded_file.checksum = file.checksum.clone();
+                        }
+                        if embedded_file.file_type.is_none() {
+                            embedded_file.file_type = file.file_type;
+                        }
+                        if embedded_file.data.is_none() {
+                            embedded_file.data = file.data.clone();
                         }
                     }
                 }
