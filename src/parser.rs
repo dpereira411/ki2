@@ -1060,6 +1060,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        symbol.sort_draw_items();
         self.need_right()?;
         Ok(symbol)
     }

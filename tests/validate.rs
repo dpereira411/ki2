@@ -1564,13 +1564,14 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.units[0].unit_name.as_deref(), Some("Amplifier"));
     assert_eq!(
         lib_symbol.units[0].draw_item_kinds,
-        vec!["circle", "arc", "field", "text_box", "pin"]
+        vec!["arc", "circle", "field", "text_box", "pin"]
     );
     assert_eq!(lib_symbol.units[0].draw_items.len(), 5);
-    assert_eq!(lib_symbol.units[0].draw_items[0].kind, "circle");
-    assert_eq!(lib_symbol.units[0].draw_items[1].points.len(), 3);
+    assert_eq!(lib_symbol.units[0].draw_items[0].kind, "arc");
+    assert_eq!(lib_symbol.units[0].draw_items[1].kind, "circle");
+    assert_eq!(lib_symbol.units[0].draw_items[0].points.len(), 3);
     assert_eq!(
-        lib_symbol.units[0].draw_items[1]
+        lib_symbol.units[0].draw_items[0]
             .stroke
             .as_ref()
             .and_then(|stroke| stroke.width),
@@ -6124,6 +6125,41 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
 }
 
 #[test]
+fn lib_symbol_draw_items_sort_like_kicad_before_return() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-draw-sort")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin input line
+        (at 5 6 180)
+        (length 2)
+        (name "IN")
+        (number "1"))
+      (text_box "TB" (at 1 2 0) (size 3 4))
+      (text private "FIELD" (at 3 4 0) (effects (font (size 1 1)) (hide)))
+      (text "TXT" (at 2 3 0) (effects (font (size 1 1))))
+      (circle (center 0 0) (radius 1)))))
+"#;
+    let path = temp_schematic("lib_symbol_draw_item_sort", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let unit = &schematic.screen.lib_symbols[0].units[0];
+
+    assert_eq!(
+        unit.draw_items
+            .iter()
+            .map(|item| item.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["circle", "field", "text", "text_box", "pin"]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn symbol_duplicate_user_properties_overwrite_existing_field() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -8421,7 +8457,11 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let unit = &schematic.screen.lib_symbols[0].units[0];
 
-    let arc = &unit.draw_items[0];
+    let arc = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "arc")
+        .expect("arc");
     assert_eq!(arc.kind, "arc");
     assert_eq!(arc.points, vec![[1.0, 0.0], [0.0, 1.0]]);
     assert_eq!(arc.arc_center, Some([0.0, 0.0]));
@@ -8436,7 +8476,11 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
         FillType::None
     );
 
-    let circle = &unit.draw_items[1];
+    let circle = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "circle")
+        .expect("circle");
     assert_eq!(circle.kind, "circle");
     assert_eq!(circle.points, vec![[0.0, 0.0]]);
     assert_eq!(circle.radius, Some(1.0));

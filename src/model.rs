@@ -205,6 +205,17 @@ impl LibSymbol {
         self.units[0].push_draw_item(item);
     }
 
+    pub fn sort_draw_items(&mut self) {
+        for unit in &mut self.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
+    }
+
     pub fn next_field_ordinal(&self) -> i32 {
         let property_ordinal = self.properties.iter().fold(42, |ordinal, property| {
             ordinal.max(property.sort_ordinal() + 1)
@@ -303,6 +314,64 @@ impl LibDrawItem {
             effects: None,
             margins: None,
         }
+    }
+
+    fn sort_type_rank(&self) -> i32 {
+        match self.kind.as_str() {
+            "arc" | "bezier" | "circle" | "polyline" | "rectangle" => 0,
+            "field" => 1,
+            "text" => 2,
+            "text_box" => 3,
+            "pin" => 4,
+            _ => 5,
+        }
+    }
+
+    fn sort_position(&self) -> [f64; 2] {
+        if let Some(at) = self.at {
+            return at;
+        }
+
+        if let Some(point) = self.points.first() {
+            return *point;
+        }
+
+        [0.0, 0.0]
+    }
+}
+
+impl Eq for LibDrawItem {}
+
+impl Ord for LibDrawItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        self.sort_type_rank()
+            .cmp(&other.sort_type_rank())
+            .then_with(|| self.unit_number.cmp(&other.unit_number))
+            .then_with(|| self.body_style.cmp(&other.body_style))
+            .then_with(|| self.is_private.cmp(&other.is_private))
+            .then_with(|| {
+                self.sort_position()[0]
+                    .partial_cmp(&other.sort_position()[0])
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| {
+                self.sort_position()[1]
+                    .partial_cmp(&other.sort_position()[1])
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| self.field_ordinal.cmp(&other.field_ordinal))
+            .then_with(|| self.kind.cmp(&other.kind))
+            .then_with(|| self.text.cmp(&other.text))
+            .then_with(|| self.name.cmp(&other.name))
+            .then_with(|| self.number.cmp(&other.number))
+    }
+}
+
+impl PartialOrd for LibDrawItem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -1272,6 +1341,29 @@ mod tests {
         assert!(table.separators_cols);
         assert_eq!(table.separators_stroke.width, Some(0.25));
         assert_eq!(table.separators_stroke.style, StrokeStyle::Default);
+    }
+
+    #[test]
+    fn lib_symbol_sorts_draw_items_by_kicad_type_order() {
+        let mut symbol = LibSymbol::new("Device:R".to_string());
+        symbol.push_root_draw_item(LibDrawItem::new("pin", 1, 1));
+        symbol.push_root_draw_item(LibDrawItem::new("text_box", 1, 1));
+        symbol.push_root_draw_item(LibDrawItem::new("text", 1, 1));
+        let mut field = LibDrawItem::new("field", 1, 1);
+        field.field_ordinal = Some(42);
+        symbol.push_root_draw_item(field);
+        symbol.push_root_draw_item(LibDrawItem::new("circle", 1, 1));
+
+        symbol.sort_draw_items();
+
+        assert_eq!(
+            symbol.units[0]
+                .draw_items
+                .iter()
+                .map(|item| item.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["circle", "field", "text", "text_box", "pin"]
+        );
     }
 
     #[test]
