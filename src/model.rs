@@ -211,44 +211,57 @@ impl LibSymbol {
         }
     }
 
-    pub fn ensure_unit_index(&mut self, name: String, unit_number: i32, body_style: i32) -> usize {
-        if let Some(index) = self.units.iter().position(|existing| {
-            existing.unit_number == unit_number
-                && existing.body_style == body_style
-                && existing.name == name
-        }) {
-            index
-        } else {
-            self.units.push(LibSymbolUnit {
-                name,
-                unit_number,
-                body_style,
-                unit_name: None,
-                draw_item_kinds: Vec::new(),
-                draw_items: Vec::new(),
-            });
-            self.units.len() - 1
+    fn materialize_unit_counts(&mut self, unit_count: i32, body_style_count: i32) {
+        let unit_count = unit_count.max(1);
+        let body_style_count = body_style_count.max(1);
+
+        for unit_number in 1..=unit_count {
+            for body_style in 1..=body_style_count {
+                if self.units.iter().any(|existing| {
+                    existing.unit_number == unit_number && existing.body_style == body_style
+                }) {
+                    continue;
+                }
+
+                self.units.push(LibSymbolUnit {
+                    name: format!("{}_{}_{}", self.lib_id, unit_number, body_style),
+                    unit_number,
+                    body_style,
+                    unit_name: None,
+                    draw_item_kinds: Vec::new(),
+                    draw_items: Vec::new(),
+                });
+            }
         }
+
+        self.units
+            .sort_by_key(|unit| (unit.unit_number, unit.body_style));
+    }
+
+    pub fn ensure_unit_index(&mut self, name: String, unit_number: i32, body_style: i32) -> usize {
+        self.materialize_unit_counts(unit_number, body_style);
+
+        let index = self
+            .units
+            .iter()
+            .position(|existing| {
+                existing.unit_number == unit_number && existing.body_style == body_style
+            })
+            .expect("materialized lib symbol unit must exist");
+        self.units[index].name = name;
+        index
     }
 
     pub fn add_draw_item(&mut self, item: LibDrawItem) {
+        self.materialize_unit_counts(item.unit_number, item.body_style);
+
         let index = self
             .units
             .iter()
             .position(|existing| {
                 existing.unit_number == item.unit_number && existing.body_style == item.body_style
             })
-            .unwrap_or_else(|| {
-                self.units.push(LibSymbolUnit {
-                    name: format!("{}_{}_{}", self.lib_id, item.unit_number, item.body_style),
-                    unit_number: item.unit_number,
-                    body_style: item.body_style,
-                    unit_name: None,
-                    draw_item_kinds: Vec::new(),
-                    draw_items: Vec::new(),
-                });
-                self.units.len() - 1
-            });
+            .expect("materialized lib symbol unit must exist");
 
         self.units[index].push_draw_item(item);
     }
@@ -1307,6 +1320,27 @@ mod tests {
         assert_eq!(symbol.units[0].draw_items.len(), 0);
         assert_eq!(symbol.units[1].draw_items.len(), 1);
         assert_eq!(symbol.units[1].draw_item_kinds, vec!["text"]);
+    }
+
+    #[test]
+    fn lib_symbol_materializes_missing_unit_and_body_style_slots() {
+        let mut symbol = LibSymbol::new("Device:R".to_string());
+
+        symbol.ensure_unit_index("Device:R_2_2".to_string(), 2, 2);
+
+        assert_eq!(
+            symbol
+                .units
+                .iter()
+                .map(|unit| (unit.name.as_str(), unit.unit_number, unit.body_style))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Device:R_1_1", 1, 1),
+                ("Device:R_1_2", 1, 2),
+                ("Device:R_2_1", 2, 1),
+                ("Device:R_2_2", 2, 2),
+            ]
+        );
     }
 
     #[test]

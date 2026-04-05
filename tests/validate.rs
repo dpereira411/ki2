@@ -3697,6 +3697,36 @@ fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
 }
 
 #[test]
+fn lib_symbol_materializes_missing_body_style_slots_from_nested_units() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_2_2"
+        (text "ALT" (at 1 2 0) (effects (font (size 1 1)))))))
+)"#;
+    let path = temp_schematic("lib_symbol_materialize_body_style_slots", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    assert_eq!(lib_symbol.units.len(), 4);
+    assert_eq!(lib_symbol.units[0].name, "Device:R_1_1");
+    assert_eq!(lib_symbol.units[1].name, "Device:R_1_2");
+    assert_eq!(lib_symbol.units[2].name, "Device:R_2_1");
+    assert_eq!(lib_symbol.units[3].name, "Device:R_2_2");
+    assert!(lib_symbol.units[0].draw_items.is_empty());
+    assert!(lib_symbol.units[1].draw_items.is_empty());
+    assert!(lib_symbol.units[2].draw_items.is_empty());
+    assert_eq!(lib_symbol.units[3].draw_items.len(), 1);
+    assert_eq!(lib_symbol.units[3].draw_items[0].kind, "text");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_property_skips_user_field_after_nine_suffix_attempts() {
     let src = r#"(kicad_sch
   (version 20260306)
