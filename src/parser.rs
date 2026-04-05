@@ -503,9 +503,18 @@ impl KiCadSchematicParser {
                         )));
                     }
                     let _ = self.need_unquoted_symbol_atom("embedded_files")?;
-                    let files = self.parse_embedded_files()?;
-                    self.screen.embedded_files.extend(files);
-                    self.need_right()?;
+                    let block_depth = self.current_nesting_depth();
+                    match self.parse_embedded_files() {
+                        Ok(files) => {
+                            self.screen.embedded_files.extend(files);
+                            self.need_right()?;
+                        }
+                        Err(err) => {
+                            self.screen.parse_warnings.push(err.to_string());
+                            self.skip_to_block_right(block_depth);
+                            self.need_right()?;
+                        }
+                    }
                     section_consumed_right = true;
                 }
                 "lib_symbols" => {
@@ -1087,8 +1096,18 @@ impl KiCadSchematicParser {
                 }
                 "embedded_files" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_files")?;
-                    symbol.embedded_files = self.parse_embedded_files()?;
-                    self.need_right()?;
+                    let block_depth = self.current_nesting_depth();
+                    match self.parse_embedded_files() {
+                        Ok(files) => {
+                            symbol.embedded_files = files;
+                            self.need_right()?;
+                        }
+                        Err(err) => {
+                            self.screen.parse_warnings.push(err.to_string());
+                            self.skip_to_block_right(block_depth);
+                            self.need_right()?;
+                        }
+                    }
                 }
                 _ => {
                     return Err(self.expecting(
@@ -5418,6 +5437,44 @@ impl KiCadSchematicParser {
             (&self.current().kind, self.current().atom_class),
             (TokKind::Atom(value), Some(AtomClass::Symbol)) if value == expected
         )
+    }
+
+    fn current_nesting_depth(&self) -> usize {
+        let mut depth = 0usize;
+
+        for token in &self.tokens[..self.idx] {
+            match token.kind {
+                TokKind::Left => depth += 1,
+                TokKind::Right => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+
+        depth
+    }
+
+    fn skip_to_block_right(&mut self, target_depth: usize) {
+        let mut depth = self.current_nesting_depth();
+
+        while !matches!(self.current().kind, TokKind::Eof) {
+            match self.current().kind {
+                TokKind::Left => {
+                    depth += 1;
+                    self.idx += 1;
+                }
+                TokKind::Right => {
+                    if depth == target_depth {
+                        break;
+                    }
+
+                    depth = depth.saturating_sub(1);
+                    self.idx += 1;
+                }
+                _ => {
+                    self.idx += 1;
+                }
+            }
+        }
     }
 
     fn current(&self) -> &Token {
