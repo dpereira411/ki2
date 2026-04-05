@@ -3823,11 +3823,8 @@ impl KiCadSchematicParser {
                                                     ));
                                                 }
                                             }
-
-                                            instance
-                                                .variants
-                                                .insert(variant.name.clone(), variant.clone());
                                         }
+                                        instance.variants.insert(variant.name.clone(), variant);
                                         self.need_right()?;
                                     }
                                     _ => {
@@ -4254,11 +4251,8 @@ impl KiCadSchematicParser {
                                                     ));
                                                 }
                                             }
-
-                                            instance
-                                                .variants
-                                                .insert(variant.name.clone(), variant.clone());
                                         }
+                                        instance.variants.insert(variant.name.clone(), variant);
                                         self.need_right()?;
                                     }
                                     _ => return Err(self.expecting("page or variant")),
