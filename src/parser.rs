@@ -1084,12 +1084,16 @@ impl KiCadSchematicParser {
                         self.need_left()?;
                         if self.at_unquoted_symbol_with("unit_name") {
                             let _ = self.need_unquoted_symbol_atom("unit_name")?;
-                            if matches!(
-                                self.current().atom_class,
-                                Some(AtomClass::Symbol | AtomClass::Quoted)
-                            ) {
-                                symbol.units[unit_index].unit_name =
-                                    Some(self.need_symbol_atom("unit_name")?);
+                            let token = self.current().clone();
+                            self.idx += 1;
+
+                            if let TokKind::Atom(value) = token.kind
+                                && matches!(
+                                    token.atom_class,
+                                    Some(AtomClass::Symbol | AtomClass::Quoted)
+                                )
+                            {
+                                symbol.units[unit_index].unit_name = Some(value);
                             }
                             self.need_right()?;
                         } else {
