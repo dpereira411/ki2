@@ -2119,8 +2119,10 @@ impl KiCadSchematicParser {
                     .properties
                     .iter()
                     .any(|existing| existing.key == name)
-                    || symbol.units[0].draw_items.iter().any(|existing| {
-                        existing.kind == "field" && existing.name.as_deref() == Some(name)
+                    || symbol.units.iter().any(|unit| {
+                        unit.draw_items.iter().any(|existing| {
+                            existing.kind == "field" && existing.name.as_deref() == Some(name)
+                        })
                     })
             };
             let mut existing = field_name_in_use(&property.key, symbol);

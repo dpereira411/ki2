@@ -8858,6 +8858,33 @@ fn hidden_lib_text_converts_to_named_user_field() {
 }
 
 #[test]
+fn lib_property_name_collision_checks_all_symbol_units() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-property-nested-field")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "Device:R_2_1"
+        (text "HIDDEN" (at 1 2 90) (effects (font (size 1 1)) (hide))))
+      (property "Field" "PROP"))))
+"#;
+    let path = temp_schematic("lib_property_nested_unit_field_collision", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    let property_field = lib_symbol.units[0]
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "field" && item.text.as_deref() == Some("PROP"))
+        .expect("property field");
+
+    assert_eq!(property_field.name.as_deref(), Some("Field_1"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_lib_pin_alternate_type_and_shape() {
     let bad_alt_type = r#"(kicad_sch
   (version 20250114)
