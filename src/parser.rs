@@ -3489,8 +3489,16 @@ impl KiCadSchematicParser {
                     let parsed = self.parse_xy3("symbol at")?;
                     match parsed[2] as i32 {
                         0 | 90 | 180 | 270 => {
+                            let delta = [parsed[0] - symbol.at[0], parsed[1] - symbol.at[1]];
                             symbol.at = [parsed[0], parsed[1]];
                             symbol.angle = parsed[2];
+
+                            for property in &mut symbol.properties {
+                                if let Some(at) = property.at.as_mut() {
+                                    at[0] += delta[0];
+                                    at[1] += delta[1];
+                                }
+                            }
                         }
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }

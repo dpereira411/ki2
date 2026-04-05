@@ -174,6 +174,9 @@ impl LibSymbol {
             Property::new(PropertyKind::SymbolDatasheet, String::new()),
             Property::new(PropertyKind::SymbolDescription, String::new()),
         ];
+        for property in &mut properties {
+            property.at = Some([0.0, 0.0]);
+        }
         properties[2].visible = false;
         properties[3].visible = false;
         properties[4].visible = false;
@@ -1085,6 +1088,9 @@ impl Symbol {
             Property::new(PropertyKind::SymbolDatasheet, String::new()),
             Property::new(PropertyKind::SymbolDescription, String::new()),
         ];
+        for property in &mut properties {
+            property.at = Some([0.0, 0.0]);
+        }
         properties[2].visible = false;
         properties[3].visible = false;
         properties[4].visible = false;

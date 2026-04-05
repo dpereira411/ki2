@@ -988,7 +988,7 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
         .iter()
         .find(|property| property.kind == PropertyKind::SymbolReference)
         .expect("reference");
-    assert_eq!(reference.at, Some([1.0, 2.0]));
+    assert_eq!(reference.at, Some([11.0, 12.0]));
     assert_eq!(reference.angle, Some(90.0));
     assert!(!reference.visible);
     assert!(!reference.show_name);
@@ -1005,7 +1005,7 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
         .iter()
         .find(|property| property.kind == PropertyKind::SymbolValue)
         .expect("value");
-    assert_eq!(value.at, Some([3.0, 4.0]));
+    assert_eq!(value.at, Some([13.0, 14.0]));
     assert_eq!(value.angle, Some(180.0));
     assert!(!value.can_autoplace);
     assert_eq!(
@@ -1021,7 +1021,7 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
         .iter()
         .find(|property| property.kind == PropertyKind::SymbolFootprint)
         .expect("footprint");
-    assert_eq!(footprint.at, Some([5.0, 6.0]));
+    assert_eq!(footprint.at, Some([15.0, 16.0]));
     assert_eq!(footprint.angle, Some(270.0));
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
@@ -1164,7 +1164,7 @@ fn preserves_power_symbol_reference_metadata_during_annotation() {
         .find(|property| property.kind == PropertyKind::SymbolReference)
         .expect("reference");
     assert_eq!(reference.value, "#PWR");
-    assert_eq!(reference.at, Some([1.0, 2.0]));
+    assert_eq!(reference.at, Some([11.0, 12.0]));
     assert_eq!(reference.angle, Some(90.0));
     assert!(!reference.visible);
 
@@ -4480,6 +4480,87 @@ fn label_at_offsets_existing_fields_during_parse() {
         .iter()
         .find(|property| property.key == "User")
         .expect("user field");
+
+    assert_eq!(property.at, Some([13.0, 24.0]));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn symbol_at_moves_default_mandatory_fields_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "symbol-at-default-fields")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"))
+  (symbol
+    (lib_id "Device:R")
+    (at 10 20 90))
+)"#;
+    let path = temp_schematic("symbol_at_moves_default_mandatory_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    for kind in [
+        PropertyKind::SymbolReference,
+        PropertyKind::SymbolValue,
+        PropertyKind::SymbolFootprint,
+        PropertyKind::SymbolDatasheet,
+        PropertyKind::SymbolDescription,
+    ] {
+        let property = symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == kind)
+            .expect("mandatory field");
+        assert_eq!(property.at, Some([10.0, 20.0]));
+    }
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn symbol_at_offsets_existing_fields_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "symbol-at-field-shift")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R1" (at 3 4 0))
+    (at 10 20 0))
+)"#;
+    let path = temp_schematic("symbol_at_offsets_existing_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    let property = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolReference)
+        .expect("reference field");
 
     assert_eq!(property.at, Some([13.0, 24.0]));
 
