@@ -68,10 +68,10 @@ Boundary:
 | `parseSchematicSymbol` | `parse_schematic_symbol` | partial | still one of the biggest remaining owner routines |
 | `parseSheet` | `parse_sch_sheet` | partial | still one of the biggest remaining owner routines |
 | `parseSchText` | `parse_sch_text` | partial | shared family is unified now, but still not fully signed off |
-| `parseSchTextBox` | `parse_sch_text_box` | partial | caller-owned flow now matches upstream better |
-| `parseSchTableCell` | `parse_sch_table_cell` | partial | distinct cell model now exists, but the shared textbox-body cluster is still not fully signed off |
-| `parseSchTextBoxContent` | `parse_sch_text_box_content` | partial | caller-owned now, but final textbox/table semantics are still reduced |
-| `parseSchTable` | `parse_sch_table` | partial | table model still simplified |
+| `parseSchTextBox` | `parse_sch_text_box` | done | shared owner/body split, raw uuid path, and legacy start/end/size/margins flow now line up closely enough that it is no longer the current bottleneck |
+| `parseSchTableCell` | `parse_sch_table_cell` | done | distinct cell ownership and shared textbox-body routing now match upstream closely enough that it is no longer the current bottleneck |
+| `parseSchTextBoxContent` | `parse_sch_text_box_content` | done | shared textbox body is now structurally close: caller-owned mutation, span gating, raw uuid path, and legacy size/end/margins flow are aligned enough to stop treating it as the current bottleneck |
+| `parseSchTable` | `parse_sch_table` | done | table ownership, border/separator routing, cell grid materialization, and no-cell failure are close enough that it is no longer the current bottleneck |
 | `parseImage` | `parse_sch_image` | partial | structurally close, not final |
 | `parseSchPolyLine` | `parse_sch_polyline` | partial | closer, not final |
 | `parseLine` | `parse_sch_line` | partial | closer, not final |
@@ -84,7 +84,7 @@ Boundary:
 | `parseNoConnect` | `parse_no_connect` | partial | same |
 | `parseBusEntry` | `parse_bus_entry` | partial | same |
 | `parseBusAlias` | `parse_bus_alias` | partial | much tighter, but not globally signed off |
-| `parseGroupMembers` + `parseGroup` | `parse_group` | partial | still simplified versus upstream split |
+| `parseGroupMembers` + `parseGroup` | `parse_group` | done | dedicated member-uuid helper, deferred resolution, lib-id diagnostics, and cycle repair now line up closely enough that it is no longer the current bottleneck |
 | `parseSchSheetInstances` | `parse_sch_sheet_instances` | partial | parser exists, loader integration still evolving |
 | `parseSchSymbolInstances` | `parse_sch_symbol_instances` | partial | parser exists, loader integration still evolving |
 
@@ -111,9 +111,9 @@ These are still parent/owner-sensitive leaves that many higher routines depend o
 
 #### Layer 2: Owner-Sensitive Mid-Level Routines
 
-1. `parse_sch_text_box_content` + `parse_sch_table_cell` + `parse_sch_table`
-2. library draw-item family under `parse_symbol_draw_item`
-3. `parse_sch_sheet_pin` (done; revisit only if `parse_sch_sheet` comparison exposes a concrete remaining mismatch)
+1. library draw-item family under `parse_symbol_draw_item`
+2. `parse_sch_sheet_pin` (done; revisit only if `parse_sch_sheet` comparison exposes a concrete remaining mismatch)
+3. `parse_sch_text_box_content` + `parse_sch_table_cell` + `parse_sch_table` (done; revisit only if a parent routine exposes a concrete remaining mismatch)
 
 #### Layer 3: Big Owner Routines
 
@@ -133,7 +133,7 @@ Pick the first routine cluster whose direct dependencies above are no longer the
 1. Revisit `parse_sch_sheet` against upstream `parseSheet()` as a full routine comparison.
 2. Revisit `parse_schematic_symbol` against upstream `parseSchematicSymbol()` as a full routine comparison.
 3. Revisit `parse_sch_text` against upstream `parseSchText()` for the remaining owner-flow and exactness edges.
-4. Revisit `parse_sch_text_box_content` + `parse_sch_table` for remaining table/textbox semantics.
+4. Revisit `parse_lib_symbol` against upstream `parseLibSymbol()` plus the remaining draw-item/finalization exactness.
 5. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
 
 ### Explicitly Deferred Until After This Map Is Exhausted

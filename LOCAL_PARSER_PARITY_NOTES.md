@@ -48,13 +48,22 @@ Closest-to-upstream areas so far:
 - `lib_symbols` improved a lot, but it is still not a true routine-by-routine port of upstream library symbol parsing
 - draw items, fields, inherited / extended symbol behavior, and exact branch / error flow still have gaps
 
-7. Shape / image / table parsing still has gaps
+7. Shape / image parsing still has gaps
 
 - `arc`, `circle`, `rectangle`, `bezier`, `polyline`, `rule_area`
 - `image`
-- `table`
 
 These are better than before, but still not at exact upstream routine parity.
+
+The table/textbox cluster is no longer the main parser-only bottleneck:
+
+- `parseSchTextBox()`
+- `parseSchTableCell()`
+- `parseSchTextBoxContent()`
+- `parseSchTable()`
+
+Direct upstream comparison shows those routines are now structurally close enough that remaining
+parser-only work should be driven elsewhere unless a parent routine exposes a concrete mismatch.
 
 8. Group / post-parse behavior is still not fully upstream-shaped
 
@@ -110,8 +119,8 @@ These are better than before, but still not at exact upstream routine parity.
 2. Tighten `parseSheet()` to upstream structure.
 3. Tighten `parseSchematicSymbol()` to upstream structure.
 4. Finish `parseLibSymbol()` / library draw-item routine parity.
-5. Revisit the table/textbox cluster as one shared routine family.
-6. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
+5. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
+6. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
 
 ### Bottom Line
 
@@ -120,8 +129,8 @@ The parser is still well short of 1:1 parity.
 The biggest remaining gaps are:
 
 - `parseSchText`
-- `parseSchField`
 - `parseSheet`
 - `parseSchematicSymbol`
-- library symbol parsing
+- `parseLibSymbol`
 - parser-wide token / error parity
+- library symbol parsing
