@@ -2565,12 +2565,25 @@ fn accepts_legacy_host_and_generates_root_uuid_for_old_files() {
   (version 20200826)
   (host "eeschema" "5.99")
   (paper "A4")
+  (sheet_instances
+    (path "/child" (page "1")))
+  (symbol_instances
+    (path "/R1" (reference "R1") (unit 1)))
 )"#;
     let path = temp_schematic("legacy_host", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     assert_eq!(schematic.generator, "eeschema");
     assert!(schematic.root_sheet.uuid.is_some());
     assert_eq!(schematic.root_sheet.uuid, schematic.screen.uuid);
+    let root_uuid = schematic.root_sheet.uuid.as_deref().expect("root uuid");
+    assert_eq!(
+        schematic.screen.sheet_instances[0].path,
+        format!("/{root_uuid}/child")
+    );
+    assert_eq!(
+        schematic.screen.symbol_instances[0].path,
+        format!("/{root_uuid}/R1")
+    );
     let _ = fs::remove_file(path);
 }
 

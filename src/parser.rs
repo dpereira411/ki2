@@ -321,6 +321,14 @@ impl KiCadSchematicParser {
             self.version = Some(SEXPR_SCHEMATIC_FILE_VERSION);
         }
 
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < 20210406
+            && self.root_uuid.is_none()
+        {
+            let generated = Uuid::new_v4().to_string();
+            self.screen.uuid = Some(generated.clone());
+            self.root_uuid = Some(generated);
+        }
+
         self.screen.file_format_version_at_load = self.version;
 
         self.parse_schematic_body()?;
