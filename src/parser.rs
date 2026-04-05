@@ -745,15 +745,7 @@ impl KiCadSchematicParser {
                         }
                     };
 
-                    if let Some(existing) = title_block
-                        .comments
-                        .iter_mut()
-                        .find(|(existing_idx, _)| *existing_idx == comment_number)
-                    {
-                        existing.1 = value;
-                    } else {
-                        title_block.comments.push((comment_number, value));
-                    }
+                    title_block.set_comment(comment_number as usize, value);
                 }
                 _ => return Err(self.expecting("title, date, rev, company, or comment")),
             }

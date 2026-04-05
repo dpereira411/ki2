@@ -93,13 +93,41 @@ pub struct Page {
     pub sheet: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TitleBlock {
     pub title: Option<String>,
     pub date: Option<String>,
     pub revision: Option<String>,
     pub company: Option<String>,
-    pub comments: Vec<(i32, String)>,
+    pub comments: [Option<String>; 9],
+}
+
+impl Default for TitleBlock {
+    fn default() -> Self {
+        Self {
+            title: None,
+            date: None,
+            revision: None,
+            company: None,
+            comments: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+impl TitleBlock {
+    pub fn set_comment(&mut self, comment_number: usize, value: String) {
+        self.comments[comment_number - 1] = Some(value);
+    }
+
+    pub fn comment(&self, comment_number: usize) -> Option<&str> {
+        self.comments
+            .get(comment_number - 1)
+            .and_then(|value| value.as_deref())
+    }
+
+    pub fn comment_count(&self) -> usize {
+        self.comments.iter().filter(|value| value.is_some()).count()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

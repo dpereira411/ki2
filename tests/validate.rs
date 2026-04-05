@@ -1402,14 +1402,7 @@ fn rejects_invalid_title_block_comment_number() {
     let schematic =
         parse_schematic_file(Path::new(&valid_path)).expect("must accept comment slot 9");
     let title_block = schematic.screen.title_block.as_ref().expect("title block");
-    assert_eq!(
-        title_block
-            .comments
-            .iter()
-            .find(|(idx, _)| *idx == 9)
-            .map(|(_, value)| value.as_str()),
-        Some("ok")
-    );
+    assert_eq!(title_block.comment(9), Some("ok"));
     let _ = fs::remove_file(valid_path);
 
     let numeric_src = r#"(kicad_sch
@@ -1425,14 +1418,7 @@ fn rejects_invalid_title_block_comment_number() {
     let title_block = schematic.screen.title_block.as_ref().expect("title block");
     assert_eq!(title_block.title.as_deref(), Some("2026"));
     assert_eq!(title_block.revision.as_deref(), Some("7"));
-    assert_eq!(
-        title_block
-            .comments
-            .iter()
-            .find(|(idx, _)| *idx == 1)
-            .map(|(_, value)| value.as_str()),
-        Some("99")
-    );
+    assert_eq!(title_block.comment(1), Some("99"));
     let _ = fs::remove_file(numeric_path);
 }
 
@@ -2677,13 +2663,8 @@ fn duplicate_header_and_title_block_sections_use_last_value_like_upstream() {
 
     let title_block = schematic.screen.title_block.as_ref().expect("title block");
     assert_eq!(title_block.title.as_deref(), Some("New"));
-    assert!(
-        title_block
-            .comments
-            .iter()
-            .any(|(idx, value)| *idx == 2 && value == "two")
-    );
-    assert!(!title_block.comments.iter().any(|(idx, _)| *idx == 1));
+    assert_eq!(title_block.comment(2), Some("two"));
+    assert_eq!(title_block.comment(1), None);
 
     let _ = fs::remove_file(path);
 }
@@ -2703,19 +2684,9 @@ fn duplicate_title_block_comment_numbers_overwrite_existing_slots() {
     let path = temp_schematic("duplicate_title_block_comments", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     let title_block = schematic.screen.title_block.as_ref().expect("title block");
-    assert_eq!(title_block.comments.len(), 2);
-    assert!(
-        title_block
-            .comments
-            .iter()
-            .any(|(idx, value)| *idx == 1 && value == "second")
-    );
-    assert!(
-        title_block
-            .comments
-            .iter()
-            .any(|(idx, value)| *idx == 2 && value == "two")
-    );
+    assert_eq!(title_block.comment_count(), 2);
+    assert_eq!(title_block.comment(1), Some("second"));
+    assert_eq!(title_block.comment(2), Some("two"));
     let _ = fs::remove_file(path);
 }
 
