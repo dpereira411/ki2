@@ -2109,6 +2109,7 @@ fn parser_links_derived_lib_symbols_with_child_fp_filter_overrides() {
     let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
 
     assert_eq!(linked.fp_filters, vec!["SOIC*", "TSSOP*"]);
+    assert!(linked.fp_filters_specified);
 
     let _ = fs::remove_file(path);
 }

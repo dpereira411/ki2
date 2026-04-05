@@ -5806,9 +5806,7 @@ impl KiCadSchematicParser {
                 }
 
                 if symbol.fp_filters_specified {
-                    if symbol.fp_filters.is_empty() {
-                        parent.fp_filters_specified = false;
-                    } else {
+                    if !symbol.fp_filters.is_empty() {
                         parent.fp_filters_specified = true;
                         parent.fp_filters = symbol.fp_filters.clone();
                     }
