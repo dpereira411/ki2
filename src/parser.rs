@@ -4651,36 +4651,70 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Empty property name"));
         }
 
-        let mut value = self
+        let value = self
             .need_symbol_atom("property value")
             .map_err(|_| self.error_here("Invalid property value"))?;
 
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
+        let value = if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
+            < VERSION_EMPTY_TILDE_IS_EMPTY
             && value == "~"
         {
-            value.clear();
-        }
+            String::new()
+        } else {
+            value
+        };
 
         let field_id = match parent {
-            FieldParent::Symbol(_) => match name.to_ascii_lowercase().as_str() {
-                "reference" => PropertyKind::SymbolReference,
-                "value" => PropertyKind::SymbolValue,
-                "footprint" => PropertyKind::SymbolFootprint,
-                "datasheet" => PropertyKind::SymbolDatasheet,
-                "description" => PropertyKind::SymbolDescription,
-                _ => PropertyKind::User,
-            },
-            FieldParent::Sheet(_) => match name.to_ascii_lowercase().as_str() {
-                "sheetname" | "sheet name" => PropertyKind::SheetName,
-                "sheetfile" | "sheet file" => PropertyKind::SheetFile,
-                _ => PropertyKind::SheetUser,
-            },
-            FieldParent::Label(label) => match name.to_ascii_lowercase().as_str() {
-                "intersheet references" if matches!(label.kind, LabelKind::Global) => {
-                    PropertyKind::GlobalLabelIntersheetRefs
+            FieldParent::Symbol(_) => {
+                let mut field_id = PropertyKind::User;
+
+                for (candidate, kind) in [
+                    ("reference", PropertyKind::SymbolReference),
+                    ("value", PropertyKind::SymbolValue),
+                    ("footprint", PropertyKind::SymbolFootprint),
+                    ("datasheet", PropertyKind::SymbolDatasheet),
+                    ("description", PropertyKind::SymbolDescription),
+                ] {
+                    if name.eq_ignore_ascii_case(candidate) {
+                        field_id = kind;
+                        break;
+                    }
                 }
-                _ => PropertyKind::User,
-            },
+
+                field_id
+            }
+            FieldParent::Sheet(_) => {
+                let mut field_id = PropertyKind::SheetUser;
+
+                for (candidate, kind) in [
+                    ("sheetname", PropertyKind::SheetName),
+                    ("sheetfile", PropertyKind::SheetFile),
+                ] {
+                    if name.eq_ignore_ascii_case(candidate) {
+                        field_id = kind;
+                        break;
+                    }
+                }
+
+                if name.eq_ignore_ascii_case("Sheet name") {
+                    field_id = PropertyKind::SheetName;
+                } else if name.eq_ignore_ascii_case("Sheet file") {
+                    field_id = PropertyKind::SheetFile;
+                }
+
+                field_id
+            }
+            FieldParent::Label(label) => {
+                let mut field_id = PropertyKind::User;
+
+                if matches!(label.kind, LabelKind::Global)
+                    && name.eq_ignore_ascii_case("Intersheet References")
+                {
+                    field_id = PropertyKind::GlobalLabelIntersheetRefs;
+                }
+
+                field_id
+            }
         };
 
         let mut property = Property::new_named(
