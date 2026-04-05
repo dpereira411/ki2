@@ -1996,14 +1996,14 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Empty property name"));
         }
 
-        let field_id = match name.to_ascii_lowercase().as_str() {
-            "reference" => PropertyKind::SymbolReference,
-            "value" => PropertyKind::SymbolValue,
-            "footprint" => PropertyKind::SymbolFootprint,
-            "datasheet" => PropertyKind::SymbolDatasheet,
-            "description" => PropertyKind::SymbolDescription,
-            _ => PropertyKind::User,
-        };
+        let mut field_id = PropertyKind::User;
+
+        for kind in PropertyKind::SYMBOL_MANDATORY_FIELDS {
+            if name.eq_ignore_ascii_case(kind.canonical_key()) {
+                field_id = kind;
+                break;
+            }
+        }
 
         let mut property = Property::new_named(field_id, &name, String::new(), is_private);
 
@@ -4672,14 +4672,8 @@ impl KiCadSchematicParser {
             FieldParent::Symbol(_) => {
                 let mut field_id = PropertyKind::User;
 
-                for (candidate, kind) in [
-                    ("reference", PropertyKind::SymbolReference),
-                    ("value", PropertyKind::SymbolValue),
-                    ("footprint", PropertyKind::SymbolFootprint),
-                    ("datasheet", PropertyKind::SymbolDatasheet),
-                    ("description", PropertyKind::SymbolDescription),
-                ] {
-                    if name.eq_ignore_ascii_case(candidate) {
+                for kind in PropertyKind::SYMBOL_MANDATORY_FIELDS {
+                    if name.eq_ignore_ascii_case(kind.canonical_key()) {
                         field_id = kind;
                         break;
                     }
@@ -4690,11 +4684,8 @@ impl KiCadSchematicParser {
             FieldParent::Sheet(_) => {
                 let mut field_id = PropertyKind::SheetUser;
 
-                for (candidate, kind) in [
-                    ("sheetname", PropertyKind::SheetName),
-                    ("sheetfile", PropertyKind::SheetFile),
-                ] {
-                    if name.eq_ignore_ascii_case(candidate) {
+                for kind in PropertyKind::SHEET_MANDATORY_FIELDS {
+                    if name.eq_ignore_ascii_case(kind.canonical_key()) {
                         field_id = kind;
                         break;
                     }
@@ -4711,10 +4702,13 @@ impl KiCadSchematicParser {
             FieldParent::Label(label) => {
                 let mut field_id = PropertyKind::User;
 
-                if matches!(label.kind, LabelKind::Global)
-                    && name.eq_ignore_ascii_case("Intersheet References")
-                {
-                    field_id = PropertyKind::GlobalLabelIntersheetRefs;
+                if matches!(label.kind, LabelKind::Global) {
+                    for kind in PropertyKind::GLOBAL_LABEL_MANDATORY_FIELDS {
+                        if name.eq_ignore_ascii_case(kind.canonical_key()) {
+                            field_id = kind;
+                            break;
+                        }
+                    }
                 }
 
                 field_id

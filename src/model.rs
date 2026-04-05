@@ -1888,6 +1888,20 @@ pub enum PropertyKind {
 }
 
 impl PropertyKind {
+    pub const SYMBOL_MANDATORY_FIELDS: [PropertyKind; 5] = [
+        PropertyKind::SymbolReference,
+        PropertyKind::SymbolValue,
+        PropertyKind::SymbolFootprint,
+        PropertyKind::SymbolDatasheet,
+        PropertyKind::SymbolDescription,
+    ];
+
+    pub const SHEET_MANDATORY_FIELDS: [PropertyKind; 2] =
+        [PropertyKind::SheetName, PropertyKind::SheetFile];
+
+    pub const GLOBAL_LABEL_MANDATORY_FIELDS: [PropertyKind; 1] =
+        [PropertyKind::GlobalLabelIntersheetRefs];
+
     pub fn is_user_field(self) -> bool {
         matches!(self, PropertyKind::User | PropertyKind::SheetUser)
     }
