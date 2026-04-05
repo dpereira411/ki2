@@ -1945,7 +1945,13 @@ impl KiCadSchematicParser {
             _ => PropertyKind::User,
         };
 
-        let mut value = self
+        let mut property = Property::new_named(field_id, &name, String::new(), is_private);
+
+        if matches!(property.kind, PropertyKind::User) {
+            property.ordinal = symbol.next_field_ordinal();
+        }
+
+        property.value = self
             .need_symbol_atom("property value")
             .map_err(|_| self.error_here("Invalid property value"))
             .map(|raw| {
@@ -1958,13 +1964,6 @@ impl KiCadSchematicParser {
                     raw
                 }
             })?;
-
-        let mut property =
-            Property::new_named(field_id, &name, std::mem::take(&mut value), is_private);
-
-        if matches!(property.kind, PropertyKind::User) {
-            property.ordinal = symbol.next_field_ordinal();
-        }
 
         while !self.at_right() {
             self.need_left()?;
@@ -4544,16 +4543,6 @@ impl KiCadSchematicParser {
             return Err(self.error_here("Empty property name"));
         }
 
-        let mut value = self
-            .need_symbol_atom("property value")
-            .map_err(|_| self.error_here("Invalid property value"))?;
-
-        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
-            && value == "~"
-        {
-            value.clear();
-        }
-
         let field_id = match parent {
             FieldParent::Symbol(_) => match name.to_ascii_lowercase().as_str() {
                 "reference" => PropertyKind::SymbolReference,
@@ -4579,7 +4568,7 @@ impl KiCadSchematicParser {
         let mut property = Property::new_named(
             field_id,
             &name,
-            std::mem::take(&mut value),
+            String::new(),
             matches!(field_id, PropertyKind::User) && is_private,
         );
 
@@ -4595,6 +4584,16 @@ impl KiCadSchematicParser {
             }
             _ => property.ordinal,
         };
+
+        property.value = self
+            .need_symbol_atom("property value")
+            .map_err(|_| self.error_here("Invalid property value"))?;
+
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_EMPTY_TILDE_IS_EMPTY
+            && property.value == "~"
+        {
+            property.value.clear();
+        }
 
         while !self.at_right() {
             self.need_left()?;
