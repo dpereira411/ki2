@@ -203,8 +203,30 @@ impl LibSymbol {
         }
     }
 
+    pub fn add_draw_item(&mut self, item: LibDrawItem) {
+        let index = self
+            .units
+            .iter()
+            .position(|existing| {
+                existing.unit_number == item.unit_number && existing.body_style == item.body_style
+            })
+            .unwrap_or_else(|| {
+                self.units.push(LibSymbolUnit {
+                    name: format!("{}_{}_{}", self.lib_id, item.unit_number, item.body_style),
+                    unit_number: item.unit_number,
+                    body_style: item.body_style,
+                    unit_name: None,
+                    draw_item_kinds: Vec::new(),
+                    draw_items: Vec::new(),
+                });
+                self.units.len() - 1
+            });
+
+        self.units[index].push_draw_item(item);
+    }
+
     pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
-        self.units[0].push_draw_item(item);
+        self.add_draw_item(item);
     }
 
     pub fn sort_draw_items(&mut self) {
@@ -1245,6 +1267,18 @@ mod tests {
         );
         assert!(sheet.properties.iter().all(|property| !property.show_name));
         assert_eq!(sheet.next_field_ordinal(), 42);
+    }
+
+    #[test]
+    fn lib_symbol_add_draw_item_routes_by_unit_and_body_style() {
+        let mut symbol = LibSymbol::new("Device:R".to_string());
+        symbol.ensure_unit_index("Device:R_2_1".to_string(), 2, 1);
+
+        symbol.add_draw_item(LibDrawItem::new("text", 2, 1));
+
+        assert_eq!(symbol.units[0].draw_items.len(), 0);
+        assert_eq!(symbol.units[1].draw_items.len(), 1);
+        assert_eq!(symbol.units[1].draw_item_kinds, vec!["text"]);
     }
 
     #[test]

@@ -1095,7 +1095,7 @@ impl KiCadSchematicParser {
                             if item.kind == "field" && item.field_ordinal.is_none() {
                                 item.field_ordinal = Some(symbol.next_field_ordinal());
                             }
-                            symbol.units[unit_index].push_draw_item(item);
+                            symbol.add_draw_item(item);
                         }
                     }
                     self.need_right()?;
@@ -1106,7 +1106,7 @@ impl KiCadSchematicParser {
                     if item.kind == "field" && item.field_ordinal.is_none() {
                         item.field_ordinal = Some(symbol.next_field_ordinal());
                     }
-                    symbol.push_root_draw_item(item);
+                    symbol.add_draw_item(item);
                 }
                 "embedded_fonts" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
@@ -2154,7 +2154,7 @@ impl KiCadSchematicParser {
                 field.name = Some(property.key);
                 field.text = Some(property.value);
                 field.effects = property.effects;
-                symbol.push_root_draw_item(field);
+                symbol.add_draw_item(field);
             }
         }
 
