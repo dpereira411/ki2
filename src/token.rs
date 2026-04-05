@@ -220,6 +220,9 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                             closed = true;
                             break;
                         }
+                        b'\n' | b'\r' => {
+                            return Err(kiutils_sexpr::ParseError::UnexpectedEof);
+                        }
                         other => {
                             out.push(other);
                             i += 1;
@@ -305,5 +308,11 @@ mod tests {
         let tokens = lex("(text \"\\x \\8\")").expect("lex");
         assert_eq!(tokens[2].kind, TokKind::Atom("x \\8".to_string()));
         assert_eq!(tokens[2].atom_class, Some(AtomClass::Quoted));
+    }
+
+    #[test]
+    fn lex_rejects_raw_newlines_inside_quoted_atoms() {
+        let err = lex("(text \"line1\nline2\")").expect_err("lex must reject raw newline");
+        assert_eq!(err, kiutils_sexpr::ParseError::UnexpectedEof);
     }
 }
