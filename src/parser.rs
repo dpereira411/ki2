@@ -2447,8 +2447,7 @@ impl KiCadSchematicParser {
                     let parsed = self.parse_xy3("text at")?;
                     match &mut item {
                         ParsedSchText::Text(text) => {
-                            text.at =
-                                Some([parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])]);
+                            text.at = [parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])];
                         }
                         ParsedSchText::Label(label) => {
                             label.at = [parsed[0], parsed[1]];

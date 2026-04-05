@@ -586,7 +586,7 @@ pub enum LabelSpin {
 pub struct Text {
     pub kind: TextKind,
     pub text: String,
-    pub at: Option<[f64; 3]>,
+    pub at: [f64; 3],
     pub excluded_from_sim: bool,
     pub fields_autoplaced: FieldAutoplacement,
     pub visible: bool,
@@ -600,7 +600,7 @@ impl Text {
         Self {
             kind,
             text,
-            at: None,
+            at: [0.0, 0.0, 0.0],
             excluded_from_sim: false,
             fields_autoplaced: FieldAutoplacement::None,
             visible: true,
@@ -1141,7 +1141,7 @@ mod tests {
         BusEntry, FieldAutoplacement, Label, LabelKind, LabelShape, LibDrawItem, LibSymbol, Line,
         LineKind, NoConnect, PropertyKind, Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin,
         SheetPinShape, SheetSide, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table,
-        TableCell, TextBox,
+        TableCell, Text, TextBox, TextKind,
     };
 
     #[test]
@@ -1325,6 +1325,14 @@ mod tests {
             Label::new(LabelKind::NetclassFlag, "N".to_string()).shape,
             Some(LabelShape::Round)
         );
+    }
+
+    #[test]
+    fn schematic_text_starts_with_default_position_and_angle() {
+        let text = Text::new(TextKind::Text, "note".to_string());
+
+        assert_eq!(text.at, [0.0, 0.0, 0.0]);
+        assert!(text.visible);
     }
 
     #[test]
