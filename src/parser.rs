@@ -784,6 +784,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_body_styles(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        symbol.body_styles_specified = true;
         while !self.at_right() {
             if self.at_unquoted_symbol_with("demorgan") {
                 let _ = self.need_unquoted_symbol_atom("demorgan")?;
@@ -5790,6 +5791,12 @@ impl KiCadSchematicParser {
 
                 for unit in &mut parent.units {
                     unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
+                }
+
+                if symbol.body_styles_specified {
+                    parent.body_styles_specified = true;
+                    parent.body_style_names = symbol.body_style_names.clone();
+                    parent.has_demorgan = symbol.has_demorgan;
                 }
 
                 for unit in &symbol.units {

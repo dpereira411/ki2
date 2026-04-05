@@ -2037,6 +2037,45 @@ fn parser_links_derived_lib_symbols_with_child_unit_name_overrides() {
 }
 
 #[test]
+fn parser_links_derived_lib_symbols_with_child_body_style_overrides() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-child-body-styles")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Root:R"
+      (body_styles demorgan "RootA" "RootB"))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (body_styles "ChildOnly")))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_child_body_styles", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    assert_eq!(linked.body_style_names, vec!["ChildOnly"]);
+    assert!(!linked.has_demorgan);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
