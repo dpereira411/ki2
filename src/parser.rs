@@ -2834,7 +2834,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    let uuid = Some(self.parse_kiid()?);
+                    let uuid = Some(self.parse_raw_kiid()?);
                     match &mut owner {
                         ParsedTextBoxOwner::TextBox(text_box) => text_box.uuid = uuid,
                         ParsedTextBoxOwner::TableCell(text_box) => text_box.uuid = uuid,
@@ -3152,7 +3152,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.parse_kiid()?);
+                    shape.uuid = Some(self.parse_raw_kiid()?);
                     self.need_right()?;
                 }
                 _ => {
@@ -3207,7 +3207,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.parse_kiid()?);
+                    shape.uuid = Some(self.parse_raw_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, mid, end, stroke, fill or uuid")),
@@ -3256,7 +3256,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.parse_kiid()?);
+                    shape.uuid = Some(self.parse_raw_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("center, radius, stroke, fill or uuid")),
@@ -3309,7 +3309,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.parse_kiid()?);
+                    shape.uuid = Some(self.parse_raw_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
@@ -5286,6 +5286,11 @@ impl KiCadSchematicParser {
     fn parse_kiid(&mut self) -> Result<String, Error> {
         let raw = self.need_symbol_atom("uuid")?;
         Ok(self.normalize_kiid(raw, true))
+    }
+
+    fn parse_raw_kiid(&mut self) -> Result<String, Error> {
+        let raw = self.need_symbol_atom("uuid")?;
+        Ok(self.normalize_kiid(raw, false))
     }
 
     fn normalize_kiid(&mut self, raw: String, track_uniqueness: bool) -> String {

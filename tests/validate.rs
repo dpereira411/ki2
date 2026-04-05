@@ -3997,6 +3997,92 @@ fn rejects_unexpected_symbol_child_with_upstream_expect_list() {
 }
 
 #[test]
+fn raw_shape_and_textbox_uuids_do_not_increment_duplicates() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (arc (start 0 0) (mid 1 1) (end 2 0) (uuid "00000000-0000-0000-0000-000000000001"))
+  (rectangle (start 0 0) (end 1 1) (uuid "00000000-0000-0000-0000-000000000001"))
+  (text_box "A" (at 0 0 0) (size 1 1) (uuid "00000000-0000-0000-0000-000000000002"))
+  (text_box "B" (at 2 0 0) (size 1 1) (uuid "00000000-0000-0000-0000-000000000002"))
+)"#;
+    let path = temp_schematic("raw_shape_textbox_duplicate_uuids", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let raw_shape_uuids = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Shape(shape) => shape.uuid.clone(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let text_box_uuids = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::TextBox(text_box) => text_box.uuid.clone(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        raw_shape_uuids,
+        vec![
+            "00000000-0000-0000-0000-000000000001".to_string(),
+            "00000000-0000-0000-0000-000000000001".to_string(),
+        ]
+    );
+    assert_eq!(
+        text_box_uuids,
+        vec![
+            "00000000-0000-0000-0000-000000000002".to_string(),
+            "00000000-0000-0000-0000-000000000002".to_string(),
+        ]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn parsed_kiid_branches_still_increment_duplicate_uuids() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "00000000-0000-0000-0000-000000000010")
+  (paper "A4")
+  (junction (at 0 0) (uuid "00000000-0000-0000-0000-000000000011"))
+  (junction (at 1 1) (uuid "00000000-0000-0000-0000-000000000011"))
+)"#;
+    let path = temp_schematic("parsed_kiid_duplicate_junction_uuids", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let uuids = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Junction(junction) => junction.uuid.clone(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        uuids,
+        vec![
+            "00000000-0000-0000-0000-000000000011".to_string(),
+            "00000000-0000-0000-0000-000000000012".to_string(),
+        ]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_text_and_label_semantics() {
     let src = r#"(kicad_sch
   (version 20231120)
@@ -7662,10 +7748,7 @@ fn ignores_numeric_lib_unit_name_token() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     assert_eq!(schematic.screen.lib_symbols.len(), 1);
     assert_eq!(schematic.screen.lib_symbols[0].units.len(), 1);
-    assert_eq!(
-        schematic.screen.lib_symbols[0].units[0].name,
-        "R_1_1"
-    );
+    assert_eq!(schematic.screen.lib_symbols[0].units[0].name, "R_1_1");
     assert_eq!(schematic.screen.lib_symbols[0].units[0].unit_name, None);
     assert!(schematic.screen.parse_warnings.is_empty());
     let _ = fs::remove_file(path);
