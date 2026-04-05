@@ -114,12 +114,11 @@ const STANDARD_PAGE_INFOS: &[StandardPageInfo] = &[
 ];
 const SIM_LEGACY_ENABLE_FIELD: &str = "Spice_Netlist_Enabled";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FieldParent {
-    Symbol,
-    Sheet,
-    GlobalLabel,
-    OtherLabel,
+#[derive(Clone, Copy)]
+enum FieldParent<'a> {
+    Symbol(&'a Symbol),
+    Sheet(&'a Sheet),
+    Label(&'a Label),
 }
 
 #[derive(Clone, Copy)]
@@ -1957,6 +1956,10 @@ impl KiCadSchematicParser {
         let mut property =
             Property::new_named(field_id, &name, std::mem::take(&mut value), is_private);
 
+        if matches!(property.kind, PropertyKind::User) {
+            property.ordinal = symbol.next_field_ordinal();
+        }
+
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -2366,6 +2369,9 @@ impl KiCadSchematicParser {
                 if matches!(label.kind, LabelKind::Global) {
                     label.properties.push(Property {
                         id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
+                        ordinal: PropertyKind::GlobalLabelIntersheetRefs
+                            .default_field_id()
+                            .unwrap_or(0),
                         key: PropertyKind::GlobalLabelIntersheetRefs
                             .canonical_key()
                             .to_string(),
@@ -2515,11 +2521,7 @@ impl KiCadSchematicParser {
                     let ParsedSchText::Label(label) = &mut item else {
                         return Err(self.unexpected("property"));
                     };
-                    let property = if matches!(label.kind, LabelKind::Global) {
-                        self.parse_sch_field(FieldParent::GlobalLabel)?
-                    } else {
-                        self.parse_sch_field(FieldParent::OtherLabel)?
-                    };
+                    let property = self.parse_sch_field(FieldParent::Label(label))?;
 
                     if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
                         let existing = label
@@ -3460,7 +3462,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "property" => {
-                    let property = self.parse_sch_field(FieldParent::Symbol)?;
+                    let property = self.parse_sch_field(FieldParent::Symbol(&symbol))?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
                         symbol.excluded_from_sim = property.value == "0";
                         continue;
@@ -3937,7 +3939,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "property" => {
-                    let mut property = self.parse_sch_field(FieldParent::Sheet)?;
+                    let mut property = self.parse_sch_field(FieldParent::Sheet(&sheet))?;
                     if self
                         .require_known_version()
                         .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -4519,7 +4521,7 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_sch_field(&mut self, parent: FieldParent) -> Result<Property, Error> {
+    fn parse_sch_field(&mut self, parent: FieldParent<'_>) -> Result<Property, Error> {
         let _ = self.need_unquoted_symbol_atom("property")?;
         let mut is_private = false;
 
@@ -4547,7 +4549,7 @@ impl KiCadSchematicParser {
         }
 
         let field_id = match parent {
-            FieldParent::Symbol => match name.to_ascii_lowercase().as_str() {
+            FieldParent::Symbol(_) => match name.to_ascii_lowercase().as_str() {
                 "reference" => PropertyKind::SymbolReference,
                 "value" => PropertyKind::SymbolValue,
                 "footprint" => PropertyKind::SymbolFootprint,
@@ -4555,16 +4557,17 @@ impl KiCadSchematicParser {
                 "description" => PropertyKind::SymbolDescription,
                 _ => PropertyKind::User,
             },
-            FieldParent::Sheet => match name.to_ascii_lowercase().as_str() {
+            FieldParent::Sheet(_) => match name.to_ascii_lowercase().as_str() {
                 "sheetname" | "sheet name" => PropertyKind::SheetName,
                 "sheetfile" | "sheet file" => PropertyKind::SheetFile,
                 _ => PropertyKind::SheetUser,
             },
-            FieldParent::GlobalLabel => match name.to_ascii_lowercase().as_str() {
-                "intersheet references" => PropertyKind::GlobalLabelIntersheetRefs,
+            FieldParent::Label(label) => match name.to_ascii_lowercase().as_str() {
+                "intersheet references" if matches!(label.kind, LabelKind::Global) => {
+                    PropertyKind::GlobalLabelIntersheetRefs
+                }
                 _ => PropertyKind::User,
             },
-            FieldParent::OtherLabel => PropertyKind::User,
         };
 
         let mut property = Property::new_named(
@@ -4573,6 +4576,19 @@ impl KiCadSchematicParser {
             std::mem::take(&mut value),
             matches!(field_id, PropertyKind::User) && is_private,
         );
+
+        property.ordinal = match parent {
+            FieldParent::Symbol(symbol) if matches!(field_id, PropertyKind::User) => {
+                symbol.next_field_ordinal()
+            }
+            FieldParent::Sheet(sheet) if matches!(field_id, PropertyKind::SheetUser) => {
+                sheet.next_field_ordinal()
+            }
+            FieldParent::Label(label) if matches!(field_id, PropertyKind::User) => {
+                label.next_field_ordinal()
+            }
+            _ => property.ordinal,
+        };
 
         while !self.at_right() {
             self.need_left()?;

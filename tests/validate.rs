@@ -2908,6 +2908,7 @@ fn parses_property_metadata_semantics() {
         .expect("property");
 
     assert_eq!(property.id, Some(0));
+    assert_eq!(property.ordinal, 42);
     assert!(property.is_private);
     assert_eq!(property.at, Some([11.0, 22.0]));
     assert_eq!(property.angle, Some(90.0));
@@ -2946,7 +2947,42 @@ fn parses_property_metadata_semantics() {
         })
         .expect("property");
     assert!(!property.show_name);
+    assert_eq!(property.ordinal, 42);
     let _ = fs::remove_file(default_path);
+
+    let ordinal_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (at 10 20 0)
+    (property "UserA" "A")
+    (property "UserB" "B"))
+)"#;
+    let ordinal_path = temp_schematic("property_metadata_ordinals", ordinal_src);
+    let schematic =
+        parse_schematic_file(Path::new(&ordinal_path)).expect("must parse ordinal properties");
+    let mut ordinals = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(
+                symbol
+                    .properties
+                    .iter()
+                    .filter(|property| matches!(property.kind, PropertyKind::User))
+                    .map(|property| (property.key.as_str(), property.ordinal))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("symbol");
+    ordinals.sort_by_key(|(key, _)| *key);
+    assert_eq!(ordinals, vec![("UserA", 42), ("UserB", 43)]);
+    let _ = fs::remove_file(ordinal_path);
 
     let bare_src = r#"(kicad_sch
   (version 20250114)

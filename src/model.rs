@@ -204,6 +204,12 @@ impl LibSymbol {
     pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
         self.units[0].push_draw_item(item);
     }
+
+    pub fn next_field_ordinal(&self) -> i32 {
+        self.properties.iter().fold(42, |ordinal, property| {
+            ordinal.max(property.sort_ordinal() + 1)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -444,6 +450,12 @@ impl Label {
             uuid: None,
             properties: Vec::new(),
         }
+    }
+
+    pub fn next_field_ordinal(&self) -> i32 {
+        self.properties.iter().fold(42, |ordinal, property| {
+            ordinal.max(property.sort_ordinal() + 1)
+        })
     }
 }
 
@@ -910,6 +922,12 @@ impl Symbol {
             self.prefix = trimmed.to_string();
         }
     }
+
+    pub fn next_field_ordinal(&self) -> i32 {
+        self.properties.iter().fold(42, |ordinal, property| {
+            ordinal.max(property.sort_ordinal() + 1)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -984,6 +1002,12 @@ impl Sheet {
     pub fn is_vertical_orientation(&self) -> bool {
         self.size[1] > self.size[0]
     }
+
+    pub fn next_field_ordinal(&self) -> i32 {
+        self.properties.iter().fold(42, |ordinal, property| {
+            ordinal.max(property.sort_ordinal() + 1)
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1016,6 +1040,7 @@ mod tests {
                 PropertyKind::SymbolDescription,
             ]
         );
+        assert_eq!(symbol.next_field_ordinal(), 42);
     }
 
     #[test]
@@ -1056,6 +1081,7 @@ mod tests {
             vec![PropertyKind::SheetName, PropertyKind::SheetFile]
         );
         assert!(sheet.properties.iter().all(|property| !property.show_name));
+        assert_eq!(sheet.next_field_ordinal(), 42);
     }
 
     #[test]
@@ -1131,6 +1157,7 @@ mod tests {
             ]
         );
         assert!(symbol.properties.iter().all(|property| !property.show_name));
+        assert_eq!(symbol.next_field_ordinal(), 42);
     }
 
     #[test]
@@ -1250,6 +1277,7 @@ impl SymbolPin {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Property {
     pub id: Option<i32>,
+    pub ordinal: i32,
     pub key: String,
     pub value: String,
     pub kind: PropertyKind,
@@ -1267,6 +1295,7 @@ impl Property {
     pub fn new(kind: PropertyKind, value: String) -> Self {
         Self {
             id: kind.default_field_id(),
+            ordinal: kind.default_field_id().unwrap_or(0),
             key: kind.canonical_key().to_string(),
             value,
             kind,
@@ -1284,6 +1313,7 @@ impl Property {
     pub fn new_named(kind: PropertyKind, name: &str, value: String, is_private: bool) -> Self {
         Self {
             id: kind.default_field_id(),
+            ordinal: kind.default_field_id().unwrap_or(0),
             key: match kind {
                 PropertyKind::User | PropertyKind::SheetUser => name.to_string(),
                 _ => kind.canonical_key().to_string(),
@@ -1298,6 +1328,14 @@ impl Property {
             can_autoplace: true,
             has_effects: false,
             effects: None,
+        }
+    }
+
+    pub fn sort_ordinal(&self) -> i32 {
+        if self.kind.is_mandatory() {
+            self.id.unwrap_or(self.ordinal)
+        } else {
+            self.ordinal
         }
     }
 }
@@ -1317,6 +1355,10 @@ pub enum PropertyKind {
 }
 
 impl PropertyKind {
+    pub fn is_mandatory(self) -> bool {
+        !matches!(self, PropertyKind::User | PropertyKind::SheetUser)
+    }
+
     pub fn canonical_key(self) -> &'static str {
         match self {
             PropertyKind::User => "",
