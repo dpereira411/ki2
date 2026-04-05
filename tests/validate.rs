@@ -1338,7 +1338,11 @@ fn rejects_unknown_top_level_sections() {
     let err =
         parse_schematic_file(&fixture("sample.kicad_sch")).expect_err("must reject future token");
     let message = err.to_string();
-    assert!(message.contains("unsupported schematic section `future_sch`"));
+    assert!(
+        message.contains(
+            "expecting generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group"
+        )
+    );
 }
 
 #[test]
@@ -2620,7 +2624,9 @@ fn defaults_missing_header_version_and_rejects_late_version_section() {
     let err = parse_schematic_file(Path::new(&late_path)).expect_err("must reject late version");
     assert!(
         err.to_string()
-            .contains("unsupported schematic section `version`")
+            .contains(
+                "expecting generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group"
+            )
     );
     let _ = fs::remove_file(late_path);
 }

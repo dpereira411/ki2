@@ -636,12 +636,8 @@ impl KiCadSchematicParser {
                     section_consumed_right = true;
                 }
                 _ => {
-                    let _ = self.need_unquoted_symbol_atom(
+                    return Err(self.expecting(
                         "generator, host, generator_version, uuid, paper, page, title_block, embedded_fonts, embedded_files, lib_symbols, bus_alias, symbol, sheet, junction, no_connect, bus_entry, wire, bus, polyline, label, global_label, hierarchical_label, directive_label, class_label, netclass_flag, text, text_box, table, image, arc, circle, rectangle, bezier, rule_area, sheet_instances, symbol_instances, or group",
-                    )?;
-                    return Err(self.validation(
-                        Some(self.current_span()),
-                        format!("unsupported schematic section `{head}`"),
                     ));
                 }
             }
