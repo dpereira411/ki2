@@ -1989,9 +1989,9 @@ fn parser_links_derived_lib_symbols_with_child_optional_metadata_overrides() {
         .expect("placed symbol");
     let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
 
-    assert_eq!(linked.keywords.as_deref(), Some(""));
-    assert_eq!(linked.description.as_deref(), Some("child desc"));
-    assert_eq!(linked.embedded_fonts, Some(false));
+    assert_eq!(linked.keywords.as_deref(), Some("root words"));
+    assert_eq!(linked.description.as_deref(), Some("root desc"));
+    assert_eq!(linked.embedded_fonts, Some(true));
 
     let _ = fs::remove_file(path);
 }
@@ -2108,7 +2108,7 @@ fn parser_links_derived_lib_symbols_with_child_fp_filter_overrides() {
         .expect("placed symbol");
     let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
 
-    assert!(linked.fp_filters.is_empty());
+    assert_eq!(linked.fp_filters, vec!["SOIC*", "TSSOP*"]);
 
     let _ = fs::remove_file(path);
 }

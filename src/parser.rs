@@ -5799,21 +5799,19 @@ impl KiCadSchematicParser {
                     }
                 }
 
-                if let Some(keywords) = symbol.keywords.as_ref() {
+                if let Some(keywords) = symbol.keywords.as_ref()
+                    && !keywords.is_empty()
+                {
                     parent.keywords = Some(keywords.clone());
                 }
 
-                if let Some(description) = symbol.description.as_ref() {
-                    parent.description = Some(description.clone());
-                }
-
                 if symbol.fp_filters_specified {
-                    parent.fp_filters_specified = true;
-                    parent.fp_filters = symbol.fp_filters.clone();
-                }
-
-                if symbol.embedded_fonts.is_some() {
-                    parent.embedded_fonts = symbol.embedded_fonts;
+                    if symbol.fp_filters.is_empty() {
+                        parent.fp_filters_specified = false;
+                    } else {
+                        parent.fp_filters_specified = true;
+                        parent.fp_filters = symbol.fp_filters.clone();
+                    }
                 }
 
                 if !symbol.embedded_files.is_empty() {
