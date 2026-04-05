@@ -206,8 +206,17 @@ impl LibSymbol {
     }
 
     pub fn next_field_ordinal(&self) -> i32 {
-        self.properties.iter().fold(42, |ordinal, property| {
+        let property_ordinal = self.properties.iter().fold(42, |ordinal, property| {
             ordinal.max(property.sort_ordinal() + 1)
+        });
+
+        self.units.iter().fold(property_ordinal, |ordinal, unit| {
+            unit.draw_items.iter().fold(ordinal, |ordinal, item| {
+                ordinal.max(
+                    item.field_ordinal
+                        .map_or(ordinal, |item_ordinal| item_ordinal + 1),
+                )
+            })
         })
     }
 }
@@ -233,6 +242,7 @@ impl LibSymbolUnit {
 pub struct LibDrawItem {
     pub kind: String,
     pub is_private: bool,
+    pub field_ordinal: Option<i32>,
     pub unit_number: i32,
     pub body_style: i32,
     pub visible: bool,
@@ -267,6 +277,7 @@ impl LibDrawItem {
         Self {
             kind: kind.to_string(),
             is_private: false,
+            field_ordinal: None,
             unit_number,
             body_style,
             visible: true,
@@ -1158,6 +1169,17 @@ mod tests {
         );
         assert!(symbol.properties.iter().all(|property| !property.show_name));
         assert_eq!(symbol.next_field_ordinal(), 42);
+    }
+
+    #[test]
+    fn hidden_lib_fields_advance_lib_symbol_ordinals() {
+        let mut symbol = LibSymbol::new("Device:R".to_string());
+
+        let mut field = LibDrawItem::new("field", 1, 1);
+        field.field_ordinal = Some(42);
+        symbol.push_root_draw_item(field);
+
+        assert_eq!(symbol.next_field_ordinal(), 43);
     }
 
     #[test]

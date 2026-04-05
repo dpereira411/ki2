@@ -1040,7 +1040,10 @@ impl KiCadSchematicParser {
                             }
                             self.need_right()?;
                         } else {
-                            let item = self.parse_symbol_draw_item(unit_number, body_style)?;
+                            let mut item = self.parse_symbol_draw_item(unit_number, body_style)?;
+                            if item.kind == "field" && item.field_ordinal.is_none() {
+                                item.field_ordinal = Some(symbol.next_field_ordinal());
+                            }
                             symbol.units[unit_index].push_draw_item(item);
                         }
                     }
@@ -1048,7 +1051,10 @@ impl KiCadSchematicParser {
                 }
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
-                    let item = self.parse_symbol_draw_item(1, 1)?;
+                    let mut item = self.parse_symbol_draw_item(1, 1)?;
+                    if item.kind == "field" && item.field_ordinal.is_none() {
+                        item.field_ordinal = Some(symbol.next_field_ordinal());
+                    }
                     symbol.push_root_draw_item(item);
                 }
                 "embedded_fonts" => {

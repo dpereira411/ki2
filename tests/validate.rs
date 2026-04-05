@@ -1574,6 +1574,7 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.units[0].draw_items[2].at, Some([3.0, 4.0]));
     assert_eq!(lib_symbol.units[0].draw_items[2].angle, Some(9.0));
     assert_eq!(lib_symbol.units[0].draw_items[2].kind, "field");
+    assert_eq!(lib_symbol.units[0].draw_items[2].field_ordinal, Some(42));
     assert!(lib_symbol.units[0].draw_items[3].is_private);
     assert_eq!(
         lib_symbol.units[0].draw_items[3].text.as_deref(),
