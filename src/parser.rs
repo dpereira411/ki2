@@ -254,6 +254,7 @@ struct KiCadSchematicParser {
     used_uuids: HashSet<String>,
     lib_unit: i32,
     lib_body_style: i32,
+    lib_next_field_ordinal: i32,
     screen: Screen,
     pending_groups: Vec<PendingGroupInfo>,
 }
@@ -282,6 +283,7 @@ impl KiCadSchematicParser {
             used_uuids: HashSet::new(),
             lib_unit: 1,
             lib_body_style: 1,
+            lib_next_field_ordinal: 42,
             screen: Screen {
                 file_format_version_at_load: None,
                 uuid: None,
@@ -861,7 +863,7 @@ impl KiCadSchematicParser {
         Ok(())
     }
 
-    fn parse_symbol_draw_item(&mut self, symbol: &LibSymbol) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_draw_item(&mut self) -> Result<LibDrawItem, Error> {
         let head = match &self.current().kind {
             TokKind::Atom(value)
                 if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
@@ -881,7 +883,7 @@ impl KiCadSchematicParser {
             "pin" => self.parse_symbol_pin(),
             "polyline" => self.parse_symbol_polyline(),
             "rectangle" => self.parse_symbol_rectangle(),
-            "text" => self.parse_symbol_text(symbol),
+            "text" => self.parse_symbol_text(),
             "text_box" => self.parse_symbol_text_box(),
             _ => Err(self.expecting("arc, bezier, circle, pin, polyline, rectangle, or text")),
         }
@@ -905,6 +907,7 @@ impl KiCadSchematicParser {
         }
 
         let mut symbol = LibSymbol::new(lib_id.clone());
+        self.lib_next_field_ordinal = symbol.next_field_ordinal();
 
         while !self.at_right() {
             self.need_left()?;
@@ -1076,7 +1079,7 @@ impl KiCadSchematicParser {
                             }
                             self.need_right()?;
                         } else {
-                            let item = self.parse_symbol_draw_item(&symbol)?;
+                            let item = self.parse_symbol_draw_item()?;
                             symbol.add_draw_item(item);
                         }
                     }
@@ -1086,7 +1089,7 @@ impl KiCadSchematicParser {
                 }
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
-                    let item = self.parse_symbol_draw_item(&symbol)?;
+                    let item = self.parse_symbol_draw_item()?;
                     symbol.add_draw_item(item);
                 }
                 "embedded_fonts" => {
@@ -1545,7 +1548,7 @@ impl KiCadSchematicParser {
         Ok(item)
     }
 
-    fn parse_symbol_text(&mut self, symbol: &LibSymbol) -> Result<LibDrawItem, Error> {
+    fn parse_symbol_text(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("text")?;
         let mut is_private = false;
         if self.at_unquoted_symbol_with("private") {
@@ -1586,11 +1589,12 @@ impl KiCadSchematicParser {
         }
 
         if !item.visible {
-            let field_ordinal = symbol.next_field_ordinal();
+            let field_ordinal = self.lib_next_field_ordinal;
             item.kind = "field".to_string();
             item.field_id = PropertyKind::User.default_field_id();
             item.field_ordinal = Some(field_ordinal);
             item.name = Some(format!("Field{field_ordinal}"));
+            self.lib_next_field_ordinal += 1;
         }
 
         self.need_right()?;
@@ -1968,7 +1972,7 @@ impl KiCadSchematicParser {
         let mut property = Property::new_named(field_id, &name, String::new(), is_private);
 
         if matches!(property.kind, PropertyKind::User) {
-            property.ordinal = symbol.next_field_ordinal();
+            property.ordinal = self.lib_next_field_ordinal;
         }
 
         property.value = self
@@ -2111,6 +2115,7 @@ impl KiCadSchematicParser {
                 field.text = Some(property.value);
                 field.effects = property.effects;
                 symbol.add_draw_item(field);
+                self.lib_next_field_ordinal += 1;
             }
         }
 
