@@ -326,7 +326,6 @@ impl KiCadSchematicParser {
         self.update_local_lib_symbol_links();
 
         self.resolve_groups();
-        self.groups_sanity_check_repair();
         self.need_right()?;
         if !matches!(self.current().kind, TokKind::Eof) {
             return Err(self.expecting("end of file"));
@@ -5723,9 +5722,7 @@ impl KiCadSchematicParser {
                 .filter(|member| known_uuids.contains(member))
                 .collect();
         }
-    }
 
-    fn groups_sanity_check_repair(&mut self) {
         loop {
             let groups = self
                 .screen
