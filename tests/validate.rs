@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
@@ -1532,6 +1533,14 @@ fn parses_extended_top_level_sections() {
     assert!(!lib_symbol.in_pos_files);
     assert!(lib_symbol.duplicate_pin_numbers_are_jumpers);
     assert_eq!(lib_symbol.jumper_pin_groups.len(), 2);
+    assert_eq!(
+        lib_symbol.jumper_pin_groups[0],
+        BTreeSet::from(["1".to_string(), "2".to_string()])
+    );
+    assert_eq!(
+        lib_symbol.jumper_pin_groups[1],
+        BTreeSet::from(["3".to_string(), "4".to_string()])
+    );
     assert_eq!(lib_symbol.keywords.as_deref(), Some("analog precision"));
     assert_eq!(
         lib_symbol.description.as_deref(),
@@ -7289,6 +7298,31 @@ fn rejects_invalid_lib_jumper_pin_group_member_token() {
             .parse_warnings
             .iter()
             .any(|warning| warning.contains("expecting list of pin names"))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn deduplicates_lib_jumper_pin_group_members_like_upstream_sets() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-jumper-sets")
+  (lib_symbols
+    (symbol "Device:R"
+      (jumper_pin_groups ("2" "1" "2"))))
+)"#;
+    let path = temp_schematic("lib_jumper_pin_group_sets", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("schematic must parse");
+    let lib_symbol = schematic
+        .screen
+        .lib_symbols
+        .first()
+        .expect("lib symbol should parse");
+    assert_eq!(lib_symbol.jumper_pin_groups.len(), 1);
+    assert_eq!(
+        lib_symbol.jumper_pin_groups[0],
+        BTreeSet::from(["1".to_string(), "2".to_string()])
     );
     let _ = fs::remove_file(path);
 }

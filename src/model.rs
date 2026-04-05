@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -117,7 +117,7 @@ pub struct LibSymbol {
     pub on_board: bool,
     pub in_pos_files: bool,
     pub duplicate_pin_numbers_are_jumpers: bool,
-    pub jumper_pin_groups: Vec<Vec<String>>,
+    pub jumper_pin_groups: Vec<BTreeSet<String>>,
     pub keywords: Option<String>,
     pub description: Option<String>,
     pub fp_filters: Vec<String>,

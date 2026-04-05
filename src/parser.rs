@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -934,9 +935,9 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("jumper_pin_groups")?;
                     while !self.at_right() {
                         self.need_left()?;
-                        let mut group = Vec::new();
+                        let mut group = BTreeSet::new();
                         while !self.at_right() {
-                            group.push(self.need_quoted_atom("list of pin names")?);
+                            group.insert(self.need_quoted_atom("list of pin names")?);
                         }
                         self.need_right()?;
                         symbol.jumper_pin_groups.push(group);
