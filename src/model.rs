@@ -1113,6 +1113,10 @@ impl Sheet {
         self.instances.push(instance);
     }
 
+    pub fn set_instances(&mut self, instances: Vec<SheetLocalInstance>) {
+        self.instances = instances;
+    }
+
     pub fn is_vertical_orientation(&self) -> bool {
         self.size[1] > self.size[0]
     }
@@ -1248,6 +1252,21 @@ mod tests {
 
         assert_eq!(sheet.instances.len(), 1);
         assert_eq!(sheet.instances[0].page.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn sheet_set_instances_preserves_duplicates() {
+        let mut sheet = Sheet::new();
+        let mut first = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
+        first.page = Some("2".to_string());
+        let mut second = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
+        second.page = Some("3".to_string());
+
+        sheet.set_instances(vec![first, second]);
+
+        assert_eq!(sheet.instances.len(), 2);
+        assert_eq!(sheet.instances[0].page.as_deref(), Some("2"));
+        assert_eq!(sheet.instances[1].page.as_deref(), Some("3"));
     }
 
     #[test]

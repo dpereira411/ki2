@@ -6216,7 +6216,7 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
 }
 
 #[test]
-fn duplicate_local_sheet_instance_paths_overwrite_like_kicad() {
+fn duplicate_local_sheet_instance_paths_preserve_parse_order_like_kicad() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6242,8 +6242,9 @@ fn duplicate_local_sheet_instance_paths_overwrite_like_kicad() {
         })
         .expect("sheet");
 
-    assert_eq!(sheet.instances.len(), 1);
-    assert_eq!(sheet.instances[0].page.as_deref(), Some("3"));
+    assert_eq!(sheet.instances.len(), 2);
+    assert_eq!(sheet.instances[0].page.as_deref(), Some("2"));
+    assert_eq!(sheet.instances[1].page.as_deref(), Some("3"));
 
     let _ = fs::remove_file(path);
 }

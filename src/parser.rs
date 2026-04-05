@@ -3977,6 +3977,7 @@ impl KiCadSchematicParser {
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
+                    let mut instances: Vec<SheetLocalInstance> = Vec::new();
                     while !self.at_right() {
                         self.need_left()?;
                         let head = match &self.current().kind {
@@ -4198,10 +4199,11 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            sheet.add_instance(instance);
+                            instances.push(instance);
                         }
                         self.need_right()?;
                     }
+                    sheet.set_instances(instances);
                     self.need_right()?;
                 }
                 _ => {
