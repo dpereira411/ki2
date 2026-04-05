@@ -1769,6 +1769,57 @@ fn parser_links_placed_symbols_to_local_lib_symbols_after_parse() {
 }
 
 #[test]
+fn parser_links_symbols_after_lib_cache_fixups() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "root-linked-fixups")
+  (paper "A4")
+  (embedded_files (file (name "shared.bin") (checksum "sha256:123") (type font) (data |abc123|)))
+  (lib_symbols
+    (symbol "Root:R"
+      (embedded_files (file (name "shared.bin")))
+      (symbol "Root:R_1_2"
+        (text "ALT" (at 1 2 0) (effects (font (size 1 1))))))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (embedded_files (file (name "shared.bin")))))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_fixups", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    assert!(linked.has_demorgan);
+    assert_eq!(linked.embedded_files.len(), 1);
+    assert_eq!(
+        linked.embedded_files[0].checksum.as_deref(),
+        Some("sha256:123")
+    );
+    assert_eq!(
+        linked.embedded_files[0].file_type,
+        Some(EmbeddedFileType::Font)
+    );
+    assert_eq!(linked.embedded_files[0].data.as_deref(), Some("abc123"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)

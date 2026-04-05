@@ -313,9 +313,9 @@ impl KiCadSchematicParser {
         let version = self
             .version
             .ok_or_else(|| self.error_here("missing version"))?;
-        self.update_local_lib_symbol_links();
         self.fixup_legacy_lib_symbol_alternate_body_styles();
         self.fixup_embedded_data();
+        self.update_local_lib_symbol_links();
 
         self.resolve_groups();
         self.groups_sanity_check_repair();
