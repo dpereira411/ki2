@@ -4789,16 +4789,9 @@ fn rejects_quoted_pts_and_embedded_file_keyword_heads() {
 )"#;
     let quoted_embedded_file_name_path =
         temp_schematic("quoted_embedded_file_name", quoted_embedded_file_name);
-    let schematic = parse_schematic_file(Path::new(&quoted_embedded_file_name_path))
-        .expect("quoted embedded file head should record a warning and continue");
-    assert!(schematic.screen.embedded_files.is_empty());
-    assert!(
-        schematic
-            .screen
-            .parse_warnings
-            .iter()
-            .any(|warning| warning.contains("expecting checksum, data or name"))
-    );
+    let err = parse_schematic_file(Path::new(&quoted_embedded_file_name_path))
+        .expect_err("must reject quoted embedded file head");
+    assert!(err.to_string().contains("expecting checksum, data or name"));
 
     let _ = fs::remove_file(quoted_polyline_xy_path);
     let _ = fs::remove_file(quoted_embedded_file_name_path);
@@ -6408,10 +6401,9 @@ fn records_warning_for_invalid_top_level_embedded_files() {
   (embedded_files (file (name "A.bin") (bogus "x")))
 )"#;
     let path = temp_schematic("bad_embedded_file_child", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
-    assert!(schematic.screen.embedded_files.is_empty());
-    assert_eq!(schematic.screen.parse_warnings.len(), 1);
-    assert!(schematic.screen.parse_warnings[0].contains("expecting checksum, data or name"));
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad embedded file child");
+    assert!(err.to_string().contains("expecting checksum, data or name"));
     let _ = fs::remove_file(path);
 }
 
@@ -6425,10 +6417,9 @@ fn records_warning_for_invalid_embedded_files_file_head() {
   (embedded_files ("file" "A.bin" "aaa"))
 )"#;
     let path = temp_schematic("bad_embedded_file_head", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
-    assert!(schematic.screen.embedded_files.is_empty());
-    assert_eq!(schematic.screen.parse_warnings.len(), 1);
-    assert!(schematic.screen.parse_warnings[0].contains("expecting file"));
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject bad embedded file head");
+    assert!(err.to_string().contains("expecting file"));
     let _ = fs::remove_file(path);
 }
 
@@ -9110,10 +9101,9 @@ fn records_warning_for_invalid_lib_symbol_embedded_files() {
       (embedded_files (file (name "shared.bin") (bogus "x")))))
 )"#;
     let path = temp_schematic("invalid_lib_embedded_files", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must keep loading");
-    assert_eq!(schematic.screen.parse_warnings.len(), 1);
-    assert!(schematic.screen.parse_warnings[0].contains("expecting checksum, data or name"));
-    assert!(schematic.screen.lib_symbols[0].embedded_files.is_empty());
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject invalid lib embedded files");
+    assert!(err.to_string().contains("expecting checksum, data or name"));
     let _ = fs::remove_file(path);
 }
 
