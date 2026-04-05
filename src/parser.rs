@@ -3373,7 +3373,7 @@ impl KiCadSchematicParser {
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
-                    shape.uuid = Some(self.parse_kiid()?);
+                    shape.uuid = Some(self.parse_raw_kiid()?);
                     self.need_right()?;
                 }
                 _ => return Err(self.expecting("pts, stroke, fill or uuid")),

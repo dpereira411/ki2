@@ -4143,6 +4143,7 @@ fn raw_shape_and_textbox_uuids_do_not_increment_duplicates() {
   (paper "A4")
   (arc (start 0 0) (mid 1 1) (end 2 0) (uuid "00000000-0000-0000-0000-000000000001"))
   (rectangle (start 0 0) (end 1 1) (uuid "00000000-0000-0000-0000-000000000001"))
+  (bezier (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (uuid "00000000-0000-0000-0000-000000000001"))
   (text_box "A" (at 0 0 0) (size 1 1) (uuid "00000000-0000-0000-0000-000000000002"))
   (text_box "B" (at 2 0 0) (size 1 1) (uuid "00000000-0000-0000-0000-000000000002"))
 )"#;
@@ -4171,6 +4172,7 @@ fn raw_shape_and_textbox_uuids_do_not_increment_duplicates() {
     assert_eq!(
         raw_shape_uuids,
         vec![
+            "00000000-0000-0000-0000-000000000001".to_string(),
             "00000000-0000-0000-0000-000000000001".to_string(),
             "00000000-0000-0000-0000-000000000001".to_string(),
         ]
