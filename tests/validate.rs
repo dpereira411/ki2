@@ -5469,9 +5469,17 @@ fn accepts_legacy_class_label_alias() {
 )"#;
     let path = temp_schematic("class_label_alias", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse class_label");
-    assert!(schematic.screen.items.iter().any(
-        |item| matches!(item, SchItem::Label(label) if label.kind == LabelKind::NetclassFlag)
-    ));
+    let label = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::NetclassFlag => Some(label),
+            _ => None,
+        })
+        .expect("class_label");
+    assert_eq!(label.shape, LabelShape::Rectangle);
+    assert_eq!(label.pin_length, Some(2.54));
     let _ = fs::remove_file(path);
 }
 

@@ -525,6 +525,10 @@ impl Label {
             LabelKind::Hierarchical => LabelShape::Input,
             LabelKind::Directive | LabelKind::NetclassFlag => LabelShape::Round,
         };
+        let pin_length = match kind {
+            LabelKind::Directive | LabelKind::NetclassFlag => Some(2.54),
+            _ => None,
+        };
 
         Self {
             kind,
@@ -533,7 +537,7 @@ impl Label {
             angle: 0.0,
             spin: LabelSpin::Right,
             shape,
-            pin_length: None,
+            pin_length,
             iref_at: None,
             excluded_from_sim: false,
             fields_autoplaced: FieldAutoplacement::None,
@@ -1324,6 +1328,14 @@ mod tests {
         assert_eq!(
             Label::new(LabelKind::NetclassFlag, "N".to_string()).shape,
             LabelShape::Round
+        );
+        assert_eq!(
+            Label::new(LabelKind::Directive, "D".to_string()).pin_length,
+            Some(2.54)
+        );
+        assert_eq!(
+            Label::new(LabelKind::NetclassFlag, "N".to_string()).pin_length,
+            Some(2.54)
         );
     }
 
