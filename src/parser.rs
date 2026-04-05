@@ -443,7 +443,6 @@ impl KiCadSchematicParser {
                     section_consumed_right = true;
                 }
                 "title_block" => {
-                    let _ = self.need_unquoted_symbol_atom("title_block")?;
                     self.parse_title_block()?;
                     section_consumed_right = true;
                 }
@@ -452,7 +451,6 @@ impl KiCadSchematicParser {
                     self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                 }
                 "embedded_files" => {
-                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let version = self.require_known_version()?;
                     if version < VERSION_EMBEDDED_FILES {
                         return Err(self.error_here(format!(
@@ -460,13 +458,15 @@ impl KiCadSchematicParser {
                         )));
                     }
                     let block_depth = self.current_nesting_depth();
-                    match self.parse_embedded_files() {
+                    match self.parse_embedded_files_block() {
                         Ok(files) => self.screen.embedded_files.extend(files),
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
                             self.skip_to_block_right(block_depth);
+                            self.need_right()?;
                         }
                     }
+                    section_consumed_right = true;
                 }
                 "lib_symbols" => {
                     self.parse_sch_lib_symbols()?;
@@ -600,6 +600,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_title_block(&mut self) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("title_block")?;
         let mut title_block = TitleBlock::default();
         while !self.at_right() {
             self.need_left()?;
@@ -1049,16 +1050,15 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "embedded_files" => {
-                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let block_depth = self.current_nesting_depth();
-                    match self.parse_embedded_files() {
+                    match self.parse_embedded_files_block() {
                         Ok(files) => symbol.embedded_files = files,
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
                             self.skip_to_block_right(block_depth);
+                            self.need_right()?;
                         }
                     }
-                    self.need_right()?;
                 }
                 _ => {
                     return Err(self.expecting(
@@ -1071,6 +1071,13 @@ impl KiCadSchematicParser {
         symbol.sort_draw_items();
         self.need_right()?;
         Ok(symbol)
+    }
+
+    fn parse_embedded_files_block(&mut self) -> Result<Vec<EmbeddedFile>, Error> {
+        let _ = self.need_unquoted_symbol_atom("embedded_files")?;
+        let files = self.parse_embedded_files()?;
+        self.need_right()?;
+        Ok(files)
     }
 
     fn parse_embedded_files(&mut self) -> Result<Vec<EmbeddedFile>, Error> {
