@@ -6691,6 +6691,60 @@ fn duplicate_variant_names_and_fields_overwrite_by_name() {
 }
 
 #[test]
+fn late_variant_name_preserves_provisional_empty_key() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-late-variant-name")
+  (symbol
+    (lib_id "Device:R")
+    (instances
+      (project "demo"
+        (path "/A"
+          (variant
+            (dnp yes)
+            (name "ALT"))))))
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/S"
+          (variant
+            (on_board no)
+            (name "ASSEMBLY"))))))
+)"#;
+    let path = temp_schematic("late_variant_name_preserves_empty_key", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert!(symbol.instances[0].variants.contains_key(""));
+    assert!(symbol.instances[0].variants.contains_key("ALT"));
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert!(sheet.instances[0].variants.contains_key(""));
+    assert!(sheet.instances[0].variants.contains_key("ASSEMBLY"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_symbol_project = r#"(kicad_sch
   (version 20260306)

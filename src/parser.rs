@@ -3780,9 +3780,11 @@ impl KiCadSchematicParser {
                                                     ));
                                                 }
                                             }
-                                        }
 
-                                        instance.variants.insert(variant.name.clone(), variant);
+                                            instance
+                                                .variants
+                                                .insert(variant.name.clone(), variant.clone());
+                                        }
                                         self.need_right()?;
                                     }
                                     _ => {
@@ -4226,9 +4228,11 @@ impl KiCadSchematicParser {
                                                     ));
                                                 }
                                             }
-                                        }
 
-                                        instance.variants.insert(variant.name.clone(), variant);
+                                            instance
+                                                .variants
+                                                .insert(variant.name.clone(), variant.clone());
+                                        }
                                         self.need_right()?;
                                     }
                                     _ => return Err(self.expecting("page or variant")),
