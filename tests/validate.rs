@@ -2696,6 +2696,29 @@ fn accepts_legacy_host_and_generates_root_uuid_for_old_files() {
 }
 
 #[test]
+fn missing_generator_section_is_accepted() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (uuid "root-missing-generator")
+)"#;
+    let path = temp_schematic("missing_generator_section", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    assert_eq!(schematic.generator, "");
+    assert_eq!(schematic.version, 20260306);
+    assert_eq!(
+        schematic.root_sheet.uuid.as_deref(),
+        Some("root-missing-generator")
+    );
+    assert_eq!(
+        schematic.screen.uuid.as_deref(),
+        Some("root-missing-generator")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn duplicate_header_and_title_block_sections_use_last_value_like_upstream() {
     let src = r#"(kicad_sch
   (version 20231120)

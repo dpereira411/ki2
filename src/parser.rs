@@ -378,11 +378,6 @@ impl KiCadSchematicParser {
             ));
         }
 
-        let generator = self
-            .generator
-            .clone()
-            .ok_or_else(|| self.error_here("missing generator"))?;
-
         // Upstream: if file has no uuid, auto-generate one regardless of version.
         // (The C++ code at the end of ParseSchematic always fills in root UUID from
         // the screen's auto-generated UUID when fileHasUuid is false.)
@@ -395,7 +390,7 @@ impl KiCadSchematicParser {
         Ok(Schematic {
             path: self.path,
             version,
-            generator,
+            generator: self.generator.unwrap_or_default(),
             generator_version: self.generator_version,
             root_sheet: RootSheet {
                 uuid: self.root_uuid.clone(),
