@@ -2651,8 +2651,10 @@ impl KiCadSchematicParser {
                         self.parse_i32_atom("row span")?,
                     ]);
                     match &mut owner {
-                        ParsedTextBoxOwner::TextBox(text_box) => text_box.span = span,
                         ParsedTextBoxOwner::TableCell(text_box) => text_box.span = span,
+                        ParsedTextBoxOwner::TextBox(_) => {
+                            return Err(self.expecting("at, size, stroke, fill, effects or uuid"));
+                        }
                     }
                     self.need_right()?;
                 }

@@ -524,7 +524,6 @@ pub struct TextBox {
     pub effects: Option<TextEffects>,
     pub stroke: Option<Stroke>,
     pub fill: Option<Fill>,
-    pub span: Option<[i32; 2]>,
     pub margins: Option<[f64; 4]>,
     pub uuid: Option<String>,
 }
@@ -545,7 +544,6 @@ impl TextBox {
             effects: None,
             stroke: Some(stroke),
             fill: Some(Fill::new()),
-            span: None,
             margins: None,
             uuid: None,
         }
