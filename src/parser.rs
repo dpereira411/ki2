@@ -5806,11 +5806,9 @@ impl KiCadSchematicParser {
 
                 for unit in &symbol.units {
                     for item in &unit.draw_items {
-                        if item.kind != "field" {
-                            continue;
-                        }
-
-                        if let Some(field_name) = item.name.as_deref() {
+                        if item.kind == "field"
+                            && let Some(field_name) = item.name.as_deref()
+                        {
                             for existing_unit in &mut parent.units {
                                 existing_unit.draw_items.retain(|existing| {
                                     !(existing.kind == "field"

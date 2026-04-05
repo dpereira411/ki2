@@ -1901,6 +1901,58 @@ fn parser_links_symbols_after_lib_cache_fixups() {
 }
 
 #[test]
+fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-child-items")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Root:R"
+      (symbol "R_1_1"
+        (text "PARENT" (at 1 1 0) (effects (font (size 1 1))))))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (symbol "R_1_1"
+        (text "CHILD" (at 2 2 0) (effects (font (size 1 1)))))))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_child_items", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+    let unit = linked
+        .units
+        .iter()
+        .find(|unit| unit.unit_number == 1 && unit.body_style == 1)
+        .expect("flattened root unit");
+    let texts: Vec<_> = unit
+        .draw_items
+        .iter()
+        .filter(|item| item.kind == "text")
+        .filter_map(|item| item.text.as_deref())
+        .collect();
+
+    assert!(texts.contains(&"PARENT"));
+    assert!(texts.contains(&"CHILD"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
