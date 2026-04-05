@@ -98,6 +98,76 @@ pub fn lex(input: &str) -> Result<Vec<Token>, kiutils_sexpr::ParseError> {
     lex_with_bar(input, knows_bar)
 }
 
+fn decode_quoted_escape(bytes: &[u8], i: &mut usize) -> Result<Vec<u8>, kiutils_sexpr::ParseError> {
+    *i += 1;
+
+    if *i >= bytes.len() {
+        return Err(kiutils_sexpr::ParseError::UnexpectedEof);
+    }
+
+    let escape = bytes[*i];
+    *i += 1;
+
+    let decoded = match escape {
+        b'"' | b'\\' => vec![escape],
+        b'a' => vec![0x07],
+        b'b' => vec![0x08],
+        b'f' => vec![0x0c],
+        b'n' => vec![b'\n'],
+        b'r' => vec![b'\r'],
+        b't' => vec![b'\t'],
+        b'v' => vec![0x0b],
+        b'x' => {
+            let hex_start = *i;
+            let mut hex_end = *i;
+
+            while hex_end < bytes.len()
+                && hex_end - hex_start < 2
+                && bytes[hex_end].is_ascii_hexdigit()
+            {
+                hex_end += 1;
+            }
+
+            if hex_end > hex_start {
+                *i = hex_end;
+                let hex = std::str::from_utf8(&bytes[hex_start..hex_end])
+                    .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(hex_start))?;
+                vec![
+                    u8::from_str_radix(hex, 16)
+                        .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(hex_start))?,
+                ]
+            } else {
+                vec![b'x']
+            }
+        }
+        other => {
+            let oct_start = *i - 1;
+            let mut oct_end = oct_start;
+
+            while oct_end < bytes.len()
+                && oct_end - oct_start < 3
+                && (b'0'..=b'7').contains(&bytes[oct_end])
+            {
+                oct_end += 1;
+            }
+
+            if oct_end > oct_start {
+                *i = oct_end;
+                let oct = std::str::from_utf8(&bytes[oct_start..oct_end])
+                    .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(oct_start))?;
+                vec![
+                    u8::from_str_radix(oct, 8)
+                        .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(oct_start))?,
+                ]
+            } else {
+                vec![b'\\', other]
+            }
+        }
+    };
+
+    Ok(decoded)
+}
+
 fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexpr::ParseError> {
     let bytes = input.as_bytes();
     let mut i = 0usize;
@@ -136,12 +206,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 while i < bytes.len() {
                     match bytes[i] {
                         b'\\' => {
-                            i += 1;
-                            if i >= bytes.len() {
-                                return Err(kiutils_sexpr::ParseError::UnexpectedEof);
-                            }
-                            out.push(bytes[i]);
-                            i += 1;
+                            out.extend(decode_quoted_escape(bytes, &mut i)?);
                         }
                         b'"' => {
                             i += 1;
@@ -217,11 +282,28 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
 
 #[cfg(test)]
 mod tests {
-    use super::prescan_version;
+    use super::{AtomClass, TokKind, lex, prescan_version};
 
     #[test]
     fn prescan_version_skips_fake_version_text_inside_quotes() {
         let input = "(kicad_sch \"(version 1)\"   (version 20260306))";
         assert_eq!(prescan_version(input), Some(20260306));
+    }
+
+    #[test]
+    fn lex_decodes_kicad_quoted_escape_sequences() {
+        let tokens = lex("(text \"a\\\\b\\\"c\\n\\r\\t\\a\\b\\f\\v\\x41\\101\")").expect("lex");
+        assert_eq!(
+            tokens[2].kind,
+            TokKind::Atom("a\\b\"c\n\r\t\u{7}\u{8}\u{c}\u{b}AA".to_string())
+        );
+        assert_eq!(tokens[2].atom_class, Some(AtomClass::Quoted));
+    }
+
+    #[test]
+    fn lex_handles_goofed_hex_and_octal_escape_sequences_like_kicad() {
+        let tokens = lex("(text \"\\x \\8\")").expect("lex");
+        assert_eq!(tokens[2].kind, TokKind::Atom("x \\8".to_string()));
+        assert_eq!(tokens[2].atom_class, Some(AtomClass::Quoted));
     }
 }
