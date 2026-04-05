@@ -772,6 +772,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_body_styles(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("body_styles")?;
         symbol.body_styles_specified = true;
         while !self.at_right() {
             if self.at_unquoted_symbol_with("demorgan") {
@@ -790,6 +791,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_pin_names(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("pin_names")?;
         while !self.at_right() {
             if self.at_unquoted_symbol_with("hide") {
                 let _ = self.need_unquoted_symbol_atom("hide")?;
@@ -826,6 +828,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_pin_numbers(&mut self, symbol: &mut LibSymbol) -> Result<(), Error> {
+        let _ = self.need_unquoted_symbol_atom("pin_numbers")?;
         while !self.at_right() {
             if self.at_unquoted_symbol_with("hide") {
                 let _ = self.need_unquoted_symbol_atom("hide")?;
@@ -934,15 +937,12 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "body_styles" => {
-                    let _ = self.need_unquoted_symbol_atom("body_styles")?;
                     self.parse_body_styles(&mut symbol)?;
                 }
                 "pin_names" => {
-                    let _ = self.need_unquoted_symbol_atom("pin_names")?;
                     self.parse_pin_names(&mut symbol)?;
                 }
                 "pin_numbers" => {
-                    let _ = self.need_unquoted_symbol_atom("pin_numbers")?;
                     self.parse_pin_numbers(&mut symbol)?;
                 }
                 "exclude_from_sim" => {
