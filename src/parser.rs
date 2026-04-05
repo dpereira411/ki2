@@ -944,21 +944,12 @@ impl KiCadSchematicParser {
                 "power" => {
                     let _ = self.need_unquoted_symbol_atom("power")?;
                     symbol.power = true;
-                    if matches!(self.current().kind, TokKind::Atom(_)) {
-                        let scope = match &self.current().kind {
-                            TokKind::Atom(value)
-                                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
-                            {
-                                value.clone()
-                            }
-                            _ => return Err(self.expecting("global or local")),
-                        };
-                        match scope.as_str() {
+                    if !self.at_right() {
+                        match self.need_unquoted_symbol_atom("global or local")?.as_str() {
                             "local" => symbol.local_power = true,
                             "global" => symbol.local_power = false,
                             _ => return Err(self.expecting("global or local")),
                         }
-                        let _ = self.need_unquoted_symbol_atom("global or local")?;
                     }
                     self.need_right()?;
                 }
@@ -1002,14 +993,30 @@ impl KiCadSchematicParser {
                 }
                 "jumper_pin_groups" => {
                     let _ = self.need_unquoted_symbol_atom("jumper_pin_groups")?;
-                    while !self.at_right() {
-                        self.need_left()?;
-                        let mut group = BTreeSet::new();
-                        while !self.at_right() {
-                            group.insert(self.need_quoted_atom("list of pin names")?);
+                    let mut current_group: Option<BTreeSet<String>> = None;
+
+                    while current_group.is_some() || !self.at_right() {
+                        match &self.current().kind {
+                            TokKind::Left => {
+                                self.need_left()?;
+                                current_group = Some(BTreeSet::new());
+                            }
+                            TokKind::Atom(_)
+                                if matches!(self.current().atom_class, Some(AtomClass::Quoted)) =>
+                            {
+                                let group = current_group
+                                    .as_mut()
+                                    .ok_or_else(|| self.expecting("list of pin names"))?;
+                                group.insert(self.need_quoted_atom("list of pin names")?);
+                            }
+                            TokKind::Right => {
+                                self.need_right()?;
+                                if let Some(group) = current_group.take() {
+                                    symbol.jumper_pin_groups.push(group);
+                                }
+                            }
+                            _ => return Err(self.expecting("list of pin names")),
                         }
-                        self.need_right()?;
-                        symbol.jumper_pin_groups.push(group);
                     }
                     self.need_right()?;
                 }
