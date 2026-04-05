@@ -4420,7 +4420,7 @@ fn global_label_starts_with_hidden_intersheet_refs_field() {
 }
 
 #[test]
-fn global_label_at_moves_default_intersheet_refs_field_during_parse() {
+fn global_label_at_leaves_default_intersheet_refs_field_unmoved_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -4446,7 +4446,7 @@ fn global_label_at_moves_default_intersheet_refs_field_during_parse() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("intersheet refs field");
 
-    assert_eq!(intersheet_refs.at, Some([10.0, 20.0]));
+    assert_eq!(intersheet_refs.at, Some([0.0, 0.0]));
     assert!(!intersheet_refs.visible);
 
     let _ = fs::remove_file(path);
