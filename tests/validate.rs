@@ -1666,6 +1666,7 @@ fn parses_extended_top_level_sections() {
         .expect("table");
     assert_eq!(table.column_count, Some(2));
     assert_eq!(table.cells.len(), 2);
+    assert_eq!(table.cells[0].span, Some([1, 1]));
     assert_eq!(table.cells[1].span, Some([2, 1]));
     assert!(table.border_external);
     assert!(!table.border_header);

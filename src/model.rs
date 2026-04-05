@@ -681,7 +681,7 @@ impl TableCell {
             effects: None,
             stroke: Some(stroke),
             fill: Some(Fill::new()),
-            span: None,
+            span: Some([1, 1]),
             margins: None,
             uuid: None,
         }
@@ -1292,6 +1292,7 @@ mod tests {
             table_cell.fill.as_ref().expect("table cell fill").fill_type,
             super::FillType::None
         );
+        assert_eq!(table_cell.span, Some([1, 1]));
     }
 
     #[test]
