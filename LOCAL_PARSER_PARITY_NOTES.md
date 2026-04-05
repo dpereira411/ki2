@@ -46,7 +46,8 @@ Closest-to-upstream areas so far:
 6. Library-cache symbol parsing is still partial
 
 - `lib_symbols` improved a lot, but it is still not a true routine-by-routine port of upstream library symbol parsing
-- draw items, fields, inherited / extended symbol behavior, and exact branch / error flow still have gaps
+- draw items now run on parser-owned current unit/body-style state like upstream, and helper section-head ownership is closer too
+- remaining gaps are now more concentrated in `parseLibSymbol()` finalization, inherited / extended symbol behavior, and exact branch / error flow
 
 7. Shape / image parsing still has gaps
 

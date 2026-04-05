@@ -47,19 +47,19 @@ Boundary:
 
 | Upstream | Local | Status | Notes |
 | --- | --- | --- | --- |
-| `parseLibSymbol` | `parse_lib_symbol` | partial | still one of the biggest remaining parser gaps |
+| `parseLibSymbol` | `parse_lib_symbol` | partial | helper boundaries and parser-owned lib unit/body-style state are much closer; remaining work is finalization and exactness |
 | `parseBodyStyles` | `parse_body_styles` | done | helper boundary restored |
 | `parsePinNames` | `parse_pin_names` | done | helper boundary restored |
 | `parsePinNumbers` | `parse_pin_numbers` | done | helper boundary restored |
-| `ParseSymbolDrawItem` | `parse_symbol_draw_item` | partial | dispatch exists, but full draw-item parity still not signed off |
-| `parseSymbolArc` | `parse_symbol_arc` | partial | better, but library draw-item family still grouped as partial |
+| `ParseSymbolDrawItem` | `parse_symbol_draw_item` | partial | parser-owned current unit/body-style flow now matches upstream much more closely; remaining work is routine exactness |
+| `parseSymbolArc` | `parse_symbol_arc` | partial | parser-owned lib unit/body-style flow is aligned; remaining work is exactness |
 | `parseSymbolBezier` | `parse_symbol_bezier` | partial | same |
 | `parseSymbolCircle` | `parse_symbol_circle` | partial | same |
 | `parseSymbolPin` | `parse_symbol_pin` | partial | same |
 | `parseSymbolPolyLine` | `parse_symbol_polyline` | partial | same |
 | `parseSymbolRectangle` | `parse_symbol_rectangle` | partial | same |
-| `parseSymbolText` | `parse_symbol_text` | partial | hidden-text-to-field flow exists, still not final |
-| `parseSymbolTextBox` | `parse_symbol_text_box` | partial | closer after shared textbox work |
+| `parseSymbolText` | `parse_symbol_text` | partial | hidden-text-to-field flow plus parser-owned lib field ordinals are closer; remaining work is exactness |
+| `parseSymbolTextBox` | `parse_symbol_text_box` | partial | parser-owned lib unit/body-style flow is aligned; remaining work is exactness |
 
 #### Layer 4: Schematic Owners
 
