@@ -5789,8 +5789,7 @@ impl KiCadSchematicParser {
                 parent.extends = None;
 
                 for unit in &mut parent.units {
-                    unit.name =
-                        format!("{}_{}_{}", parent.lib_id, unit.unit_number, unit.body_style);
+                    unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
                 }
 
                 for property in &symbol.properties {

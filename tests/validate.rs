@@ -1883,11 +1883,13 @@ fn parser_links_symbols_after_lib_cache_fixups() {
     assert_eq!(linked.lib_id, "Child:R");
     assert_eq!(linked.name, "R");
     assert_eq!(linked.units.len(), 2);
+    assert_eq!(linked.units[0].name, "R_1_1");
     let inherited_unit = linked
         .units
         .iter()
         .find(|unit| unit.unit_number == 1 && unit.body_style == 2)
         .expect("flattened inherited unit");
+    assert_eq!(inherited_unit.name, "R_1_2");
     let inherited_text = inherited_unit
         .draw_items
         .iter()
