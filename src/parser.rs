@@ -271,6 +271,7 @@ impl KiCadSchematicParser {
             generator_version: None,
             root_uuid: None,
             screen: Screen {
+                file_format_version_at_load: None,
                 uuid: None,
                 paper: Some(Paper {
                     kind: page_info.kind.to_string(),
@@ -319,6 +320,8 @@ impl KiCadSchematicParser {
         } else {
             self.version = Some(SEXPR_SCHEMATIC_FILE_VERSION);
         }
+
+        self.screen.file_format_version_at_load = self.version;
 
         self.parse_schematic_body()?;
         let version = self

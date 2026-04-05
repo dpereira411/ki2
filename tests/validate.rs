@@ -2730,6 +2730,7 @@ fn modern_root_sheet_instance_page_is_stored_on_screen_root_page() {
     let path = temp_schematic("modern_root_sheet_page", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
+    assert_eq!(schematic.screen.file_format_version_at_load, Some(20221110));
     assert_eq!(schematic.screen.root_sheet_page.as_deref(), Some("7"));
     assert!(!schematic.screen.content_modified);
     assert_eq!(schematic.screen.sheet_instances.len(), 1);

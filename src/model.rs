@@ -48,6 +48,7 @@ pub struct RootSheet {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Screen {
+    pub file_format_version_at_load: Option<i32>,
     pub uuid: Option<String>,
     pub paper: Option<Paper>,
     pub page: Option<Page>,
