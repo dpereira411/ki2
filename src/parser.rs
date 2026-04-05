@@ -1606,7 +1606,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "effects" => {
-                    self.parse_eda_text(ParsedEdaTextOwner::lib_item_text(&mut item), true, false)?;
+                    self.parse_eda_text(ParsedEdaTextOwner::lib_item_text(&mut item), true, true)?;
                 }
                 _ => return Err(self.expecting("at or effects")),
             }
@@ -1858,7 +1858,7 @@ impl KiCadSchematicParser {
                             &mut visible,
                         ),
                         true,
-                        true,
+                        false,
                     )?;
                     self.need_right()?;
                 }
@@ -1890,8 +1890,8 @@ impl KiCadSchematicParser {
                             &mut item.number_effects,
                             &mut visible,
                         ),
-                        true,
-                        true,
+                        false,
+                        false,
                     )?;
                     self.need_right()?;
                 }

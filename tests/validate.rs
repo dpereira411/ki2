@@ -5375,7 +5375,7 @@ fn clamps_minimum_effects_font_size_for_schematic_text_family() {
 }
 
 #[test]
-fn does_not_clamp_minimum_effects_font_size_for_library_text() {
+fn library_text_clamps_but_pin_name_and_number_effects_do_not() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -5383,12 +5383,15 @@ fn does_not_clamp_minimum_effects_font_size_for_library_text() {
   (lib_symbols
     (symbol "Device:R"
       (symbol "Device:R_1_1"
-        (text "TXT" (at 0 0 0) (effects (font (size 0 999)))))))
+        (text "TXT" (at 0 0 0) (effects (font (size 0 999))))
+        (pin input line
+          (name "N" (effects (font (size 0 999))))
+          (number "1" (effects (font (size 0 999))))))))
 )"#;
     let path = temp_schematic("lib_unclamped_effects_text_size", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
-    let lib_text = schematic
+    let lib_unit = schematic
         .screen
         .lib_symbols
         .iter()
@@ -5396,13 +5399,36 @@ fn does_not_clamp_minimum_effects_font_size_for_library_text() {
         .expect("lib symbol")
         .units
         .iter()
-        .flat_map(|unit| unit.draw_items.iter())
+        .find(|unit| unit.unit_number == 1 && unit.body_style == 1)
+        .expect("lib unit");
+    let lib_text = lib_unit
+        .draw_items
+        .iter()
         .find(|item| item.kind == "text")
         .expect("lib text");
+    let lib_pin = lib_unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "pin")
+        .expect("lib pin");
 
     assert_eq!(
         lib_text
             .effects
+            .as_ref()
+            .and_then(|effects| effects.font_size),
+        Some([0.001, 250.0])
+    );
+    assert_eq!(
+        lib_pin
+            .name_effects
+            .as_ref()
+            .and_then(|effects| effects.font_size),
+        Some([0.0, 999.0])
+    );
+    assert_eq!(
+        lib_pin
+            .number_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
         Some([0.0, 999.0])
