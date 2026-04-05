@@ -1129,6 +1129,10 @@ impl KiCadSchematicParser {
             }
         }
 
+        if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_CUSTOM_BODY_STYLES {
+            symbol.has_demorgan = symbol.has_legacy_alternate_body_style();
+        }
+
         symbol.refresh_library_tree_caches();
         self.need_right()?;
         Ok(symbol)
