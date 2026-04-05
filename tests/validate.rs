@@ -6175,6 +6175,25 @@ fn schematic_text_box_does_not_require_at() {
 }
 
 #[test]
+fn schematic_text_box_rejects_table_cell_only_span_branch() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text_box "body" (span 2 1) (size 3 4))
+)"#;
+    let path = temp_schematic("text_box_rejects_span", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject table-cell-only span in schematic text_box");
+    assert!(
+        err.to_string()
+            .contains("expecting at, size, stroke, fill, effects or uuid")
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn applies_upstream_default_text_box_margins_when_omitted() {
     let src = r#"(kicad_sch
   (version 20250114)

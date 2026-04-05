@@ -140,6 +140,12 @@ enum ParsedTextBoxOwner<'a> {
     TableCell(&'a mut TableCell),
 }
 
+impl<'a> ParsedTextBoxOwner<'a> {
+    fn is_table_cell(&self) -> bool {
+        matches!(self, Self::TableCell(_))
+    }
+}
+
 struct ParsedEdaTextOwner<'a> {
     text: Option<&'a mut String>,
     visible: &'a mut bool,
@@ -2629,22 +2635,22 @@ impl KiCadSchematicParser {
     fn parse_sch_text_box(&mut self) -> Result<TextBox, Error> {
         let _ = self.need_unquoted_symbol_atom("text_box")?;
         let mut text_box = TextBox::new();
-        self.parse_sch_text_box_content(ParsedTextBoxOwner::TextBox(&mut text_box), false)?;
+        self.parse_sch_text_box_content(ParsedTextBoxOwner::TextBox(&mut text_box))?;
         Ok(text_box)
     }
 
     fn parse_sch_table_cell(&mut self) -> Result<TableCell, Error> {
         let _ = self.need_unquoted_symbol_atom("table_cell")?;
         let mut text_box = TableCell::new();
-        self.parse_sch_text_box_content(ParsedTextBoxOwner::TableCell(&mut text_box), true)?;
+        self.parse_sch_text_box_content(ParsedTextBoxOwner::TableCell(&mut text_box))?;
         Ok(text_box)
     }
 
     fn parse_sch_text_box_content(
         &mut self,
         mut owner: ParsedTextBoxOwner<'_>,
-        table_cell: bool,
     ) -> Result<(), Error> {
+        let is_table_cell = owner.is_table_cell();
         match &mut owner {
             ParsedTextBoxOwner::TextBox(text_box) => {
                 text_box.text = self
@@ -2675,7 +2681,7 @@ impl KiCadSchematicParser {
                     value.clone()
                 }
                 _ => {
-                    return Err(self.expecting(if table_cell {
+                    return Err(self.expecting(if is_table_cell {
                         "at, size, stroke, fill, effects, span or uuid"
                     } else {
                         "at, size, stroke, fill, effects or uuid"
@@ -2723,7 +2729,7 @@ impl KiCadSchematicParser {
                     found_size = true;
                     self.need_right()?;
                 }
-                "span" if table_cell => {
+                "span" if is_table_cell => {
                     let _ = self.need_unquoted_symbol_atom("span")?;
                     let span = Some([
                         self.parse_i32_atom("column span")?,
@@ -2817,7 +2823,7 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 _ => {
-                    return Err(self.expecting(if table_cell {
+                    return Err(self.expecting(if is_table_cell {
                         "at, size, stroke, fill, effects, span or uuid"
                     } else {
                         "at, size, stroke, fill, effects or uuid"
