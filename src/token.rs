@@ -136,6 +136,47 @@ pub fn prescan_version(input: &str) -> Option<i32> {
 /// The version at which `|` became an s-expression separator in KiCad.
 const VERSION_KNOWS_BAR: i32 = 20240620;
 
+fn is_dsn_number(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    let len = bytes.len();
+    let mut saw_number = false;
+
+    if i < len && matches!(bytes[i], b'-' | b'+') {
+        i += 1;
+    }
+
+    while i < len && bytes[i].is_ascii_digit() {
+        i += 1;
+        saw_number = true;
+    }
+
+    if i < len && bytes[i] == b'.' {
+        i += 1;
+
+        while i < len && bytes[i].is_ascii_digit() {
+            i += 1;
+            saw_number = true;
+        }
+    }
+
+    if saw_number && i < len && matches!(bytes[i], b'e' | b'E') {
+        i += 1;
+        saw_number = false;
+
+        if i < len && matches!(bytes[i], b'-' | b'+') {
+            i += 1;
+        }
+
+        while i < len && bytes[i].is_ascii_digit() {
+            i += 1;
+            saw_number = true;
+        }
+    }
+
+    saw_number && i == len
+}
+
 pub fn lex(input: &str) -> Result<Vec<Token>, kiutils_sexpr::ParseError> {
     let knows_bar = prescan_version(input).unwrap_or(0) >= VERSION_KNOWS_BAR;
     lex_with_bar(input, knows_bar)
@@ -301,7 +342,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 }
                 let text = String::from_utf8(bytes[start..i].to_vec())
                     .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(start))?;
-                let atom_class = if text.parse::<f64>().is_ok() {
+                let atom_class = if is_dsn_number(&text) {
                     AtomClass::Number
                 } else {
                     AtomClass::Symbol
@@ -328,7 +369,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
 
 #[cfg(test)]
 mod tests {
-    use super::{AtomClass, TokKind, lex, prescan_version};
+    use super::{AtomClass, TokKind, is_dsn_number, lex, prescan_version};
 
     #[test]
     fn prescan_version_skips_fake_version_text_inside_quotes() {
@@ -369,5 +410,50 @@ mod tests {
     fn lex_rejects_raw_newlines_inside_quoted_atoms() {
         let err = lex("(text \"line1\nline2\")").expect_err("lex must reject raw newline");
         assert_eq!(err, kiutils_sexpr::ParseError::UnexpectedEof);
+    }
+
+    #[test]
+    fn dsn_number_classifier_matches_kicad_number_grammar() {
+        for valid in [
+            "0", "1", "-1", "+1", "1.", ".5", "-.5", "+.5", "1.25", "1e3", "1E3", "1e-3", "1e+3",
+            ".5e2", "1.e2",
+        ] {
+            assert!(is_dsn_number(valid), "{valid} should be a DSN number");
+        }
+
+        for invalid in [
+            "", "+", "-", ".", "+.", "-.", "e3", "1e", "1e+", "1e-", "NaN", "nan", "inf",
+            "Infinity", "0x10", "1_0",
+        ] {
+            assert!(
+                !is_dsn_number(invalid),
+                "{invalid} should not be a DSN number"
+            );
+        }
+    }
+
+    #[test]
+    fn lex_classifies_only_dsn_numbers_as_number_atoms() {
+        let tokens = lex("(numbers NaN inf .5 1e3 1e 1.)").expect("lex");
+        let atom_classes: Vec<Option<AtomClass>> = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokKind::Atom(_) => Some(token.atom_class),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            atom_classes,
+            vec![
+                Some(AtomClass::Symbol),
+                Some(AtomClass::Symbol),
+                Some(AtomClass::Symbol),
+                Some(AtomClass::Number),
+                Some(AtomClass::Number),
+                Some(AtomClass::Symbol),
+                Some(AtomClass::Number),
+            ]
+        );
     }
 }
