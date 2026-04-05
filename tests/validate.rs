@@ -4420,7 +4420,7 @@ fn global_label_starts_with_hidden_intersheet_refs_field() {
 }
 
 #[test]
-fn global_label_at_leaves_default_intersheet_refs_field_unmoved_during_parse() {
+fn global_label_at_moves_default_intersheet_refs_field_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -4446,8 +4446,42 @@ fn global_label_at_leaves_default_intersheet_refs_field_unmoved_during_parse() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("intersheet refs field");
 
-    assert_eq!(intersheet_refs.at, Some([0.0, 0.0]));
+    assert_eq!(intersheet_refs.at, Some([10.0, 20.0]));
     assert!(!intersheet_refs.visible);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn label_at_offsets_existing_fields_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "label-at-field-shift")
+  (paper "A4")
+  (label "L"
+    (property "User" "V" (at 3 4 0))
+    (at 10 20 0))
+)"#;
+    let path = temp_schematic("label_at_offsets_existing_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let label = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Local => Some(label),
+            _ => None,
+        })
+        .expect("label");
+    let property = label
+        .properties
+        .iter()
+        .find(|property| property.key == "User")
+        .expect("user field");
+
+    assert_eq!(property.at, Some([13.0, 24.0]));
 
     let _ = fs::remove_file(path);
 }
