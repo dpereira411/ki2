@@ -29,9 +29,9 @@ Closest-to-upstream areas so far:
 
 3. Property / field parsing still needs closer upstream shape
 
-- `parseSchField()` behavior is only partially mirrored
-- parent-sensitive field handling is still simplified in places
-- mandatory vs user-field handling, legacy cases, and overwrite behavior need more literal routine parity
+- direct audits show `parseSchField()` and library `parseProperty()` are much closer than earlier notes implied
+- the remaining gap here is now mostly exactness and parent-routine interaction, not a large missing branch family
+- remaining field/property work should be driven by concrete parent-routine mismatches, especially under `parseSchText()`, `parseSheet()`, `parseSchematicSymbol()`, and `parseLibSymbol()`
 
 4. Symbol parsing is still not 1:1
 
@@ -107,10 +107,10 @@ These are better than before, but still not at exact upstream routine parity.
 ### Recommended Next Order
 
 1. Port `parseSchText()` and shared text/effects callers more literally.
-2. Port `parseSchField()` more literally.
-3. Tighten `parseSheet()` to upstream structure.
-4. Tighten `parseSchematicSymbol()` to upstream structure.
-5. Finish `parseLibSymbol()` / library draw-item routine parity.
+2. Tighten `parseSheet()` to upstream structure.
+3. Tighten `parseSchematicSymbol()` to upstream structure.
+4. Finish `parseLibSymbol()` / library draw-item routine parity.
+5. Revisit the table/textbox cluster as one shared routine family.
 6. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
 
 ### Bottom Line

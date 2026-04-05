@@ -38,10 +38,10 @@ Boundary:
 | --- | --- | --- | --- |
 | `parseStroke` | `parse_stroke` | done | token ownership mostly aligned |
 | `parseFill` | `parse_fill` | done | token ownership mostly aligned |
-| `parseEDA_TEXT` | `parse_eda_text` | partial | ownership flow much closer, but still central to remaining parity |
-| `parseSchField` | `parse_sch_field` | partial | major parent-sensitive branch, still a bottleneck |
+| `parseEDA_TEXT` | `parse_eda_text` | partial | ownership flow is much closer, but final parser-wide token/error exactness still depends on it |
+| `parseSchField` | `parse_sch_field` | partial | direct audit shows the main parent-sensitive classification flow is close; remaining work is exactness, not a large missing branch family |
 | `parseSchSheetPin` | `parse_sch_sheet_pin` | done | constructor defaults, shape token flow, at/uuid/effects handling, and close ownership are now close enough that it is no longer the current bottleneck |
-| `parseProperty` (lib) | `parse_lib_property` | partial | inline insertion policy is better, but still not final |
+| `parseProperty` (lib) | `parse_lib_property` | partial | direct audit shows the constructor/order and insertion policy are close; remaining work is exactness around the surrounding lib-symbol routine |
 
 #### Layer 3: Library Cache
 
@@ -104,8 +104,8 @@ Finish these, in this order, before moving back to `src/loader.rs`:
 #### Layer 1: Shared Bottlenecks
 
 1. `parse_eda_text`
-2. `parse_sch_field`
-3. `parse_lib_property`
+2. `parse_sch_field` (no longer the primary bottleneck; revisit only if a parent routine exposes a concrete mismatch)
+3. `parse_lib_property` (no longer the primary bottleneck; revisit only if a parent routine exposes a concrete mismatch)
 
 These are still parent/owner-sensitive leaves that many higher routines depend on.
 
@@ -132,8 +132,9 @@ Pick the first routine cluster whose direct dependencies above are no longer the
 
 1. Revisit `parse_sch_sheet` against upstream `parseSheet()` as a full routine comparison.
 2. Revisit `parse_schematic_symbol` against upstream `parseSchematicSymbol()` as a full routine comparison.
-3. Revisit `parse_sch_text_box_content` + `parse_sch_table` for remaining table/textbox semantics.
-4. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
+3. Revisit `parse_sch_text` against upstream `parseSchText()` for the remaining owner-flow and exactness edges.
+4. Revisit `parse_sch_text_box_content` + `parse_sch_table` for remaining table/textbox semantics.
+5. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
 
 ### Explicitly Deferred Until After This Map Is Exhausted
 
