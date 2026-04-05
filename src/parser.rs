@@ -2035,7 +2035,7 @@ impl KiCadSchematicParser {
             symbol.fp_filters = property
                 .value
                 .split_whitespace()
-                .map(str::to_string)
+                .map(Self::unescape_string_markers)
                 .collect();
         } else if name == "ki_locked" {
             symbol.locked_units = true;
@@ -5376,6 +5376,90 @@ impl KiCadSchematicParser {
 
         if in_overbar {
             out.push('}');
+        }
+
+        out
+    }
+
+    fn unescape_string_markers(source: &str) -> String {
+        if source.len() <= 2 {
+            return source.to_string();
+        }
+
+        let chars: Vec<char> = source.chars().collect();
+        let mut out = String::with_capacity(source.len());
+        let mut prev = '\0';
+        let mut i = 0usize;
+
+        while i < chars.len() {
+            let ch = chars[i];
+
+            if ch == '{' {
+                let mut token = String::new();
+                let mut depth = 1usize;
+                let mut j = i + 1;
+                let mut terminated = false;
+
+                while j < chars.len() {
+                    let nested = chars[j];
+
+                    if nested == '{' {
+                        depth += 1;
+                    } else if nested == '}' {
+                        depth -= 1;
+                    }
+
+                    if depth == 0 {
+                        terminated = true;
+                        break;
+                    }
+
+                    token.push(nested);
+                    j += 1;
+                }
+
+                if !terminated {
+                    out.push('{');
+                    out.push_str(&Self::unescape_string_markers(&token));
+                    break;
+                }
+
+                if matches!(prev, '$' | '~' | '^' | '_') {
+                    out.push('{');
+                    out.push_str(&Self::unescape_string_markers(&token));
+                    out.push('}');
+                } else {
+                    match token.as_str() {
+                        "dblquote" => out.push('"'),
+                        "quote" => out.push('\''),
+                        "lt" => out.push('<'),
+                        "gt" => out.push('>'),
+                        "backslash" => out.push('\\'),
+                        "slash" => out.push('/'),
+                        "bar" => out.push('|'),
+                        "comma" => out.push(','),
+                        "colon" => out.push(':'),
+                        "space" => out.push(' '),
+                        "dollar" => out.push('$'),
+                        "tab" => out.push('\t'),
+                        "return" => out.push('\n'),
+                        "brace" => out.push('{'),
+                        _ => {
+                            out.push('{');
+                            out.push_str(&Self::unescape_string_markers(&token));
+                            out.push('}');
+                        }
+                    }
+                }
+
+                prev = '}';
+                i = j + 1;
+                continue;
+            }
+
+            out.push(ch);
+            prev = ch;
+            i += 1;
         }
 
         out

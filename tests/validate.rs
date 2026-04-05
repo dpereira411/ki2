@@ -1719,6 +1719,26 @@ fn parses_extended_top_level_sections() {
 }
 
 #[test]
+fn lib_fp_filters_unescape_kicad_string_markers() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "ki_fp_filters" "SOIC{slash}SO-8 R{space}0603"))))
+"#;
+    let path = temp_schematic("lib_fp_filters_unescape_markers", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let lib_symbol = schematic.screen.lib_symbols.first().expect("lib symbol");
+
+    assert_eq!(lib_symbol.fp_filters, vec!["SOIC/SO-8", "R 0603"]);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_symbol_text_uses_decidegree_angles_like_upstream() {
     let src = r#"(kicad_sch
   (version 20250114)
