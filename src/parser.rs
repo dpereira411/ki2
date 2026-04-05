@@ -2746,12 +2746,13 @@ impl KiCadSchematicParser {
                 }
                 "span" if is_table_cell => {
                     let _ = self.need_unquoted_symbol_atom("span")?;
-                    let span = Some([
-                        self.parse_i32_atom("column span")?,
-                        self.parse_i32_atom("row span")?,
-                    ]);
+                    let col_span = self.parse_i32_atom("column span")?;
+                    let row_span = self.parse_i32_atom("row span")?;
                     match &mut owner {
-                        ParsedTextBoxOwner::TableCell(text_box) => text_box.span = span,
+                        ParsedTextBoxOwner::TableCell(text_box) => {
+                            text_box.col_span = col_span;
+                            text_box.row_span = row_span;
+                        }
                         ParsedTextBoxOwner::TextBox(_) => {
                             return Err(self.expecting("at, size, stroke, fill, effects or uuid"));
                         }
@@ -3016,7 +3017,7 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        if table.first_cell().is_none() {
+        if table.get_cell(0, 0).is_none() {
             return Err(self.error_here("Invalid table: no cells defined"));
         }
         self.need_right()?;

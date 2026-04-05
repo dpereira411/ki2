@@ -609,7 +609,7 @@ fn text_box_and_table_cell_preserve_hidden_effects_state() {
             _ => None,
         })
         .expect("table");
-    let cell = table.first_cell().expect("table cell");
+    let cell = table.get_cell(0, 0).expect("table cell");
     assert!(!cell.visible);
     assert!(cell.has_effects);
     assert!(cell.effects.as_ref().expect("table cell effects").hidden);
@@ -1709,8 +1709,14 @@ fn parses_extended_top_level_sections() {
         .expect("table");
     assert_eq!(table.column_count, Some(2));
     assert_eq!(table.cells.len(), 2);
-    assert_eq!(table.cells[0].span, Some([1, 1]));
-    assert_eq!(table.cells[1].span, Some([2, 1]));
+    assert_eq!(table.cells[0].col_span, 1);
+    assert_eq!(table.cells[0].row_span, 1);
+    assert_eq!(table.cells[0].row, 0);
+    assert_eq!(table.cells[0].column, 0);
+    assert_eq!(table.cells[1].col_span, 2);
+    assert_eq!(table.cells[1].row_span, 1);
+    assert_eq!(table.cells[1].row, 0);
+    assert_eq!(table.cells[1].column, 1);
     assert!(table.border_external);
     assert!(!table.border_header);
     assert_eq!(table.border_stroke.width, Some(0.3));
@@ -6370,7 +6376,7 @@ fn text_boxes_and_table_cells_keep_constructor_graphic_defaults() {
             _ => None,
         })
         .expect("table");
-    let cell = table.first_cell().expect("table cell");
+    let cell = table.get_cell(0, 0).expect("table cell");
     assert_eq!(
         cell.stroke
             .as_ref()
@@ -6385,6 +6391,8 @@ fn text_boxes_and_table_cells_keep_constructor_graphic_defaults() {
             .fill_type,
         FillType::None
     );
+    assert_eq!(cell.col_span, 1);
+    assert_eq!(cell.row_span, 1);
 
     let _ = fs::remove_file(path);
 }

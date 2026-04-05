@@ -727,6 +727,8 @@ impl TextBox {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableCell {
     pub text: String,
+    pub row: usize,
+    pub column: usize,
     pub at: [f64; 2],
     pub angle: f64,
     pub end: [f64; 2],
@@ -736,7 +738,8 @@ pub struct TableCell {
     pub effects: Option<TextEffects>,
     pub stroke: Option<Stroke>,
     pub fill: Option<Fill>,
-    pub span: Option<[i32; 2]>,
+    pub col_span: i32,
+    pub row_span: i32,
     pub margins: Option<[f64; 4]>,
     pub uuid: Option<String>,
 }
@@ -748,6 +751,8 @@ impl TableCell {
 
         Self {
             text: String::new(),
+            row: 0,
+            column: 0,
             at: [0.0, 0.0],
             angle: 0.0,
             end: [0.0, 0.0],
@@ -757,7 +762,8 @@ impl TableCell {
             effects: None,
             stroke: Some(stroke),
             fill: Some(Fill::new()),
-            span: Some([1, 1]),
+            col_span: 1,
+            row_span: 1,
             margins: None,
             uuid: None,
         }
@@ -908,11 +914,36 @@ impl Table {
     }
 
     pub fn add_cell(&mut self, cell: TableCell) {
+        let mut cell = cell;
+        let (row, column) = self.next_available_cell_slot();
+        cell.row = row;
+        cell.column = column;
         self.cells.push(cell);
     }
 
-    pub fn first_cell(&self) -> Option<&TableCell> {
-        self.cells.first()
+    pub fn get_cell(&self, row: usize, column: usize) -> Option<&TableCell> {
+        self.cells.iter().find(|cell| {
+            let row_span = cell.row_span.max(1) as usize;
+            let col_span = cell.col_span.max(1) as usize;
+            row >= cell.row
+                && row < cell.row + row_span
+                && column >= cell.column
+                && column < cell.column + col_span
+        })
+    }
+
+    fn next_available_cell_slot(&self) -> (usize, usize) {
+        let column_count = self.column_count.unwrap_or(1).max(1) as usize;
+        let mut row = 0usize;
+        loop {
+            for column in 0..column_count {
+                if self.get_cell(row, column).is_none() {
+                    return (row, column);
+                }
+            }
+
+            row += 1;
+        }
     }
 }
 
@@ -1381,7 +1412,41 @@ mod tests {
             table_cell.fill.as_ref().expect("table cell fill").fill_type,
             super::FillType::None
         );
-        assert_eq!(table_cell.span, Some([1, 1]));
+        assert_eq!(table_cell.col_span, 1);
+        assert_eq!(table_cell.row_span, 1);
+        assert_eq!(table_cell.row, 0);
+        assert_eq!(table_cell.column, 0);
+    }
+
+    #[test]
+    fn tables_place_cells_on_grid_from_spans() {
+        let mut table = Table::new(0.0);
+        table.set_column_count(3);
+
+        let mut first = TableCell::new();
+        first.col_span = 2;
+        table.add_cell(first);
+
+        let second = TableCell::new();
+        table.add_cell(second);
+
+        let third = TableCell::new();
+        table.add_cell(third);
+
+        assert_eq!(table.cells[0].row, 0);
+        assert_eq!(table.cells[0].column, 0);
+        assert_eq!(table.cells[1].row, 0);
+        assert_eq!(table.cells[1].column, 2);
+        assert_eq!(table.cells[2].row, 1);
+        assert_eq!(table.cells[2].column, 0);
+        assert!(std::ptr::eq(
+            table.get_cell(0, 1).expect("spanned cell"),
+            &table.cells[0]
+        ));
+        assert!(std::ptr::eq(
+            table.get_cell(0, 2).expect("third column cell"),
+            &table.cells[1]
+        ));
     }
 
     #[test]
