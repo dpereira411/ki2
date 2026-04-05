@@ -5826,14 +5826,20 @@ impl KiCadSchematicParser {
                     }
                 }
 
-                if let Some(keywords) = symbol.keywords.as_ref()
-                    && !keywords.is_empty()
-                {
+                if let Some(keywords) = symbol.keywords.as_ref() {
                     parent.keywords = Some(keywords.clone());
+                }
+
+                if let Some(description) = symbol.description.as_ref() {
+                    parent.description = Some(description.clone());
                 }
 
                 if !symbol.fp_filters.is_empty() {
                     parent.fp_filters = symbol.fp_filters.clone();
+                }
+
+                if symbol.embedded_fonts.is_some() {
+                    parent.embedded_fonts = symbol.embedded_fonts;
                 }
 
                 if !symbol.embedded_files.is_empty() {

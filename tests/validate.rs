@@ -1953,6 +1953,50 @@ fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
 }
 
 #[test]
+fn parser_links_derived_lib_symbols_with_child_optional_metadata_overrides() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-child-metadata")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Root:R"
+      (embedded_fonts yes)
+      (property "ki_keywords" "root words")
+      (property "ki_description" "root desc"))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (embedded_fonts no)
+      (property "ki_keywords" "")
+      (property "ki_description" "child desc")))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_child_metadata", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    assert_eq!(linked.keywords.as_deref(), Some(""));
+    assert_eq!(linked.description.as_deref(), Some("child desc"));
+    assert_eq!(linked.embedded_fonts, Some(false));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
