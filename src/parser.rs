@@ -3917,7 +3917,7 @@ impl KiCadSchematicParser {
         let _ = self.need_unquoted_symbol_atom("sheet")?;
         let mut sheet = Sheet::new();
         sheet.fields_autoplaced = FieldAutoplacement::None;
-        let mut properties = Vec::new();
+        let mut properties: Vec<Property> = Vec::new();
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -4001,6 +4001,11 @@ impl KiCadSchematicParser {
                             property.kind = PropertyKind::SheetFile;
                             property.id = PropertyKind::SheetFile.default_field_id();
                         }
+                    }
+                    if matches!(property.kind, PropertyKind::SheetUser) {
+                        property.ordinal = properties.iter().fold(42, |ordinal, existing| {
+                            ordinal.max(existing.sort_ordinal() + 1)
+                        });
                     }
                     properties.push(property);
                 }

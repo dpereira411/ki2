@@ -3286,6 +3286,46 @@ fn private_only_survives_on_true_user_fields() {
 }
 
 #[test]
+fn sheet_user_fields_advance_pending_ordinals() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-ordinals")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (property "UserA" "A")
+    (property "UserB" "B"))
+)"#;
+    let path = temp_schematic("sheet_user_field_ordinals", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let mut ordinals = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(
+                sheet
+                    .properties
+                    .iter()
+                    .filter(|property| property.kind == PropertyKind::SheetUser)
+                    .map(|property| (property.key.as_str(), property.ordinal))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("sheet");
+    ordinals.sort_by_key(|(key, _)| *key);
+    assert_eq!(ordinals, vec![("UserA", 42), ("UserB", 43)]);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn respects_hide_inside_property_effects() {
     let src = r#"(kicad_sch
   (version 20231120)
