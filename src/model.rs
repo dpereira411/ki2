@@ -912,6 +912,26 @@ impl Symbol {
         self.pins.push(pin);
     }
 
+    pub fn add_hierarchical_reference(&mut self, mut instance: SymbolLocalInstance) {
+        if instance.unit.is_none() {
+            instance.unit = Some(1);
+        }
+
+        self.instances
+            .retain(|existing| existing.path != instance.path);
+
+        let seed_live_state = self.instances.is_empty();
+        let reference = instance.reference.clone().unwrap_or_default();
+        let unit = instance.unit;
+
+        self.instances.push(instance);
+
+        if seed_live_state {
+            self.set_field_text(PropertyKind::SymbolReference, reference);
+            self.unit = unit;
+        }
+    }
+
     pub fn update_prefix_from_reference(&mut self) {
         let Some(reference) = self
             .properties
@@ -1026,7 +1046,7 @@ mod tests {
     use super::{
         BusEntry, FieldAutoplacement, LibDrawItem, LibSymbol, Line, LineKind, NoConnect,
         PropertyKind, Shape, ShapeKind, Sheet, SheetPin, SheetPinShape, SheetSide, StrokeStyle,
-        Symbol, SymbolPin, Table, TableCell, TextBox,
+        Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, TextBox,
     };
 
     #[test]
@@ -1073,6 +1093,43 @@ mod tests {
         symbol.set_field_text(PropertyKind::SymbolReference, "".to_string());
         assert_eq!(symbol.prefix, "#PWR");
         assert!(symbol.in_netlist);
+    }
+
+    #[test]
+    fn first_hierarchical_reference_seeds_live_symbol_state() {
+        let mut symbol = Symbol::new();
+        let mut instance = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
+        instance.reference = Some("R7".to_string());
+        instance.unit = Some(2);
+
+        symbol.add_hierarchical_reference(instance);
+
+        assert_eq!(symbol.unit, Some(2));
+        assert_eq!(
+            symbol
+                .properties
+                .iter()
+                .find(|property| property.kind == PropertyKind::SymbolReference)
+                .map(|property| property.value.as_str()),
+            Some("R7")
+        );
+    }
+
+    #[test]
+    fn hierarchical_references_overwrite_by_path() {
+        let mut symbol = Symbol::new();
+        let mut first = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
+        first.reference = Some("R1".to_string());
+        let mut second = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
+        second.reference = Some("R2".to_string());
+        second.unit = Some(3);
+
+        symbol.add_hierarchical_reference(first);
+        symbol.add_hierarchical_reference(second);
+
+        assert_eq!(symbol.instances.len(), 1);
+        assert_eq!(symbol.instances[0].reference.as_deref(), Some("R2"));
+        assert_eq!(symbol.instances[0].unit, Some(3));
     }
 
     #[test]
@@ -1558,7 +1615,7 @@ impl SymbolLocalInstance {
             project,
             path,
             reference: None,
-            unit: None,
+            unit: Some(1),
             variants: BTreeMap::new(),
         }
     }

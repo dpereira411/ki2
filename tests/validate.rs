@@ -6060,7 +6060,7 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
         .expect("symbol");
 
     assert_eq!(symbol.instances[0].reference, None);
-    assert_eq!(symbol.instances[0].unit, None);
+    assert_eq!(symbol.instances[0].unit, Some(1));
     assert_eq!(
         symbol
             .properties
@@ -6077,6 +6077,48 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
             .map(|property| property.value.as_str()),
         Some("instance-footprint")
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-duplicate-local-symbol-instance")
+  (symbol
+    (lib_id "Device:R")
+    (instances
+      (project "demo"
+        (path "/A" (reference "R1") (unit 2))
+        (path "/A" (reference "R2") (unit 3)))))
+)"#;
+    let path = temp_schematic("duplicate_local_symbol_instance_paths", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.instances.len(), 1);
+    assert_eq!(symbol.instances[0].reference.as_deref(), Some("R2"));
+    assert_eq!(symbol.instances[0].unit, Some(3));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R2")
+    );
+    assert_eq!(symbol.unit, Some(3));
 
     let _ = fs::remove_file(path);
 }

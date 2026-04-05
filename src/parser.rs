@@ -3755,7 +3755,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.instances.push(instance);
+                            symbol.add_hierarchical_reference(instance);
                         }
                         self.need_right()?;
                     }
