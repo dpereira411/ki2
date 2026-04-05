@@ -1533,7 +1533,13 @@ fn parses_extended_top_level_sections() {
     (border (external yes) (header no) (stroke (width 0.3) (type solid)))
     (separators (rows yes) (cols no) (stroke (width 0.4) (type dash)))
     (uuid "tbl-1"))
-  (image (at 1 2) (scale 2.5) (data "ab" "cd") (uuid "img-1"))
+  (image
+    (at 1 2)
+    (scale 2.5)
+    (data
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptV"
+      "AAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
+    (uuid "img-1"))
   (polyline (pts (xy 0 0) (xy 1 1)) (uuid "pl-1"))
   (arc (start 0 0) (mid 1 1) (end 2 0) (uuid "a-1"))
   (circle (center 0 0) (radius 1) (uuid "c-1"))
@@ -1744,7 +1750,12 @@ fn parses_extended_top_level_sections() {
         })
         .expect("image");
     assert_eq!(image.scale, 2.5);
-    assert_eq!(image.data.as_deref(), Some("abcd"));
+    assert_eq!(
+        image.data.as_deref(),
+        Some(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg=="
+        )
+    );
     let arc = schematic
         .screen
         .items
@@ -6143,7 +6154,10 @@ fn image_does_not_require_at() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (image (scale 1.0) (data "QUJD") (uuid "img-1"))
+  (image
+    (scale 1.0)
+    (data "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
+    (uuid "img-1"))
 )"#;
     let path = temp_schematic("image_without_at", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must accept image without at");
@@ -6157,6 +6171,22 @@ fn image_does_not_require_at() {
         })
         .expect("image");
     assert_eq!(image.at, [0.0, 0.0]);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_decoded_non_image_payload() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (image (at 1 2) (scale 1.0) (data "QUJD") (uuid "img-1"))
+)"#;
+    let path = temp_schematic("bad_decoded_image_data", src);
+    let err =
+        parse_schematic_file(Path::new(&path)).expect_err("must reject decoded non-image data");
+    assert!(err.to_string().contains("Failed to read image data."));
     let _ = fs::remove_file(path);
 }
 

@@ -3076,6 +3076,9 @@ impl KiCadSchematicParser {
                     let decoded = base64::engine::general_purpose::STANDARD
                         .decode(&encoded)
                         .map_err(|_| self.error_here("Failed to read image data."))?;
+                    if !Self::validate_image_data(&decoded) {
+                        return Err(self.error_here("Failed to read image data."));
+                    }
                     if self.require_known_version()? <= VERSION_IMAGE_PPI_SCALE_ADJUSTMENT {
                         if let Some(ppi) = Self::read_png_ppi(&decoded) {
                             image.scale *= ppi / 300.0;
@@ -5205,6 +5208,10 @@ impl KiCadSchematicParser {
         }
 
         None
+    }
+
+    fn validate_image_data(data: &[u8]) -> bool {
+        image::load_from_memory(data).is_ok()
     }
 
     fn parse_xy2(&mut self, context: &str) -> Result<[f64; 2], Error> {
