@@ -8770,6 +8770,37 @@ fn resolves_groups_after_items_and_drops_unknown_members() {
 }
 
 #[test]
+fn group_members_follow_shared_uuid_normalization() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-normalized")
+  (wire
+    (pts (xy 0 0) (xy 10 0))
+    (uuid "1"))
+  (group "G1" (uuid "g1") (members "1"))
+)"#;
+    let path = temp_schematic("group_member_uuid_normalization", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let group = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Group(group) => Some(group),
+            _ => None,
+        })
+        .expect("group");
+
+    assert_eq!(
+        group.members,
+        vec!["00000000-0000-0000-0000-000000000001".to_string()]
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn group_members_accept_number_tokens_and_drop_unknown_entries_later() {
     let src = r#"(kicad_sch
   (version 20260306)

@@ -4617,12 +4617,12 @@ impl KiCadSchematicParser {
 
     fn parse_group_members(&mut self, group: &mut PendingGroupInfo) -> Result<(), Error> {
         while !self.at_right() {
-            let member = match &self.current().kind {
+            let raw = match &self.current().kind {
                 TokKind::Atom(value) => value.clone(),
                 _ => return Err(self.expecting("group member uuid")),
             };
             self.idx += 1;
-            group.member_uuids.push(member);
+            group.member_uuids.push(self.normalize_kiid(raw, false));
         }
 
         self.need_right()?;
@@ -5238,6 +5238,10 @@ impl KiCadSchematicParser {
 
     fn parse_kiid(&mut self) -> Result<String, Error> {
         let raw = self.need_symbol_atom("uuid")?;
+        Ok(self.normalize_kiid(raw, true))
+    }
+
+    fn normalize_kiid(&mut self, raw: String, track_uniqueness: bool) -> String {
         let mut bytes = if !raw.is_empty()
             && raw.len() <= 8
             && raw.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -5254,25 +5258,28 @@ impl KiCadSchematicParser {
         } else if let Ok(parsed) = Uuid::parse_str(&raw) {
             *parsed.as_bytes()
         } else {
-            return Ok(raw);
+            return raw;
         };
 
         let mut normalized = Uuid::from_bytes(bytes).hyphenated().to_string();
 
-        while self.used_uuids.contains(&normalized) {
-            for byte in bytes.iter_mut().rev() {
-                *byte = byte.wrapping_add(1);
+        if track_uniqueness {
+            while self.used_uuids.contains(&normalized) {
+                for byte in bytes.iter_mut().rev() {
+                    *byte = byte.wrapping_add(1);
 
-                if *byte != 0 {
-                    break;
+                    if *byte != 0 {
+                        break;
+                    }
                 }
+
+                normalized = Uuid::from_bytes(bytes).hyphenated().to_string();
             }
 
-            normalized = Uuid::from_bytes(bytes).hyphenated().to_string();
+            self.used_uuids.insert(normalized.clone());
         }
 
-        self.used_uuids.insert(normalized.clone());
-        Ok(normalized)
+        normalized
     }
 
     fn parse_maybe_absent_bool(&mut self, default: bool) -> Result<bool, Error> {
