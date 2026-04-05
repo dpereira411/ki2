@@ -1621,6 +1621,7 @@ impl KiCadSchematicParser {
         if !item.visible {
             item.kind = "field".to_string();
             item.field_id = PropertyKind::User.default_field_id();
+            item.name = Some("Field".to_string());
         }
 
         self.need_right()?;

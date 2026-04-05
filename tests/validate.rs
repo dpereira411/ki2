@@ -8819,6 +8819,38 @@ fn lib_symbol_private_is_preserved_on_mandatory_and_user_fields() {
 }
 
 #[test]
+fn hidden_lib_text_converts_to_named_user_field() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-hidden-lib-text-field")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (text "A" (at 1 2 90) (effects (font (size 1 1)) (hide)))
+      (text "B" (at 3 4 90) (effects (font (size 1 1)) (hide)))))
+)"#;
+    let path = temp_schematic("hidden_lib_text_named_field", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let unit = &schematic.screen.lib_symbols[0].units[0];
+    let extra_fields = unit
+        .draw_items
+        .iter()
+        .filter(|item| item.kind == "field")
+        .collect::<Vec<_>>();
+
+    assert_eq!(extra_fields.len(), 2);
+    assert_eq!(extra_fields[0].name.as_deref(), Some("Field"));
+    assert_eq!(extra_fields[0].text.as_deref(), Some("A"));
+    assert_eq!(extra_fields[0].field_id, Some(0));
+    assert_eq!(extra_fields[1].name.as_deref(), Some("Field"));
+    assert_eq!(extra_fields[1].text.as_deref(), Some("B"));
+    assert_eq!(extra_fields[1].field_id, Some(0));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_lib_pin_alternate_type_and_shape() {
     let bad_alt_type = r#"(kicad_sch
   (version 20250114)
