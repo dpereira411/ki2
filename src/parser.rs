@@ -506,12 +506,10 @@ impl KiCadSchematicParser {
                             "embedded_files requires schematic version {VERSION_EMBEDDED_FILES} or newer"
                         )));
                     }
-                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let block_depth = self.current_nesting_depth();
                     match self.parse_embedded_files() {
                         Ok(files) => {
                             self.screen.embedded_files.extend(files);
-                            self.need_right()?;
                         }
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
@@ -1097,12 +1095,10 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 "embedded_files" => {
-                    let _ = self.need_unquoted_symbol_atom("embedded_files")?;
                     let block_depth = self.current_nesting_depth();
                     match self.parse_embedded_files() {
                         Ok(files) => {
                             symbol.embedded_files = files;
-                            self.need_right()?;
                         }
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
@@ -1129,6 +1125,7 @@ impl KiCadSchematicParser {
     }
 
     fn parse_embedded_files(&mut self) -> Result<Vec<EmbeddedFile>, Error> {
+        let _ = self.need_unquoted_symbol_atom("embedded_files")?;
         let mut files = Vec::new();
 
         while !self.at_right() {
@@ -1225,6 +1222,7 @@ impl KiCadSchematicParser {
             files.push(file);
         }
 
+        self.need_right()?;
         Ok(files)
     }
 
