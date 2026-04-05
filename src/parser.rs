@@ -3797,24 +3797,7 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            if instance.unit.is_none() {
-                                instance.unit = Some(1);
-                            }
-
-                            symbol
-                                .instances
-                                .retain(|existing| existing.path != instance.path);
-
-                            let seed_live_state = symbol.instances.is_empty();
-                            let reference = instance.reference.clone().unwrap_or_default();
-                            let unit = instance.unit;
-
-                            symbol.instances.push(instance);
-
-                            if seed_live_state {
-                                symbol.set_field_text(PropertyKind::SymbolReference, reference);
-                                symbol.unit = unit;
-                            }
+                            symbol.add_hierarchical_reference(instance);
                         }
                         self.need_right()?;
                     }
