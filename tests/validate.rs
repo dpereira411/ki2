@@ -5724,6 +5724,35 @@ fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
 }
 
 #[test]
+fn repairs_group_membership_cycles_after_deferred_resolution() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-cycle")
+  (group "A" (uuid "group-a") (members "group-b"))
+  (group "B" (uuid "group-b") (members "group-a"))
+)"#;
+    let path = temp_schematic("group_cycle_repair", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let groups = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Group(group) => Some(group),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].uuid.as_deref(), Some("group-b"));
+    assert!(groups[0].members.is_empty());
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_table_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)

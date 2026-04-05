@@ -317,6 +317,7 @@ impl KiCadSchematicParser {
         self.fixup_embedded_data();
 
         self.resolve_groups();
+        self.groups_sanity_check_repair();
         self.need_right()?;
         if !matches!(self.current().kind, TokKind::Eof) {
             return Err(self.expecting("end of file"));
@@ -5643,6 +5644,120 @@ impl KiCadSchematicParser {
                 group.members.retain(|member| known_uuids.contains(member));
                 SchItem::Group(group)
             }));
+    }
+
+    fn groups_sanity_check_repair(&mut self) {
+        loop {
+            let groups = self
+                .screen
+                .items
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, item)| match item {
+                    SchItem::Group(group) => Some((idx, group)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            let group_indices = groups
+                .iter()
+                .filter_map(|(idx, group)| Some((group.uuid.as_ref()?.clone(), *idx)))
+                .collect::<std::collections::HashMap<_, _>>();
+
+            let mut parent = std::collections::HashMap::<String, String>::new();
+
+            for (_, group) in &groups {
+                let Some(parent_uuid) = group.uuid.as_ref() else {
+                    continue;
+                };
+
+                for member in &group.members {
+                    if group_indices.contains_key(member) {
+                        parent.entry(member.clone()).or_insert(parent_uuid.clone());
+                    }
+                }
+            }
+
+            let mut removed_uuid = None;
+            let mut known_cycle_free = std::collections::HashSet::<String>::new();
+
+            for (_, group) in &groups {
+                let Some(start_uuid) = group.uuid.as_ref() else {
+                    continue;
+                };
+
+                if known_cycle_free.contains(start_uuid) {
+                    continue;
+                }
+
+                let mut current_chain = std::collections::HashSet::<String>::new();
+                let mut current = start_uuid.clone();
+
+                loop {
+                    if current_chain.contains(&current) {
+                        removed_uuid = Some(current);
+                        break;
+                    }
+
+                    if known_cycle_free.contains(&current) {
+                        break;
+                    }
+
+                    current_chain.insert(current.clone());
+
+                    let Some(next) = parent.get(&current).cloned() else {
+                        break;
+                    };
+
+                    current = next;
+                }
+
+                if removed_uuid.is_some() {
+                    break;
+                }
+
+                known_cycle_free.extend(current_chain);
+            }
+
+            let Some(removed_uuid) = removed_uuid else {
+                break;
+            };
+
+            if let Some(remove_idx) = group_indices.get(&removed_uuid).copied() {
+                self.screen.items.remove(remove_idx);
+            } else {
+                break;
+            }
+        }
+
+        let valid_uuids = self
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Junction(item) => item.uuid.clone(),
+                SchItem::NoConnect(item) => item.uuid.clone(),
+                SchItem::BusEntry(item) => item.uuid.clone(),
+                SchItem::Wire(item) | SchItem::Bus(item) | SchItem::Polyline(item) => {
+                    item.uuid.clone()
+                }
+                SchItem::Label(item) => item.uuid.clone(),
+                SchItem::Text(item) => item.uuid.clone(),
+                SchItem::TextBox(item) => item.uuid.clone(),
+                SchItem::Table(item) => item.uuid.clone(),
+                SchItem::Image(item) => item.uuid.clone(),
+                SchItem::Shape(item) => item.uuid.clone(),
+                SchItem::Symbol(item) => item.uuid.clone(),
+                SchItem::Sheet(item) => item.uuid.clone(),
+                SchItem::Group(item) => item.uuid.clone(),
+            })
+            .collect::<std::collections::HashSet<_>>();
+
+        for item in &mut self.screen.items {
+            if let SchItem::Group(group) = item {
+                group.members.retain(|member| valid_uuids.contains(member));
+            }
+        }
     }
 
     fn validation(&self, span: Option<Span>, message: impl Into<String>) -> Error {
