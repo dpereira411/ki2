@@ -4295,7 +4295,7 @@ impl KiCadSchematicParser {
                         }
                         self.need_right()?;
                     }
-                    sheet.instances = instances;
+                    sheet.set_instances(instances);
                     self.need_right()?;
                 }
                 _ => {

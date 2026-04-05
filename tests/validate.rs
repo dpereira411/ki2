@@ -3929,6 +3929,43 @@ fn recovers_legacy_sheet_field_ids_during_parse() {
 }
 
 #[test]
+fn preserves_duplicate_local_sheet_instances_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-sheet-dup")
+  (paper "A4")
+  (sheet
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/A" (page "1"))
+        (path "/A" (page "2")))))
+)"#;
+    let path = temp_schematic("duplicate_local_sheet_instances", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    assert_eq!(sheet.instances.len(), 2);
+    assert_eq!(sheet.instances[0].path, "/A");
+    assert_eq!(sheet.instances[0].page.as_deref(), Some("1"));
+    assert_eq!(sheet.instances[1].path, "/A");
+    assert_eq!(sheet.instances[1].page.as_deref(), Some("2"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_symbol_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
