@@ -4230,19 +4230,22 @@ impl KiCadSchematicParser {
         if name.is_empty() {
             return Err(self.error_here("Empty sheet pin name"));
         }
-        let shape_head = self.need_unquoted_symbol_atom("sheet pin shape")?;
-        let shape = match shape_head.as_str() {
-            "input" => SheetPinShape::Input,
-            "output" => SheetPinShape::Output,
-            "bidirectional" => SheetPinShape::Bidirectional,
-            "tri_state" => SheetPinShape::TriState,
-            "passive" => SheetPinShape::Passive,
+        let mut sheet_pin = SheetPin::new(
+            name,
+            SheetPinShape::Passive,
+            sheet.is_vertical_orientation(),
+        );
+
+        match self.need_unquoted_symbol_atom("sheet pin shape")?.as_str() {
+            "input" => sheet_pin.shape = SheetPinShape::Input,
+            "output" => sheet_pin.shape = SheetPinShape::Output,
+            "bidirectional" => sheet_pin.shape = SheetPinShape::Bidirectional,
+            "tri_state" => sheet_pin.shape = SheetPinShape::TriState,
+            "passive" => sheet_pin.shape = SheetPinShape::Passive,
             _ => {
                 return Err(self.expecting("input, output, bidirectional, tri_state, or passive"));
             }
-        };
-
-        let mut sheet_pin = SheetPin::new(name, shape, sheet.is_vertical_orientation());
+        }
 
         while !self.at_right() {
             self.need_left()?;
