@@ -2689,6 +2689,7 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert_eq!(sheet.fields_autoplaced, FieldAutoplacement::Auto);
 
     assert_eq!(schematic.screen.root_sheet_page, None);
+    assert!(schematic.screen.content_modified);
     assert_eq!(schematic.screen.sheet_instances.len(), 2);
     assert_eq!(schematic.screen.sheet_instances[0].path, "");
     assert_eq!(
@@ -2730,6 +2731,7 @@ fn modern_root_sheet_instance_page_is_stored_on_screen_root_page() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
     assert_eq!(schematic.screen.root_sheet_page.as_deref(), Some("7"));
+    assert!(!schematic.screen.content_modified);
     assert_eq!(schematic.screen.sheet_instances.len(), 1);
     assert_eq!(schematic.screen.sheet_instances[0].path, "/child");
     assert_eq!(
@@ -2768,6 +2770,7 @@ fn sheet_page_normalization_only_hashes_truly_empty_tokens() {
         })
         .expect("sheet");
     assert_eq!(sheet.instances[0].page.as_deref(), Some(""));
+    assert!(schematic.screen.content_modified);
     assert_eq!(
         schematic.screen.sheet_instances[0].page.as_deref(),
         Some("#")

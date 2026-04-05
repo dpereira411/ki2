@@ -52,6 +52,7 @@ pub struct Screen {
     pub paper: Option<Paper>,
     pub page: Option<Page>,
     pub root_sheet_page: Option<String>,
+    pub content_modified: bool,
     pub title_block: Option<TitleBlock>,
     pub embedded_fonts: Option<bool>,
     pub embedded_files: Vec<EmbeddedFile>,

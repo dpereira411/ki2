@@ -280,6 +280,7 @@ impl KiCadSchematicParser {
                 }),
                 page: None,
                 root_sheet_page: None,
+                content_modified: false,
                 title_block: None,
                 embedded_fonts: None,
                 embedded_files: Vec::new(),
@@ -4364,12 +4365,22 @@ impl KiCadSchematicParser {
                 match child.as_str() {
                     "page" => {
                         let _ = self.need_unquoted_symbol_atom("page")?;
-                        let mut parsed_page = self.need_symbol_atom("page")?;
+                        let raw_page = self.need_symbol_atom("page")?;
+                        let mut parsed_page = raw_page.clone();
+                        let mut replacements = 0usize;
 
                         if parsed_page.is_empty() {
                             parsed_page = "#".to_string();
+                            replacements += 1;
                         } else {
+                            let original_len = parsed_page.chars().count();
                             parsed_page.retain(|ch| !matches!(ch, '\r' | '\n' | '\t' | ' '));
+                            replacements +=
+                                original_len.saturating_sub(parsed_page.chars().count());
+                        }
+
+                        if replacements > 0 {
+                            self.screen.content_modified = true;
                         }
 
                         instance.page = Some(parsed_page);
