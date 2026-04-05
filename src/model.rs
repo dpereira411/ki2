@@ -1590,7 +1590,7 @@ mod tests {
 
     #[test]
     fn sheet_pins_start_with_default_geometry() {
-        let pin = SheetPin::new("IN".to_string(), false);
+        let pin = SheetPin::new("IN".to_string(), &Sheet::new());
 
         assert_eq!(pin.at, [0.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Left);
@@ -1609,10 +1609,29 @@ mod tests {
 
     #[test]
     fn vertical_sheet_pins_start_on_top_side() {
-        let pin = SheetPin::new("IN".to_string(), true);
+        let mut sheet = Sheet::new();
+        sheet.size = [5.0, 20.0];
+        let pin = SheetPin::new("IN".to_string(), &sheet);
 
         assert_eq!(pin.at, [0.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Top);
+    }
+
+    #[test]
+    fn sheet_pin_defaults_track_sheet_owner_position() {
+        let mut sheet = Sheet::new();
+        sheet.at = [11.0, 22.0];
+
+        let pin = SheetPin::new("IN".to_string(), &sheet);
+
+        assert_eq!(pin.at, [11.0, 0.0]);
+        assert_eq!(pin.side, SheetSide::Left);
+
+        sheet.size = [5.0, 20.0];
+        let vertical_pin = SheetPin::new("OUT".to_string(), &sheet);
+
+        assert_eq!(vertical_pin.at, [0.0, 22.0]);
+        assert_eq!(vertical_pin.side, SheetSide::Top);
     }
 
     #[test]
@@ -1921,16 +1940,21 @@ pub struct SheetPin {
 }
 
 impl SheetPin {
-    pub fn new(name: String, vertical_sheet: bool) -> Self {
+    pub fn new(name: String, sheet: &Sheet) -> Self {
+        let mut at = [0.0, 0.0];
+        let side = if sheet.is_vertical_orientation() {
+            at[1] = sheet.at[1];
+            SheetSide::Top
+        } else {
+            at[0] = sheet.at[0];
+            SheetSide::Left
+        };
+
         Self {
             name,
             shape: SheetPinShape::Input,
-            at: [0.0, 0.0],
-            side: if vertical_sheet {
-                SheetSide::Top
-            } else {
-                SheetSide::Left
-            },
+            at,
+            side,
             visible: true,
             has_effects: false,
             effects: None,
