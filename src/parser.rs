@@ -5177,7 +5177,6 @@ impl KiCadSchematicParser {
         convert_overbar_syntax: bool,
         enforce_min_text_size: bool,
     ) -> Result<(), Error> {
-        let _ = self.need_unquoted_symbol_atom("effects")?;
         if convert_overbar_syntax
             && self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION) < VERSION_TEXT_OVERBAR_NOTATION
         {
@@ -5189,6 +5188,23 @@ impl KiCadSchematicParser {
         let mut effects = owner.effects.take().unwrap_or_default();
         effects.h_justify = TextHJustify::Center;
         effects.v_justify = TextVJustify::Center;
+
+        if self.at_unquoted_symbol_with("href") {
+            let _ = self.need_unquoted_symbol_atom("href")?;
+            let href = self.need_symbol_atom("symbol")?;
+            if !Self::validate_hyperlink(&href) {
+                return Err(self.error_here(format!("Invalid hyperlink url '{href}'")));
+            }
+            effects.hyperlink = Some(href);
+            if let Some(has_effects) = owner.has_effects {
+                *has_effects = true;
+            }
+            *owner.effects = Some(effects);
+            self.need_right()?;
+            return Ok(());
+        }
+
+        let _ = self.need_unquoted_symbol_atom("effects")?;
 
         while !self.at_right() {
             let section_is_list = matches!(self.current().kind, TokKind::Left);
@@ -6561,7 +6577,10 @@ impl KiCadSchematicParser {
 
 #[cfg(test)]
 mod parser_tests {
-    use super::KiCadSchematicParser;
+    use std::path::PathBuf;
+
+    use super::{KiCadSchematicParser, ParsedEdaTextOwner};
+    use crate::token::lex;
 
     #[test]
     fn reads_jfif_jpeg_ppi_in_inches() {
@@ -6583,5 +6602,29 @@ mod parser_tests {
 
         assert_eq!(KiCadSchematicParser::read_jpeg_ppi(&data), Some(299.72));
         assert_eq!(KiCadSchematicParser::read_image_ppi(&data), Some(299.72));
+    }
+
+    #[test]
+    fn parse_eda_text_accepts_direct_href_head() {
+        let tokens = lex(r#"(href "https://example.com")"#).expect("tokens");
+        let mut parser = KiCadSchematicParser::new(PathBuf::from("unit.kicad_sch"), tokens);
+        let mut text = String::from("note");
+        let mut visible = true;
+        let mut effects = None;
+
+        parser.need_left().expect("open href block");
+        parser
+            .parse_eda_text(
+                ParsedEdaTextOwner::detached(Some(&mut text), &mut effects, &mut visible),
+                true,
+                true,
+            )
+            .expect("direct href head should parse");
+        assert_eq!(
+            effects.and_then(|effects| effects.hyperlink),
+            Some(String::from("https://example.com"))
+        );
+        assert!(visible);
+        assert!(matches!(parser.current().kind, crate::token::TokKind::Eof));
     }
 }
