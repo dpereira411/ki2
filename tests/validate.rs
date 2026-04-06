@@ -5139,6 +5139,43 @@ fn parses_text_and_label_semantics() {
 }
 
 #[test]
+fn schematic_text_effects_hide_controls_visibility() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-text-effects-hide")
+  (text "note" (effects (font (size 1 1)) (hide)))
+  (global_label "GL" (shape input) (effects (font (size 1 1)) (hide)))
+)"#;
+    let path = temp_schematic("schematic_text_effects_hide_visibility", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert!(!text.visible);
+
+    let label = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    assert!(!label.visible);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn global_label_without_user_fields_keeps_parser_default_autoplace_state() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -7071,7 +7108,7 @@ fn labels_do_not_require_at() {
 }
 
 #[test]
-fn parses_shared_effects_payload_and_text_hide_override() {
+fn parses_shared_effects_payload_and_text_hide() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
@@ -7097,7 +7134,7 @@ fn parses_shared_effects_payload_and_text_hide_override() {
         })
         .expect("text");
 
-    assert!(text.visible);
+    assert!(!text.visible);
     let effects = text.effects.as_ref().expect("effects");
     assert_eq!(effects.font_face.as_deref(), Some("KiCad Font"));
     assert_eq!(effects.font_size, Some([2.5, 1.5]));
@@ -7263,7 +7300,7 @@ fn clamps_internal_unit_effects_and_pin_name_offset() {
 }
 
 #[test]
-fn shared_text_family_forces_visible_after_effects_hide() {
+fn shared_text_family_preserves_effects_hide_visibility() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
@@ -7287,7 +7324,7 @@ fn shared_text_family_forces_visible_after_effects_hide() {
         })
         .expect("global label");
 
-    assert!(label.visible);
+    assert!(!label.visible);
     assert!(label.effects.as_ref().expect("effects").hidden);
 
     let _ = fs::remove_file(path);
