@@ -3433,7 +3433,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000001")
   (paper "User" 123.4 234.5 portrait)
 )"#;
     let path = temp_schematic("user_paper", src);
@@ -3448,7 +3448,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let tall_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000002")
   (paper "User" 123.4 234.5)
 )"#;
     let tall_path = temp_schematic("tall_user_paper", tall_src);
@@ -3462,7 +3462,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let lower_user_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000003")
   (paper user 123.4 234.5)
 )"#;
     let lower_user_path = temp_schematic("lower_user_paper", lower_user_src);
@@ -3478,7 +3478,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let clamped_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000004")
   (paper "User" 1 1000000)
 )"#;
     let clamped_path = temp_schematic("clamped_user_paper", clamped_src);
@@ -3491,7 +3491,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let quoted_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000005")
   (paper "User" "123.4" 234.5)
 )"#;
     let quoted_path = temp_schematic("quoted_user_paper_dimension", quoted_src);
@@ -3502,7 +3502,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let quoted_height_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000006")
   (paper "User" 123.4 "234.5")
 )"#;
     let quoted_height_path = temp_schematic("quoted_user_paper_height", quoted_height_src);
@@ -3514,7 +3514,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let quoted_portrait_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000007")
   (paper "User" 123.4 234.5 "portrait")
 )"#;
     let quoted_portrait_path = temp_schematic("quoted_user_paper_portrait", quoted_portrait_src);
@@ -3526,7 +3526,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let upper_portrait_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000008")
   (paper "User" 123.4 234.5 PORTRAIT)
 )"#;
     let upper_portrait_path = temp_schematic("upper_user_paper_portrait", upper_portrait_src);
@@ -3538,7 +3538,7 @@ fn parses_user_paper_dimensions_and_portrait() {
     let bogus_tail_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000009")
   (paper "User" 123.4 234.5 sideways)
 )"#;
     let bogus_tail_path = temp_schematic("bogus_user_paper_tail", bogus_tail_src);
@@ -3553,7 +3553,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000000a")
   (paper "A4")
 )"#;
     let path = temp_schematic("a4_paper_dimensions", src);
@@ -3568,7 +3568,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let portrait_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000000b")
   (paper "A4" portrait)
 )"#;
     let portrait_path = temp_schematic("a4_paper_portrait", portrait_src);
@@ -3582,7 +3582,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let unquoted_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000000c")
   (paper A4)
 )"#;
     let unquoted_path = temp_schematic("unquoted_a4_paper", unquoted_src);
@@ -3596,7 +3596,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let gerber_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000000d")
   (paper GERBER)
 )"#;
     let gerber_path = temp_schematic("gerber_paper", gerber_src);
@@ -3610,7 +3610,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let mixed_case_usletter_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000000e")
   (paper usletter)
 )"#;
     let mixed_case_usletter_path =
@@ -3627,7 +3627,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let mixed_case_gerber_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000000f")
   (paper gerber)
 )"#;
     let mixed_case_gerber_path = temp_schematic("mixed_case_gerber_paper", mixed_case_gerber_src);
@@ -3642,7 +3642,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let bogus_tail_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000010")
   (paper A4 sideways)
 )"#;
     let bogus_tail_path = temp_schematic("standard_paper_bad_tail", bogus_tail_src);
@@ -3654,7 +3654,7 @@ fn standard_paper_resolves_upstream_dimensions_and_portrait_rotation() {
     let extra_after_portrait_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000011")
   (paper A4 portrait sideways)
 )"#;
     let extra_after_portrait_path = temp_schematic(
@@ -3672,7 +3672,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let paper_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000012")
   (paper "A4")
   (paper "User" 40 50 portrait)
 )"#;
@@ -3688,7 +3688,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let page_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000013")
   (page 1 1)
   (page 2 4)
 )"#;
@@ -3702,7 +3702,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let quoted_page_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000014")
   (page "" "")
 )"#;
     let quoted_page_path = temp_schematic("quoted_page_sniff", quoted_page_src);
@@ -3716,7 +3716,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let numeric_page_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000015")
   (page 3 4)
 )"#;
     let numeric_page_path = temp_schematic("numeric_page_sniff", numeric_page_src);
@@ -3730,7 +3730,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let mixed_quoted_page_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "30000000-0000-0000-0000-000000000001")
   (page 3 "4")
 )"#;
     let mixed_quoted_page_path = temp_schematic("mixed_quoted_page_sniff", mixed_quoted_page_src);
@@ -3744,7 +3744,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let raw_quoted_page_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000016")
   (page " 7 " " 9 ")
 )"#;
     let raw_quoted_page_path = temp_schematic("raw_quoted_page_sniff", raw_quoted_page_src);
@@ -3758,7 +3758,7 @@ fn duplicate_paper_and_page_sections_use_last_value_like_upstream() {
     let keyword_page_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000017")
   (page portrait paper)
 )"#;
     let keyword_page_path = temp_schematic("keyword_page_sniff", keyword_page_src);
@@ -3775,7 +3775,7 @@ fn rejects_invalid_page_type() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000018")
   (paper "BogusSize")
 )"#;
     let path = temp_schematic("invalid_page_type", src);
@@ -3793,7 +3793,7 @@ fn rejects_invalid_page_type() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-000000000019")
   (paper "usletter")
 )"#;
     let path = temp_schematic("canonical_page_type", src);
@@ -3811,7 +3811,7 @@ fn rejects_invalid_page_type() {
     let numeric_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000001a")
   (paper 123)
 )"#;
     let path = temp_schematic("numeric_page_type", numeric_src);
@@ -3825,7 +3825,7 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
     let missing_paper_kind_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000001b")
   (paper)
 )"#;
     let missing_paper_kind_path = temp_schematic("missing_paper_kind", missing_paper_kind_src);
@@ -3837,7 +3837,7 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
     let missing_user_width_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000001c")
   (paper User)
 )"#;
     let missing_user_width_path = temp_schematic("missing_user_width", missing_user_width_src);
@@ -3849,7 +3849,7 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
     let missing_user_height_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000001d")
   (paper User 123.4)
 )"#;
     let missing_user_height_path = temp_schematic("missing_user_height", missing_user_height_src);
@@ -3861,7 +3861,7 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
     let missing_page_sheet_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000001e")
   (page 7)
 )"#;
     let missing_page_sheet_path = temp_schematic("missing_page_sheet", missing_page_sheet_src);
@@ -3873,7 +3873,7 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
     let missing_page_right_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "10000000-0000-0000-0000-00000000001f")
   (page 7 9
 )"#;
     let missing_page_right_path = temp_schematic("missing_page_right", missing_page_right_src);
@@ -4148,7 +4148,7 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     let src = r#"(kicad_sch
   (version 20221001)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "30000000-0000-0000-0000-000000000001")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 90) (in_bom no) (on_board no) (dnp yes) (fields_autoplaced) (property "Value" "~"))
   (sheet (at 0 0) (size 10 10) (in_bom no) (on_board no) (dnp yes) (fields_autoplaced)
@@ -4195,17 +4195,26 @@ fn normalizes_symbol_and_sheet_instance_paths_and_legacy_empty_text() {
     assert_eq!(schematic.screen.root_sheet_page, None);
     assert!(schematic.screen.content_modified);
     assert_eq!(schematic.screen.sheet_instances.len(), 2);
-    assert_eq!(schematic.screen.sheet_instances[0].path, "/root-uuid");
+    assert_eq!(
+        schematic.screen.sheet_instances[0].path,
+        "/30000000-0000-0000-0000-000000000001"
+    );
     assert_eq!(
         schematic.screen.sheet_instances[0].page.as_deref(),
         Some("1")
     );
-    assert_eq!(schematic.screen.sheet_instances[1].path, "/root-uuid/child");
+    assert_eq!(
+        schematic.screen.sheet_instances[1].path,
+        "/30000000-0000-0000-0000-000000000001/child"
+    );
     assert_eq!(
         schematic.screen.sheet_instances[1].page.as_deref(),
         Some("#")
     );
-    assert_eq!(schematic.screen.symbol_instances[0].path, "/root-uuid/sym1");
+    assert_eq!(
+        schematic.screen.symbol_instances[0].path,
+        "/30000000-0000-0000-0000-000000000001/sym1"
+    );
     assert_eq!(
         schematic.screen.symbol_instances[0].value.as_deref(),
         Some("")
@@ -5031,17 +5040,17 @@ fn parses_symbol_mirror_body_style_and_sheet_pins() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "20000000-0000-0000-0000-000000000001")
   (paper "A4")
-  (symbol (lib_id "Device:R") (at 10 20 270) (mirror x) (body_style 2) (uuid "sym-1"))
-  (sheet (at 0 0) (size 20 10) (uuid "sheet-1")
+  (symbol (lib_id "Device:R") (at 10 20 270) (mirror x) (body_style 2) (uuid "20000000-0000-0000-0000-000000000002"))
+  (sheet (at 0 0) (size 20 10) (uuid "20000000-0000-0000-0000-000000000003")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
-    (pin "IN" input (at 0 5 180) (uuid "pin-1"))
-    (pin "OUT" output (at 20 5 0) (uuid "pin-2"))
-    (pin "TOP" bidirectional (at 10 0 90) (uuid "pin-3"))
-    (pin "BOT" tri_state (at 10 10 270) (uuid "pin-4"))
-    (pin "PASS" passive (at 5 5 0) (effects (font (size 1 2)) (hide)) (uuid "pin-5")))
+    (pin "IN" input (at 0 5 180) (uuid "20000000-0000-0000-0000-000000000004"))
+    (pin "OUT" output (at 20 5 0) (uuid "20000000-0000-0000-0000-000000000005"))
+    (pin "TOP" bidirectional (at 10 0 90) (uuid "20000000-0000-0000-0000-000000000006"))
+    (pin "BOT" tri_state (at 10 10 270) (uuid "20000000-0000-0000-0000-000000000007"))
+    (pin "PASS" passive (at 5 5 0) (effects (font (size 1 2)) (hide)) (uuid "20000000-0000-0000-0000-000000000008")))
 )"#;
     let path = temp_schematic("symbol_sheet_pins", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -8745,14 +8754,14 @@ fn converts_legacy_overbar_value_fields_when_effects_are_parsed() {
     let src = r#"(kicad_sch
   (version 20210605)
   (generator "eeschema")
-  (uuid "root-overbar-value")
+  (uuid "30000000-0000-0000-0000-000000000002")
   (lib_symbols
     (symbol "Device:R"
       (property "Value" "~LIB~" (id 1) (at 0 0 0) (effects (font (size 1 1))))))
   (symbol
     (lib_id "Device:R")
     (property "Value" "~SCH~" (id 1) (at 0 0 0) (effects (font (size 1 1))))
-    (uuid "sym-1"))
+    (uuid "30000000-0000-0000-0000-000000000003"))
 )"#;
     let path = temp_schematic("legacy_overbar_value_fields", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should parse");
@@ -8794,7 +8803,7 @@ fn converts_legacy_overbar_library_text_when_effects_are_parsed() {
     let src = r#"(kicad_sch
   (version 20210605)
   (generator "eeschema")
-  (uuid "root-overbar-lib-text")
+  (uuid "30000000-0000-0000-0000-000000000004")
   (lib_symbols
     (symbol "Device:R"
       (symbol "R_1_1"
@@ -8825,14 +8834,14 @@ fn keeps_legacy_overbar_value_raw_without_effects_path() {
     let src = r#"(kicad_sch
   (version 20210605)
   (generator "eeschema")
-  (uuid "root-overbar-no-effects")
+  (uuid "30000000-0000-0000-0000-000000000005")
   (lib_symbols
     (symbol "Device:R"
       (property "Value" "~LIBRAW~")))
   (symbol
     (lib_id "Device:R")
     (property "Value" "~SCHRAW~")
-    (uuid "sym-1"))
+    (uuid "30000000-0000-0000-0000-000000000006"))
 )"#;
     let path = temp_schematic("legacy_overbar_no_effects_path", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("schematic should parse");
