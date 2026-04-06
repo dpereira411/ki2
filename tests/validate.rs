@@ -2564,7 +2564,30 @@ fn rejects_invalid_lib_symbol_unit_name_suffix() {
 )"#;
     let path = temp_schematic("bad_lib_unit_suffix", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject malformed lib symbol");
-    assert!(err.to_string().contains("invalid symbol unit number"));
+    assert!(
+        err.to_string()
+            .contains("Invalid symbol unit name suffix bad")
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_lib_symbol_body_style_number() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R_1_bad" (arc))))
+)"#;
+    let path = temp_schematic("bad_lib_body_style_number", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject malformed lib symbol");
+    assert!(
+        err.to_string()
+            .contains("Invalid symbol body style number 1_bad")
+    );
     let _ = fs::remove_file(path);
 }
 

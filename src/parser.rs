@@ -1021,7 +1021,7 @@ impl KiCadSchematicParser {
 
                     if !unit_full_name.starts_with(&symbol.name) {
                         return Err(self.error_here(format!(
-                            "invalid symbol unit name prefix {unit_full_name}"
+                            "Invalid symbol unit name prefix {unit_full_name}"
                         )));
                     }
 
@@ -1030,32 +1030,27 @@ impl KiCadSchematicParser {
                         .and_then(|rest| rest.strip_prefix('_'))
                         .ok_or_else(|| {
                             self.error_here(format!(
-                                "invalid symbol unit name prefix {unit_full_name}"
+                                "Invalid symbol unit name prefix {unit_full_name}"
                             ))
                         })?;
-                    let mut parts = suffix.split('_');
-                    let unit_number = parts
-                        .next()
-                        .ok_or_else(|| {
-                            self.error_here(format!("invalid symbol unit name suffix {suffix}"))
-                        })?
-                        .parse::<i32>()
-                        .map_err(|_| self.error_here(format!("invalid symbol unit number {suffix}")))?;
-                    let body_style = parts
-                        .next()
-                        .ok_or_else(|| {
-                            self.error_here(format!("invalid symbol unit name suffix {suffix}"))
-                        })?
-                        .parse::<i32>()
-                        .map_err(|_| {
-                            self.error_here(format!("invalid symbol body style number {suffix}"))
-                        })?;
+                    let parts: Vec<_> = suffix.split('_').collect();
 
-                    if parts.next().is_some() {
+                    if parts.len() != 2 {
                         return Err(
-                            self.error_here(format!("invalid symbol unit name suffix {suffix}"))
+                            self.error_here(format!("Invalid symbol unit name suffix {suffix}"))
                         );
                     }
+
+                    let unit_number = parts[0]
+                        .parse::<i32>()
+                        .map_err(|_| {
+                            self.error_here(format!("Invalid symbol unit number {suffix}"))
+                        })?;
+                    let body_style = parts[1]
+                        .parse::<i32>()
+                        .map_err(|_| {
+                            self.error_here(format!("Invalid symbol body style number {suffix}"))
+                        })?;
 
                     let unit_name = unit_full_name;
                     symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
