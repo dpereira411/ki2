@@ -1032,13 +1032,13 @@ impl KiCadSchematicParser {
 
                     let suffix = unit_full_name
                         .strip_prefix(&symbol.name)
-                        .and_then(|rest| rest.strip_prefix('_'))
+                        .map(|rest| rest.chars().skip(1).collect::<String>())
                         .ok_or_else(|| {
                             self.error_here(format!(
                                 "Invalid symbol unit name prefix {unit_full_name}"
                             ))
                         })?;
-                    let parts: Vec<_> = suffix.split('_').collect();
+                    let parts: Vec<_> = suffix.split('_').filter(|part| !part.is_empty()).collect();
 
                     if parts.len() != 2 {
                         return Err(

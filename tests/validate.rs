@@ -2581,6 +2581,26 @@ fn rejects_invalid_lib_symbol_unit_name_suffix() {
 }
 
 #[test]
+fn rejects_lib_symbol_unit_name_without_separator_as_bad_suffix() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R1_1" (arc))))
+)"#;
+    let path = temp_schematic("bad_lib_unit_missing_separator", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject malformed lib symbol");
+    assert!(
+        err.to_string()
+            .contains("Invalid symbol unit name suffix _1")
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_lib_symbol_body_style_number() {
     let src = r#"(kicad_sch
   (version 20250114)
