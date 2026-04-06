@@ -10265,6 +10265,23 @@ fn rejects_lib_pin_keywords_as_unquoted_lib_jumper_pin_group_members() {
 }
 
 #[test]
+fn rejects_effects_as_unquoted_lib_jumper_pin_group_member() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-jumper-effects-keyword")
+  (lib_symbols
+    (symbol "Device:R"
+      (jumper_pin_groups (effects 2))))
+)"#;
+    let path = temp_schematic("effects_keyword_jumper_pin_groups", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject unquoted effects keyword pin names");
+    assert!(err.to_string().contains("expecting list of pin names"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)

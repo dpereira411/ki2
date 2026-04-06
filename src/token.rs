@@ -246,6 +246,7 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "pin_numbers"
             | "offset"
             | "hide"
+            | "effects"
             | "exclude_from_sim"
             | "in_bom"
             | "on_board"
@@ -811,9 +812,10 @@ mod tests {
 
     #[test]
     fn lex_marks_parser_only_reserved_heads_as_keywords() {
-        let tokens =
-            lex("(items host margins face diameter dot round diamond power_in inverted_clock)")
-                .expect("lex");
+        let tokens = lex(
+            "(items host margins face diameter dot round diamond power_in inverted_clock effects)",
+        )
+        .expect("lex");
         let atoms: Vec<(String, bool)> = tokens
             .into_iter()
             .filter_map(|token| match token.kind {
@@ -835,6 +837,7 @@ mod tests {
                 ("diamond".to_string(), true),
                 ("power_in".to_string(), true),
                 ("inverted_clock".to_string(), true),
+                ("effects".to_string(), true),
             ]
         );
     }
