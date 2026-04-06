@@ -427,9 +427,9 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
     }
 
     let name = raw_name
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
+        .split_once(' ')
+        .map(|(name, _)| name)
+        .unwrap_or(raw_name.as_str())
         .to_string();
 
     if name.is_empty() {
