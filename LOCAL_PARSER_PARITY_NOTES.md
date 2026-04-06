@@ -61,7 +61,6 @@ Direct re-audit shows `parseSchText()` itself is no longer an active parser-only
 - parser-owned finalization is now much closer too: description-cache refresh and draw-item sorting are no longer hidden behind model helpers
 - remaining lib gaps are now concentrated in narrower helper/exactness surfaces:
   - `parseSymbolDrawItem()`
-  - `parseSymbolPin()`
   - local-lib flattening exactness
 
 7. Shape parsing still has gaps
@@ -134,7 +133,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 ### More Exact Current Priority
 
 1. Revisit top-level `ParseSchematic()` / `parse_schematic_body()` for concrete remaining exactness mismatches.
-2. Tighten remaining exact library helper surfaces (`parseSymbolDrawItem()`, `parseSymbolPin()`, local-lib flattening) where direct comparison exposes them.
+2. Tighten remaining exact library helper surfaces (`parseSymbolDrawItem()`, local-lib flattening) where direct comparison exposes them.
 3. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
 4. Do a parser-wide token/error parity pass.
 5. Port the missing cross-file post-load pipeline.

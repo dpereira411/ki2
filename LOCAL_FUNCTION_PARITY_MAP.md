@@ -151,7 +151,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `parseSymbolRectangle` | `parse_symbol_rectangle` | `same` | corner-radius/internal-units flow is stable enough | existing tests | none |
 | `parseSymbolText` | `parse_symbol_text` | `same` | hidden-text-to-field flow and effects ownership are stable enough | existing tests | none |
 | `parseSymbolTextBox` | `parse_symbol_text_box` | `same` | text-box ownership and defaults are stable enough | existing tests | none |
-| `parseSymbolPin` | `parse_symbol_pin` | `different` | still part of the narrower lib-symbol exactness surface | source comparison | revisit only if direct diff shows a concrete mismatch |
+| `parseSymbolPin` | `parse_symbol_pin` | `same` | direct re-audit shows the remaining lib exactness is no longer here: child-head ownership, bare/valued hide flow, name/number effects timing, and alternate overwrite semantics are structurally close enough to upstream | direct source comparison against upstream body plus existing lib-pin regressions | none |
 | `embedded_files` body | `parse_embedded_files` | `same` | section ownership and recovery behavior are now close enough | direct audit + tests | none |
 
 ## Layer 4: Schematic Owners
