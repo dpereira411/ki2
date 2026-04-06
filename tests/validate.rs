@@ -4812,7 +4812,7 @@ fn parses_text_and_label_semantics() {
         })
         .expect("global label");
     assert!(global.excluded_from_sim);
-    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::Auto);
     assert_eq!(global.properties.len(), 1);
     assert!(global.has_effects);
     assert!(global.visible);
@@ -4852,6 +4852,38 @@ fn parses_text_and_label_semantics() {
         })
         .expect("directive label");
     assert_eq!(directive.pin_length, Some(3.5));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn global_label_without_user_fields_still_autoplaces_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (global_label "GL" (at 1 2 0) (shape input) (uuid "g-1"))
+)"#;
+    let path = temp_schematic("global_label_default_autoplace", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let global = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::Auto);
+    assert_eq!(global.properties.len(), 1);
+    assert_eq!(
+        global.properties[0].kind,
+        PropertyKind::GlobalLabelIntersheetRefs
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -5168,7 +5200,7 @@ fn global_label_starts_with_hidden_intersheet_refs_field() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("intersheet refs field");
 
-    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::Auto);
     assert_eq!(intersheet_refs.id, Some(6));
     assert_eq!(intersheet_refs.key, "Intersheet References");
     assert_eq!(intersheet_refs.value, "${INTERSHEET_REFS}");
