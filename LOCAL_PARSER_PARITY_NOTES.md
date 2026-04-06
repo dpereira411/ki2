@@ -215,23 +215,20 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   10. legacy helper exactness is now locked too: mixed-case `dc` / source-model kinds still migrate, and punctuation-heavy `Spice_Node_Sequence` payloads still decode into `Sim.Pins`
   11. default `Sim.Pins` synthesis is now locked too: source pins are filtered by the active symbol unit and ordered numerically before the migration writes the name-value map
   12. migrated `Sim.*` field state now also hydrates a structured `Symbol.sim_model` snapshot during load, including parsed `Sim.Params` name/value maps and `Sim.Pins` mappings, so the remaining blocked simulator-model work is no longer forced to live only as flat property strings
-  Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, broader internal source/model functions beyond the current `DC/SIN/PULSE/EXP/AM/SFFM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
+  Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, the still-unported control-source/internal-model families beyond the current `DC/SIN/PULSE/EXP/AM/SFFM/PWL/TRNOISE/TRRANDOM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 
 ### More Exact Current Priority
 
-1. Tighten remaining loader/post-load exactness around reused-screen/current-sheet page semantics.
-2. Tighten remaining loader-side `RecomputeIntersheetRefs` / `SetSheetNumberAndCount` exactness.
-3. Tighten remaining loader-side `UpdateAllScreenReferences` beyond the current symbol/global-label subset.
+1. Tighten remaining loader/post-load exactness around reused-screen/current-sheet page semantics only if direct audit still finds real model-visible mismatches.
+2. Tighten remaining loader-side `RecomputeIntersheetRefs` / `SetSheetNumberAndCount` exactness only if direct audit still finds real model-visible mismatches.
+3. Re-open the remaining blocked `MigrateSimModels` branch on the new structured `Symbol.sim_model` state instead of flat field-only rewrites.
 4. Leave parser-only blocked surfaces alone unless we explicitly choose fixture migration or error-model expansion.
 
 ### Recommended Next Order
 
-1. `SetSheetNumberAndCount`
-2. `RecomputeIntersheetRefs`
-3. `UpdateAllScreenReferences`
-4. `UpdateSymbolInstanceData`
-5. `FixLegacyPowerSymbolMismatches`
-6. only then revisit parser blocked surfaces or the heavier blocked `MigrateSimModels` branch
+1. direct-audit `SetSheetNumberAndCount` / `RecomputeIntersheetRefs` / `UpdateAllScreenReferences` for any remaining real model-visible mismatch
+2. if that audit is effectively exhausted, move the active queue to the remaining blocked `MigrateSimModels` branch on structured `Symbol.sim_model`
+3. only then revisit parser blocked surfaces
 
 ### Bottom Line
 
