@@ -1,126 +1,189 @@
 # Parser BFS Record
 
-Target: parser-only, pre-hierarchy flow inventory for `src/parser.rs`.
+Target: parser-only, pre-hierarchy flow inventory for:
+- `src/token.rs`
+- `src/model.rs`
+- `src/error.rs`
+- `src/diagnostic.rs`
+- `src/parser.rs`
 
 Purpose:
 - record the current local parser call graph in breadth-first layers
-- provide an audit artifact for “does every upstream routine family have a local counterpart?”
-- support parity tracking alongside `LOCAL_FUNCTION_PARITY_MAP.md`
+- provide a coverage artifact for “does every upstream parser routine family have a local counterpart?”
+- complement `LOCAL_FUNCTION_PARITY_MAP.md`, which remains the authoritative parity audit
 
-Non-goal:
-- this is not the primary porting order
-- primary execution order remains bottom-up by dependency, not BFS order
+Non-goals:
+- this is not the primary execution order
+- this is not the authoritative parity status file
+- active executable parity work is no longer in the parser layer
 
-Legend:
-- `done`: structurally close enough that it should not be the current bottleneck
-- `partial`: still has meaningful exactness / control-flow work left
+Status legend:
+- `same`: parser-visible behavior is close enough to upstream and no longer an active parser bottleneck
+- `blocked`: literal parity is still blocked by a real model/test/support limitation
+- `not_applicable`: local support only, or intentionally inlined into another audited routine
+
+Current summary:
+- parser-only routine work is exhausted in the current model
+- all parser nodes below are now `same`, `blocked`, or `not_applicable`
+- active parity work has moved to loader/post-load flow in `src/loader.rs`
 
 ## Layer 0
 
-- `parse_schematic_file` (`partial`)
+- `parse_schematic_file` (`same`)
 
 ## Layer 1
 
-- `parse_schematic` (`partial`)
+- `parse_schematic` (`same`)
 
 ## Layer 2
 
-- `parse_schematic_body` (`partial`)
+- `parse_schematic_body` (`same`)
 
 ## Layer 3: Top-Level Section Dispatch
 
-- `parse_page_info` (`done`)
-- `parse_title_block` (`done`)
-- `parse_sch_lib_symbols` (`partial`)
-- `parse_schematic_symbol` (`partial`)
-- `parse_sch_sheet` (`partial`)
-- `parse_junction` (`partial`)
-- `parse_no_connect` (`partial`)
-- `parse_bus_entry` (`partial`)
-- `parse_sch_line` (`partial`)
-- `parse_sch_polyline` (`partial`)
-- `parse_sch_arc` (`partial`)
-- `parse_sch_circle` (`partial`)
-- `parse_sch_rectangle` (`partial`)
-- `parse_sch_bezier` (`partial`)
-- `parse_sch_rule_area` (`partial`)
-- `parse_sch_text` (`partial`)
-- `parse_sch_text_box` (`done`)
-- `parse_sch_table` (`done`)
-- `parse_sch_image` (`done`)
-- `parse_bus_alias` (`done`)
-- `parse_group` (`done`)
-- `parse_embedded_files` (`partial`)
-- `parse_sch_sheet_instances` (`partial`)
-- `parse_sch_symbol_instances` (`partial`)
+- `parse_page_info` (`same`)
+- `parse_title_block` (`same`)
+- `parse_sch_lib_symbols` (`same`)
+- `parse_schematic_symbol` (`same`)
+- `parse_sch_sheet` (`same`)
+- `parse_junction` (`same`)
+- `parse_no_connect` (`same`)
+- `parse_bus_entry` (`same`)
+- `parse_sch_line` (`same`)
+- `parse_sch_polyline` (`same`)
+- `parse_sch_arc` (`same`)
+- `parse_sch_circle` (`same`)
+- `parse_sch_rectangle` (`same`)
+- `parse_sch_bezier` (`same`)
+- `parse_sch_rule_area` (`same`)
+- `parse_sch_text` (`same`)
+- `parse_sch_text_box` (`same`)
+- `parse_sch_table` (`same`)
+- `parse_sch_image` (`same`)
+- `parse_bus_alias` (`same`)
+- `parse_group` (`same`)
+- `parse_embedded_files` (`same`)
+- `parse_sch_sheet_instances` (`same`)
+- `parse_sch_symbol_instances` (`same`)
 
 ## Layer 4: Owner-Sensitive Children
 
-- `parse_lib_symbol` (`partial`)
-- `parse_sch_sheet_pin` (`done`)
-- `parse_sch_field` (`partial`)
-- `parse_sch_text_box_content` (`done`)
-- `parse_sch_table_cell` (`done`)
-- `parse_group_members` (`done`)
+- `parse_lib_symbol` (`same`)
+- `parse_sch_sheet_pin` (`same`)
+- `parse_sch_field` (`same`)
+- `parse_sch_text_box_content` (`same`)
+- `parse_sch_table_cell` (`same`)
+- `parse_group_members` (`same`)
 
 ## Layer 5: Library Helper / Draw-Item Family
 
-- `parse_body_styles` (`done`)
-- `parse_pin_names` (`done`)
-- `parse_pin_numbers` (`done`)
-- `parse_lib_property` (`partial`)
-- `parse_symbol_draw_item` (`partial`)
-- `parse_symbol_arc` (`partial`)
-- `parse_symbol_bezier` (`partial`)
-- `parse_symbol_circle` (`partial`)
-- `parse_symbol_polyline` (`partial`)
-- `parse_symbol_rectangle` (`partial`)
-- `parse_symbol_text` (`partial`)
-- `parse_symbol_text_box` (`partial`)
-- `parse_symbol_pin` (`partial`)
+- `parse_body_styles` (`same`)
+- `parse_pin_names` (`same`)
+- `parse_pin_numbers` (`same`)
+- `parse_lib_property` (`same`)
+- `parse_symbol_draw_item` (`same`)
+- `parse_symbol_arc` (`same`)
+- `parse_symbol_bezier` (`same`)
+- `parse_symbol_circle` (`same`)
+- `parse_symbol_polyline` (`same`)
+- `parse_symbol_rectangle` (`same`)
+- `parse_symbol_text` (`same`)
+- `parse_symbol_text_box` (`same`)
+- `parse_symbol_pin` (`same`)
 
 ## Layer 6: Shared Leaves
 
-- `parse_stroke` (`done`)
-- `parse_fill` (`done`)
-- `parse_eda_text` (`partial`)
-- `parse_xy2` (`partial`)
-- `parse_xy2_lib` (`partial`)
-- `parse_i32_atom` (`partial`)
-- `parse_f64_atom` (`partial`)
-- `parse_internal_units_atom` (`partial`)
-- `parse_bool_atom` (`partial`)
-- `parse_kiid` (`partial`)
-- `parse_raw_kiid` (`partial`)
-- `parse_kiid_atom` (`partial`)
-- `parse_maybe_absent_bool` (`partial`)
+- `parse_stroke` (`same`)
+- `parse_fill` (`same`)
+- `parse_eda_text` (`same`)
+- `parse_xy2` (`same`)
+- `parse_xy2_lib` (`same`)
+- `parse_i32_atom` (`same`)
+- `parse_f64_atom` (`same`)
+- `parse_internal_units_atom` (`same`)
+- `parse_bool_atom` (`same`)
+- `parse_kiid` (`blocked`)
+- `parse_raw_kiid` (`same`)
+- `parse_kiid_atom` (`blocked`)
+- `parse_maybe_absent_bool` (`same`)
 
-## Layer 7: Shared Token Readers
+## Layer 7: Shared Token Readers / Primitive Helpers
 
-- `need_left` (`partial`)
-- `need_right` (`partial`)
-- `need_symbol_atom` (`partial`)
-- `need_unquoted_symbol_atom` (`partial`)
-- `need_quoted_atom` (`partial`)
-- `need_symbol_or_number_atom` (`partial`)
+- `need_left` (`same`)
+- `need_right` (`same`)
+- `need_symbol_atom` (`same`)
+- `need_unquoted_symbol_atom` (`same`)
+- `need_quoted_atom` (`not_applicable`)
+- `need_symbol_or_number_atom` (`same`)
+- `need_dsn_string_atom` (`same`)
+- `expecting` (`blocked`)
+- `unexpected` (`blocked`)
+- `error_here` (`blocked`)
 
-## Active Endgame Queue
+## Layer 8: Parser-Support Model Methods
 
-Use this BFS record as an audit checklist, but keep execution order dependency-driven:
+- `LibSymbol::new` (`same`)
+- `LibDrawItem::new` (`same`)
+- `Label::new` (`same`)
+- `Label::set_position` (`same`)
+- `Label::set_angle` (`same`)
+- `Label::set_spin` (`same`)
+- `Text::new` (`same`)
+- `Text::set_position` (`same`)
+- `Text::set_angle` (`same`)
+- `TextBox::new` (`same`)
+- `TableCell::new` (`same`)
+- `Stroke::new` (`same`)
+- `Fill::new` (`same`)
+- `Table::new` (`same`)
+- `Table::add_cell` (`same`)
+- `Image::new` (`same`)
+- `Shape::new` (`same`)
+- `Symbol::new` (`same`)
+- `Symbol::set_field_text` (`same`)
+- `Symbol::set_position` (`same`)
+- `Symbol::set_angle` (`same`)
+- `Symbol::update_prefix_from_reference` (`same`)
+- `Sheet::new` (`same`)
+- `Sheet::set_position` (`same`)
+- `Sheet::set_size` (`same`)
+- `SheetPin::new` (`same`)
+- `SheetPin::set_side_with_sheet_geometry` (`same`)
+- `SheetPin::constrain_on_sheet_edge` (`same`)
+- `Property::new` (`same`)
+- `Property::new_named` (`same`)
+- `PropertyKind::canonical_key` (`same`)
+- `PropertyKind::default_field_id` (`same`)
 
-1. `parse_eda_text`
-2. `parse_sch_text`
-3. `parse_lib_symbol`
-4. `parse_sch_sheet`
-5. `parse_schematic_symbol`
-6. parser-wide token / diagnostic exactness
+## Blocked Parser Surfaces
 
-## Completion Rule
+These are the only remaining parser-only gaps recorded by the current audit:
 
-Do not mark the parser-only boundary complete until:
+1. malformed UUID semantics
+   - blocked on migrating tests/fixtures/model assumptions away from stable symbolic IDs
+   - touches:
+     - `parse_kiid`
+     - `parse_kiid_atom`
+     - UUID normalization/uniqueness flow
 
-- every `partial` routine above is either:
-  - moved to `done`, or
-  - split into a smaller explicit remaining mismatch elsewhere
-- `LOCAL_FUNCTION_PARITY_MAP.md` no longer contains parser-only `partial` bottlenecks
-- remaining differences are outside the parser-only boundary
+2. exact diagnostic / error-model parity
+   - blocked on expanding the local diagnostic representation beyond the current reduced model
+   - touches:
+     - `Diagnostic::error`
+     - parser error helpers:
+       - `expecting`
+       - `unexpected`
+       - `error_here`
+     - `Error` formatting / source-location fidelity
+
+## Rule Of Use
+
+Use this file only as a breadth-first coverage record.
+
+For actual parity decisions:
+- `LOCAL_FUNCTION_PARITY_MAP.md` is authoritative
+- `LOCAL_PARSER_PARITY_NOTES.md` records current strategy, blockers, and loader priorities
+
+Do not reopen parser routine work from this BFS file unless:
+1. a blocked parser surface is being explicitly unblocked, or
+2. loader/upstream comparison exposes a concrete parser regression.
