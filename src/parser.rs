@@ -1139,7 +1139,14 @@ impl KiCadSchematicParser {
             symbol.has_demorgan = symbol.has_legacy_alternate_body_style();
         }
 
-        symbol.refresh_library_tree_caches();
+        for unit in &mut symbol.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
         self.need_right()?;
         Ok(symbol)
     }
@@ -5981,7 +5988,14 @@ impl KiCadSchematicParser {
             symbol.clone()
         };
 
-        flattened.refresh_library_tree_caches();
+        for unit in &mut flattened.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
         stack.remove(lib_id);
         cache.insert(lib_id.to_string(), flattened.clone());
         Some(flattened)
