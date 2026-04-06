@@ -726,8 +726,7 @@ impl KiCadSchematicParser {
                             ));
                         }
                     };
-
-                    title_block.set_comment(comment_number as usize, value);
+                    title_block.comments[comment_number as usize - 1] = Some(value);
                 }
                 _ => return Err(self.expecting("title, date, rev, company, or comment")),
             }
@@ -2912,15 +2911,20 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "column_count" => {
                     let _ = self.need_unquoted_symbol_atom("column_count")?;
-                    table.set_column_count(self.parse_i32_atom("column count")?);
+                    table.column_count = Some(self.parse_i32_atom("column count")?);
                     self.need_right()?;
                 }
                 "column_widths" => {
                     let _ = self.need_unquoted_symbol_atom("column_widths")?;
                     let mut col = 0usize;
                     while !self.at_right() {
-                        table
-                            .set_column_width(col, self.parse_internal_units_atom("column width")?);
+                        let width = self.parse_internal_units_atom("column width")?;
+
+                        if table.column_widths.len() <= col {
+                            table.column_widths.resize(col + 1, 0.0);
+                        }
+
+                        table.column_widths[col] = width;
                         col += 1;
                     }
                     self.need_right()?;
@@ -2929,7 +2933,13 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("row_heights")?;
                     let mut row = 0usize;
                     while !self.at_right() {
-                        table.set_row_height(row, self.parse_internal_units_atom("row height")?);
+                        let height = self.parse_internal_units_atom("row height")?;
+
+                        if table.row_heights.len() <= row {
+                            table.row_heights.resize(row + 1, 0.0);
+                        }
+
+                        table.row_heights[row] = height;
                         row += 1;
                     }
                     self.need_right()?;

@@ -101,10 +101,6 @@ impl Default for TitleBlock {
 }
 
 impl TitleBlock {
-    pub fn set_comment(&mut self, comment_number: usize, value: String) {
-        self.comments[comment_number - 1] = Some(value);
-    }
-
     pub fn comment(&self, comment_number: usize) -> Option<&str> {
         self.comments
             .get(comment_number - 1)
@@ -933,26 +929,6 @@ impl Table {
         }
     }
 
-    pub fn set_column_count(&mut self, count: i32) {
-        self.column_count = Some(count);
-    }
-
-    pub fn set_column_width(&mut self, col: usize, width: f64) {
-        if self.column_widths.len() <= col {
-            self.column_widths.resize(col + 1, 0.0);
-        }
-
-        self.column_widths[col] = width;
-    }
-
-    pub fn set_row_height(&mut self, row: usize, height: f64) {
-        if self.row_heights.len() <= row {
-            self.row_heights.resize(row + 1, 0.0);
-        }
-
-        self.row_heights[row] = height;
-    }
-
     pub fn add_cell(&mut self, cell: TableCell) {
         let mut cell = cell;
         let (row, column) = self.next_available_cell_slot();
@@ -1545,7 +1521,7 @@ mod tests {
     #[test]
     fn tables_place_cells_on_grid_from_spans() {
         let mut table = Table::new(0.0);
-        table.set_column_count(3);
+        table.column_count = Some(3);
 
         let mut first = TableCell::new();
         first.col_span = 2;
@@ -1577,7 +1553,7 @@ mod tests {
     #[test]
     fn tables_place_cells_around_row_spans() {
         let mut table = Table::new(0.0);
-        table.set_column_count(2);
+        table.column_count = Some(2);
 
         let mut first = TableCell::new();
         first.row_span = 2;
