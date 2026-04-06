@@ -289,20 +289,6 @@ impl LibSymbol {
         self.units[index].push_draw_item(item);
     }
 
-    pub fn set_description_field_text(&mut self, value: String) {
-        let existing = self
-            .properties
-            .iter_mut()
-            .find(|property| property.kind == PropertyKind::SymbolDescription)
-            .expect("lib symbols start with mandatory fields");
-        existing.id = PropertyKind::SymbolDescription
-            .default_field_id()
-            .or(existing.id);
-        existing.key = PropertyKind::SymbolDescription.canonical_key().to_string();
-        existing.value = value;
-        self.sync_description_from_property();
-    }
-
     pub fn sort_draw_items(&mut self) {
         for unit in &mut self.units {
             unit.draw_items.sort();

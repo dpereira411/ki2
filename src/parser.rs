@@ -2118,7 +2118,17 @@ impl KiCadSchematicParser {
         } else if name == "ki_keywords" {
             symbol.keywords = Some(property.value);
         } else if name == "ki_description" {
-            symbol.set_description_field_text(property.value);
+            let existing = symbol
+                .properties
+                .iter_mut()
+                .find(|existing| existing.kind == PropertyKind::SymbolDescription)
+                .expect("lib symbols start with mandatory fields");
+            existing.id = PropertyKind::SymbolDescription
+                .default_field_id()
+                .or(existing.id);
+            existing.key = PropertyKind::SymbolDescription.canonical_key().to_string();
+            existing.value = property.value;
+            symbol.sync_description_from_property();
         } else if name == "ki_fp_filters" {
             symbol.fp_filters_specified = true;
             symbol.fp_filters = property
