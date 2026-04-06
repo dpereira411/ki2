@@ -3,8 +3,11 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
-use crate::model::{Property, PropertyKind, SchItem, Schematic, SheetReference};
+use crate::model::{
+    EmbeddedFile, Property, PropertyKind, SchItem, Schematic, SheetReference, Symbol,
+};
 use crate::parser::parse_schematic_file;
+use crate::sim::resolve_symbol_sim_library_from_embedded_files;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HierarchyLink {
@@ -663,6 +666,8 @@ impl SchematicLoader {
     fn migrate_sim_models(&mut self) {
         for schematic in &mut self.schematics {
             let mut migrated = false;
+            let schematic_path = schematic.path.clone();
+            let embedded_files = schematic.screen.embedded_files.clone();
 
             for item in &mut schematic.screen.items {
                 let SchItem::Symbol(symbol) = item else {
@@ -718,6 +723,7 @@ impl SchematicLoader {
                         }
 
                         symbol.sync_sim_model_from_properties();
+                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
                         migrated = true;
                         continue;
                     }
@@ -807,6 +813,7 @@ impl SchematicLoader {
                         }
 
                         symbol.sync_sim_model_from_properties();
+                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
                         migrated = true;
                         continue;
                     }
@@ -887,6 +894,7 @@ impl SchematicLoader {
                         }
 
                         symbol.sync_sim_model_from_properties();
+                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
                         migrated = true;
                         continue;
                     }
@@ -897,6 +905,7 @@ impl SchematicLoader {
 
                     if !can_raw_migrate {
                         symbol.sync_sim_model_from_properties();
+                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
                         continue;
                     }
 
@@ -985,6 +994,7 @@ impl SchematicLoader {
                     }
 
                     symbol.sync_sim_model_from_properties();
+                    hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
                     migrated = true;
                     continue;
                 }
@@ -1025,6 +1035,7 @@ impl SchematicLoader {
                 }
 
                 symbol.sync_sim_model_from_properties();
+                hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
             }
 
             if migrated {
@@ -1410,6 +1421,19 @@ fn compare_pin_numbers(a: &String, b: &String) -> std::cmp::Ordering {
     match (a.parse::<i32>(), b.parse::<i32>()) {
         (Ok(a_number), Ok(b_number)) => a_number.cmp(&b_number),
         _ => a.cmp(b),
+    }
+}
+
+fn hydrate_resolved_sim_library(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &mut Symbol,
+) {
+    let resolved_library =
+        resolve_symbol_sim_library_from_embedded_files(schematic_path, embedded_files, symbol);
+
+    if let Some(sim_model) = symbol.sim_model.as_mut() {
+        sim_model.resolved_library = resolved_library;
     }
 }
 

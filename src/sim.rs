@@ -2,14 +2,9 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::model::{EmbeddedFileType, Screen, Symbol};
+use crate::model::{EmbeddedFile, EmbeddedFileType, Screen, Symbol};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SimLibrarySource {
-    Filesystem(PathBuf),
-    SchematicEmbedded { name: String },
-    SymbolEmbedded { name: String },
-}
+pub use crate::model::{ResolvedSimLibrary, SimLibraryKind, SimLibrarySource};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimLibraryContent {
@@ -22,9 +17,21 @@ pub fn collect_symbol_sim_library_sources(
     screen: &Screen,
     symbol: &Symbol,
 ) -> Vec<SimLibrarySource> {
+    collect_symbol_sim_library_sources_from_embedded_files(
+        schematic_path,
+        &screen.embedded_files,
+        symbol,
+    )
+}
+
+pub fn collect_symbol_sim_library_sources_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+) -> Vec<SimLibrarySource> {
     let mut sources = Vec::new();
 
-    for file in &screen.embedded_files {
+    for file in embedded_files {
         if file.file_type == Some(EmbeddedFileType::Model) {
             if let Some(name) = file.name.as_ref() {
                 sources.push(SimLibrarySource::SchematicEmbedded { name: name.clone() });
@@ -59,12 +66,28 @@ pub fn resolve_symbol_sim_library_source(
     screen: &Screen,
     symbol: &Symbol,
 ) -> Option<SimLibrarySource> {
+    resolve_symbol_sim_library_source_from_embedded_files(
+        schematic_path,
+        &screen.embedded_files,
+        symbol,
+    )
+}
+
+pub fn resolve_symbol_sim_library_source_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+) -> Option<SimLibrarySource> {
     let library = symbol
         .sim_model
         .as_ref()
         .and_then(|sim_model| sim_model.library.as_deref())?;
 
-    for source in collect_symbol_sim_library_sources(schematic_path, screen, symbol) {
+    for source in collect_symbol_sim_library_sources_from_embedded_files(
+        schematic_path,
+        embedded_files,
+        symbol,
+    ) {
         match &source {
             SimLibrarySource::SchematicEmbedded { name }
             | SimLibrarySource::SymbolEmbedded { name }
@@ -89,12 +112,24 @@ pub fn load_symbol_sim_library_content(
     screen: &Screen,
     symbol: &Symbol,
 ) -> Option<SimLibraryContent> {
+    load_symbol_sim_library_content_from_embedded_files(
+        schematic_path,
+        &screen.embedded_files,
+        symbol,
+    )
+}
+
+pub fn load_symbol_sim_library_content_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+) -> Option<SimLibraryContent> {
     let library = symbol
         .sim_model
         .as_ref()
         .and_then(|sim_model| sim_model.library.as_deref())?;
 
-    for file in &screen.embedded_files {
+    for file in embedded_files {
         if file.file_type == Some(EmbeddedFileType::Model)
             && file.name.as_deref() == Some(library)
             && file.data.is_some()
@@ -130,6 +165,83 @@ pub fn load_symbol_sim_library_content(
         source: SimLibrarySource::Filesystem(path),
         text,
     })
+}
+
+pub fn classify_symbol_sim_library_kind(
+    schematic_path: &Path,
+    screen: &Screen,
+    symbol: &Symbol,
+) -> Option<SimLibraryKind> {
+    classify_symbol_sim_library_kind_from_embedded_files(
+        schematic_path,
+        &screen.embedded_files,
+        symbol,
+    )
+}
+
+pub fn classify_symbol_sim_library_kind_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+) -> Option<SimLibraryKind> {
+    let source = resolve_symbol_sim_library_source_from_embedded_files(
+        schematic_path,
+        embedded_files,
+        symbol,
+    )?;
+    let name = match source {
+        SimLibrarySource::Filesystem(path) => path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        SimLibrarySource::SchematicEmbedded { name }
+        | SimLibrarySource::SymbolEmbedded { name } => name,
+    };
+
+    Some(classify_sim_library_name(&name))
+}
+
+pub fn resolve_symbol_sim_library(
+    schematic_path: &Path,
+    screen: &Screen,
+    symbol: &Symbol,
+) -> Option<ResolvedSimLibrary> {
+    resolve_symbol_sim_library_from_embedded_files(schematic_path, &screen.embedded_files, symbol)
+}
+
+pub fn resolve_symbol_sim_library_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+) -> Option<ResolvedSimLibrary> {
+    let source = resolve_symbol_sim_library_source_from_embedded_files(
+        schematic_path,
+        embedded_files,
+        symbol,
+    )?;
+    let name = match &source {
+        SimLibrarySource::Filesystem(path) => path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        SimLibrarySource::SchematicEmbedded { name }
+        | SimLibrarySource::SymbolEmbedded { name } => name.clone(),
+    };
+
+    Some(ResolvedSimLibrary {
+        source,
+        kind: classify_sim_library_name(&name),
+    })
+}
+
+fn classify_sim_library_name(name: &str) -> SimLibraryKind {
+    if name.to_ascii_lowercase().ends_with(".ibs") {
+        SimLibraryKind::Ibis
+    } else {
+        SimLibraryKind::Spice
+    }
 }
 
 fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {

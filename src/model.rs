@@ -1240,6 +1240,7 @@ impl Symbol {
             value_binding,
             enabled: !self.excluded_from_sim,
             origin,
+            resolved_library: None,
         });
     }
 }
@@ -1260,6 +1261,25 @@ pub enum SimModelOrigin {
     InferredValue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimLibraryKind {
+    Spice,
+    Ibis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SimLibrarySource {
+    Filesystem(PathBuf),
+    SchematicEmbedded { name: String },
+    SymbolEmbedded { name: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSimLibrary {
+    pub source: SimLibrarySource,
+    pub kind: SimLibraryKind,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimModel {
     pub device: Option<String>,
@@ -1276,6 +1296,7 @@ pub struct SimModel {
     pub value_binding: Option<SimValueBinding>,
     pub enabled: bool,
     pub origin: Option<SimModelOrigin>,
+    pub resolved_library: Option<ResolvedSimLibrary>,
 }
 
 fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {

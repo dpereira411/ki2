@@ -9,13 +9,14 @@ use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
     EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelShape, LabelSpin,
-    LineKind, MirrorAxis, PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide,
-    SimModelOrigin, SimValueBinding, StrokeStyle, TextHJustify, TextKind, TextVJustify,
+    LineKind, MirrorAxis, PropertyKind, ResolvedSimLibrary, SchItem, ShapeKind, SheetPinShape,
+    SheetSide, SimLibraryKind, SimLibrarySource, SimModelOrigin, SimValueBinding, StrokeStyle,
+    TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 use ki2::sim::{
-    SimLibraryContent, SimLibrarySource, collect_symbol_sim_library_sources,
-    load_symbol_sim_library_content, resolve_symbol_sim_library_source,
+    SimLibraryContent, classify_symbol_sim_library_kind, collect_symbol_sim_library_sources,
+    load_symbol_sim_library_content, resolve_symbol_sim_library, resolve_symbol_sim_library_source,
 };
 use uuid::Uuid;
 
@@ -5901,6 +5902,107 @@ fn loads_symbol_sim_library_content_from_spice_lib_dir() {
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
     let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn classifies_symbol_sim_library_kind_from_embedded_sources() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000315")
+  (paper "A4")
+  (embedded_files
+    (file (name "driver.ibs") (type model) (data |ibis-model|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_embedded_sim_library_kind", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        classify_symbol_sim_library_kind(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryKind::Ibis)
+    );
+    assert_eq!(
+        resolve_symbol_sim_library(&schematic.path, &schematic.screen, symbol),
+        Some(ResolvedSimLibrary {
+            source: SimLibrarySource::SchematicEmbedded {
+                name: "driver.ibs".to_string(),
+            },
+            kind: SimLibraryKind::Ibis,
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_hydrates_resolved_sim_library_on_symbol() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000316")
+  (paper "A4")
+  (embedded_files
+    (file (name "top.kicad_sim") (type model) (data |model-text|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_resolved_sim_library", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_library.clone()),
+        Some(ResolvedSimLibrary {
+            source: SimLibrarySource::SchematicEmbedded {
+                name: "top.kicad_sim".to_string(),
+            },
+            kind: SimLibraryKind::Spice,
+        })
+    );
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
