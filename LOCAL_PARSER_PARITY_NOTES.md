@@ -32,8 +32,10 @@ be:
 
 - the shared text-family object-construction loop, `shape` / `length` / `iref` / `property`
   ownership, and final fieldless-label autoplacement behavior are now structurally close to upstream
-- the remaining text-family gap is narrower and is now concentrated more in `parseEDA_TEXT()`
-  exactness and text/effects interaction than in a missing `parseSchText()` routine shape
+- `parseEDA_TEXT()` itself is now much tighter after direct-href entry, bare-head, and native
+  hyperlink-validation fixes
+- the remaining text-family gap is now concentrated more in `parseSchText()` owner-level exactness
+  than in the shared effects leaf
 
 3. Property / field parsing still needs closer upstream shape
 
@@ -128,18 +130,17 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Tighten remaining exact `parseEDA_TEXT()` and shared text/effects semantics.
-2. Revisit `parseSchText()` where that shared text/effects exactness still leaks into the owner routine.
-3. Finish the remaining narrower `parseLibSymbol()` exact branch / error parity.
-4. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
-5. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
-6. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
-7. Do a parser-wide token/error parity pass.
-8. Port the missing cross-file post-load pipeline.
+1. Revisit `parseSchText()` for the remaining owner-level exactness.
+2. Finish the remaining narrower `parseLibSymbol()` exact branch / error parity.
+3. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
+4. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
+5. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
+6. Do a parser-wide token/error parity pass.
+7. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
-1. Port `parseSchText()` and shared text/effects callers more literally.
+1. Port `parseSchText()` more literally where remaining owner-level exactness still differs.
 2. Finish `parseLibSymbol()` / library draw-item routine parity.
 3. Revisit `parseSheet()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
 4. Revisit `parseSchematicSymbol()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.

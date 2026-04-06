@@ -135,7 +135,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `parsePinNumbers` | `parse_pin_numbers` | `same` | helper boundary restored and direct behavior is stable | direct audit | none |
 | `parseStroke` | `parse_stroke` | `same` | token ownership and internal-units flow are close enough | existing tests | none |
 | `parseFill` | `parse_fill` | `same` | token ownership and fill-type flow are close enough | existing tests | none |
-| `parseEDA_TEXT` | `parse_eda_text` | `different` | shared ownership is close, but final token/error exactness is still active | recent direct-href work + notes | continue function-by-function exactness |
+| `parseEDA_TEXT` | `parse_eda_text` | `same` | bare `font`/`justify`/`hide`/`href` heads, direct `href` entry, and native hyperlink acceptance/rejection cases are now tight enough that it is no longer the active bottleneck | direct source comparison, native `kicad-cli` probes, and focused tests | none |
 | `parseSchField` | `parse_sch_field` | `different` | parent-sensitive flow is close, but exactness still depends on parent routines and diagnostics | direct audit | revisit from active parent mismatch |
 | `parseProperty` | `parse_lib_property` | `different` | constructor/order is close, but final lib-symbol exactness still depends on it | direct audit | revisit from `parse_lib_symbol` |
 | `parseSchSheetPin` | `parse_sch_sheet_pin` | `same` | constructor defaults, side/geometry flow, and close ownership are now stable | direct audit + tests | none |
@@ -167,7 +167,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `parseNoConnect` | `parse_no_connect` | `same` | constructor/default/token flow is stable enough | existing tests | none |
 | `parseBusEntry` | `parse_bus_entry` | `same` | legacy/default stroke and size flow are stable enough | existing tests | none |
 | `parseLine` | `parse_sch_line` | `same` | line/token ownership is close enough | existing tests | none |
-| `parseSchText` | `parse_sch_text` | `different` | broad owner loop is close, but shared effects interaction still has active exactness work | notes + direct audit | revisit after `parse_eda_text` |
+| `parseSchText` | `parse_sch_text` | `different` | broad owner loop is close, and `parse_eda_text` is no longer the primary blocker; the remaining active work is now owner-level exactness inside the text-family routine itself | direct audit + tightened effects tests | revisit next |
 | `parseSchTextBox` | `parse_sch_text_box` | `same` | no longer a primary bottleneck | direct audit | none |
 | `parseSchTable` | `parse_sch_table` | `same` | table ownership and no-cell behavior are stable enough | direct audit + tests | none |
 | `parseImage` | `parse_sch_image` | `same` | no longer a primary bottleneck | direct audit | none |
@@ -192,7 +192,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `find_invalid_lib_id_char` | `LIB_ID::Parse` helper split | `same` | used to preserve upstream error text shape | current behavior | none |
 | `is_valid_lib_id_shape` | `LIB_ID::Parse` helper split | `different` | validation shape is still local rather than the real KiCad parser implementation | direct audit | revisit during lib endgame if behavior diverges |
 | `clamp_text_size` | text size enforcement | `same` | current branch behavior is tested and stable | tests | none |
-| `validate_hyperlink` | `EDA_TEXT::ValidateHyperlink` | `different` | local implementation is close, but final URI exactness is still active | source comparison | continue with `parse_eda_text` exactness |
+| `validate_hyperlink` | `EDA_TEXT::ValidateHyperlink` | `same` | scheme handling, `#page` handling, digit-scheme rejection, malformed-url rejection, and native whitespace acceptance are now close enough | source comparison, native `kicad-cli` probes, and focused tests | none |
 | `get_label_spin_style` | label spin mapping | `same` | now separated cleanly from position flow | tests | none |
 | `normalize_text_angle` | text angle normalization | `same` | current behavior is stable enough | tests | none |
 | `get_legacy_text_margin` | legacy margin fallback | `same` | covered by textbox/table tests | tests | none |
