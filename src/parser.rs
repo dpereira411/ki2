@@ -1160,7 +1160,7 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("file"));
             }
             let _ = self.need_unquoted_symbol_atom("file")?;
-            let mut file = EmbeddedFile::new();
+            let mut file: Option<EmbeddedFile> = None;
 
             while !self.at_right() {
                 self.need_left()?;
@@ -1175,20 +1175,19 @@ impl KiCadSchematicParser {
                 match head.as_str() {
                     "name" => {
                         let _ = self.need_unquoted_symbol_atom("name")?;
-                        file.name = Some(self.need_symbol_or_number_atom("name")?);
+                        let name = self.need_symbol_or_number_atom("name")?;
+                        let mut new_file = EmbeddedFile::new();
+                        new_file.name = Some(name);
+                        file = Some(new_file);
                     }
                     "checksum" => {
                         let _ = self.need_unquoted_symbol_atom("checksum")?;
-                        if file.name.is_none() {
-                            return Err(self.expecting("name"));
-                        }
+                        let file = file.as_mut().ok_or_else(|| self.expecting("name"))?;
                         file.checksum = Some(self.need_symbol_or_number_atom("checksum data")?);
                     }
                     "type" => {
                         let _ = self.need_unquoted_symbol_atom("type")?;
-                        if file.name.is_none() {
-                            return Err(self.expecting("name"));
-                        }
+                        let file = file.as_mut().ok_or_else(|| self.expecting("name"))?;
                         file.file_type = Some(
                             match self
                                 .need_unquoted_symbol_atom(
@@ -1210,9 +1209,7 @@ impl KiCadSchematicParser {
                     }
                     "data" => {
                         let _ = self.need_unquoted_symbol_atom("data")?;
-                        if file.name.is_none() {
-                            return Err(self.expecting("name"));
-                        }
+                        let file = file.as_mut().ok_or_else(|| self.expecting("name"))?;
                         if self.at_right() {
                             self.need_right()?;
                             continue;
@@ -1237,7 +1234,9 @@ impl KiCadSchematicParser {
             }
 
             self.need_right()?;
-            files.push(file);
+            if let Some(file) = file.take() {
+                files.push(file);
+            }
         }
 
         self.need_right()?;

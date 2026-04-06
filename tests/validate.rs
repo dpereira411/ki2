@@ -7527,6 +7527,52 @@ fn parses_bar_delimited_embedded_files_when_version_is_not_early() {
 }
 
 #[test]
+fn skips_empty_embedded_file_blocks_like_kicad() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (embedded_files
+    (file)
+    (file (name "B.bin") (data |bbb|)))
+)"#;
+    let path = temp_schematic("empty_embedded_file_block", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    assert_eq!(schematic.screen.embedded_files.len(), 1);
+    let file = &schematic.screen.embedded_files[0];
+    assert_eq!(file.name.as_deref(), Some("B.bin"));
+    assert_eq!(file.data.as_deref(), Some("bbb"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn duplicate_embedded_file_name_restarts_current_file_state() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "A.bin")
+      (checksum deadbeef)
+      (type font)
+      (data |abc123|)
+      (name "B.bin"))))
+"#;
+    let path = temp_schematic("duplicate_embedded_file_name", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    assert_eq!(schematic.screen.embedded_files.len(), 1);
+    let file = &schematic.screen.embedded_files[0];
+    assert_eq!(file.name.as_deref(), Some("B.bin"));
+    assert_eq!(file.checksum, None);
+    assert_eq!(file.file_type, None);
+    assert_eq!(file.data, None);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
     let src = r#"(kicad_sch
   (version 20250114)
