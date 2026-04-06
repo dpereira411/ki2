@@ -816,7 +816,8 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "offset" => {
                     let _ = self.need_unquoted_symbol_atom("offset")?;
-                    symbol.pin_name_offset = Some(self.parse_f64_atom("pin name offset")?);
+                    symbol.pin_name_offset =
+                        Some(self.parse_internal_units_atom("pin name offset")?);
                     self.need_right()?;
                 }
                 "hide" => {
@@ -5060,8 +5061,8 @@ impl KiCadSchematicParser {
                             }
                             "size" => {
                                 let mut font_size = [
-                                    self.parse_f64_atom("font width")?,
-                                    self.parse_f64_atom("font height")?,
+                                    self.parse_internal_units_atom("font width")?,
+                                    self.parse_internal_units_atom("font height")?,
                                 ];
 
                                 if enforce_min_text_size {
@@ -5074,7 +5075,8 @@ impl KiCadSchematicParser {
                                 }
                             }
                             "thickness" => {
-                                effects.thickness = Some(self.parse_f64_atom("text thickness")?);
+                                effects.thickness =
+                                    Some(self.parse_internal_units_atom("text thickness")?);
                                 if font_is_list {
                                     self.need_right()?;
                                 }

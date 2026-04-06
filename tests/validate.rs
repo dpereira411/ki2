@@ -6618,6 +6618,58 @@ fn library_text_clamps_but_pin_name_and_number_effects_do_not() {
 }
 
 #[test]
+fn clamps_internal_unit_effects_and_pin_name_offset() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-clamped-effects-units")
+  (paper "A4")
+  (text "note" (effects (font (size 9999999 9999999) (thickness 9999999))))
+  (lib_symbols
+    (symbol "Device:R"
+      (pin_names (offset 9999999))
+      (text "TXT" (at 1 2 0) (effects (font (thickness 9999999)))))))
+"#;
+    let path = temp_schematic("clamped_effects_internal_units", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let expected_max = (f64::from(i32::MAX) * 0.7071) / 1e4;
+
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    let schematic_effects = text.effects.as_ref().expect("text effects");
+    assert_eq!(schematic_effects.font_size, Some([250.0, 250.0]));
+    assert!((schematic_effects.thickness.expect("thickness") - expected_max).abs() < 1e-9);
+
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    assert!((lib_symbol.pin_name_offset.expect("pin name offset") - expected_max).abs() < 1e-9);
+    let lib_text = lib_symbol.units[0]
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "text")
+        .expect("lib text");
+    assert!(
+        (lib_text
+            .effects
+            .as_ref()
+            .and_then(|effects| effects.thickness)
+            .expect("lib text thickness")
+            - expected_max)
+            .abs()
+            < 1e-9
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn shared_text_family_forces_visible_after_effects_hide() {
     let src = r#"(kicad_sch
   (version 20231120)
