@@ -665,7 +665,6 @@ impl SchematicLoader {
                 intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
                     .canonical_key()
                     .to_string();
-                intersheet_refs.visible = false;
             }
         }
     }
