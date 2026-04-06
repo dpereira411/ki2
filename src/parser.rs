@@ -1544,7 +1544,7 @@ impl KiCadSchematicParser {
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    item.radius = Some(self.parse_f64_atom("corner radius")?);
+                    item.radius = Some(self.parse_internal_units_atom("corner radius")?);
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -2882,7 +2882,8 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("column_widths")?;
                     let mut col = 0usize;
                     while !self.at_right() {
-                        table.set_column_width(col, self.parse_f64_atom("column width")?);
+                        table
+                            .set_column_width(col, self.parse_internal_units_atom("column width")?);
                         col += 1;
                     }
                     self.need_right()?;
@@ -2891,7 +2892,7 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("row_heights")?;
                     let mut row = 0usize;
                     while !self.at_right() {
-                        table.set_row_height(row, self.parse_f64_atom("row height")?);
+                        table.set_row_height(row, self.parse_internal_units_atom("row height")?);
                         row += 1;
                     }
                     self.need_right()?;
@@ -3255,7 +3256,7 @@ impl KiCadSchematicParser {
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    shape.corner_radius = Some(self.parse_f64_atom("corner radius")?);
+                    shape.corner_radius = Some(self.parse_internal_units_atom("corner radius")?);
                     self.need_right()?;
                 }
                 "stroke" => {
