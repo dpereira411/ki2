@@ -3354,7 +3354,7 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
     let missing_page_sheet_path = temp_schematic("missing_page_sheet", missing_page_sheet_src);
     let err = parse_schematic_file(Path::new(&missing_page_sheet_path))
         .expect_err("must reject missing page sheet token");
-    assert!(err.to_string().contains("missing page sheet"));
+    assert!(err.to_string().contains("expecting page sheet"));
     let _ = fs::remove_file(missing_page_sheet_path);
 
     let missing_page_right_src = r#"(kicad_sch

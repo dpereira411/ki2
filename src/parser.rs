@@ -480,12 +480,8 @@ impl KiCadSchematicParser {
                 }
                 "page" => {
                     let _ = self.need_unquoted_symbol_atom("page")?;
-                    let page = self
-                        .need_symbol_or_number_atom("page number")
-                        .map_err(|_| self.error_here("missing page number"))?;
-                    let sheet = self
-                        .need_symbol_or_number_atom("page sheet")
-                        .map_err(|_| self.error_here("missing page sheet"))?;
+                    let page = self.need_symbol_or_number_atom("page number")?;
+                    let sheet = self.need_symbol_or_number_atom("page sheet")?;
                     self.screen.page = Some(Page { page, sheet });
                     self.need_right()?;
                     section_consumed_right = true;
