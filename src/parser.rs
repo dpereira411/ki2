@@ -1309,9 +1309,16 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("arc", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
+        let mut start_point = item.points[0];
+        let mut mid_point = item.points[1];
+        let mut end_point = item.points[2];
+        let mut arc_center = item.arc_center;
+        let mut radius = item.radius;
+        let mut arc_start_angle = item.arc_start_angle;
+        let mut arc_end_angle = item.arc_end_angle;
         let mut saw_start = false;
         let mut saw_mid = false;
-        let mut saw_end = false;
+        let mut saw_angles = false;
 
         while !self.at_right() {
             self.need_left()?;
@@ -1326,20 +1333,19 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "start" => {
                     let _ = self.need_unquoted_symbol_atom("start")?;
-                    item.points[0] = self.parse_xy2_lib("arc start")?;
+                    start_point = self.parse_xy2_lib("arc start")?;
                     saw_start = true;
                     self.need_right()?;
                 }
                 "mid" => {
                     let _ = self.need_unquoted_symbol_atom("mid")?;
-                    item.points[1] = self.parse_xy2_lib("arc mid")?;
+                    mid_point = self.parse_xy2_lib("arc mid")?;
                     saw_mid = true;
                     self.need_right()?;
                 }
                 "end" => {
                     let _ = self.need_unquoted_symbol_atom("end")?;
-                    item.points[2] = self.parse_xy2_lib("arc end")?;
-                    saw_end = true;
+                    end_point = self.parse_xy2_lib("arc end")?;
                     self.need_right()?;
                 }
                 "radius" => {
@@ -1351,18 +1357,17 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "at" => {
-                                item.arc_center = Some(self.parse_xy2_lib("arc center")?);
+                                arc_center = Some(self.parse_xy2_lib("arc center")?);
                                 self.need_right()?;
                             }
                             "length" => {
-                                item.radius =
-                                    Some(self.parse_internal_units_atom("radius length")?);
+                                radius = Some(self.parse_internal_units_atom("radius length")?);
                                 self.need_right()?;
                             }
                             "angles" => {
-                                item.arc_start_angle =
-                                    Some(self.parse_f64_atom("start radius angle")?);
-                                item.arc_end_angle = Some(self.parse_f64_atom("end radius angle")?);
+                                arc_start_angle = Some(self.parse_f64_atom("start radius angle")?);
+                                arc_end_angle = Some(self.parse_f64_atom("end radius angle")?);
+                                saw_angles = true;
                                 self.need_right()?;
                             }
                             _ => return Err(self.expecting("at, length, or angles")),
@@ -1382,10 +1387,21 @@ impl KiCadSchematicParser {
             }
         }
 
-        if !saw_mid {
-            item.points.remove(1);
-        } else if !saw_start || !saw_end {
+        if saw_mid {
+            item.points = vec![start_point, mid_point, end_point];
+        } else {
+            item.points = vec![start_point, end_point];
+        }
+
+        item.arc_center = arc_center;
+        item.radius = radius;
+        item.arc_start_angle = arc_start_angle;
+        item.arc_end_angle = arc_end_angle;
+
+        if saw_mid && (!saw_start || item.points.len() < 3) {
             // keep defaults when an explicit midpoint path only partially specifies endpoints
+        } else if !saw_mid && !saw_angles {
+            // keep upstream-shaped two-point fallback when neither midpoint nor legacy angles were given
         }
 
         self.need_right()?;
@@ -1401,6 +1417,7 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("bezier", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
+        let mut points = item.points.clone();
 
         while !self.at_right() {
             self.need_left()?;
@@ -1415,7 +1432,7 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "pts" => {
                     let _ = self.need_unquoted_symbol_atom("pts")?;
-                    let mut points = Vec::new();
+                    points.clear();
                     while !self.at_right() {
                         self.need_left()?;
                         let head = match &self.current().kind {
@@ -1436,7 +1453,6 @@ impl KiCadSchematicParser {
                         points.push(self.parse_xy2_lib("bezier point")?);
                         self.need_right()?;
                     }
-                    item.points = points;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -1451,6 +1467,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        item.points = points;
         self.need_right()?;
         Ok(item)
     }
@@ -1464,6 +1481,8 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("circle", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
+        let mut center = item.points[0];
+        let mut radius = item.radius.unwrap_or(1.0);
 
         while !self.at_right() {
             self.need_left()?;
@@ -1478,12 +1497,12 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "center" => {
                     let _ = self.need_unquoted_symbol_atom("center")?;
-                    item.points[0] = self.parse_xy2_lib("circle center")?;
+                    center = self.parse_xy2_lib("circle center")?;
                     self.need_right()?;
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    item.radius = Some(self.parse_internal_units_atom("radius length")?);
+                    radius = self.parse_internal_units_atom("radius length")?;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -1498,6 +1517,8 @@ impl KiCadSchematicParser {
             }
         }
 
+        item.points[0] = center;
+        item.radius = Some(radius);
         self.need_right()?;
         Ok(item)
     }
