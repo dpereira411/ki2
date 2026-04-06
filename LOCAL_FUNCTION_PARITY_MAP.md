@@ -20,10 +20,8 @@ Status legend:
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
 1. `parse_schematic` / `parse_schematic_body`
-2. `parse_sch_sheet`
-3. `parse_schematic_symbol`
-4. narrower library exactness in `parse_symbol_draw_item` / `parse_symbol_pin` / `flatten_local_lib_symbol`
-5. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
+2. narrower library exactness in `parse_symbol_draw_item` / `parse_symbol_pin` / `flatten_local_lib_symbol`
+3. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
 
 ## Layer 0: Support Files
 
@@ -175,7 +173,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `parseSchRectangle` | `parse_sch_rectangle` | `same` | shape finalization flow is stable enough | existing tests | none |
 | `parseSchBezier` | `parse_sch_bezier` | `same` | shape finalization flow is stable enough | existing tests | none |
 | `parseSchRuleArea` | `parse_sch_rule_area` | `same` | rule-area/polyline ownership is stable enough | existing tests | none |
-| `parseSchematicSymbol` | `parse_schematic_symbol` | `different` | much closer than before, but exact branch behavior still needs direct signoff | direct audit | revisit after text/lib endgame |
+| `parseSchematicSymbol` | `parse_schematic_symbol` | `same` | direct re-audit shows the broad owner routine is now structurally close enough: upfront construction, inline `default_instance` and `instances` walks, parent-sensitive property insertion, first-instance live-state seeding, and local-instance value/footprint ownership are no longer active parser-only bottlenecks | direct source comparison plus the focused symbol-instance/property regressions | none |
 | `parseSheet` | `parse_sch_sheet` | `same` | direct re-audit shows the broad owner routine is now structurally close enough: upfront construction, inline `instances` walk, legacy field-ID recovery timing, owner-driven pin geometry, duplicate mandatory-field accumulation, and deferred `Sheetfile` normalization all align closely enough that it is no longer an active parser-only bottleneck | direct source comparison plus the focused sheet regressions | none |
 | `parseSchSheetInstances` | `parse_sch_sheet_instances` | `same` | parser-only behavior is stable enough; loader integration is deferred | current notes | none in parser-only phase |
 | `parseSchSymbolInstances` | `parse_sch_symbol_instances` | `same` | parser-only behavior is stable enough; loader integration is deferred | current notes | none in parser-only phase |
