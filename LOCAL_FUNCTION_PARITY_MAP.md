@@ -65,7 +65,7 @@ If diagnostic/error unblocking is chosen, execute it in this order:
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus byte-span and 1-based line/column source positions now exist; the remaining gap is final display wording fidelity | parser notes + diagnostic regressions | tighten final formatting wording |
+| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus byte-span and 1-based line/column source positions now exist, and parser-built diagnostics now share the `parse error at ...` display prefix with lexer failures; the remaining gap is narrower final wording fidelity | parser notes + diagnostic regressions | tighten final formatting wording |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -76,7 +76,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist; the remaining gap is final wording fidelity in rendered errors | parser notes + diagnostic regressions | tighten `Display` formatting wording |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist, and parser/validation failures no longer split on a repo-local `validation error at ...` prefix; the remaining gap is narrower final wording fidelity in rendered errors | parser notes + diagnostic regressions | tighten `Display` formatting wording |
 
 ### `src/model.rs` parser support methods
 

@@ -62,7 +62,10 @@ Execution order:
 3. lock parser-helper exactness with focused tests before touching broad wording
    - done: parser-helper kind regressions are in place
 4. tighten final `Display` formatting and wording polish
-   - remaining active diagnostic task
+   - in progress: parser-built diagnostics now render with the same `parse error at ...` prefix
+     shape as lexer failures instead of the older local `validation error at ...` split
+   - remaining active diagnostic task is now narrower final wording polish after that shared prefix
+     unification
 5. re-audit blocked parser helpers in `LOCAL_FUNCTION_PARITY_MAP.md`
 
 Closest-to-upstream areas so far:

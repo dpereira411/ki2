@@ -4865,6 +4865,8 @@ fn structured_diagnostics_tag_expecting_and_unexpected_parser_failures() {
 )"#;
     let expecting_path = temp_schematic("structured_expect_diagnostic", expecting_src);
     let err = parse_schematic_file(Path::new(&expecting_path)).expect_err("must reject bad pts");
+    assert!(err.to_string().contains("parse error at"));
+    assert!(err.to_string().contains("expecting xy"));
     match &err {
         Error::Validation { diagnostic, .. } => {
             assert!(matches!(
@@ -4886,6 +4888,8 @@ fn structured_diagnostics_tag_expecting_and_unexpected_parser_failures() {
     let unexpected_path = temp_schematic("structured_unexpected_diagnostic", unexpected_src);
     let err =
         parse_schematic_file(Path::new(&unexpected_path)).expect_err("must reject bad property");
+    assert!(err.to_string().contains("parse error at"));
+    assert!(err.to_string().contains("unexpected property"));
     match &err {
         Error::Validation { diagnostic, .. } => {
             assert!(matches!(
@@ -4896,6 +4900,24 @@ fn structured_diagnostics_tag_expecting_and_unexpected_parser_failures() {
         other => panic!("expected validation error, got {other:?}"),
     }
     let _ = fs::remove_file(unexpected_path);
+}
+
+#[test]
+fn validation_diagnostics_render_with_parse_error_prefix() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-00000000000a")
+  (paper "A4")
+  (title_block (comment 10 "bad"))
+)"#;
+    let path = temp_schematic("validation_diagnostic_parse_error_prefix", src);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject invalid comment");
+    let rendered = err.to_string();
+    assert!(rendered.contains("parse error at"));
+    assert!(!rendered.contains("validation error at"));
+    assert!(rendered.contains("Invalid title block comment number"));
+    let _ = fs::remove_file(path);
 }
 
 #[test]
