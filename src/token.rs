@@ -313,8 +313,21 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "bidirectional"
             | "tri_state"
             | "passive"
+            | "unspecified"
+            | "power_in"
+            | "power_out"
+            | "open_collector"
+            | "open_emitter"
+            | "free"
+            | "unconnected"
             | "clock"
             | "inverted"
+            | "inverted_clock"
+            | "input_low"
+            | "clock_low"
+            | "output_low"
+            | "edge_clock_high"
+            | "non_logic"
             | "line"
             | "alternate"
             | "number"
@@ -798,7 +811,9 @@ mod tests {
 
     #[test]
     fn lex_marks_parser_only_reserved_heads_as_keywords() {
-        let tokens = lex("(items host margins face diameter dot round diamond)").expect("lex");
+        let tokens =
+            lex("(items host margins face diameter dot round diamond power_in inverted_clock)")
+                .expect("lex");
         let atoms: Vec<(String, bool)> = tokens
             .into_iter()
             .filter_map(|token| match token.kind {
@@ -818,6 +833,8 @@ mod tests {
                 ("dot".to_string(), true),
                 ("round".to_string(), true),
                 ("diamond".to_string(), true),
+                ("power_in".to_string(), true),
+                ("inverted_clock".to_string(), true),
             ]
         );
     }
