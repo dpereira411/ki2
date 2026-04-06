@@ -4053,7 +4053,13 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    sheet.at = self.parse_xy2("sheet at")?;
+                    let parsed_at = self.parse_xy2("sheet at")?;
+                    let delta = [parsed_at[0] - sheet.at[0], parsed_at[1] - sheet.at[1]];
+                    sheet.at = parsed_at;
+                    for pin in &mut sheet.pins {
+                        pin.at[0] += delta[0];
+                        pin.at[1] += delta[1];
+                    }
                     self.need_right()?;
                 }
                 "size" => {
