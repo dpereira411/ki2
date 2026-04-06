@@ -912,7 +912,8 @@ fn parse_spice_model_param_token(token: &str) -> Option<(String, Option<String>)
 }
 
 fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {
-    let library_path = PathBuf::from(library);
+    let expanded_library = expand_sim_library_env_vars(library);
+    let library_path = PathBuf::from(&expanded_library);
 
     if library_path.is_absolute() {
         return library_path;
@@ -935,4 +936,76 @@ fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {
     }
 
     project_path
+}
+
+fn expand_sim_library_env_vars(path: &str) -> String {
+    let mut expanded = String::new();
+    let chars = path.chars().collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index < chars.len() {
+        if chars[index] != '$' {
+            expanded.push(chars[index]);
+            index += 1;
+            continue;
+        }
+
+        if index + 1 >= chars.len() {
+            expanded.push('$');
+            break;
+        }
+
+        if chars[index + 1] == '{' {
+            let mut end = index + 2;
+
+            while end < chars.len() && chars[end] != '}' {
+                end += 1;
+            }
+
+            if end >= chars.len() {
+                expanded.push('$');
+                index += 1;
+                continue;
+            }
+
+            let name = chars[index + 2..end].iter().collect::<String>();
+
+            if let Some(value) = env::var_os(&name) {
+                expanded.push_str(&value.to_string_lossy());
+            } else {
+                expanded.push('$');
+                expanded.push('{');
+                expanded.push_str(&name);
+                expanded.push('}');
+            }
+
+            index = end + 1;
+            continue;
+        }
+
+        let mut end = index + 1;
+
+        while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_') {
+            end += 1;
+        }
+
+        if end == index + 1 {
+            expanded.push('$');
+            index += 1;
+            continue;
+        }
+
+        let name = chars[index + 1..end].iter().collect::<String>();
+
+        if let Some(value) = env::var_os(&name) {
+            expanded.push_str(&value.to_string_lossy());
+        } else {
+            expanded.push('$');
+            expanded.push_str(&name);
+        }
+
+        index = end;
+    }
+
+    expanded
 }

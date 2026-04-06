@@ -6200,6 +6200,158 @@ fn loads_symbol_sim_library_content_from_spice_lib_dir() {
 }
 
 #[test]
+fn loads_symbol_sim_library_content_from_env_expanded_path() {
+    let dir = env::temp_dir().join(format!(
+        "sim_lib_env_path_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(dir.join("models")).expect("create dir");
+    fs::write(dir.join("models/model.kicad_sim"), "env-expanded-model").expect("write sim lib");
+    let old_sim_models_dir = env::var_os("KI2_SIM_MODELS");
+    // SAFETY: tests run in-process and we restore the environment before returning.
+    unsafe {
+        env::set_var("KI2_SIM_MODELS", dir.join("models"));
+    }
+    let path = dir.join("env_path_loader.kicad_sch");
+    fs::write(
+        &path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000314")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "$KI2_SIM_MODELS/model.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#,
+    )
+    .expect("write schematic");
+
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        load_symbol_sim_library_content(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryContent {
+            source: SimLibrarySource::Filesystem(dir.join("models/model.kicad_sim")),
+            text: "env-expanded-model".to_string(),
+        })
+    );
+
+    match old_sim_models_dir {
+        Some(value) => {
+            // SAFETY: restore previous process environment after the test mutation above.
+            unsafe { env::set_var("KI2_SIM_MODELS", value) }
+        }
+        None => {
+            // SAFETY: restore previous process environment after the test mutation above.
+            unsafe { env::remove_var("KI2_SIM_MODELS") }
+        }
+    }
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn loads_symbol_sim_library_content_from_braced_env_expanded_path() {
+    let dir = env::temp_dir().join(format!(
+        "sim_lib_braced_env_path_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(dir.join("models")).expect("create dir");
+    fs::write(
+        dir.join("models/model.kicad_sim"),
+        "braced-env-expanded-model",
+    )
+    .expect("write sim lib");
+    let old_sim_models_dir = env::var_os("KI2_SIM_MODELS_BRACED");
+    // SAFETY: tests run in-process and we restore the environment before returning.
+    unsafe {
+        env::set_var("KI2_SIM_MODELS_BRACED", dir.join("models"));
+    }
+    let path = dir.join("braced_env_path_loader.kicad_sch");
+    fs::write(
+        &path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000315")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "${KI2_SIM_MODELS_BRACED}/model.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#,
+    )
+    .expect("write schematic");
+
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        load_symbol_sim_library_content(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryContent {
+            source: SimLibrarySource::Filesystem(dir.join("models/model.kicad_sim")),
+            text: "braced-env-expanded-model".to_string(),
+        })
+    );
+
+    match old_sim_models_dir {
+        Some(value) => {
+            // SAFETY: restore previous process environment after the test mutation above.
+            unsafe { env::set_var("KI2_SIM_MODELS_BRACED", value) }
+        }
+        None => {
+            // SAFETY: restore previous process environment after the test mutation above.
+            unsafe { env::remove_var("KI2_SIM_MODELS_BRACED") }
+        }
+    }
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn classifies_symbol_sim_library_kind_from_embedded_sources() {
     let src = r#"(kicad_sch
   (version 20260306)
