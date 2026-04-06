@@ -220,6 +220,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   15. the structured snapshot now also derives library-backed state from raw `Sim.Params` payloads when explicit `Sim.Type` / `Sim.Library` / `Sim.Name` fields are absent, so the current model can carry more of the raw-SPICE library/model branch without inventing extra migrated properties
   16. default and migrated `Sim.Pins` synthesis is now also locked on the structured snapshot, not only the flat property text, across active-unit defaults, numeric sorting, and decoded-whitespace migration
   17. the remaining representable built-in source family is now also locked on the structured snapshot more broadly, not only on isolated branches: `SIN`, `PWL`, `EXP`, `AM`, and `SFFM` all now prove device/type/params/pins state directly on `Symbol.sim_model`
+  18. the residual representable source exactness branches are now also locked on the structured snapshot: `DC`, whitespace/mixed-case source parsing, `TRNOISE`, and `TRRANDOM` all prove device/type/params state directly on `Symbol.sim_model`
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, the still-unported control-source/internal-model families beyond the current `DC/SIN/PULSE/EXP/AM/SFFM/PWL/TRNOISE/TRRANDOM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 
 ### More Exact Current Priority

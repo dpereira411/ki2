@@ -6780,6 +6780,20 @@ fn load_tree_migrates_legacy_dc_source_fields_with_whitespace_model() {
             .map(|property| property.value.as_str()),
         Some("DC")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("DC")
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -7006,6 +7020,27 @@ fn load_tree_migrates_mixed_case_legacy_source_fields() {
             .iter()
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.as_str()),
+        Some("dc=0 ampl=1 f=1k td=2n")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("SIN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
         Some("dc=0 ampl=1 f=1k td=2n")
     );
 
@@ -7279,6 +7314,27 @@ fn load_tree_migrates_legacy_whitenoise_source_fields() {
         symbol
             .sim_model
             .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("TRNOISE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("rms=1 dt=2n")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .map(|sim_model| sim_model.param_values.clone()),
         Some(BTreeMap::from([
             ("dt".to_string(), "2n".to_string()),
@@ -7344,6 +7400,27 @@ fn load_tree_migrates_legacy_random_source_fields() {
             .iter()
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.as_str()),
+        Some("ts=1n td=2n stddev=3 mean=4")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("I")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("TRRANDOM")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
         Some("ts=1n td=2n stddev=3 mean=4")
     );
     assert_eq!(
