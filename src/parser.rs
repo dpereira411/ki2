@@ -3736,7 +3736,6 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        instance.value = Some(parsed.clone());
                                         let existing = symbol
                                             .properties
                                             .iter_mut()
@@ -3767,7 +3766,6 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        instance.footprint = Some(parsed.clone());
                                         let existing = symbol
                                             .properties
                                             .iter_mut()
