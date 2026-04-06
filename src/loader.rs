@@ -943,7 +943,7 @@ impl SchematicLoader {
                         .map(|property| property.value.trim().to_string())
                         .unwrap_or_default();
 
-                    if pin_map_field.is_none() && !source_pins.is_empty() {
+                    if pin_map_field.is_none() && !source_pins.is_empty() && lib_field.is_none() {
                         let template = primitive_field
                             .clone()
                             .or_else(|| model_field.clone())
@@ -1444,44 +1444,57 @@ fn hydrate_resolved_sim_library(
     });
 
     if should_default_resolved_pins {
-        if let Some(model) = resolved_model.as_ref() {
-            let source_pins = symbol_source_pin_numbers(symbol);
+        let source_pins = symbol_source_pin_numbers(symbol);
 
-            if !source_pins.is_empty() && source_pins.len() == model.pins.len() {
-                let mut pin_map_field = symbol
-                    .properties
-                    .iter()
-                    .find(|property| {
-                        matches!(
-                            property.key.as_str(),
-                            "Sim.Name" | "Sim.Library" | "Sim.Device"
-                        )
-                    })
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        Property::new_named(PropertyKind::User, "", String::new(), false)
-                    });
-                pin_map_field.key = "Sim.Pins".to_string();
-                pin_map_field.value = source_pins
-                    .into_iter()
-                    .zip(model.pins.iter())
-                    .map(|(source_pin, model_pin)| format!("{source_pin}={model_pin}"))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                symbol.properties.push(pin_map_field);
-                symbol.sync_sim_model_from_properties();
-                resolved_library = resolve_symbol_sim_library_from_embedded_files(
-                    schematic_path,
-                    embedded_files,
-                    symbol,
-                );
-                resolved_model = resolve_symbol_sim_model_from_embedded_files(
-                    schematic_path,
-                    embedded_files,
-                    symbol,
-                );
-                modified = true;
-            }
+        if !source_pins.is_empty() {
+            let pin_map_value = resolved_model
+                .as_ref()
+                .filter(|model| source_pins.len() == model.pins.len())
+                .map(|model| {
+                    source_pins
+                        .iter()
+                        .zip(model.pins.iter())
+                        .map(|(source_pin, model_pin)| format!("{source_pin}={model_pin}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_else(|| {
+                    source_pins
+                        .iter()
+                        .enumerate()
+                        .map(|(index, source_pin)| format!("{source_pin}={}", index + 1))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                });
+
+            let mut pin_map_field = symbol
+                .properties
+                .iter()
+                .find(|property| {
+                    matches!(
+                        property.key.as_str(),
+                        "Sim.Name" | "Sim.Library" | "Sim.Device"
+                    )
+                })
+                .cloned()
+                .unwrap_or_else(|| {
+                    Property::new_named(PropertyKind::User, "", String::new(), false)
+                });
+            pin_map_field.key = "Sim.Pins".to_string();
+            pin_map_field.value = pin_map_value;
+            symbol.properties.push(pin_map_field);
+            symbol.sync_sim_model_from_properties();
+            resolved_library = resolve_symbol_sim_library_from_embedded_files(
+                schematic_path,
+                embedded_files,
+                symbol,
+            );
+            resolved_model = resolve_symbol_sim_model_from_embedded_files(
+                schematic_path,
+                embedded_files,
+                symbol,
+            );
+            modified = true;
         }
     }
 

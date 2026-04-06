@@ -1192,7 +1192,8 @@ impl Symbol {
         let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
         let origin = if ibis_pin.is_some() || ibis_model.is_some() {
             Some(SimModelOrigin::Ibis)
-        } else if device.as_deref() == Some("SPICE") && (has_explicit_library || has_explicit_name)
+        } else if device.as_deref() == Some("SPICE")
+            && (has_explicit_library || has_explicit_name || library.is_some())
         {
             Some(SimModelOrigin::LibraryReference)
         } else if device.as_deref() == Some("SPICE") {
@@ -1820,7 +1821,7 @@ mod tests {
                 .sim_model
                 .as_ref()
                 .and_then(|sim_model| sim_model.origin),
-            Some(SimModelOrigin::RawSpice)
+            Some(SimModelOrigin::LibraryReference)
         );
     }
 
