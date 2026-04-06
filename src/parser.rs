@@ -959,12 +959,10 @@ impl KiCadSchematicParser {
                 "power" => {
                     let _ = self.need_unquoted_symbol_atom("power")?;
                     symbol.power = true;
-                    if !self.at_right() {
-                        match self.need_unquoted_symbol_atom("global or local")?.as_str() {
-                            "local" => symbol.local_power = true,
-                            "global" => symbol.local_power = false,
-                            _ => return Err(self.expecting("global or local")),
-                        }
+                    match self.need_unquoted_symbol_atom("global or local")?.as_str() {
+                        "local" => symbol.local_power = true,
+                        "global" => symbol.local_power = false,
+                        _ => return Err(self.expecting("global or local")),
                     }
                     self.need_right()?;
                 }

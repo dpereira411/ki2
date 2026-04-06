@@ -11223,6 +11223,24 @@ fn lib_property_name_collision_checks_all_symbol_units() {
 }
 
 #[test]
+fn rejects_bare_lib_power_branch_without_scope() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-lib-power")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:PWR"
+      (power))))
+"#;
+    let path = temp_schematic("bare_lib_power_scope", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject bare lib power branch without global/local scope");
+    assert!(err.to_string().contains("expecting global or local"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_lib_pin_alternate_type_and_shape() {
     let bad_alt_type = r#"(kicad_sch
   (version 20250114)
