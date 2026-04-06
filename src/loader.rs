@@ -186,6 +186,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.update_sheet_instance_data(&root_path, &mut sheet_paths);
     loader.fix_legacy_power_symbol_mismatches(&root_path);
     loader.annotate_power_symbols();
+    loader.migrate_sim_models();
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
     loader.update_all_screen_references(&sheet_paths);
@@ -622,6 +623,70 @@ impl SchematicLoader {
         }
     }
 
+    fn migrate_sim_models(&mut self) {
+        for schematic in &mut self.schematics {
+            let mut migrated = false;
+
+            for item in &mut schematic.screen.items {
+                let SchItem::Symbol(symbol) = item else {
+                    continue;
+                };
+
+                if symbol.properties.iter().any(|property| {
+                    matches!(
+                        property.key.as_str(),
+                        "Spice_Primitive"
+                            | "Spice_Node_Sequence"
+                            | "Spice_Model"
+                            | "Spice_Netlist_Enabled"
+                            | "Spice_Lib_File"
+                    )
+                }) {
+                    continue;
+                }
+
+                let source_pins = symbol_source_pin_numbers(symbol);
+
+                for property in &mut symbol.properties {
+                    match property.key.as_str() {
+                        "Sim_Type" => {
+                            property.key = "Sim.Type".to_string();
+                            migrated = true;
+                        }
+                        "Sim_Device" => {
+                            property.key = "Sim.Device".to_string();
+                            migrated = true;
+                        }
+                        "Sim_Pins" => {
+                            property.key = "Sim.Pins".to_string();
+
+                            if !source_pins.is_empty() {
+                                let pin_indexes =
+                                    property.value.split_whitespace().collect::<Vec<_>>();
+                                property.value = migrated_sim_pins_value(
+                                    &symbol.prefix,
+                                    &source_pins,
+                                    &pin_indexes,
+                                );
+                            }
+
+                            migrated = true;
+                        }
+                        "Sim_Params" => {
+                            property.key = "Sim.Params".to_string();
+                            migrated = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            if migrated {
+                schematic.screen.content_modified = true;
+            }
+        }
+    }
+
     fn collect_power_lib_symbol_info(schematic: &Schematic) -> HashMap<String, PowerLibSymbolInfo> {
         schematic
             .screen
@@ -873,6 +938,52 @@ fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
             symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
         }
     }
+}
+
+fn symbol_source_pin_numbers(symbol: &crate::model::Symbol) -> Vec<String> {
+    let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+        return Vec::new();
+    };
+
+    let unit_number = symbol.unit.unwrap_or(1);
+    let body_style = symbol.body_style.unwrap_or(1);
+    let mut pin_numbers = lib_symbol
+        .units
+        .iter()
+        .filter(|unit| unit.unit_number == unit_number && unit.body_style == body_style)
+        .flat_map(|unit| unit.draw_items.iter())
+        .filter(|item| item.kind == "pin")
+        .filter_map(|item| item.number.clone())
+        .collect::<Vec<_>>();
+
+    pin_numbers.sort_by(compare_pin_numbers);
+    pin_numbers
+}
+
+fn compare_pin_numbers(a: &String, b: &String) -> std::cmp::Ordering {
+    match (a.parse::<i32>(), b.parse::<i32>()) {
+        (Ok(a_number), Ok(b_number)) => a_number.cmp(&b_number),
+        _ => a.cmp(b),
+    }
+}
+
+fn migrated_sim_pins_value(prefix: &str, source_pins: &[String], pin_indexes: &[&str]) -> String {
+    let is_passive = prefix.starts_with('R') || prefix.starts_with('L') || prefix.starts_with('C');
+
+    if is_passive && pin_indexes.len() == 2 && source_pins.len() == 2 {
+        if pin_indexes[0] == "2" {
+            return format!("{}=- {}=+", source_pins[0], source_pins[1]);
+        }
+
+        return format!("{}=+ {}=-", source_pins[0], source_pins[1]);
+    }
+
+    source_pins
+        .iter()
+        .zip(pin_indexes.iter())
+        .map(|(symbol_pin, model_pin)| format!("{symbol_pin}={model_pin}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn refresh_current_screen_page_state(

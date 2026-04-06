@@ -4349,6 +4349,105 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
 }
 
 #[test]
+fn load_tree_migrates_mid_v7_sim_field_names() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54) (name "A") (number "1"))
+        (pin passive line (at 10 0 0) (length 2.54) (name "B") (number "2")))))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim_Device" "R")
+    (property "Sim_Type" "R")
+    (property "Sim_Params" "r=10k")
+    (property "Sim_Pins" "2 1")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_mid_v7_sim_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert!(
+        symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Device")
+    );
+    assert!(
+        symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Type")
+    );
+    assert!(
+        symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Params")
+    );
+    assert!(
+        symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Pins")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim_Device")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim_Type")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim_Params")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim_Pins")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=- 2=+")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_symbol_mirror_body_style_and_sheet_pins() {
     let src = r#"(kicad_sch
   (version 20231120)

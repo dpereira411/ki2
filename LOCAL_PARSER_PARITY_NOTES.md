@@ -143,7 +143,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `FixLegacyPowerSymbolMismatches`
   Status: first loader-side global-power value fix now handles pre-`20230221` symbols linked to global power lib symbols with hidden `power_in` pins; remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
 - `MigrateSimModels`
-  Status: still blocked on missing simulation-model / project / embedded-model representation. Upstream migration is not a parser-token tweak; it runs through the simulator model layer and rewrites symbol fields such as `Sim.Device`, `Sim.Params`, `Sim.Pins`, model/library fields, and value-field substitutions. Do not fake this stage without first expanding the Rust model beyond plain parser fields.
+  Status: first loader-side migration slice now exists for the upstream early-return branch that only rewrites legacy/mid-v7 symbol field spellings (`Sim_Device`, `Sim_Type`, `Sim_Params`, `Sim_Pins`) and converts `Sim_Pins` index arrays into `Sim.Pins` name-value maps when source pins are available. The remaining blocked gap is the heavier simulator-model / project / embedded-model branch that resolves legacy `Spice_*` fields, library-backed model types, and value-field substitutions. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 - `AnnotatePowerSymbols`
 - `SetSheetNumberAndCount`
 - `RecomputeIntersheetRefs`
