@@ -1080,7 +1080,16 @@ impl KiCadSchematicParser {
                             self.need_right()?;
                         } else {
                             let item = self.parse_symbol_draw_item()?;
-                            symbol.add_draw_item(item);
+                            let unit_name = format!(
+                                "{}_{}_{}",
+                                symbol.name, item.unit_number, item.body_style
+                            );
+                            let unit_index = symbol.ensure_unit_index(
+                                unit_name,
+                                item.unit_number,
+                                item.body_style,
+                            );
+                            symbol.units[unit_index].push_draw_item(item);
                         }
                     }
                     self.need_right()?;
@@ -1090,7 +1099,11 @@ impl KiCadSchematicParser {
                 "arc" | "bezier" | "circle" | "pin" | "polyline" | "rectangle" | "text"
                 | "text_box" => {
                     let item = self.parse_symbol_draw_item()?;
-                    symbol.add_draw_item(item);
+                    let unit_name =
+                        format!("{}_{}_{}", symbol.name, item.unit_number, item.body_style);
+                    let unit_index =
+                        symbol.ensure_unit_index(unit_name, item.unit_number, item.body_style);
+                    symbol.units[unit_index].push_draw_item(item);
                 }
                 "embedded_fonts" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
@@ -2114,7 +2127,11 @@ impl KiCadSchematicParser {
                 field.name = Some(property.key);
                 field.text = Some(property.value);
                 field.effects = property.effects;
-                symbol.add_draw_item(field);
+                let unit_name =
+                    format!("{}_{}_{}", symbol.name, field.unit_number, field.body_style);
+                let unit_index =
+                    symbol.ensure_unit_index(unit_name, field.unit_number, field.body_style);
+                symbol.units[unit_index].push_draw_item(field);
                 self.lib_next_field_ordinal += 1;
             }
         }
