@@ -644,6 +644,40 @@ impl SchematicLoader {
                 });
 
                 if has_legacy_spice_fields {
+                    let inferred_device = symbol
+                        .properties
+                        .iter()
+                        .find(|property| {
+                            property.kind.is_user_field() && property.key == "Spice_Primitive"
+                        })
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
+                    let can_infer_from_value = !inferred_device.is_empty()
+                        && !symbol.properties.iter().any(|property| {
+                            matches!(property.key.as_str(), "Spice_Model" | "Spice_Lib_File")
+                        })
+                        && matches!(inferred_device.as_str(), "R" | "L" | "C" | "V" | "I")
+                        && symbol.prefix.starts_with(&inferred_device);
+
+                    if can_infer_from_value {
+                        let _primitive_field = take_symbol_user_field(symbol, "Spice_Primitive");
+                        let node_sequence_field =
+                            take_symbol_user_field(symbol, "Spice_Node_Sequence");
+                        let _legacy_enable =
+                            take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
+                        let _lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+
+                        if let Some(mut pin_map_field) =
+                            node_sequence_field.map(legacy_spice_pin_map_field)
+                        {
+                            pin_map_field.key = "Sim.Pins".to_string();
+                            symbol.properties.push(pin_map_field);
+                        }
+
+                        migrated = true;
+                        continue;
+                    }
+
                     let can_raw_migrate = symbol.properties.iter().any(|property| {
                         matches!(property.key.as_str(), "Spice_Model" | "Spice_Lib_File")
                     });

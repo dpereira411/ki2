@@ -4527,6 +4527,83 @@ fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
 }
 
 #[test]
+fn load_tree_migrates_inferred_legacy_spice_fields_from_value() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Value" "1k")
+    (property "Spice_Primitive" "R")
+    (property "Spice_Node_Sequence" "2 1")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_inferred_legacy_spice_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Spice_Primitive")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Spice_Node_Sequence")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Device")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Params")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("1k")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("2=1 1=2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_symbol_mirror_body_style_and_sheet_pins() {
     let src = r#"(kicad_sch
   (version 20231120)

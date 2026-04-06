@@ -146,6 +146,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   Status: loader-side migration now covers two upstream-representable slices:
   1. the early-return branch that rewrites mid-v7 field spellings (`Sim_Device`, `Sim_Type`, `Sim_Params`, `Sim_Pins`) and converts `Sim_Pins` index arrays into `Sim.Pins` name-value maps when source pins are available
   2. the explicit legacy `Spice_*` raw-SPICE fallback branch that removes `Spice_Primitive` / `Spice_Model` / `Spice_Node_Sequence` / `Spice_Lib_File` fields and synthesizes `Sim.Device=SPICE`, `Sim.Params`, and `Sim.Pins`
+  3. the inferred legacy passive/source branch where `Spice_Primitive` matches the symbol prefix and the existing `Value` field remains the model source, while legacy `Spice_Node_Sequence` is still migrated into `Sim.Pins`
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed/internal source models, value-field substitutions, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 - `AnnotatePowerSymbols`
 - `SetSheetNumberAndCount`
