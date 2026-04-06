@@ -1148,6 +1148,11 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Ibis.Model")
             .map(|property| property.value.clone());
+        let ibis_diff = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Ibis.Diff")
+            .is_some_and(|property| property.value.trim() == "1");
         let params = self
             .properties
             .iter()
@@ -1233,6 +1238,7 @@ impl Symbol {
             name,
             ibis_pin,
             ibis_model,
+            ibis_diff,
             params,
             param_pairs,
             param_values,
@@ -1244,6 +1250,7 @@ impl Symbol {
             resolved_library: None,
             resolved_name: None,
             resolved_model_type: None,
+            resolved_ibis_diff_pin: None,
             generated_pin_names: Vec::new(),
             generated_param_pairs: Vec::new(),
         });
@@ -1293,6 +1300,7 @@ pub struct SimModel {
     pub name: Option<String>,
     pub ibis_pin: Option<String>,
     pub ibis_model: Option<String>,
+    pub ibis_diff: bool,
     pub params: Option<String>,
     pub param_pairs: Vec<(String, String)>,
     pub param_values: BTreeMap<String, String>,
@@ -1304,6 +1312,7 @@ pub struct SimModel {
     pub resolved_library: Option<ResolvedSimLibrary>,
     pub resolved_name: Option<String>,
     pub resolved_model_type: Option<String>,
+    pub resolved_ibis_diff_pin: Option<String>,
     pub generated_pin_names: Vec<String>,
     pub generated_param_pairs: Vec<(String, Option<String>)>,
 }
@@ -1630,6 +1639,12 @@ mod tests {
         ));
         symbol.properties.push(Property::new_named(
             PropertyKind::User,
+            "Sim.Ibis.Diff",
+            "1".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
             "Sim.Pins",
             "1=1 2=2".to_string(),
             false,
@@ -1671,6 +1686,13 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.ibis_model.as_deref()),
             Some("TX_MODEL")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.ibis_diff),
+            Some(true)
         );
         assert_eq!(
             symbol

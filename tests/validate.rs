@@ -6057,6 +6057,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
             },
             name: "MODEL".to_string(),
             model_type: None,
+            diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string(), "VSS".to_string()],
             params: vec![
                 ("RVAL".to_string(), Some("1k".to_string())),
@@ -6123,6 +6124,73 @@ B2 SIGB MODEL_B
             },
             name: "DRIVER".to_string(),
             model_type: Some("MODEL_A".to_string()),
+            diff_pin: None,
+            pins: vec!["A1".to_string(), "B2".to_string()],
+            params: Vec::new(),
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn resolves_symbol_sim_model_diff_pin_from_embedded_ibis_component() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000031f")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+B2 SIGB MODEL_B
+[Diff Pin]
+A1 B2
+|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (property "Sim.Ibis.Pin" "A1")
+    (property "Sim.Ibis.Model" "MODEL_A")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_embedded_ibis_diff_pin", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "driver.ibs".to_string(),
+                },
+                kind: SimLibraryKind::Ibis,
+            },
+            name: "DRIVER".to_string(),
+            model_type: Some("MODEL_A".to_string()),
+            diff_pin: Some("B2".to_string()),
             pins: vec!["A1".to_string(), "B2".to_string()],
             params: Vec::new(),
         })
@@ -6274,6 +6342,71 @@ B2 SIGB MODEL_B
 }
 
 #[test]
+fn load_tree_hydrates_resolved_ibis_diff_pin_on_symbol() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000320")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+B2 SIGB MODEL_B
+[Diff Pin]
+A1 B2
+|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (property "Sim.Ibis.Pin" "A1")
+    (property "Sim.Ibis.Model" "MODEL_A")
+    (property "Sim.Ibis.Diff" "1")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_resolved_ibis_diff_pin", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.ibis_diff),
+        Some(true)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_ibis_diff_pin.as_deref()),
+        Some("B2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_marks_resolved_ibis_libraries_as_ibis_origin() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -6373,6 +6506,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_model() {
             },
             name: "MODEL".to_string(),
             model_type: Some("NPN".to_string()),
+            diff_pin: None,
             pins: Vec::new(),
             params: vec![
                 ("BF".to_string(), Some("100".to_string())),

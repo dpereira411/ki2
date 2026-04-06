@@ -17,6 +17,7 @@ pub struct ResolvedSimModel {
     pub library: ResolvedSimLibrary,
     pub name: String,
     pub model_type: Option<String>,
+    pub diff_pin: Option<String>,
     pub pins: Vec<String>,
     pub params: Vec<(String, Option<String>)>,
 }
@@ -291,6 +292,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 library,
                 name: model.name,
                 model_type: model.model_type,
+                diff_pin: model.diff_pin,
                 pins: model.pins,
                 params: model.params,
             })
@@ -306,6 +308,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 library,
                 name: model.name,
                 model_type: model.model_type,
+                diff_pin: None,
                 pins: model.pins,
                 params: model.params,
             })
@@ -333,6 +336,7 @@ struct ResolvedSpiceModel {
 struct ResolvedIbisModel {
     name: String,
     model_type: Option<String>,
+    diff_pin: Option<String>,
     pins: Vec<String>,
     params: Vec<(String, Option<String>)>,
 }
@@ -404,8 +408,10 @@ fn resolve_ibis_model(
     let mut current_component: Option<String> = None;
     let mut pending_component_name = false;
     let mut collecting_pins = false;
+    let mut collecting_diff_pins = false;
     let mut pins = Vec::new();
     let mut resolved_model_type = None;
+    let mut resolved_diff_pin = None;
 
     for raw_line in text.lines() {
         let line = raw_line.trim();
@@ -418,6 +424,7 @@ fn resolve_ibis_model(
             current_component = Some(line.to_string());
             pending_component_name = false;
             collecting_pins = false;
+            collecting_diff_pins = false;
             continue;
         }
 
@@ -430,11 +437,16 @@ fn resolve_ibis_model(
                 Some(rest.to_string())
             };
             collecting_pins = false;
+            collecting_diff_pins = false;
             continue;
         }
 
         if line.starts_with('[') {
             collecting_pins = line.eq_ignore_ascii_case("[Pin]")
+                && current_component
+                    .as_deref()
+                    .is_some_and(|component| component.eq_ignore_ascii_case(wanted_name));
+            collecting_diff_pins = line.eq_ignore_ascii_case("[Diff Pin]")
                 && current_component
                     .as_deref()
                     .is_some_and(|component| component.eq_ignore_ascii_case(wanted_name));
@@ -465,6 +477,20 @@ fn resolve_ibis_model(
                 }
             }
         }
+
+        if collecting_diff_pins {
+            let tokens = line.split_whitespace().collect::<Vec<_>>();
+
+            if tokens.len() < 2 || tokens[0].eq_ignore_ascii_case("pin") {
+                continue;
+            }
+
+            if selected_pin.is_some_and(|pin| pin.eq_ignore_ascii_case(tokens[0])) {
+                resolved_diff_pin = Some(tokens[1].to_string());
+            } else if selected_pin.is_some_and(|pin| pin.eq_ignore_ascii_case(tokens[1])) {
+                resolved_diff_pin = Some(tokens[0].to_string());
+            }
+        }
     }
 
     if current_component
@@ -475,6 +501,7 @@ fn resolve_ibis_model(
         return Some(ResolvedIbisModel {
             name: wanted_name.to_string(),
             model_type: resolved_model_type,
+            diff_pin: resolved_diff_pin,
             pins,
             params: Vec::new(),
         });

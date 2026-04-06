@@ -1504,6 +1504,9 @@ fn hydrate_resolved_sim_library(
         sim_model.resolved_model_type = resolved_model
             .as_ref()
             .and_then(|model| model.model_type.clone());
+        sim_model.resolved_ibis_diff_pin = resolved_model
+            .as_ref()
+            .and_then(|model| model.diff_pin.clone());
         sim_model.generated_param_pairs = resolved_model
             .as_ref()
             .map(|model| model.params.clone())
