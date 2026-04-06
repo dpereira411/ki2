@@ -200,54 +200,6 @@ impl LibSymbol {
         }
     }
 
-    fn materialize_unit_counts(&mut self, unit_count: i32, body_style_count: i32) {
-        let unit_count = unit_count.max(1);
-        let body_style_count = body_style_count.max(1);
-
-        for unit_number in 1..=unit_count {
-            for body_style in 1..=body_style_count {
-                if self.units.iter().any(|existing| {
-                    existing.unit_number == unit_number && existing.body_style == body_style
-                }) {
-                    continue;
-                }
-
-                let unit_name = self
-                    .units
-                    .iter()
-                    .find(|existing| existing.unit_number == unit_number)
-                    .and_then(|existing| existing.unit_name.clone());
-
-                self.units.push(LibSymbolUnit {
-                    name: format!("{}_{}_{}", self.name, unit_number, body_style),
-                    unit_number,
-                    body_style,
-                    unit_name,
-                    draw_item_kinds: Vec::new(),
-                    draw_items: Vec::new(),
-                });
-            }
-        }
-
-        self.units
-            .sort_by_key(|unit| (unit.unit_number, unit.body_style));
-    }
-
-    pub fn add_draw_item(&mut self, item: LibDrawItem) {
-        self.materialize_unit_counts(item.unit_number, item.body_style);
-
-        let index = self
-            .units
-            .iter()
-            .position(|existing| {
-                existing.unit_number == item.unit_number && existing.body_style == item.body_style
-            })
-            .expect("materialized lib symbol unit must exist");
-
-        self.units[index].draw_item_kinds.push(item.kind.clone());
-        self.units[index].draw_items.push(item);
-    }
-
     pub fn sort_draw_items(&mut self) {
         for unit in &mut self.units {
             unit.draw_items.sort();
@@ -261,16 +213,6 @@ impl LibSymbol {
 
     pub fn has_legacy_alternate_body_style(&self) -> bool {
         self.units.iter().any(|unit| unit.body_style > 1)
-    }
-
-    pub fn refresh_library_tree_caches(&mut self) {
-        self.description = self
-            .properties
-            .iter()
-            .find(|property| property.kind == PropertyKind::SymbolDescription)
-            .map(|property| property.value.clone())
-            .filter(|value| !value.is_empty());
-        self.sort_draw_items();
     }
 
     pub fn next_field_ordinal(&self) -> i32 {
@@ -1243,10 +1185,50 @@ mod tests {
 
     use super::{
         BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LibDrawItem,
-        LibSymbol, Line, LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet,
-        SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol,
-        SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextKind,
+        LibSymbol, LibSymbolUnit, Line, LineKind, NoConnect, Property, PropertyKind, Shape,
+        ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, StrokeStyle,
+        Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextKind,
     };
+
+    fn push_lib_draw_item(symbol: &mut LibSymbol, item: LibDrawItem) {
+        for unit_number in 1..=item.unit_number.max(1) {
+            for body_style in 1..=item.body_style.max(1) {
+                if symbol.units.iter().any(|existing| {
+                    existing.unit_number == unit_number && existing.body_style == body_style
+                }) {
+                    continue;
+                }
+
+                let unit_name = symbol
+                    .units
+                    .iter()
+                    .find(|existing| existing.unit_number == unit_number)
+                    .and_then(|existing| existing.unit_name.clone());
+
+                symbol.units.push(LibSymbolUnit {
+                    name: format!("{}_{}_{}", symbol.name, unit_number, body_style),
+                    unit_number,
+                    body_style,
+                    unit_name,
+                    draw_item_kinds: Vec::new(),
+                    draw_items: Vec::new(),
+                });
+            }
+        }
+
+        symbol
+            .units
+            .sort_by_key(|unit| (unit.unit_number, unit.body_style));
+        let index = symbol
+            .units
+            .iter()
+            .position(|existing| {
+                existing.unit_number == item.unit_number && existing.body_style == item.body_style
+            })
+            .expect("materialized lib symbol unit must exist");
+        symbol.units[index].draw_item_kinds.push(item.kind.clone());
+        symbol.units[index].draw_items.push(item);
+    }
 
     #[test]
     fn placed_symbols_start_with_mandatory_fields() {
@@ -1411,7 +1393,7 @@ mod tests {
     fn lib_symbol_add_draw_item_routes_by_unit_and_body_style() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
 
-        symbol.add_draw_item(LibDrawItem::new("text", 2, 1));
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("text", 2, 1));
 
         assert_eq!(symbol.units[0].draw_items.len(), 0);
         assert_eq!(symbol.units[1].draw_items.len(), 1);
@@ -1422,7 +1404,7 @@ mod tests {
     fn lib_symbol_materializes_missing_unit_and_body_style_slots() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
 
-        symbol.add_draw_item(LibDrawItem::new("text", 2, 2));
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("text", 2, 2));
 
         assert_eq!(
             symbol
@@ -1562,20 +1544,32 @@ mod tests {
     fn lib_symbol_refresh_updates_draw_item_caches() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
 
-        symbol.add_draw_item(LibDrawItem {
-            kind: "text".to_string(),
-            unit_number: 1,
-            body_style: 2,
-            ..LibDrawItem::new("text", 1, 2)
-        });
-        symbol.add_draw_item(LibDrawItem {
-            kind: "arc".to_string(),
-            unit_number: 1,
-            body_style: 2,
-            ..LibDrawItem::new("arc", 1, 2)
-        });
+        push_lib_draw_item(
+            &mut symbol,
+            LibDrawItem {
+                kind: "text".to_string(),
+                unit_number: 1,
+                body_style: 2,
+                ..LibDrawItem::new("text", 1, 2)
+            },
+        );
+        push_lib_draw_item(
+            &mut symbol,
+            LibDrawItem {
+                kind: "arc".to_string(),
+                unit_number: 1,
+                body_style: 2,
+                ..LibDrawItem::new("arc", 1, 2)
+            },
+        );
 
-        symbol.refresh_library_tree_caches();
+        symbol.description = symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolDescription)
+            .map(|property| property.value.clone())
+            .filter(|value| !value.is_empty());
+        symbol.sort_draw_items();
 
         assert_eq!(symbol.units[1].body_style, 2);
         assert_eq!(symbol.units[1].draw_item_kinds, vec!["arc", "text"]);
@@ -1584,7 +1578,7 @@ mod tests {
     #[test]
     fn lib_symbol_unit_display_names_are_shared_across_body_styles() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.add_draw_item(LibDrawItem::new("text", 1, 2));
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("text", 1, 2));
         for unit in &mut symbol.units {
             if unit.unit_number == 1 {
                 unit.unit_name = Some("Amplifier".to_string());
@@ -1783,7 +1777,7 @@ mod tests {
 
         let mut field = LibDrawItem::new("field", 1, 1);
         field.field_ordinal = Some(42);
-        symbol.add_draw_item(field);
+        push_lib_draw_item(&mut symbol, field);
 
         assert_eq!(symbol.next_field_ordinal(), 43);
     }
@@ -1826,13 +1820,13 @@ mod tests {
     #[test]
     fn lib_symbol_sorts_draw_items_by_kicad_type_order() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.add_draw_item(LibDrawItem::new("pin", 1, 1));
-        symbol.add_draw_item(LibDrawItem::new("text_box", 1, 1));
-        symbol.add_draw_item(LibDrawItem::new("text", 1, 1));
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("pin", 1, 1));
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("text_box", 1, 1));
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("text", 1, 1));
         let mut field = LibDrawItem::new("field", 1, 1);
         field.field_ordinal = Some(42);
-        symbol.add_draw_item(field);
-        symbol.add_draw_item(LibDrawItem::new("circle", 1, 1));
+        push_lib_draw_item(&mut symbol, field);
+        push_lib_draw_item(&mut symbol, LibDrawItem::new("circle", 1, 1));
 
         symbol.sort_draw_items();
 
