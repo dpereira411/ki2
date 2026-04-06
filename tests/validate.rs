@@ -6608,7 +6608,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
 }
 
 #[test]
-fn rejects_unquoted_jumper_pin_group_names() {
+fn accepts_unquoted_jumper_pin_group_names() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6619,9 +6619,19 @@ fn rejects_unquoted_jumper_pin_group_names() {
         (A B))))
 )"#;
     let path = temp_schematic("unquoted_jumper_pin_groups", src);
-    let err =
-        parse_schematic_file(Path::new(&path)).expect_err("must reject unquoted jumper pin groups");
-    assert!(err.to_string().contains("expecting list of pin names"));
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept unquoted jumper pin groups");
+    let lib_symbol = schematic
+        .screen
+        .lib_symbols
+        .iter()
+        .find(|symbol| symbol.lib_id == "MyLib:U")
+        .expect("lib symbol");
+    assert_eq!(lib_symbol.jumper_pin_groups.len(), 1);
+    assert_eq!(
+        lib_symbol.jumper_pin_groups[0],
+        ["A".to_string(), "B".to_string()].into_iter().collect()
+    );
     let _ = fs::remove_file(path);
 }
 

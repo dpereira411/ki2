@@ -984,12 +984,15 @@ impl KiCadSchematicParser {
                                 current_group = Some(BTreeSet::new());
                             }
                             TokKind::Atom(_)
-                                if matches!(self.current().atom_class, Some(AtomClass::Quoted)) =>
+                                if matches!(
+                                    self.current().atom_class,
+                                    Some(AtomClass::Symbol | AtomClass::Quoted)
+                                ) =>
                             {
                                 let group = current_group
                                     .as_mut()
                                     .ok_or_else(|| self.expecting("list of pin names"))?;
-                                group.insert(self.need_quoted_atom("list of pin names")?);
+                                group.insert(self.need_symbol_atom("list of pin names")?);
                             }
                             TokKind::Right => {
                                 self.need_right()?;
