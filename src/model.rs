@@ -2323,17 +2323,6 @@ pub struct Group {
     pub members: Vec<String>,
 }
 
-impl Group {
-    pub fn new() -> Self {
-        Self {
-            name: None,
-            uuid: None,
-            lib_id: None,
-            members: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SheetReference {
     pub sheet_uuid: Option<String>,

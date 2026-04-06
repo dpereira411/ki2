@@ -6165,11 +6165,12 @@ impl KiCadSchematicParser {
         }
 
         for group_info in &self.pending_groups {
-            let mut group = Group::new();
-            group.name = group_info.name.clone();
-            group.uuid = group_info.uuid.clone();
-            group.lib_id = group_info.lib_id.clone();
-            self.screen.items.push(SchItem::Group(group));
+            self.screen.items.push(SchItem::Group(Group {
+                name: group_info.name.clone(),
+                uuid: group_info.uuid.clone(),
+                lib_id: group_info.lib_id.clone(),
+                members: Vec::new(),
+            }));
         }
 
         let pending_groups = self.pending_groups.drain(..).collect::<Vec<_>>();
