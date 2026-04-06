@@ -2243,7 +2243,7 @@ impl KiCadSchematicParser {
             alias.members.push(member);
         }
         self.need_right()?;
-        self.screen.add_bus_alias(alias);
+        self.screen.bus_aliases.push(alias);
         self.need_right()?;
         Ok(())
     }
@@ -4504,7 +4504,7 @@ impl KiCadSchematicParser {
             {
                 self.screen.root_sheet_page = instance.page;
             } else {
-                self.screen.add_sheet_instance(instance);
+                self.screen.sheet_instances.push(instance);
             }
         }
         self.need_right()?;
@@ -4600,7 +4600,7 @@ impl KiCadSchematicParser {
                 self.need_right()?;
             }
             self.need_right()?;
-            self.screen.add_symbol_instance(instance);
+            self.screen.symbol_instances.push(instance);
         }
         self.need_right()?;
         Ok(())

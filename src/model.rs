@@ -65,20 +65,6 @@ pub struct Screen {
     pub symbol_instances: Vec<SymbolInstance>,
 }
 
-impl Screen {
-    pub fn add_bus_alias(&mut self, alias: BusAlias) {
-        self.bus_aliases.push(alias);
-    }
-
-    pub fn add_sheet_instance(&mut self, instance: SheetInstance) {
-        self.sheet_instances.push(instance);
-    }
-
-    pub fn add_symbol_instance(&mut self, instance: SymbolInstance) {
-        self.symbol_instances.push(instance);
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Paper {
     pub kind: String,
