@@ -4232,7 +4232,7 @@ fn modern_root_sheet_instance_page_is_stored_on_screen_root_page() {
     let src = r#"(kicad_sch
   (version 20221110)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000001")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
@@ -4261,7 +4261,7 @@ fn root_symbol_instance_paths_are_prefixed_with_root_uuid() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sym-inst")
+  (uuid "40000000-0000-0000-0000-000000000002")
   (symbol_instances
     (path "" (reference "R1") (unit 1))
     (path "/child/R2" (reference "R2") (unit 2)))
@@ -4270,10 +4270,13 @@ fn root_symbol_instance_paths_are_prefixed_with_root_uuid() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
 
     assert_eq!(schematic.screen.symbol_instances.len(), 2);
-    assert_eq!(schematic.screen.symbol_instances[0].path, "/root-sym-inst");
+    assert_eq!(
+        schematic.screen.symbol_instances[0].path,
+        "/40000000-0000-0000-0000-000000000002"
+    );
     assert_eq!(
         schematic.screen.symbol_instances[1].path,
-        "/root-sym-inst/child/R2"
+        "/40000000-0000-0000-0000-000000000002/child/R2"
     );
 
     let _ = fs::remove_file(path);
@@ -4321,7 +4324,7 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000003")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 0) (property "Sim.Enable" "0"))
   (symbol (lib_id "Device:R") (at 3 4 0) (property "Spice_Netlist_Enabled" "N"))
@@ -4362,7 +4365,7 @@ fn load_tree_migrates_mid_v7_sim_field_names() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000004")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -4461,7 +4464,7 @@ fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000005")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -4540,7 +4543,7 @@ fn load_tree_migrates_inferred_legacy_spice_fields_from_value() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000006")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -4617,7 +4620,7 @@ fn load_tree_migrates_legacy_dc_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000007")
   (paper "A4")
   (symbol
     (lib_id "Device:V")
@@ -4699,7 +4702,7 @@ fn load_tree_migrates_legacy_sin_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000008")
   (paper "A4")
   (symbol
     (lib_id "Device:V")
@@ -4789,7 +4792,7 @@ fn load_tree_migrates_legacy_pulse_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-000000000009")
   (paper "A4")
   (symbol
     (lib_id "Device:I")
@@ -4864,7 +4867,7 @@ fn load_tree_migrates_legacy_exp_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-00000000000a")
   (paper "A4")
   (symbol
     (lib_id "Device:V")
@@ -4917,7 +4920,7 @@ fn load_tree_migrates_legacy_am_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-00000000000b")
   (paper "A4")
   (symbol
     (lib_id "Device:V")
@@ -4970,7 +4973,7 @@ fn load_tree_migrates_legacy_sffm_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-00000000000c")
   (paper "A4")
   (symbol
     (lib_id "Device:I")
@@ -5102,7 +5105,7 @@ fn sheet_pin_without_at_keeps_default_geometry() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "40000000-0000-0000-0000-00000000000d")
   (paper "A4")
   (sheet
     (property "Sheetname" "Child")
