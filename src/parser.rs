@@ -1532,6 +1532,7 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("polyline", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
+        let mut points = item.points.clone();
 
         while !self.at_right() {
             self.need_left()?;
@@ -1546,7 +1547,7 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "pts" => {
                     let _ = self.need_unquoted_symbol_atom("pts")?;
-                    let mut points = Vec::new();
+                    points.clear();
                     while !self.at_right() {
                         self.need_left()?;
                         let head = match &self.current().kind {
@@ -1564,7 +1565,6 @@ impl KiCadSchematicParser {
                         points.push(self.parse_xy2_lib("xy")?);
                         self.need_right()?;
                     }
-                    item.points = points;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -1579,6 +1579,7 @@ impl KiCadSchematicParser {
             }
         }
 
+        item.points = points;
         self.need_right()?;
         Ok(item)
     }
@@ -1592,6 +1593,9 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("rectangle", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
+        let mut start = item.points.first().copied().unwrap_or([0.0, 0.0]);
+        let mut end = item.end;
+        let mut radius = item.radius;
 
         while !self.at_right() {
             self.need_left()?;
@@ -1606,17 +1610,17 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "start" => {
                     let _ = self.need_unquoted_symbol_atom("start")?;
-                    item.points.push(self.parse_xy2_lib("rectangle start")?);
+                    start = self.parse_xy2_lib("rectangle start")?;
                     self.need_right()?;
                 }
                 "end" => {
                     let _ = self.need_unquoted_symbol_atom("end")?;
-                    item.end = Some(self.parse_xy2_lib("rectangle end")?);
+                    end = Some(self.parse_xy2_lib("rectangle end")?);
                     self.need_right()?;
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    item.radius = Some(self.parse_internal_units_atom("corner radius")?);
+                    radius = Some(self.parse_internal_units_atom("corner radius")?);
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -1631,6 +1635,9 @@ impl KiCadSchematicParser {
             }
         }
 
+        item.points = vec![start];
+        item.end = end;
+        item.radius = radius;
         self.need_right()?;
         Ok(item)
     }
