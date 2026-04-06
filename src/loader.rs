@@ -1842,11 +1842,15 @@ fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
         device.trim(),
         model_type.trim().to_ascii_uppercase().as_str(),
     ) {
-        ("R", "POT") => true,
+        ("R", "" | "POT" | "=") => true,
+        ("C" | "L", "" | "=") => true,
+        ("TLINE", "" | "RLGC") => true,
+        ("SW", "V" | "I") => true,
         (
             "V" | "I",
-            "DC" | "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "PWL" | "TRNOISE" | "TRRANDOM",
+            "DC" | "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "PWL" | "TRNOISE" | "TRRANDOM" | "=",
         ) => true,
+        ("E" | "F" | "G" | "H" | "SUBCKT" | "XSPICE", "") => true,
         _ => false,
     }
 }

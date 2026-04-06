@@ -8008,6 +8008,51 @@ fn load_tree_records_warning_for_invalid_current_sim_type_without_reference() {
 }
 
 #[test]
+fn load_tree_does_not_warn_for_valid_behavioral_current_sim_pairs() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000913")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "R")
+    (property "Sim.Type" "=")
+    (at 1 2 0))
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Sim.Device" "V")
+    (property "Sim.Type" "=")
+    (at 3 4 0))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "S?")
+    (property "Sim.Device" "SW")
+    (property "Sim.Type" "V")
+    (at 5 6 0))
+)"#;
+    let path = temp_schematic("loader_accepts_valid_current_sim_pairs", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .all(|warning| !warning.contains("No simulation model definition found"))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_fixes_legacy_global_power_symbol_value_from_hidden_power_pin() {
     let src = r##"(kicad_sch
   (version 20230220)
