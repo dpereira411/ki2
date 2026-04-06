@@ -547,6 +547,7 @@ impl SchematicLoader {
 
         for schematic in &mut self.schematics {
             let power_infos = Self::collect_power_lib_symbol_info(schematic);
+            let mut migrated = false;
 
             for item in &mut schematic.screen.items {
                 let SchItem::Symbol(symbol) = item else {
@@ -573,7 +574,17 @@ impl SchematicLoader {
                     continue;
                 };
 
+                let value_changed = symbol
+                    .properties
+                    .iter()
+                    .find(|property| property.kind == PropertyKind::SymbolValue)
+                    .is_none_or(|property| property.value != pin_name);
                 symbol.set_field_text(PropertyKind::SymbolValue, pin_name);
+                migrated |= value_changed;
+            }
+
+            if migrated {
+                schematic.screen.content_modified = true;
             }
         }
     }

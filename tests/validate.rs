@@ -5652,6 +5652,140 @@ fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
 }
 
 #[test]
+fn load_tree_fixes_legacy_global_power_symbol_value_from_hidden_power_pin() {
+    let src = r##"(kicad_sch
+  (version 20230220)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090d")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:VCC"
+      (power)
+      (property "Reference" "#PWR")
+      (property "Value" "VCC")
+      (symbol "VCC_1_1"
+        (pin power_in line
+          (at 0 0 180)
+          (length 2.54)
+          (hide yes)
+          (name "PWR_FLAG")
+          (number "1")))))
+  (symbol
+    (lib_id "power:VCC")
+    (property "Reference" "#PWR?")
+    (property "Value" "WRONG")
+    (at 1 2 0))
+)"##;
+    let path = temp_schematic("loader_fixes_legacy_global_power_symbol_value", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("PWR_FLAG")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_leaves_local_power_and_visible_power_pins_untouched() {
+    let src = r##"(kicad_sch
+  (version 20230220)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090e")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:LOCAL"
+      (power)
+      (property "Reference" "#PWR")
+      (property "Value" "LOCAL")
+      (symbol "LOCAL_1_1"
+        (pin power_in line
+          (at 0 0 180)
+          (length 2.54)
+          (hide yes)
+          (name "LOCALPIN")
+          (number "1"))))
+    (symbol "power:VISIBLE"
+      (power)
+      (property "Reference" "#PWR")
+      (property "Value" "VISIBLE")
+      (symbol "VISIBLE_1_1"
+        (pin power_in line
+          (at 0 0 180)
+          (length 2.54)
+          (name "VISIBLEPIN")
+          (number "1")))))
+  (symbol
+    (lib_id "power:LOCAL")
+    (lib_name "LOCAL")
+    (property "Reference" "#PWR?")
+    (property "Value" "KEEP_LOCAL")
+    (at 1 2 0))
+  (symbol
+    (lib_id "power:VISIBLE")
+    (property "Reference" "#PWR?")
+    (property "Value" "KEEP_VISIBLE")
+    (at 3 4 0))
+)"##;
+    let path = temp_schematic("loader_leaves_local_and_visible_power_symbols", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbols = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(symbols.len(), 2);
+    assert_eq!(
+        symbols[0]
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("KEEP_LOCAL")
+    );
+    assert_eq!(
+        symbols[1]
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("KEEP_VISIBLE")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_preserves_mid_v7_sim_pin_indexes_without_source_pins() {
     let src = r#"(kicad_sch
   (version 20260306)
