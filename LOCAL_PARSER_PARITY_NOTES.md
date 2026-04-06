@@ -143,7 +143,10 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `FixLegacyPowerSymbolMismatches`
   Status: first loader-side global-power value fix now handles pre-`20230221` symbols linked to global power lib symbols with hidden `power_in` pins; remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
 - `MigrateSimModels`
-  Status: first loader-side migration slice now exists for the upstream early-return branch that only rewrites legacy/mid-v7 symbol field spellings (`Sim_Device`, `Sim_Type`, `Sim_Params`, `Sim_Pins`) and converts `Sim_Pins` index arrays into `Sim.Pins` name-value maps when source pins are available. The remaining blocked gap is the heavier simulator-model / project / embedded-model branch that resolves legacy `Spice_*` fields, library-backed model types, and value-field substitutions. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
+  Status: loader-side migration now covers two upstream-representable slices:
+  1. the early-return branch that rewrites mid-v7 field spellings (`Sim_Device`, `Sim_Type`, `Sim_Params`, `Sim_Pins`) and converts `Sim_Pins` index arrays into `Sim.Pins` name-value maps when source pins are available
+  2. the explicit legacy `Spice_*` raw-SPICE fallback branch that removes `Spice_Primitive` / `Spice_Model` / `Spice_Node_Sequence` / `Spice_Lib_File` fields and synthesizes `Sim.Device=SPICE`, `Sim.Params`, and `Sim.Pins`
+  Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed/internal source models, value-field substitutions, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 - `AnnotatePowerSymbols`
 - `SetSheetNumberAndCount`
 - `RecomputeIntersheetRefs`

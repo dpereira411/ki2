@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
-use crate::model::{PropertyKind, SchItem, Schematic, SheetReference};
+use crate::model::{Property, PropertyKind, SchItem, Schematic, SheetReference};
 use crate::parser::parse_schematic_file;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -632,7 +632,7 @@ impl SchematicLoader {
                     continue;
                 };
 
-                if symbol.properties.iter().any(|property| {
+                let has_legacy_spice_fields = symbol.properties.iter().any(|property| {
                     matches!(
                         property.key.as_str(),
                         "Spice_Primitive"
@@ -641,7 +641,87 @@ impl SchematicLoader {
                             | "Spice_Netlist_Enabled"
                             | "Spice_Lib_File"
                     )
-                }) {
+                });
+
+                if has_legacy_spice_fields {
+                    let can_raw_migrate = symbol.properties.iter().any(|property| {
+                        matches!(property.key.as_str(), "Spice_Model" | "Spice_Lib_File")
+                    });
+
+                    if !can_raw_migrate {
+                        continue;
+                    }
+
+                    let primitive_field = take_symbol_user_field(symbol, "Spice_Primitive");
+                    let node_sequence_field = take_symbol_user_field(symbol, "Spice_Node_Sequence");
+                    let model_field = take_symbol_user_field(symbol, "Spice_Model");
+                    let _legacy_enable = take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
+                    let lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+
+                    let mut pin_map_field = node_sequence_field.map(legacy_spice_pin_map_field);
+                    let source_pins = symbol_source_pin_numbers(symbol);
+                    let device = primitive_field
+                        .as_ref()
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
+                    let model = model_field
+                        .as_ref()
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
+                    let lib = lib_field
+                        .as_ref()
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
+
+                    if pin_map_field.is_none() && !source_pins.is_empty() {
+                        let template = primitive_field
+                            .clone()
+                            .or_else(|| model_field.clone())
+                            .or_else(|| lib_field.clone())
+                            .unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
+                        pin_map_field = Some(default_sim_pins_field(template, &source_pins));
+                    }
+
+                    let device_template = primitive_field
+                        .clone()
+                        .or_else(|| model_field.clone())
+                        .or_else(|| lib_field.clone())
+                        .unwrap_or_else(|| {
+                            Property::new_named(PropertyKind::User, "", String::new(), false)
+                        });
+                    let mut sim_device_field = device_template;
+                    sim_device_field.key = "Sim.Device".to_string();
+                    sim_device_field.value = "SPICE".to_string();
+
+                    let params_template = model_field
+                        .clone()
+                        .or_else(|| primitive_field.clone())
+                        .or_else(|| lib_field.clone())
+                        .unwrap_or_else(|| {
+                            Property::new_named(PropertyKind::User, "", String::new(), false)
+                        });
+                    let mut sim_params_field = params_template;
+                    sim_params_field.key = "Sim.Params".to_string();
+                    sim_params_field.value = if device.is_empty() && lib.is_empty() {
+                        model
+                    } else {
+                        format!(
+                            "type=\"{device}\" model=\"{}\" lib=\"{lib}\"",
+                            sim_params_field_value_escape(&model)
+                        )
+                    };
+
+                    symbol.properties.push(sim_device_field);
+                    symbol.properties.push(sim_params_field);
+
+                    if let Some(mut pin_map_field) = pin_map_field {
+                        pin_map_field.key = "Sim.Pins".to_string();
+                        symbol.properties.push(pin_map_field);
+                    }
+
+                    migrated = true;
                     continue;
                 }
 
@@ -965,6 +1045,44 @@ fn compare_pin_numbers(a: &String, b: &String) -> std::cmp::Ordering {
         (Ok(a_number), Ok(b_number)) => a_number.cmp(&b_number),
         _ => a.cmp(b),
     }
+}
+
+fn take_symbol_user_field(symbol: &mut crate::model::Symbol, key: &str) -> Option<Property> {
+    let index = symbol
+        .properties
+        .iter()
+        .position(|property| property.kind.is_user_field() && property.key == key)?;
+    Some(symbol.properties.remove(index))
+}
+
+fn legacy_spice_pin_map_field(mut property: Property) -> Property {
+    let pin_map = property
+        .value
+        .split(|ch: char| matches!(ch, '{' | '}' | ':' | ',' | ';' | ' '))
+        .filter(|token| !token.is_empty())
+        .enumerate()
+        .map(|(index, token)| {
+            let symbol_pin = token.parse::<i32>().unwrap_or(1);
+            format!("{symbol_pin}={}", index + 1)
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    property.value = pin_map;
+    property
+}
+
+fn default_sim_pins_field(mut property: Property, source_pins: &[String]) -> Property {
+    property.value = source_pins
+        .iter()
+        .enumerate()
+        .map(|(index, symbol_pin)| format!("{symbol_pin}={}", index + 1))
+        .collect::<Vec<_>>()
+        .join(" ");
+    property
+}
+
+fn sim_params_field_value_escape(model: &str) -> String {
+    model.replace('"', "\\\"")
 }
 
 fn migrated_sim_pins_value(prefix: &str, source_pins: &[String], pin_indexes: &[&str]) -> String {
