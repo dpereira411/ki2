@@ -46,6 +46,13 @@ impl LoadResult {
         self.sheet_path(&self.current_sheet_instance_path)
     }
 
+    pub fn current_schematic(&self) -> Option<&Schematic> {
+        let current_sheet_path = self.current_sheet_path()?;
+        self.schematics
+            .iter()
+            .find(|schematic| schematic.path == current_sheet_path.schematic_path)
+    }
+
     pub fn children_of<'a>(
         &'a self,
         path: &'a Path,

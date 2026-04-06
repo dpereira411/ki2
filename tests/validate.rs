@@ -363,6 +363,13 @@ fn validates_hierarchical_tree_fixture() {
     );
     assert_eq!(
         project
+            .current_schematic()
+            .expect("project current schematic")
+            .path,
+        project.root_path
+    );
+    assert_eq!(
+        project
             .sheet_paths_of(&project.root_path)
             .next()
             .expect("root sheet path")
@@ -451,6 +458,13 @@ fn reuses_previously_loaded_child_schematic() {
             .expect("load result current sheet path")
             .instance_path,
         ""
+    );
+    assert_eq!(
+        loaded
+            .current_schematic()
+            .expect("load result current schematic")
+            .path,
+        root_path.canonicalize().unwrap_or(root_path.clone())
     );
     assert_eq!(
         loaded
