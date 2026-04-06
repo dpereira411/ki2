@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
@@ -1600,6 +1600,231 @@ fn reset_reused_screen_symbol_state(
     }
 }
 
+fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
+    let source_pins = symbol_source_pin_numbers(symbol);
+
+    if source_pins.len() != 2 {
+        return false;
+    }
+
+    let value = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .map(|property| property.value.trim().to_string())
+        .unwrap_or_default();
+
+    if value.is_empty() {
+        return false;
+    }
+
+    let explicit_device = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "Sim.Device")
+        .map(|property| property.value.trim().to_string())
+        .unwrap_or_default();
+    let explicit_type = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "Sim.Type")
+        .map(|property| property.value.trim().to_string())
+        .unwrap_or_default();
+    let explicit_library = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "Sim.Library")
+        .map(|property| property.value.trim().to_string())
+        .unwrap_or_default();
+    let explicit_name = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "Sim.Name")
+        .map(|property| property.value.trim().to_string())
+        .unwrap_or_default();
+    let explicit_params = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "Sim.Params")
+        .map(|property| property.value.trim().to_string())
+        .unwrap_or_default();
+
+    if !explicit_library.is_empty() || !explicit_name.is_empty() {
+        return false;
+    }
+
+    let prefix = symbol.prefix.trim();
+    let mut device = explicit_device.clone();
+    let mut model_type = explicit_type.clone();
+    let mut params = explicit_params.clone();
+
+    if matches!(device.as_str(), "R" | "L" | "C") && model_type.is_empty() {
+        if params.is_empty() {
+            let key = device.to_ascii_lowercase();
+
+            if looks_behavioral_value(&value) {
+                model_type = "=".to_string();
+            }
+
+            params = format!("{key}=\"{value}\"");
+        }
+    } else if device.is_empty()
+        && model_type.is_empty()
+        && matches!(prefix.chars().next(), Some('R' | 'L' | 'C'))
+    {
+        device = prefix.chars().next().unwrap().to_string();
+        let key = device.to_ascii_lowercase();
+
+        if looks_behavioral_value(&value) {
+            model_type = "=".to_string();
+        }
+
+        params = format!("{key}=\"{value}\"");
+    } else if matches!(device.as_str(), "V" | "I") && (model_type.is_empty() || model_type == "DC")
+    {
+        if params.is_empty() {
+            let (param_name, param_value) = split_inferred_source_value(&value);
+            model_type = "DC".to_string();
+            params = format!("{param_name}=\"{param_value}\"");
+        }
+    } else if device.is_empty()
+        && model_type.is_empty()
+        && matches!(prefix.chars().next(), Some('V' | 'I'))
+    {
+        device = prefix.chars().next().unwrap().to_string();
+        let (param_name, param_value) = split_inferred_source_value(&value);
+        model_type = "DC".to_string();
+        params = format!("{param_name}=\"{param_value}\"");
+    } else {
+        return false;
+    }
+
+    let pin_pairs = if let Some(pin_field) = symbol
+        .properties
+        .iter()
+        .find(|property| property.key == "Sim.Pins")
+    {
+        parse_loader_sim_pin_pairs(&pin_field.value)
+    } else {
+        vec![
+            (source_pins[0].clone(), "+".to_string()),
+            (source_pins[1].clone(), "-".to_string()),
+        ]
+    };
+
+    let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
+    let param_pairs = parse_loader_sim_param_pairs(&params);
+    let param_values = param_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
+
+    symbol.sim_model = Some(crate::model::SimModel {
+        device: (!device.is_empty()).then_some(device),
+        model_type: (!model_type.is_empty()).then_some(model_type),
+        library: None,
+        name: None,
+        ibis_pin: None,
+        ibis_model: None,
+        ibis_diff: false,
+        params: (!params.is_empty()).then_some(params),
+        param_pairs,
+        param_values,
+        pin_pairs,
+        pins,
+        value_binding: None,
+        enabled: true,
+        origin: Some(crate::model::SimModelOrigin::InferredValue),
+        resolved_library: None,
+        resolved_name: None,
+        resolved_kind: None,
+        resolved_model_type: None,
+        resolved_ibis_model_type: None,
+        resolved_ibis_diff_pin: None,
+        generated_pin_names: Vec::new(),
+        generated_param_pairs: Vec::new(),
+    });
+
+    true
+}
+
+fn looks_behavioral_value(value: &str) -> bool {
+    value.chars().any(|ch| {
+        matches!(
+            ch,
+            '(' | ')' | '{' | '}' | '[' | ']' | '+' | '-' | '*' | '/' | '='
+        ) || (ch.is_ascii_alphabetic()
+            && !matches!(
+                ch,
+                'f' | 'F'
+                    | 'p'
+                    | 'P'
+                    | 'n'
+                    | 'N'
+                    | 'u'
+                    | 'U'
+                    | 'm'
+                    | 'M'
+                    | 'k'
+                    | 'K'
+                    | 'g'
+                    | 'G'
+                    | 't'
+                    | 'T'
+                    | 'r'
+                    | 'R'
+                    | 'h'
+                    | 'H'
+                    | 'o'
+                    | 'O'
+            ))
+    })
+}
+
+fn split_inferred_source_value(value: &str) -> (&'static str, String) {
+    let trimmed = value.trim();
+
+    if let Some(rest) = trimmed.strip_prefix("AC ") {
+        return ("ac", rest.trim().to_string());
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("ac ") {
+        return ("ac", rest.trim().to_string());
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("DC ") {
+        return ("dc", rest.trim().to_string());
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("dc ") {
+        return ("dc", rest.trim().to_string());
+    }
+
+    ("dc", trimmed.to_string())
+}
+
+fn parse_loader_sim_param_pairs(params: &str) -> Vec<(String, String)> {
+    params
+        .split_whitespace()
+        .filter_map(|token| {
+            token
+                .split_once('=')
+                .map(|(name, value)| (name.to_string(), value.trim_matches('"').to_string()))
+                .or_else(|| Some((token.to_string(), "1".to_string())))
+        })
+        .collect()
+}
+
+fn parse_loader_sim_pin_pairs(pins: &str) -> Vec<(String, String)> {
+    pins.split_whitespace()
+        .filter_map(|token| {
+            token.split_once('=').map(|(symbol_pin, model_pin)| {
+                (
+                    symbol_pin.to_string(),
+                    model_pin.trim_matches('"').to_string(),
+                )
+            })
+        })
+        .collect()
+}
+
 fn symbol_source_pin_numbers(symbol: &crate::model::Symbol) -> Vec<String> {
     let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
         return Vec::new();
@@ -1746,6 +1971,19 @@ fn hydrate_resolved_sim_library(
         if !warnings.iter().any(|existing| existing == &warning) {
             warnings.push(warning);
         }
+    }
+
+    if symbol.sim_model.is_none()
+        || symbol.sim_model.as_ref().is_some_and(|sim_model| {
+            sim_model.origin == Some(crate::model::SimModelOrigin::Fields)
+                && sim_model.device.is_none()
+                && sim_model.model_type.is_none()
+                && sim_model.library.is_none()
+                && sim_model.name.is_none()
+                && sim_model.params.is_none()
+        })
+    {
+        infer_symbol_sim_model(symbol);
     }
 
     modified
