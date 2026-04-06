@@ -5640,7 +5640,7 @@ impl KiCadSchematicParser {
         } else if let Ok(parsed) = Uuid::parse_str(&raw) {
             *parsed.as_bytes()
         } else {
-            return raw;
+            *Uuid::new_v4().as_bytes()
         };
 
         let mut normalized = Uuid::from_bytes(bytes).hyphenated().to_string();

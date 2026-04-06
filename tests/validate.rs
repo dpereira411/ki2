@@ -12,6 +12,7 @@ use ki2::model::{
     TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
+use uuid::Uuid;
 
 fn fixture(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -2237,6 +2238,54 @@ fn parser_normalizes_legacy_short_uuids_and_increments_duplicates() {
         no_connect.uuid.as_deref(),
         Some("00000000-0000-0000-0000-000000000003")
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn parser_replaces_malformed_uuids_with_generated_ids() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbolic-id")
+  (paper "A4")
+  (junction (at 0 0) (uuid "junction-symbolic-id"))
+  (no_connect (at 1 1) (uuid "junction-symbolic-id"))
+)"#;
+    let path = temp_schematic("malformed_symbolic_uuids", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let root_uuid = schematic.screen.uuid.as_deref().expect("root uuid");
+    assert!(Uuid::parse_str(root_uuid).is_ok());
+
+    let junction = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction),
+            _ => None,
+        })
+        .expect("junction");
+    let junction_uuid = junction.uuid.as_deref().expect("junction uuid");
+    assert!(Uuid::parse_str(junction_uuid).is_ok());
+
+    let no_connect = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::NoConnect(no_connect) => Some(no_connect),
+            _ => None,
+        })
+        .expect("no_connect");
+    let no_connect_uuid = no_connect.uuid.as_deref().expect("no_connect uuid");
+    assert!(Uuid::parse_str(no_connect_uuid).is_ok());
+
+    assert_ne!(root_uuid, "root-symbolic-id");
+    assert_ne!(junction_uuid, "junction-symbolic-id");
+    assert_ne!(no_connect_uuid, "junction-symbolic-id");
+    assert_ne!(junction_uuid, no_connect_uuid);
 
     let _ = fs::remove_file(path);
 }
@@ -10823,7 +10872,9 @@ fn parses_bom_prefixed_schematic_header() {
     let path = temp_schematic("bom_prefixed_schematic", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse UTF-8 BOM");
 
-    assert_eq!(schematic.screen.uuid.as_deref(), Some("bom-root"));
+    let uuid = schematic.screen.uuid.as_deref().expect("root uuid");
+    assert!(Uuid::parse_str(uuid).is_ok());
+    assert_ne!(uuid, "bom-root");
 
     let _ = fs::remove_file(path);
 }
