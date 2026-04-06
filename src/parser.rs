@@ -2229,7 +2229,6 @@ impl KiCadSchematicParser {
     fn parse_junction(&mut self) -> Result<Junction, Error> {
         let _ = self.need_unquoted_symbol_atom("junction")?;
         let mut junction = Junction::new();
-        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -2244,7 +2243,6 @@ impl KiCadSchematicParser {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
                     junction.at = self.parse_xy2("junction at")?;
-                    has_at = true;
                     self.need_right()?;
                 }
                 "diameter" => {
@@ -2270,9 +2268,6 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("at, diameter, color or uuid")),
             }
         }
-        if !has_at {
-            junction.at = [0.0, 0.0];
-        }
         self.need_right()?;
         Ok(junction)
     }
@@ -2280,7 +2275,6 @@ impl KiCadSchematicParser {
     fn parse_no_connect(&mut self) -> Result<NoConnect, Error> {
         let _ = self.need_unquoted_symbol_atom("no_connect")?;
         let mut no_connect = NoConnect::new();
-        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -2295,7 +2289,6 @@ impl KiCadSchematicParser {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
                     no_connect.at = self.parse_xy2("no_connect at")?;
-                    has_at = true;
                     self.need_right()?;
                 }
                 "uuid" => {
@@ -2306,9 +2299,6 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("at or uuid")),
             }
         }
-        if !has_at {
-            no_connect.at = [0.0, 0.0];
-        }
         self.need_right()?;
         Ok(no_connect)
     }
@@ -2316,7 +2306,6 @@ impl KiCadSchematicParser {
     fn parse_bus_entry(&mut self) -> Result<BusEntry, Error> {
         let _ = self.need_unquoted_symbol_atom("bus_entry")?;
         let mut bus_entry = BusEntry::new();
-        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -2331,7 +2320,6 @@ impl KiCadSchematicParser {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
                     bus_entry.at = self.parse_xy2("bus_entry at")?;
-                    has_at = true;
                     self.need_right()?;
                 }
                 "size" => {
@@ -2354,9 +2342,6 @@ impl KiCadSchematicParser {
                 }
                 _ => return Err(self.expecting("at, size, uuid or stroke")),
             }
-        }
-        if !has_at {
-            bus_entry.at = [0.0, 0.0];
         }
         self.need_right()?;
         Ok(bus_entry)
@@ -2383,8 +2368,6 @@ impl KiCadSchematicParser {
             _ => return Err(self.error_here("invalid schematic line kind")),
         };
         let mut line = Line::new(kind);
-        line.points = vec![[0.0, 0.0], [0.0, 0.0]];
-        let mut has_pts = false;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -2430,7 +2413,6 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                     self.need_right()?;
                     line.points = vec![start, end];
-                    has_pts = true;
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -2444,9 +2426,6 @@ impl KiCadSchematicParser {
                 }
                 _ => return Err(self.expecting("at, uuid or stroke")),
             }
-        }
-        if !has_pts {
-            line.points = vec![[0.0, 0.0], [0.0, 0.0]];
         }
         self.need_right()?;
         Ok(line)

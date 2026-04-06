@@ -603,7 +603,7 @@ impl Line {
 
         Self {
             kind,
-            points: Vec::new(),
+            points: vec![[0.0, 0.0], [0.0, 0.0]],
             has_stroke: false,
             stroke: Some(stroke),
             uuid: None,
@@ -1365,10 +1365,10 @@ impl Sheet {
 #[cfg(test)]
 mod tests {
     use super::{
-        BusEntry, FieldAutoplacement, Label, LabelKind, LabelShape, LibDrawItem, LibSymbol, Line,
-        LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet, SheetLocalInstance,
-        SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin,
-        Table, TableCell, Text, TextBox, TextKind,
+        BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LibDrawItem,
+        LibSymbol, Line, LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet,
+        SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol,
+        SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextKind,
     };
 
     #[test]
@@ -1944,17 +1944,22 @@ mod tests {
 
     #[test]
     fn connectivity_items_start_with_constructor_defaults() {
+        let junction = Junction::new();
         let no_connect = NoConnect::new();
         let bus_entry = BusEntry::new();
         let line = Line::new(LineKind::Wire);
 
+        assert_eq!(junction.at, [0.0, 0.0]);
+        assert_eq!(no_connect.at, [0.0, 0.0]);
         assert_eq!(no_connect.size, 1.2192);
+        assert_eq!(bus_entry.at, [0.0, 0.0]);
         assert_eq!(bus_entry.size, [2.54, 2.54]);
         assert_eq!(
             bus_entry.stroke.as_ref().expect("bus entry stroke").width,
             Some(0.0)
         );
         assert_eq!(line.stroke.as_ref().expect("line stroke").width, Some(0.0));
+        assert_eq!(line.points, vec![[0.0, 0.0], [0.0, 0.0]]);
         assert!(!bus_entry.has_stroke);
         assert!(!line.has_stroke);
     }
