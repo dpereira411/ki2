@@ -8087,9 +8087,9 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolReference)
             .map(|property| property.value.as_str()),
-        Some("")
+        Some("R2")
     );
-    assert_eq!(symbol.unit, Some(1));
+    assert_eq!(symbol.unit, Some(3));
 
     let _ = fs::remove_file(path);
 }

@@ -3897,7 +3897,13 @@ impl KiCadSchematicParser {
                                 .instances
                                 .retain(|existing| existing.path != instance.path);
 
-                            symbol.instances.push(instance);
+                            symbol.instances.push(instance.clone());
+
+                            if symbol.instances.len() == 1 {
+                                let reference = instance.reference.clone().unwrap_or_default();
+                                symbol.set_field_text(PropertyKind::SymbolReference, reference);
+                                symbol.unit = instance.unit;
+                            }
                         }
                         self.need_right()?;
                     }
