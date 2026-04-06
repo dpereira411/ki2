@@ -7066,7 +7066,10 @@ fn rejects_invalid_effects_hyperlink() {
 )"#;
     let path = temp_schematic("bad_effects_href", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject invalid hyperlink");
-    assert!(err.to_string().contains("invalid hyperlink url"));
+    assert!(
+        err.to_string()
+            .contains("Invalid hyperlink url 'not-a-url'")
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -7081,7 +7084,10 @@ fn rejects_digit_started_effects_hyperlink_scheme() {
     let path = temp_schematic("bad_effects_digit_scheme_href", src);
     let err = parse_schematic_file(Path::new(&path))
         .expect_err("must reject digit-started hyperlink scheme");
-    assert!(err.to_string().contains("invalid hyperlink url"));
+    assert!(
+        err.to_string()
+            .contains("Invalid hyperlink url '1ttp://example.com'")
+    );
     let _ = fs::remove_file(path);
 }
 

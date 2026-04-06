@@ -5111,7 +5111,7 @@ impl KiCadSchematicParser {
                 "href" => {
                     let href = self.need_symbol_atom("symbol")?;
                     if !Self::validate_hyperlink(&href) {
-                        return Err(self.error_here(format!("invalid hyperlink url `{href}`")));
+                        return Err(self.error_here(format!("Invalid hyperlink url '{href}'")));
                     }
                     effects.hyperlink = Some(href);
                     if section_is_list {
