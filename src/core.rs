@@ -75,6 +75,14 @@ impl SchematicProject {
 
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_paths_by_instance.contains_key(instance_path) {
+            let previous = self.current_sheet_path().cloned();
+            let next = self.sheet_path(instance_path).cloned();
+            reset_reused_screen_symbol_state(
+                &mut self.schematics,
+                &self.sheet_paths,
+                previous.as_ref(),
+                next.as_ref(),
+            );
             refresh_current_screen_page_state(
                 &mut self.schematics,
                 &self.sheet_paths,
@@ -216,6 +224,64 @@ fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
         if let Some(footprint) = instance.footprint {
             symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
         }
+    }
+}
+
+fn seed_first_symbol_instance_state(schematic: &mut Schematic) {
+    for item in &mut schematic.screen.items {
+        let SchItem::Symbol(symbol) = item else {
+            continue;
+        };
+
+        let Some(instance) = symbol.instances.first().cloned() else {
+            continue;
+        };
+
+        if let Some(reference) = instance.reference {
+            symbol.set_field_text(PropertyKind::SymbolReference, reference);
+        }
+
+        if let Some(unit) = instance.unit {
+            symbol.unit = Some(unit);
+        }
+
+        if let Some(value) = instance.value {
+            symbol.set_field_text(PropertyKind::SymbolValue, value);
+        }
+
+        if let Some(footprint) = instance.footprint {
+            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+        }
+    }
+}
+
+fn reset_reused_screen_symbol_state(
+    schematics: &mut [Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    previous: Option<&LoadedSheetPath>,
+    next: Option<&LoadedSheetPath>,
+) {
+    let Some(previous) = previous else {
+        return;
+    };
+
+    let previous_occurrence_count = sheet_paths
+        .iter()
+        .filter(|sheet_path| sheet_path.schematic_path == previous.schematic_path)
+        .count();
+    let switching_schematic = next
+        .map(|next| next.schematic_path != previous.schematic_path)
+        .unwrap_or(true);
+
+    if previous_occurrence_count <= 1 || !switching_schematic {
+        return;
+    }
+
+    if let Some(schematic) = schematics
+        .iter_mut()
+        .find(|schematic| schematic.path == previous.schematic_path)
+    {
+        seed_first_symbol_instance_state(schematic);
     }
 }
 

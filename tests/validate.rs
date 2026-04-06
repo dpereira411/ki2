@@ -657,6 +657,49 @@ fn reuses_previously_loaded_child_schematic() {
             .instance_path,
         ""
     );
+    assert!(loaded.set_current_sheet_path(""));
+    let reset_child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("reset child schematic");
+    assert_eq!(reset_child.screen.page_number, None);
+    assert_eq!(reset_child.screen.page_count, None);
+    assert_eq!(reset_child.screen.virtual_page_number, None);
+    let reset_child_symbol = reset_child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("reset child symbol");
+    assert_eq!(
+        reset_child_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(reset_child_symbol.unit, Some(1));
+    assert_eq!(
+        reset_child_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        reset_child_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
 
     let project = SchematicProject::from_load_result(loaded);
     assert_eq!(project.sheet_paths_of(&child_path).count(), 2);
@@ -750,6 +793,47 @@ fn reuses_previously_loaded_child_schematic() {
     );
     assert_eq!(
         project_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
+    assert!(project.set_current_sheet_path(""));
+    let reset_project_child = project
+        .schematic(&child_path)
+        .expect("reset project child schematic");
+    assert_eq!(reset_project_child.screen.page_number, None);
+    assert_eq!(reset_project_child.screen.page_count, None);
+    assert_eq!(reset_project_child.screen.virtual_page_number, None);
+    let reset_project_symbol = reset_project_child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("reset project child symbol");
+    assert_eq!(
+        reset_project_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(reset_project_symbol.unit, Some(1));
+    assert_eq!(
+        reset_project_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        reset_project_symbol
             .properties
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolFootprint)
