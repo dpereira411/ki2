@@ -8256,7 +8256,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
   (version 20260306)
   (generator "eeschema")
   (uuid "60000000-0000-0000-0000-000000000018")
-  (group "locked" (uuid "g-1") (members))
+  (group "locked" (uuid "60000000-0000-0000-0000-000000000098") (members))
 )"#;
     let quoted_group_locked_path = temp_schematic("quoted_group_locked", quoted_group_locked);
     let schematic = parse_schematic_file(Path::new(&quoted_group_locked_path)).expect("must parse");
@@ -8264,7 +8264,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
         .screen
         .items
         .iter()
-        .any(|item| matches!(item, SchItem::Group(Group { name, uuid, .. }) if name.as_deref() == Some("locked") && uuid.as_deref() == Some("g-1"))));
+        .any(|item| matches!(item, SchItem::Group(Group { name, uuid, .. }) if name.as_deref() == Some("locked") && uuid.as_deref() == Some("60000000-0000-0000-0000-000000000098"))));
 
     let quoted_property_private = r#"(kicad_sch
   (version 20260306)
@@ -9421,7 +9421,7 @@ fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000099")
   (paper "A4")
   (wire (pts (xy 0 0) (xy 1 1)) (uuid "11111111-1111-1111-1111-111111111111"))
   (text_box "body" (at 10 20 90) (size 3 4) (exclude_from_sim yes) (uuid "22222222-2222-2222-2222-222222222222"))
@@ -10082,7 +10082,7 @@ fn symbol_duplicate_user_properties_overwrite_existing_field() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "symbol-duplicate-user-property")
+  (uuid "60000000-0000-0000-0000-00000000009a")
   (symbol
     (lib_id "Device:R")
     (property "MPN" "first" (at 0 0 0))
@@ -10118,7 +10118,7 @@ fn global_label_duplicate_user_properties_are_appended() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "global-label-duplicate-user-property")
+  (uuid "60000000-0000-0000-0000-00000000009b")
   (global_label "GL"
     (property "FOO" "first" (at 0 0 0))
     (property "FOO" "second" (at 1 2 0))))
