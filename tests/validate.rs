@@ -6046,6 +6046,16 @@ fn load_tree_defaults_sim_pins_from_active_symbol_unit() {
             .map(|property| property.value.as_str()),
         Some("2=1 3=2")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("2".to_string(), "1".to_string()),
+            ("3".to_string(), "2".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6094,6 +6104,17 @@ fn load_tree_sorts_default_sim_pins_numerically() {
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("1=1 2=2 10=3")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+            ("10".to_string(), "3".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
@@ -6338,6 +6359,16 @@ fn load_tree_migrates_legacy_spice_pin_maps_with_newline_whitespace() {
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("2=1 1=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "2".to_string()),
+            ("2".to_string(), "1".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
