@@ -2475,17 +2475,12 @@ impl KiCadSchematicParser {
                             text.at = [parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])];
                         }
                         ParsedSchText::Label(label) => {
-                            let delta = [parsed[0] - label.at[0], parsed[1] - label.at[1]];
-                            label.at = [parsed[0], parsed[1]];
-                            label.angle = Self::normalize_text_angle(parsed[2]);
-                            label.spin = Self::get_label_spin_style(label.angle);
-
-                            for property in &mut label.properties {
-                                if let Some(at) = property.at.as_mut() {
-                                    at[0] += delta[0];
-                                    at[1] += delta[1];
-                                }
-                            }
+                            let angle = Self::normalize_text_angle(parsed[2]);
+                            label.set_position(
+                                [parsed[0], parsed[1]],
+                                angle,
+                                Self::get_label_spin_style(angle),
+                            );
                         }
                     }
                     self.need_right()?;
@@ -3463,16 +3458,7 @@ impl KiCadSchematicParser {
                     let parsed = self.parse_xy3("symbol at")?;
                     match parsed[2] as i32 {
                         0 | 90 | 180 | 270 => {
-                            let delta = [parsed[0] - symbol.at[0], parsed[1] - symbol.at[1]];
-                            symbol.at = [parsed[0], parsed[1]];
-                            symbol.angle = parsed[2];
-
-                            for property in &mut symbol.properties {
-                                if let Some(at) = property.at.as_mut() {
-                                    at[0] += delta[0];
-                                    at[1] += delta[1];
-                                }
-                            }
+                            symbol.set_position([parsed[0], parsed[1]], parsed[2]);
                         }
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }

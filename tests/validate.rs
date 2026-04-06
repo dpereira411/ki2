@@ -544,6 +544,51 @@ fn symbol_reference_property_updates_prefix() {
 }
 
 #[test]
+fn symbol_at_moves_preparsed_properties_during_parse() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-symbol-at-fields")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R1" (at 3 4 0))
+    (property "Value" "10k" (at 5 6 0))
+    (at 10 20 90)))"#;
+    let path = temp_schematic("symbol_at_moves_preparsed_properties", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.at, [10.0, 20.0]);
+    assert_eq!(symbol.angle, 90.0);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .and_then(|property| property.at),
+        Some([13.0, 24.0])
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .and_then(|property| property.at),
+        Some([15.0, 26.0])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn power_style_reference_updates_symbol_netlist_state() {
     let src = r##"(kicad_sch
   (version 20260306)

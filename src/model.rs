@@ -684,6 +684,20 @@ impl Label {
             ordinal.max(property.sort_ordinal() + 1)
         })
     }
+
+    pub fn set_position(&mut self, at: [f64; 2], angle: f64, spin: LabelSpin) {
+        let delta = [at[0] - self.at[0], at[1] - self.at[1]];
+        self.at = at;
+        self.angle = angle;
+        self.spin = spin;
+
+        for property in &mut self.properties {
+            if let Some(property_at) = property.at.as_mut() {
+                property_at[0] += delta[0];
+                property_at[1] += delta[1];
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1165,6 +1179,19 @@ impl Symbol {
 
         if kind == PropertyKind::SymbolReference {
             self.update_prefix_from_reference();
+        }
+    }
+
+    pub fn set_position(&mut self, at: [f64; 2], angle: f64) {
+        let delta = [at[0] - self.at[0], at[1] - self.at[1]];
+        self.at = at;
+        self.angle = angle;
+
+        for property in &mut self.properties {
+            if let Some(property_at) = property.at.as_mut() {
+                property_at[0] += delta[0];
+                property_at[1] += delta[1];
+            }
         }
     }
 
