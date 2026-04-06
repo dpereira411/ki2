@@ -1901,6 +1901,74 @@ fn parser_links_symbols_after_lib_cache_fixups() {
 }
 
 #[test]
+fn parser_flatten_keeps_child_embedded_files_without_overwriting_parent() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "root-lib-embedded-flatten")
+  (paper "A4")
+  (embedded_files
+    (file (name "parent.bin") (checksum "sha256:parent") (type font) (data |aaa|))
+    (file (name "child.bin") (checksum "sha256:child") (type font) (data |bbb|))
+    (file (name "shared.bin") (checksum "sha256:root") (type font) (data |ccc|)))
+  (lib_symbols
+    (symbol "Root:R"
+      (embedded_files
+        (file (name "parent.bin"))
+        (file (name "shared.bin"))))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (embedded_files
+        (file (name "child.bin"))
+        (file (name "shared.bin")))))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_flatten_child_embedded_files", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    assert_eq!(linked.embedded_files.len(), 3);
+
+    let parent_file = linked
+        .embedded_files
+        .iter()
+        .find(|file| file.name.as_deref() == Some("parent.bin"))
+        .expect("parent embedded file");
+    assert_eq!(parent_file.data.as_deref(), Some("aaa"));
+
+    let child_file = linked
+        .embedded_files
+        .iter()
+        .find(|file| file.name.as_deref() == Some("child.bin"))
+        .expect("child embedded file");
+    assert_eq!(child_file.data.as_deref(), Some("bbb"));
+
+    let shared_file = linked
+        .embedded_files
+        .iter()
+        .find(|file| file.name.as_deref() == Some("shared.bin"))
+        .expect("shared embedded file");
+    assert_eq!(shared_file.checksum.as_deref(), Some("sha256:root"));
+    assert_eq!(shared_file.data.as_deref(), Some("ccc"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
     let src = r#"(kicad_sch
   (version 20260306)

@@ -5778,6 +5778,19 @@ impl KiCadSchematicParser {
                     }
                 }
 
+                for embedded_file in &symbol.embedded_files {
+                    let already_present = embedded_file.name.as_ref().is_some_and(|name| {
+                        parent
+                            .embedded_files
+                            .iter()
+                            .any(|existing| existing.name.as_ref() == Some(name))
+                    });
+
+                    if !already_present {
+                        parent.embedded_files.push(embedded_file.clone());
+                    }
+                }
+
                 if let Some(immediate_parent) = symbols.get(parent_name) {
                     parent.excluded_from_sim = immediate_parent.excluded_from_sim;
                     parent.in_bom = immediate_parent.in_bom;
