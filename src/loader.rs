@@ -1838,14 +1838,25 @@ fn unresolved_builtin_sim_model_warning(symbol: &Symbol) -> Option<String> {
 }
 
 fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
-    match (
-        device.trim(),
-        model_type.trim().to_ascii_uppercase().as_str(),
-    ) {
+    let device = device.trim().to_ascii_uppercase();
+    let model_type = model_type.trim().to_ascii_uppercase();
+
+    match (device.as_str(), model_type.as_str()) {
         ("R", "" | "POT" | "=") => true,
         ("C" | "L", "" | "=") => true,
+        ("K", "") => true,
         ("TLINE", "" | "RLGC") => true,
         ("SW", "V" | "I") => true,
+        ("D", "") => true,
+        ("NPN" | "PNP", "VBIC" | "GUMMELPOON" | "HICUML2") => true,
+        ("NJFET" | "PJFET", "SHICHMANHODGES" | "PARKERSKELLERN") => true,
+        ("NMES" | "PMES", "STATZ" | "YTTERDAL" | "HFET1" | "HFET2") => true,
+        (
+            "NMOS" | "PMOS",
+            "VDMOS" | "MOS1" | "MOS2" | "MOS3" | "BSIM1" | "BSIM2" | "MOS6" | "BSIM3" | "MOS9"
+            | "B4SOI" | "BSIM4" | "B3SOIFD" | "B3SOIDD" | "B3SOIPD" | "HISIM2" | "HISIMHV1"
+            | "HISIMHV2",
+        ) => true,
         (
             "V" | "I",
             "DC" | "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "PWL" | "TRNOISE" | "TRRANDOM" | "=",
