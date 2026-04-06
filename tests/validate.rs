@@ -3405,6 +3405,20 @@ fn rejects_future_schematic_version_at_generator_version_branch() {
 }
 
 #[test]
+fn future_version_generator_version_branch_still_owns_close_first() {
+    let src = r#"(kicad_sch
+  (version 20990101)
+  (generator "eeschema")
+  (generator_version "9.0" "trailing")
+)"#;
+    let path = temp_schematic("future_version_generator_version_trailing", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("bad generator_version trailer should fail before future-version check");
+    assert!(err.to_string().contains("expecting )"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn defaults_missing_header_version_and_rejects_late_version_section() {
     let missing_src = r#"(kicad_sch
   (generator "eeschema")

@@ -454,6 +454,7 @@ impl KiCadSchematicParser {
                         }
                         _ => return Err(self.error_here("missing generator_version")),
                     });
+                    self.need_right()?;
                     if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         > SEXPR_SCHEMATIC_FILE_VERSION
                     {
@@ -465,7 +466,6 @@ impl KiCadSchematicParser {
                             ),
                         ));
                     }
-                    self.need_right()?;
                     section_consumed_right = true;
                 }
                 "uuid" => {
