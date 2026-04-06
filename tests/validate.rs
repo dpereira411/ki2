@@ -2747,17 +2747,34 @@ fn rejects_invalid_lib_symbol_body_style_number() {
 }
 
 #[test]
-fn rejects_generator_version_before_supported_version() {
+fn accepts_generator_version_before_supported_version() {
     let src = r#"(kicad_sch
   (version 20230101)
   (generator "eeschema")
   (generator_version "8.0")
 )"#;
     let path = temp_schematic("old_generator_version", src);
-    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject generator_version");
-    assert!(
-        err.to_string()
-            .contains("generator_version requires schematic version 20231120 or newer")
+    let schematic = parse_schematic_file(Path::new(&path))
+        .expect("must accept generator_version on older schematic versions");
+    assert_eq!(schematic.generator_version.as_deref(), Some("8.0"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn accepts_embedded_files_before_supported_version() {
+    let src = r#"(kicad_sch
+  (version 20230101)
+  (generator "eeschema")
+  (embedded_files
+    (file (name "old.bin")))
+)"#;
+    let path = temp_schematic("old_embedded_files", src);
+    let schematic = parse_schematic_file(Path::new(&path))
+        .expect("must accept embedded_files on older schematic versions");
+    assert_eq!(schematic.screen.embedded_files.len(), 1);
+    assert_eq!(
+        schematic.screen.embedded_files[0].name.as_deref(),
+        Some("old.bin")
     );
     let _ = fs::remove_file(path);
 }

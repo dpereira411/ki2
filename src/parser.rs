@@ -22,8 +22,6 @@ const SEXPR_SCHEMATIC_FILE_VERSION: i32 = 20260306;
 const VERSION_GENERATOR_VERSION: i32 = 20231120;
 const VERSION_TABLES: i32 = 20240101;
 const VERSION_RULE_AREAS: i32 = 20240417;
-const VERSION_EMBEDDED_FILES: i32 = 20240706;
-
 const VERSION_PAGE_RENAMED_TO_PAPER: i32 = 20200506;
 const VERSION_EMPTY_TILDE_IS_EMPTY: i32 = 20250318;
 const VERSION_SHEET_INSTANCE_ROOT_PATH: i32 = 20221002;
@@ -445,12 +443,6 @@ impl KiCadSchematicParser {
                 }
                 "generator_version" => {
                     let _ = self.need_unquoted_symbol_atom("generator_version")?;
-                    let version = self.require_known_version()?;
-                    if version < VERSION_GENERATOR_VERSION {
-                        return Err(self.error_here(format!(
-                            "generator_version requires schematic version {VERSION_GENERATOR_VERSION} or newer"
-                        )));
-                    }
                     self.generator_version = Some(match &self.current().kind {
                         TokKind::Atom(value) => {
                             let out = value.clone();
@@ -503,12 +495,6 @@ impl KiCadSchematicParser {
                     self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
                 }
                 "embedded_files" => {
-                    let version = self.require_known_version()?;
-                    if version < VERSION_EMBEDDED_FILES {
-                        return Err(self.error_here(format!(
-                            "embedded_files requires schematic version {VERSION_EMBEDDED_FILES} or newer"
-                        )));
-                    }
                     let block_depth = self.current_nesting_depth();
                     match self.parse_embedded_files() {
                         Ok(files) => {
