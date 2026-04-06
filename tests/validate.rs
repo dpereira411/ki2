@@ -4578,7 +4578,6 @@ fn parses_text_and_label_semantics() {
     assert!(global.excluded_from_sim);
     assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
     assert_eq!(global.properties.len(), 1);
-    assert_eq!(global.iref_at, Some([9.0, 10.0]));
     assert!(global.has_effects);
     assert!(global.visible);
     assert_eq!(global.angle, 0.0);
@@ -4587,6 +4586,14 @@ fn parses_text_and_label_semantics() {
         global.effects.as_ref().map(|effects| effects.h_justify),
         Some(TextHJustify::Center)
     );
+    let intersheet_refs = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("default intersheet refs property");
+    assert_eq!(intersheet_refs.value, "show");
+    assert_eq!(intersheet_refs.at, None);
+    assert!(intersheet_refs.visible);
 
     let local = schematic
         .screen

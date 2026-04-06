@@ -576,7 +576,6 @@ impl SchematicLoader {
                     "[?]".to_string()
                 };
 
-                let iref_at = label.iref_at;
                 let intersheet_refs = label
                     .properties
                     .iter_mut()
@@ -587,7 +586,6 @@ impl SchematicLoader {
                 intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
                     .canonical_key()
                     .to_string();
-                intersheet_refs.at = iref_at;
                 intersheet_refs.visible = false;
             }
         }
@@ -646,7 +644,7 @@ impl SchematicLoader {
                 if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
                     && !intersheet_refs.visible
                 {
-                    intersheet_refs.at = label.iref_at.or(Some(label.at));
+                    intersheet_refs.at = Some(label.at);
                 }
             }
         }

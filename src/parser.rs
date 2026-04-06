@@ -2526,9 +2526,8 @@ impl KiCadSchematicParser {
                         continue;
                     };
                     if matches!(label.kind, LabelKind::Global) {
-                        label.iref_at = Some(self.parse_xy2("iref")?);
+                        let iref_at = self.parse_xy2("iref")?;
                         self.need_right()?;
-                        let iref_at = label.iref_at;
                         let intersheet_refs = label
                             .properties
                             .iter_mut()
@@ -2536,7 +2535,7 @@ impl KiCadSchematicParser {
                                 property.kind == PropertyKind::GlobalLabelIntersheetRefs
                             })
                             .expect("global labels start with intersheet refs property");
-                        intersheet_refs.at = iref_at;
+                        intersheet_refs.at = Some(iref_at);
                         intersheet_refs.visible = true;
                     }
                 }
