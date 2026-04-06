@@ -1117,12 +1117,12 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Type")
             .map(|property| property.value.clone());
-        let library = self
+        let explicit_library = self
             .properties
             .iter()
             .find(|property| property.key == "Sim.Library")
             .map(|property| property.value.clone());
-        let name = self
+        let explicit_name = self
             .properties
             .iter()
             .find(|property| property.key == "Sim.Name")
@@ -1146,6 +1146,18 @@ impl Symbol {
             .as_deref()
             .map(parse_sim_param_values)
             .unwrap_or_default();
+        let library = explicit_library.or_else(|| {
+            param_values
+                .get("lib")
+                .filter(|value| !value.is_empty())
+                .cloned()
+        });
+        let name = explicit_name.or_else(|| {
+            param_values
+                .get("model")
+                .filter(|value| !value.is_empty())
+                .cloned()
+        });
         let pins = self
             .properties
             .iter()
@@ -1568,6 +1580,13 @@ mod tests {
             symbol
                 .sim_model
                 .as_ref()
+                .and_then(|sim_model| sim_model.model_type.as_deref()),
+            None
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
                 .map(|sim_model| sim_model.param_values.clone()),
             Some(BTreeMap::from([
                 ("lib".to_string(), "models.lib".to_string()),
@@ -1583,6 +1602,58 @@ mod tests {
             Some(BTreeMap::from([
                 ("1".to_string(), "1".to_string()),
                 ("2".to_string(), "2".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn symbol_syncs_library_backed_sim_state_from_raw_params() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Device",
+            "SPICE".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Params",
+            r#"type="Q" model="BC\"547" lib="models.lib""#.to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.device.as_deref()),
+            Some("SPICE")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.library.as_deref()),
+            Some("models.lib")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.name.as_deref()),
+            Some("BC\"547")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_values.clone()),
+            Some(BTreeMap::from([
+                ("lib".to_string(), "models.lib".to_string()),
+                ("model".to_string(), "BC\"547".to_string()),
+                ("type".to_string(), "Q".to_string()),
             ]))
         );
     }

@@ -5953,6 +5953,20 @@ fn load_tree_migrates_lib_only_legacy_spice_fields_to_raw_sim_model() {
         symbol
             .sim_model
             .as_ref()
+            .and_then(|sim_model| sim_model.library.as_deref()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .map(|sim_model| sim_model.param_values.clone()),
         Some(BTreeMap::from([
             ("lib".to_string(), "models.lib".to_string()),
@@ -6125,6 +6139,20 @@ fn load_tree_migrates_primitive_and_lib_legacy_spice_fields_to_raw_sim_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("type=\"Q\" model=\"\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.library.as_deref()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        None
     );
     assert_eq!(
         symbol
@@ -6381,6 +6409,20 @@ fn load_tree_migrates_legacy_spice_lib_fields_to_raw_sim_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("type=\"Q\" model=\"BC\\\"547\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.library.as_deref()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        Some("BC\"547")
     );
     assert_eq!(
         symbol
