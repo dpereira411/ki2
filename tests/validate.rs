@@ -7833,6 +7833,118 @@ fn keeps_non_space_sim_name_separators_in_library_lookup() {
 }
 
 #[test]
+fn load_tree_records_warning_for_missing_library_backed_sim_name() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090c")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.model MODEL NPN (BF=100)|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_warns_missing_sim_name", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("Error loading simulation model: no 'Sim.Name' field"))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_records_warning_for_missing_sim_library() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090f")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "missing.lib")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_warns_missing_sim_library", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let canonical = path.canonicalize().unwrap_or(path.clone());
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == canonical)
+        .expect("loaded schematic");
+    let expected = canonical
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("missing.lib")
+        .display()
+        .to_string();
+
+    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
+        warning.contains("Simulation model library not found at")
+            && warning.contains(expected.as_str())
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_records_warning_for_missing_library_base_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000910")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.model OTHER NPN (BF=100)|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models.lib")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_warns_missing_base_model", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+
+    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
+        warning.contains("Error loading simulation model: could not find base model 'MODEL'")
+            && warning.contains("models.lib")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_fixes_legacy_global_power_symbol_value_from_hidden_power_pin() {
     let src = r##"(kicad_sch
   (version 20230220)

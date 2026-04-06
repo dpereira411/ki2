@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    EmbeddedFile, Property, PropertyKind, SchItem, Schematic, SheetReference, Symbol,
+    EmbeddedFile, Property, PropertyKind, SchItem, Schematic, SheetReference, SimLibrarySource,
+    Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
+    load_symbol_sim_library_content_from_embedded_files,
     resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
 };
 
@@ -732,7 +734,12 @@ impl SchematicLoader {
                         }
 
                         symbol.sync_sim_model_from_properties();
-                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                        hydrate_resolved_sim_library(
+                            &schematic_path,
+                            &embedded_files,
+                            symbol,
+                            &mut schematic.screen.parse_warnings,
+                        );
                         migrated = true;
                         continue;
                     }
@@ -822,7 +829,12 @@ impl SchematicLoader {
                         }
 
                         symbol.sync_sim_model_from_properties();
-                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                        hydrate_resolved_sim_library(
+                            &schematic_path,
+                            &embedded_files,
+                            symbol,
+                            &mut schematic.screen.parse_warnings,
+                        );
                         migrated = true;
                         continue;
                     }
@@ -903,7 +915,12 @@ impl SchematicLoader {
                         }
 
                         symbol.sync_sim_model_from_properties();
-                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                        hydrate_resolved_sim_library(
+                            &schematic_path,
+                            &embedded_files,
+                            symbol,
+                            &mut schematic.screen.parse_warnings,
+                        );
                         migrated = true;
                         continue;
                     }
@@ -914,8 +931,12 @@ impl SchematicLoader {
 
                     if !can_raw_migrate {
                         symbol.sync_sim_model_from_properties();
-                        migrated |=
-                            hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                        migrated |= hydrate_resolved_sim_library(
+                            &schematic_path,
+                            &embedded_files,
+                            symbol,
+                            &mut schematic.screen.parse_warnings,
+                        );
                         continue;
                     }
 
@@ -1032,7 +1053,12 @@ impl SchematicLoader {
                             }
 
                             symbol.sync_sim_model_from_properties();
-                            hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                            hydrate_resolved_sim_library(
+                                &schematic_path,
+                                &embedded_files,
+                                symbol,
+                                &mut schematic.screen.parse_warnings,
+                            );
                             migrated = true;
                             continue;
                         }
@@ -1092,7 +1118,12 @@ impl SchematicLoader {
                     }
 
                     symbol.sync_sim_model_from_properties();
-                    hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                    hydrate_resolved_sim_library(
+                        &schematic_path,
+                        &embedded_files,
+                        symbol,
+                        &mut schematic.screen.parse_warnings,
+                    );
                     migrated = true;
                     continue;
                 }
@@ -1213,7 +1244,12 @@ impl SchematicLoader {
                 }
 
                 symbol.sync_sim_model_from_properties();
-                migrated |= hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                migrated |= hydrate_resolved_sim_library(
+                    &schematic_path,
+                    &embedded_files,
+                    symbol,
+                    &mut schematic.screen.parse_warnings,
+                );
             }
 
             if migrated {
@@ -1595,6 +1631,7 @@ fn hydrate_resolved_sim_library(
     schematic_path: &Path,
     embedded_files: &[EmbeddedFile],
     symbol: &mut Symbol,
+    warnings: &mut Vec<String>,
 ) -> bool {
     let mut modified = false;
     let mut resolved_library =
@@ -1667,7 +1704,7 @@ fn hydrate_resolved_sim_library(
     }
 
     if let Some(sim_model) = symbol.sim_model.as_mut() {
-        sim_model.resolved_library = resolved_library;
+        sim_model.resolved_library = resolved_library.clone();
         sim_model.resolved_name = resolved_model.as_ref().map(|model| model.name.clone());
         sim_model.resolved_kind = resolved_model.as_ref().map(|model| model.kind);
         sim_model.resolved_model_type = resolved_model
@@ -1694,7 +1731,70 @@ fn hydrate_resolved_sim_library(
         }
     }
 
+    if let Some(warning) = unresolved_sim_model_warning(
+        schematic_path,
+        embedded_files,
+        symbol,
+        resolved_library.as_ref(),
+    ) {
+        if !warnings.iter().any(|existing| existing == &warning) {
+            warnings.push(warning);
+        }
+    }
+
     modified
+}
+
+fn unresolved_sim_model_warning(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+    resolved_library: Option<&crate::model::ResolvedSimLibrary>,
+) -> Option<String> {
+    let sim_model = symbol.sim_model.as_ref()?;
+    let library_name = sim_model.library.as_deref()?.trim();
+
+    if library_name.is_empty() {
+        return None;
+    }
+
+    let name = sim_model.name.as_deref().map(str::trim).unwrap_or_default();
+
+    if name.is_empty() {
+        return Some("Error loading simulation model: no 'Sim.Name' field".to_string());
+    }
+
+    if load_symbol_sim_library_content_from_embedded_files(schematic_path, embedded_files, symbol)
+        .is_none()
+    {
+        let location = resolved_library
+            .map(|library| display_sim_library_source(&library.source))
+            .unwrap_or_else(|| library_name.to_string());
+        return Some(format!(
+            "Simulation model library not found at '{location}'"
+        ));
+    }
+
+    if resolve_symbol_sim_model_from_embedded_files(schematic_path, embedded_files, symbol)
+        .is_none()
+    {
+        let location = resolved_library
+            .map(|library| display_sim_library_source(&library.source))
+            .unwrap_or_else(|| library_name.to_string());
+        return Some(format!(
+            "Error loading simulation model: could not find base model '{name}' in library '{location}'"
+        ));
+    }
+
+    None
+}
+
+fn display_sim_library_source(source: &SimLibrarySource) -> String {
+    match source {
+        SimLibrarySource::Filesystem(path) => path.display().to_string(),
+        SimLibrarySource::SchematicEmbedded { name }
+        | SimLibrarySource::SymbolEmbedded { name } => name.clone(),
+    }
 }
 
 fn take_symbol_user_field(symbol: &mut crate::model::Symbol, key: &str) -> Option<Property> {
