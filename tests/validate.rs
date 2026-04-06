@@ -6142,6 +6142,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
             name: "MODEL".to_string(),
             kind: ResolvedSimModelKind::SpiceSubckt,
             model_type: None,
+            ibis_model_type: None,
             diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string(), "VSS".to_string()],
             params: vec![
@@ -6208,6 +6209,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_include_chain() {
             name: "MODEL".to_string(),
             kind: ResolvedSimModelKind::SpiceSubckt,
             model_type: None,
+            ibis_model_type: None,
             diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string()],
             params: Vec::new(),
@@ -6271,6 +6273,7 @@ fn resolves_symbol_sim_model_from_mixed_case_spice_include_chain() {
             name: "MODEL".to_string(),
             kind: ResolvedSimModelKind::SpiceSubckt,
             model_type: None,
+            ibis_model_type: None,
             diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string()],
             params: Vec::new(),
@@ -6296,6 +6299,8 @@ fn resolves_symbol_sim_model_from_embedded_ibis_component() {
 pin signal model
 A1 SIGA MODEL_A
 B2 SIGB MODEL_B
+[Model] MODEL_A
+Model_type Output
 |)))
   (symbol
     (lib_id "Device:R")
@@ -6336,6 +6341,7 @@ B2 SIGB MODEL_B
             name: "DRIVER".to_string(),
             kind: ResolvedSimModelKind::IbisComponent,
             model_type: Some("MODEL_A".to_string()),
+            ibis_model_type: Some("Output".to_string()),
             diff_pin: None,
             pins: vec!["A1".to_string(), "B2".to_string()],
             params: Vec::new(),
@@ -6403,6 +6409,7 @@ A1 B2
             name: "DRIVER".to_string(),
             kind: ResolvedSimModelKind::IbisComponent,
             model_type: Some("MODEL_A".to_string()),
+            ibis_model_type: None,
             diff_pin: Some("B2".to_string()),
             pins: vec!["A1".to_string(), "B2".to_string()],
             params: Vec::new(),
@@ -6561,6 +6568,8 @@ fn load_tree_hydrates_resolved_ibis_component_pins_on_symbol() {
 pin signal model
 A1 SIGA MODEL_A
 B2 SIGB MODEL_B
+[Model] MODEL_A
+Model_type Output
 |)))
   (symbol
     (lib_id "Device:R")
@@ -6609,6 +6618,13 @@ B2 SIGB MODEL_B
             .as_ref()
             .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
         Some("MODEL_A")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_ibis_model_type.as_deref()),
+        Some("Output")
     );
     assert_eq!(
         symbol
@@ -6794,6 +6810,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_model() {
             name: "MODEL".to_string(),
             kind: ResolvedSimModelKind::SpiceModel,
             model_type: Some("NPN".to_string()),
+            ibis_model_type: None,
             diff_pin: None,
             pins: Vec::new(),
             params: vec![
@@ -6881,6 +6898,7 @@ fn resolves_embedded_spice_model_from_single_statement_only() {
             name: "MODEL".to_string(),
             kind: ResolvedSimModelKind::SpiceModel,
             model_type: Some("NPN".to_string()),
+            ibis_model_type: None,
             diff_pin: None,
             pins: Vec::new(),
             params: vec![("BF".to_string(), Some("100".to_string()))],

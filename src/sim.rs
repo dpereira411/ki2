@@ -19,6 +19,7 @@ pub struct ResolvedSimModel {
     pub name: String,
     pub kind: ResolvedSimModelKind,
     pub model_type: Option<String>,
+    pub ibis_model_type: Option<String>,
     pub diff_pin: Option<String>,
     pub pins: Vec<String>,
     pub params: Vec<(String, Option<String>)>,
@@ -446,6 +447,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 name: model.name,
                 kind: model.kind,
                 model_type: model.model_type,
+                ibis_model_type: model.ibis_model_type,
                 diff_pin: model.diff_pin,
                 pins: model.pins,
                 params: model.params,
@@ -465,6 +467,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 name: model.name,
                 kind: model.kind,
                 model_type: model.model_type,
+                ibis_model_type: None,
                 diff_pin: None,
                 pins: model.pins,
                 params: model.params,
@@ -495,6 +498,7 @@ struct ResolvedIbisModel {
     name: String,
     kind: ResolvedSimModelKind,
     model_type: Option<String>,
+    ibis_model_type: Option<String>,
     diff_pin: Option<String>,
     pins: Vec<String>,
     params: Vec<(String, Option<String>)>,
@@ -690,10 +694,13 @@ fn resolve_ibis_model(
 ) -> Option<ResolvedIbisModel> {
     let mut current_component: Option<String> = None;
     let mut pending_component_name = false;
+    let mut pending_model_name = false;
     let mut collecting_pins = false;
     let mut collecting_diff_pins = false;
+    let mut collecting_model = false;
     let mut pins = Vec::new();
     let mut resolved_model_type = None;
+    let mut resolved_ibis_model_type = None;
     let mut resolved_diff_pin = None;
 
     for raw_line in text.lines() {
@@ -708,6 +715,14 @@ fn resolve_ibis_model(
             pending_component_name = false;
             collecting_pins = false;
             collecting_diff_pins = false;
+            collecting_model = false;
+            continue;
+        }
+
+        if pending_model_name {
+            pending_model_name = false;
+            collecting_model =
+                selected_model.is_some_and(|selected| selected.eq_ignore_ascii_case(line));
             continue;
         }
 
@@ -719,6 +734,17 @@ fn resolve_ibis_model(
             } else {
                 Some(rest.to_string())
             };
+            collecting_pins = false;
+            collecting_diff_pins = false;
+            collecting_model = false;
+            continue;
+        }
+
+        if let Some(rest) = line.strip_prefix("[Model]") {
+            let rest = rest.trim();
+            pending_model_name = rest.is_empty();
+            collecting_model = !pending_model_name
+                && selected_model.is_some_and(|selected| selected.eq_ignore_ascii_case(rest));
             collecting_pins = false;
             collecting_diff_pins = false;
             continue;
@@ -733,6 +759,7 @@ fn resolve_ibis_model(
                 && current_component
                     .as_deref()
                     .is_some_and(|component| component.eq_ignore_ascii_case(wanted_name));
+            collecting_model = false;
             continue;
         }
 
@@ -774,6 +801,14 @@ fn resolve_ibis_model(
                 resolved_diff_pin = Some(tokens[0].to_string());
             }
         }
+
+        if collecting_model {
+            let tokens = line.split_whitespace().collect::<Vec<_>>();
+
+            if tokens.len() >= 2 && tokens[0].eq_ignore_ascii_case("Model_type") {
+                resolved_ibis_model_type = Some(tokens[1].to_string());
+            }
+        }
     }
 
     if current_component
@@ -785,6 +820,7 @@ fn resolve_ibis_model(
             name: wanted_name.to_string(),
             kind: ResolvedSimModelKind::IbisComponent,
             model_type: resolved_model_type,
+            ibis_model_type: resolved_ibis_model_type,
             diff_pin: resolved_diff_pin,
             pins,
             params: Vec::new(),
