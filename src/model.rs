@@ -276,7 +276,8 @@ impl LibSymbol {
             })
             .expect("materialized lib symbol unit must exist");
 
-        self.units[index].push_draw_item(item);
+        self.units[index].draw_item_kinds.push(item.kind.clone());
+        self.units[index].draw_items.push(item);
     }
 
     pub fn sort_draw_items(&mut self) {
@@ -332,13 +333,6 @@ pub struct LibSymbolUnit {
     pub unit_name: Option<String>,
     pub draw_item_kinds: Vec<String>,
     pub draw_items: Vec<LibDrawItem>,
-}
-
-impl LibSymbolUnit {
-    pub fn push_draw_item(&mut self, item: LibDrawItem) {
-        self.draw_item_kinds.push(item.kind.clone());
-        self.draw_items.push(item);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

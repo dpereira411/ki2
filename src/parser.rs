@@ -1079,7 +1079,10 @@ impl KiCadSchematicParser {
                                 item.unit_number,
                                 item.body_style,
                             );
-                            symbol.units[unit_index].push_draw_item(item);
+                            symbol.units[unit_index]
+                                .draw_item_kinds
+                                .push(item.kind.clone());
+                            symbol.units[unit_index].draw_items.push(item);
                         }
                     }
                     self.need_right()?;
@@ -1093,7 +1096,10 @@ impl KiCadSchematicParser {
                         format!("{}_{}_{}", symbol.name, item.unit_number, item.body_style);
                     let unit_index =
                         symbol.ensure_unit_index(unit_name, item.unit_number, item.body_style);
-                    symbol.units[unit_index].push_draw_item(item);
+                    symbol.units[unit_index]
+                        .draw_item_kinds
+                        .push(item.kind.clone());
+                    symbol.units[unit_index].draw_items.push(item);
                 }
                 "embedded_fonts" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
@@ -2185,7 +2191,10 @@ impl KiCadSchematicParser {
                     .iter()
                     .position(|unit| unit.unit_number == 1 && unit.body_style == 1)
                     .expect("lib symbols start with root 1_1 unit");
-                symbol.units[unit_index].push_draw_item(field);
+                symbol.units[unit_index]
+                    .draw_item_kinds
+                    .push(field.kind.clone());
+                symbol.units[unit_index].draw_items.push(field);
                 self.lib_next_field_ordinal += 1;
             }
         }
@@ -5960,7 +5969,10 @@ impl KiCadSchematicParser {
                                         item.unit_number,
                                         item.body_style,
                                     );
-                                    target.units[unit_index].push_draw_item(item.clone());
+                                    target.units[unit_index]
+                                        .draw_item_kinds
+                                        .push(item.kind.clone());
+                                    target.units[unit_index].draw_items.push(item.clone());
                                 }
                             }
                         }
