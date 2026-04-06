@@ -1752,6 +1752,16 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         return false;
     }
 
+    let Some(sim_model) = symbol.sim_model.as_mut() else {
+        return false;
+    };
+
+    if sim_model.library.is_some() || sim_model.name.is_some() {
+        return false;
+    }
+
+    let defaulted_pins = maybe_default_current_sim_pins(sim_model, &source_pins);
+
     let value = symbol
         .properties
         .iter()
@@ -1760,7 +1770,7 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         .filter(|value| !value.is_empty() && !matches!(*value, "${SIM.PARAMS}" | "${SIM.NAME}"));
 
     let Some(value) = value else {
-        return false;
+        return defaulted_pins;
     };
 
     let prefix_param = symbol
@@ -1770,24 +1780,18 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         .map(|ch| ch.to_ascii_lowercase().to_string())
         .unwrap_or_default();
 
-    let Some(sim_model) = symbol.sim_model.as_mut() else {
-        return false;
-    };
-
-    if sim_model.library.is_some()
-        || sim_model.name.is_some()
-        || sim_model.params.is_some()
-        || !sim_model.param_pairs.is_empty()
-        || sim_model.value_binding.is_some()
-    {
-        return false;
-    }
-
     match (
         sim_model.device.as_deref().map(str::trim),
         sim_model.model_type.as_deref().map(str::trim),
     ) {
         (Some("R") | Some("C") | Some("L"), None | Some("")) => {
+            if sim_model.params.is_some()
+                || !sim_model.param_pairs.is_empty()
+                || sim_model.value_binding.is_some()
+            {
+                return defaulted_pins;
+            }
+
             if looks_behavioral_value(value) {
                 sim_model.model_type = Some("=".to_string());
             }
@@ -1795,22 +1799,54 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
             sim_model.param_pairs = vec![(prefix_param, value.to_string())];
         }
         (Some("V") | Some("I"), None | Some("") | Some("DC")) => {
+            if sim_model.params.is_some()
+                || !sim_model.param_pairs.is_empty()
+                || sim_model.value_binding.is_some()
+            {
+                return defaulted_pins;
+            }
+
             let (param_name, param_value) = split_inferred_source_value(value);
             sim_model.model_type.get_or_insert_with(|| "DC".to_string());
             sim_model.param_pairs = vec![(param_name.to_string(), param_value)];
         }
-        _ => return false,
+        _ => return defaulted_pins,
     }
 
     sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
-    if sim_model.pin_pairs.is_empty() {
-        sim_model.pin_pairs = vec![
-            (source_pins[0].clone(), "+".to_string()),
-            (source_pins[1].clone(), "-".to_string()),
-        ];
-        sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
-    }
+    maybe_default_current_sim_pins(sim_model, &source_pins);
     sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
+    true
+}
+
+fn maybe_default_current_sim_pins(
+    sim_model: &mut crate::model::SimModel,
+    source_pins: &[String],
+) -> bool {
+    if !sim_model.pin_pairs.is_empty() || source_pins.len() != 2 {
+        return false;
+    }
+
+    let should_default = matches!(
+        (
+            sim_model.device.as_deref().map(str::trim),
+            sim_model.model_type.as_deref().map(str::trim),
+        ),
+        (
+            Some("R") | Some("C") | Some("L"),
+            None | Some("") | Some("=")
+        ) | (Some("V") | Some("I"), None | Some("") | Some("DC"))
+    );
+
+    if !should_default {
+        return false;
+    }
+
+    sim_model.pin_pairs = vec![
+        (source_pins[0].clone(), "+".to_string()),
+        (source_pins[1].clone(), "-".to_string()),
+    ];
+    sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
     true
 }
 
