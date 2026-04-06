@@ -5164,6 +5164,14 @@ impl KiCadSchematicParser {
             return true;
         }
 
+        // wxURI rejects URIs containing raw whitespace/control characters.
+        if href
+            .chars()
+            .any(|ch| ch.is_ascii_whitespace() || ch.is_control())
+        {
+            return false;
+        }
+
         // Check for a URI scheme: at least one alpha char followed by ':'
         if let Some(colon_pos) = href.find(':') {
             let scheme = &href[..colon_pos];
