@@ -5417,7 +5417,7 @@ fn rejects_invalid_sheet_pin_name() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000001")
   (sheet
     (at 0 0)
     (size 10 10)
@@ -5436,7 +5436,7 @@ fn rejects_invalid_sheet_pin_uuid_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000002")
   (sheet
     (at 0 0)
     (size 10 10)
@@ -5455,7 +5455,7 @@ fn accepts_decimal_sheet_pin_side_angles() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000003")
   (sheet
     (at 0 0)
     (size 10 10)
@@ -5630,7 +5630,7 @@ fn rejects_invalid_property_header_tokens() {
     let invalid_name_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000004")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 0) (property))
 )"#;
@@ -5643,7 +5643,7 @@ fn rejects_invalid_property_header_tokens() {
     let empty_name_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000005")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 0) (property "" "v"))
 )"#;
@@ -5656,7 +5656,7 @@ fn rejects_invalid_property_header_tokens() {
     let invalid_value_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000006")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 0) (property "X"))
 )"#;
@@ -5690,7 +5690,7 @@ fn private_only_survives_on_true_user_fields() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000007")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 0)
     (property private "UserField" "sym"))
@@ -5982,7 +5982,7 @@ fn symbol_duplicate_user_properties_overwrite_by_name() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000008")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -6018,7 +6018,7 @@ fn lib_symbol_starts_with_root_unit_even_without_root_draw_items() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "77000000-0000-0000-0000-000000000009")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
