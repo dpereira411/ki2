@@ -1735,7 +1735,18 @@ impl KiCadSchematicParser {
 
     fn parse_symbol_pin(&mut self) -> Result<LibDrawItem, Error> {
         let _ = self.need_unquoted_symbol_atom("pin")?;
-        let electrical_type_token = self.need_unquoted_symbol_atom("pin type")?;
+        let electrical_type_token = match &self.current().kind {
+            TokKind::Atom(value) if matches!(self.current().atom_class, Some(AtomClass::Symbol)) => {
+                let out = value.clone();
+                self.idx += 1;
+                out
+            }
+            _ => {
+                return Err(self.expecting(
+                    "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
+                ))
+            }
+        };
         let electrical_type = if matches!(
             electrical_type_token.as_str(),
             "input"
@@ -1758,7 +1769,18 @@ impl KiCadSchematicParser {
                 "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
             ));
         };
-        let graphic_shape_token = self.need_unquoted_symbol_atom("pin shape")?;
+        let graphic_shape_token = match &self.current().kind {
+            TokKind::Atom(value) if matches!(self.current().atom_class, Some(AtomClass::Symbol)) => {
+                let out = value.clone();
+                self.idx += 1;
+                out
+            }
+            _ => {
+                return Err(self.expecting(
+                    "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
+                ))
+            }
+        };
         let graphic_shape = if matches!(
             graphic_shape_token.as_str(),
             "line"
@@ -1913,7 +1935,20 @@ impl KiCadSchematicParser {
                         .need_symbol_atom("alternate pin name")
                         .map_err(|_| self.error_here("Invalid alternate pin name"))?;
 
-                    let alt_type_token = self.need_unquoted_symbol_atom("alternate pin type")?;
+                    let alt_type_token = match &self.current().kind {
+                        TokKind::Atom(value)
+                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                        {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => {
+                            return Err(self.expecting(
+                                "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
+                            ))
+                        }
+                    };
                     let alt_type = if matches!(
                         alt_type_token.as_str(),
                         "input"
@@ -1936,7 +1971,20 @@ impl KiCadSchematicParser {
                             "input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect",
                         ));
                     };
-                    let alt_shape_token = self.need_unquoted_symbol_atom("alternate pin shape")?;
+                    let alt_shape_token = match &self.current().kind {
+                        TokKind::Atom(value)
+                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                        {
+                            let out = value.clone();
+                            self.idx += 1;
+                            out
+                        }
+                        _ => {
+                            return Err(self.expecting(
+                                "line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic",
+                            ))
+                        }
+                    };
                     let alt_shape = if matches!(
                         alt_shape_token.as_str(),
                         "line"
@@ -4342,7 +4390,18 @@ impl KiCadSchematicParser {
         }
         let mut sheet_pin = SheetPin::new(name, sheet);
 
-        match self.need_unquoted_symbol_atom("sheet pin shape")?.as_str() {
+        let shape = match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+            {
+                let out = value.clone();
+                self.idx += 1;
+                out
+            }
+            _ => return Err(self.expecting("input, output, bidirectional, tri_state, or passive")),
+        };
+
+        match shape.as_str() {
             "input" => sheet_pin.shape = SheetPinShape::Input,
             "output" => sheet_pin.shape = SheetPinShape::Output,
             "bidirectional" => sheet_pin.shape = SheetPinShape::Bidirectional,

@@ -5750,7 +5750,10 @@ fn rejects_quoted_label_and_sheet_pin_shape_tokens() {
         temp_schematic("quoted_sheet_pin_shape_token", quoted_sheet_pin_shape);
     let err = parse_schematic_file(Path::new(&quoted_sheet_pin_shape_path))
         .expect_err("must reject quoted sheet pin shape token");
-    assert!(err.to_string().contains("expecting sheet pin shape"));
+    assert!(
+        err.to_string()
+            .contains("expecting input, output, bidirectional, tri_state, or passive")
+    );
 
     let _ = fs::remove_file(quoted_label_shape_path);
     let _ = fs::remove_file(quoted_sheet_pin_shape_path);
@@ -5810,7 +5813,9 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_lib_pin_type_path = temp_schematic("quoted_lib_pin_type", quoted_lib_pin_type);
     let err = parse_schematic_file(Path::new(&quoted_lib_pin_type_path))
         .expect_err("must reject quoted lib pin type");
-    assert!(err.to_string().contains("expecting pin type"));
+    assert!(err.to_string().contains(
+        "expecting input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect"
+    ));
 
     let quoted_lib_pin_shape = r#"(kicad_sch
   (version 20260306)
@@ -5827,7 +5832,9 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_lib_pin_shape_path = temp_schematic("quoted_lib_pin_shape", quoted_lib_pin_shape);
     let err = parse_schematic_file(Path::new(&quoted_lib_pin_shape_path))
         .expect_err("must reject quoted lib pin shape");
-    assert!(err.to_string().contains("expecting pin shape"));
+    assert!(err.to_string().contains(
+        "expecting line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic"
+    ));
 
     let _ = fs::remove_file(quoted_mirror_path);
     let _ = fs::remove_file(quoted_lib_pin_type_path);
@@ -9633,7 +9640,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_alternate_type_path = temp_schematic("bad_lib_pin_alternate_type", bad_alternate_type);
     let err = parse_schematic_file(Path::new(&bad_alternate_type_path))
         .expect_err("must reject bad alternate pin type");
-    assert!(err.to_string().contains("expecting alternate pin type"));
+    assert!(err.to_string().contains(
+        "expecting input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect"
+    ));
 
     let bad_alternate_shape = r#"(kicad_sch
   (version 20260306)
@@ -9648,7 +9657,9 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
         temp_schematic("bad_lib_pin_alternate_shape", bad_alternate_shape);
     let err = parse_schematic_file(Path::new(&bad_alternate_shape_path))
         .expect_err("must reject bad alternate pin shape");
-    assert!(err.to_string().contains("expecting alternate pin shape"));
+    assert!(err.to_string().contains(
+        "expecting line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic"
+    ));
 
     let _ = fs::remove_file(bad_name_path);
     let _ = fs::remove_file(bad_number_path);
@@ -9672,7 +9683,9 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
     let bad_type_path = temp_schematic("bad_lib_pin_type", bad_type);
     let err =
         parse_schematic_file(Path::new(&bad_type_path)).expect_err("must reject bad pin type");
-    assert!(err.to_string().contains("expecting pin type"));
+    assert!(err.to_string().contains(
+        "expecting input, output, bidirectional, tri_state, passive, unspecified, power_in, power_out, open_collector, open_emitter, free or no_connect"
+    ));
 
     let bad_shape = r#"(kicad_sch
   (version 20260306)
@@ -9685,7 +9698,9 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
     let bad_shape_path = temp_schematic("bad_lib_pin_shape", bad_shape);
     let err =
         parse_schematic_file(Path::new(&bad_shape_path)).expect_err("must reject bad pin shape");
-    assert!(err.to_string().contains("expecting pin shape"));
+    assert!(err.to_string().contains(
+        "expecting line, inverted, clock, inverted_clock, input_low, clock_low, output_low, edge_clock_high, non_logic"
+    ));
 
     let _ = fs::remove_file(bad_type_path);
     let _ = fs::remove_file(bad_shape_path);
