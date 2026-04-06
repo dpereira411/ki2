@@ -8635,7 +8635,7 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let bad_name_path = temp_schematic("bad_variant_field_name", bad_name);
     let err =
         parse_schematic_file(Path::new(&bad_name_path)).expect_err("must reject bad field name");
-    assert!(err.to_string().contains("Invalid variant field name"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_variant_name = r#"(kicad_sch
   (version 20260306)
@@ -8654,7 +8654,7 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let bad_variant_name_path = temp_schematic("bad_variant_name", bad_variant_name);
     let err = parse_schematic_file(Path::new(&bad_variant_name_path))
         .expect_err("must reject bad variant name");
-    assert!(err.to_string().contains("Invalid variant name"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_value = r#"(kicad_sch
   (version 20260306)
@@ -8675,7 +8675,7 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let bad_value_path = temp_schematic("bad_variant_field_value", bad_value);
     let err =
         parse_schematic_file(Path::new(&bad_value_path)).expect_err("must reject bad field value");
-    assert!(err.to_string().contains("Invalid variant field value"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let _ = fs::remove_file(bad_name_path);
     let _ = fs::remove_file(bad_variant_name_path);
