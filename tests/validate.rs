@@ -9333,7 +9333,7 @@ fn parses_embedded_file_checksum_type_and_bar_data() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000046")
   (paper "A4")
   (embedded_files
     (file
@@ -9357,7 +9357,7 @@ fn parses_embedded_file_checksum_type_and_bar_data() {
 fn parses_bar_delimited_embedded_files_when_version_is_not_early() {
     let spacer = " ".repeat(700);
     let src = format!(
-        "(kicad_sch{spacer}\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"late-version-root\")\n  (embedded_files (file (name \"late.bin\") (data |abc123|)))\n)"
+        "(kicad_sch{spacer}\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"60000000-0000-0000-0000-000000000047\")\n  (embedded_files (file (name \"late.bin\") (data |abc123|)))\n)"
     );
     let path = temp_schematic("late_version_embedded_files", &src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse delayed version");
@@ -9375,7 +9375,7 @@ fn skips_empty_embedded_file_blocks_like_kicad() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000048")
   (paper "A4")
   (embedded_files
     (file)
@@ -9395,7 +9395,7 @@ fn duplicate_embedded_file_name_restarts_current_file_state() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000049")
   (paper "A4")
   (embedded_files
     (file
@@ -9457,8 +9457,8 @@ fn repairs_group_membership_cycles_after_deferred_resolution() {
   (version 20260306)
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000021")
-  (group "A" (uuid "group-a") (members "group-b"))
-  (group "B" (uuid "group-b") (members "group-a"))
+  (group "A" (uuid "63000000-0000-0000-0000-000000000026") (members "63000000-0000-0000-0000-000000000027"))
+  (group "B" (uuid "63000000-0000-0000-0000-000000000027") (members "63000000-0000-0000-0000-000000000026"))
 )"#;
     let path = temp_schematic("group_cycle_repair", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -9474,7 +9474,10 @@ fn repairs_group_membership_cycles_after_deferred_resolution() {
         .collect::<Vec<_>>();
 
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].uuid.as_deref(), Some("group-b"));
+    assert_eq!(
+        groups[0].uuid.as_deref(),
+        Some("63000000-0000-0000-0000-000000000027")
+    );
     assert!(groups[0].members.is_empty());
 
     let _ = fs::remove_file(path);
@@ -9505,9 +9508,9 @@ fn schematic_text_box_does_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000004a")
   (paper "A4")
-  (text_box "body" (size 3 4) (uuid "tb"))
+  (text_box "body" (size 3 4) (uuid "60000000-0000-0000-0000-00000000004b"))
 )"#;
     let path = temp_schematic("text_box_without_at", src);
     let schematic =
@@ -9531,7 +9534,7 @@ fn schematic_text_box_rejects_table_cell_only_span_branch() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000004c")
   (paper "A4")
   (text_box "body" (span 2 1) (size 3 4))
 )"#;
@@ -9550,9 +9553,9 @@ fn applies_upstream_default_text_box_margins_when_omitted() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000004d")
   (paper "A4")
-  (text_box "body" (at 10 20 90) (size 3 4) (stroke (width 0.2)) (effects (font (size 2 3))) (uuid "tb"))
+  (text_box "body" (at 10 20 90) (size 3 4) (stroke (width 0.2)) (effects (font (size 2 3))) (uuid "60000000-0000-0000-0000-00000000004e"))
 )"#;
     let path = temp_schematic("textbox_default_margins", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -9742,9 +9745,9 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000004f")
   (paper "A4")
-  (polyline (pts (xy 0 0) (xy 1 1)) (stroke (width 0.1)) (uuid "pl-1"))
+  (polyline (pts (xy 0 0) (xy 1 1)) (stroke (width 0.1)) (uuid "60000000-0000-0000-0000-000000000050"))
   (symbol
     (lib_id "Device:R")
     (lib_name "Device:R")
@@ -9754,7 +9757,7 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
       (unit 1)
       (value "10k")
       (footprint "Resistor_SMD:R_0603"))
-    (pin "1" (alternate "A") (uuid "pin-u"))
+    (pin "1" (alternate "A") (uuid "60000000-0000-0000-0000-000000000051"))
     (instances
       (project "demo"
         (path "/A"
@@ -9823,7 +9826,10 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     );
     assert_eq!(symbol.pins.len(), 1);
     assert_eq!(symbol.pins[0].alternate.as_deref(), Some("A"));
-    assert_eq!(symbol.pins[0].uuid.as_deref(), Some("pin-u"));
+    assert_eq!(
+        symbol.pins[0].uuid.as_deref(),
+        Some("60000000-0000-0000-0000-000000000051")
+    );
     assert_eq!(symbol.instances[0].project, "demo");
     assert_eq!(symbol.instances[0].path, "/A");
     assert_eq!(symbol.instances[0].value.as_deref(), Some("10k"));
