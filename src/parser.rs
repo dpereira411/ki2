@@ -1127,7 +1127,7 @@ impl KiCadSchematicParser {
                 }
                 _ => {
                     return Err(self.expecting(
-                        "pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text",
+                        "pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text, property, extends, symbol, or embedded_fonts",
                     ))
                 }
             }
