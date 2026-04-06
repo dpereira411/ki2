@@ -8457,7 +8457,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_symbol_project_path = temp_schematic("bad_symbol_project_name", bad_symbol_project);
     let err = parse_schematic_file(Path::new(&bad_symbol_project_path))
         .expect_err("must reject bad project name");
-    assert!(err.to_string().contains("expecting project name"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_sheet_path = r#"(kicad_sch
   (version 20260306)
@@ -8486,7 +8486,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
         temp_schematic("bad_symbol_instance_reference", bad_symbol_reference);
     let err = parse_schematic_file(Path::new(&bad_symbol_reference_path))
         .expect_err("must reject bad symbol reference");
-    assert!(err.to_string().contains("expecting reference"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let _ = fs::remove_file(bad_symbol_project_path);
     let _ = fs::remove_file(bad_sheet_path_path);
@@ -8583,7 +8583,7 @@ fn rejects_invalid_default_instance_reference() {
     let path = temp_schematic("bad_default_instance_reference", src);
     let err = parse_schematic_file(Path::new(&path))
         .expect_err("must reject bad default instance reference");
-    assert!(err.to_string().contains("expecting reference"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -8607,7 +8607,7 @@ fn rejects_invalid_symbol_instance_value_token() {
     let path = temp_schematic("bad_symbol_instance_value", src);
     let err =
         parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol instance value");
-    assert!(err.to_string().contains("expecting value"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -8625,7 +8625,7 @@ fn rejects_invalid_symbol_pin_number() {
     let path = temp_schematic("bad_symbol_pin_number", src);
     let err =
         parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol pin number");
-    assert!(err.to_string().contains("expecting pin number"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -8642,7 +8642,7 @@ fn rejects_invalid_symbol_pin_uuid_token() {
 )"#;
     let path = temp_schematic("bad_symbol_pin_uuid", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol pin uuid");
-    assert!(err.to_string().contains("expecting uuid"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -8703,7 +8703,7 @@ fn rejects_invalid_symbol_pin_alternate_token() {
     let path = temp_schematic("bad_symbol_pin_alternate", src);
     let err =
         parse_schematic_file(Path::new(&path)).expect_err("must reject bad symbol pin alternate");
-    assert!(err.to_string().contains("expecting alternate"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 

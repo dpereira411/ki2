@@ -3533,7 +3533,7 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "reference" => {
-                                let _ = self.need_symbol_atom("reference")?;
+                                let _ = self.need_symbol_atom("symbol")?;
                                 self.need_right()?;
                             }
                             "unit" => {
@@ -3542,7 +3542,7 @@ impl KiCadSchematicParser {
                             }
                             "value" => {
                                 let parsed = {
-                                    let value = self.need_symbol_atom("value")?;
+                                    let value = self.need_symbol_atom("symbol")?;
                                     if self
                                         .require_known_version()
                                         .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -3568,7 +3568,7 @@ impl KiCadSchematicParser {
                             }
                             "footprint" => {
                                 let parsed = {
-                                    let value = self.need_symbol_atom("footprint")?;
+                                    let value = self.need_symbol_atom("symbol")?;
                                     if self
                                         .require_known_version()
                                         .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -3616,7 +3616,7 @@ impl KiCadSchematicParser {
                             return Err(self.expecting("project"));
                         }
                         let _ = self.need_unquoted_symbol_atom("project")?;
-                        let project = self.need_symbol_atom("project name")?;
+                        let project = self.need_symbol_atom("symbol")?;
                         while !self.at_right() {
                             self.need_left()?;
                             let head = match &self.current().kind {
@@ -3634,7 +3634,7 @@ impl KiCadSchematicParser {
                                 return Err(self.expecting("path"));
                             }
                             let _ = self.need_unquoted_symbol_atom("path")?;
-                            let path = self.need_symbol_atom("symbol instance path")?;
+                            let path = self.need_symbol_atom("symbol")?;
                             let mut instance = SymbolLocalInstance::new(project.clone(), path);
                             while !self.at_right() {
                                 self.need_left()?;
@@ -3656,8 +3656,7 @@ impl KiCadSchematicParser {
                                 match child.as_str() {
                                     "reference" => {
                                         let _ = self.need_unquoted_symbol_atom("reference")?;
-                                        instance.reference =
-                                            Some(self.need_symbol_atom("reference")?);
+                                        instance.reference = Some(self.need_symbol_atom("symbol")?);
                                         self.need_right()?;
                                     }
                                     "unit" => {
@@ -3668,7 +3667,7 @@ impl KiCadSchematicParser {
                                     "value" => {
                                         let _ = self.need_unquoted_symbol_atom("value")?;
                                         let parsed = {
-                                            let value = self.need_symbol_atom("value")?;
+                                            let value = self.need_symbol_atom("symbol")?;
                                             if self
                                                 .require_known_version()
                                                 .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -3699,7 +3698,7 @@ impl KiCadSchematicParser {
                                     "footprint" => {
                                         let _ = self.need_unquoted_symbol_atom("footprint")?;
                                         let parsed = {
-                                            let value = self.need_symbol_atom("footprint")?;
+                                            let value = self.need_symbol_atom("symbol")?;
                                             if self
                                                 .require_known_version()
                                                 .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -3986,7 +3985,7 @@ impl KiCadSchematicParser {
                 }
                 "pin" => {
                     let _ = self.need_unquoted_symbol_atom("pin")?;
-                    let mut pin = SymbolPin::new(self.need_symbol_atom("pin number")?);
+                    let mut pin = SymbolPin::new(self.need_symbol_atom("symbol")?);
                     while !self.at_right() {
                         self.need_left()?;
                         match self
@@ -3994,14 +3993,14 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "alternate" => {
-                                pin.alternate = Some(self.need_symbol_atom("alternate")?);
+                                pin.alternate = Some(self.need_symbol_atom("symbol")?);
                                 self.need_right()?;
                             }
                             "uuid" => {
                                 if self.require_known_version()? >= VERSION_SYMBOL_PIN_UUID {
-                                    pin.uuid = Some(self.parse_kiid()?);
+                                    pin.uuid = Some(self.parse_kiid_atom("symbol", true)?);
                                 } else {
-                                    let _ = self.need_symbol_atom("uuid")?;
+                                    let _ = self.need_symbol_atom("symbol")?;
                                 }
                                 self.need_right()?;
                             }
@@ -5354,13 +5353,16 @@ impl KiCadSchematicParser {
     }
 
     fn parse_kiid(&mut self) -> Result<String, Error> {
-        let raw = self.need_symbol_atom("uuid")?;
-        Ok(self.normalize_kiid(raw, true))
+        self.parse_kiid_atom("uuid", true)
     }
 
     fn parse_raw_kiid(&mut self) -> Result<String, Error> {
-        let raw = self.need_symbol_atom("uuid")?;
-        Ok(self.normalize_kiid(raw, false))
+        self.parse_kiid_atom("uuid", false)
+    }
+
+    fn parse_kiid_atom(&mut self, field: &str, track_uniqueness: bool) -> Result<String, Error> {
+        let raw = self.need_symbol_atom(field)?;
+        Ok(self.normalize_kiid(raw, track_uniqueness))
     }
 
     fn normalize_kiid(&mut self, raw: String, track_uniqueness: bool) -> String {
