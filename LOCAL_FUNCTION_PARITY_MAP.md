@@ -65,7 +65,7 @@ If diagnostic/error unblocking is chosen, execute it in this order:
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds now exist, but native parity still needs final display/source-location fidelity beyond the current reduced `{ path, span }` rendering | parser notes + diagnostic regressions | tighten final formatting/source rendering |
+| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus byte-span and 1-based line/column source positions now exist, but native parity still needs final display/source-location wording fidelity | parser notes + diagnostic regressions | tighten final formatting/source rendering |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -76,7 +76,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data now exists; the remaining gap is final wording and source-location rendering | parser notes + diagnostic regressions | tighten `Display` formatting and source rendering |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist; the remaining gap is final wording and display rendering fidelity | parser notes + diagnostic regressions | tighten `Display` formatting and source rendering |
 
 ### `src/model.rs` parser support methods
 

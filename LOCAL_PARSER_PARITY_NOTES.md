@@ -58,7 +58,8 @@ Execution order:
    - done
 2. expand the diagnostic model and thread structured data through parser helper construction
    - done: structured diagnostic kinds now distinguish generic validation, `expecting`, and
-     `unexpected` parser failures
+     `unexpected` parser failures, and diagnostics now carry byte-span plus 1-based line/column
+     source positions
 3. lock parser-helper exactness with focused tests before touching broad wording
    - done: parser-helper kind regressions are in place
 4. tighten final `Display` formatting and source-location rendering

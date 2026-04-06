@@ -163,10 +163,6 @@ These are the only remaining parser-only gaps recorded by the current audit:
    - blocked on final display/source-location fidelity after the structured diagnostic expansion
    - touches:
      - `Diagnostic::error`
-     - parser error helpers:
-       - `expecting`
-       - `unexpected`
-       - `error_here`
      - `Error` formatting / source-location fidelity
    - staged unblock order:
      1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate which parser fields are flattened away
