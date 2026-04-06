@@ -2425,8 +2425,7 @@ impl KiCadSchematicParser {
             "label" => SchTextTarget::Label(LabelKind::Local),
             "global_label" => SchTextTarget::Label(LabelKind::Global),
             "hierarchical_label" => SchTextTarget::Label(LabelKind::Hierarchical),
-            "directive_label" => SchTextTarget::Label(LabelKind::Directive),
-            "netclass_flag" => SchTextTarget::Label(LabelKind::NetclassFlag),
+            "directive_label" | "netclass_flag" => SchTextTarget::Label(LabelKind::Directive),
             _ => return Err(self.error_here("invalid schematic text kind")),
         };
 
@@ -2520,7 +2519,7 @@ impl KiCadSchematicParser {
                     let ParsedSchText::Label(label) = &mut item else {
                         return Err(self.unexpected("length"));
                     };
-                    if !matches!(label.kind, LabelKind::Directive | LabelKind::NetclassFlag) {
+                    if !matches!(label.kind, LabelKind::Directive) {
                         return Err(self.unexpected("length"));
                     }
                     label.pin_length = Some(self.parse_internal_units_atom("pin length")?);

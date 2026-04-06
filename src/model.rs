@@ -642,10 +642,10 @@ impl Label {
             LabelKind::Local => LabelShape::Input,
             LabelKind::Global => LabelShape::Bidirectional,
             LabelKind::Hierarchical => LabelShape::Input,
-            LabelKind::Directive | LabelKind::NetclassFlag => LabelShape::Round,
+            LabelKind::Directive => LabelShape::Round,
         };
         let pin_length = match kind {
-            LabelKind::Directive | LabelKind::NetclassFlag => Some(2.54),
+            LabelKind::Directive => Some(2.54),
             _ => None,
         };
         let properties = if matches!(kind, LabelKind::Global) {
@@ -706,7 +706,6 @@ pub enum LabelKind {
     Global,
     Hierarchical,
     Directive,
-    NetclassFlag,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1706,15 +1705,7 @@ mod tests {
             LabelShape::Round
         );
         assert_eq!(
-            Label::new(LabelKind::NetclassFlag, "N".to_string()).shape,
-            LabelShape::Round
-        );
-        assert_eq!(
             Label::new(LabelKind::Directive, "D".to_string()).pin_length,
-            Some(2.54)
-        );
-        assert_eq!(
-            Label::new(LabelKind::NetclassFlag, "N".to_string()).pin_length,
             Some(2.54)
         );
     }

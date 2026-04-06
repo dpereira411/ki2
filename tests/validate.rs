@@ -1829,9 +1829,17 @@ fn parses_extended_top_level_sections() {
             |item| matches!(item, SchItem::Label(label) if label.kind == LabelKind::Directive)
         )
     );
-    assert!(schematic.screen.items.iter().any(
-        |item| matches!(item, SchItem::Label(label) if label.kind == LabelKind::NetclassFlag)
-    ));
+    assert_eq!(
+        schematic
+            .screen
+            .items
+            .iter()
+            .filter(
+                |item| matches!(item, SchItem::Label(label) if label.kind == LabelKind::Directive)
+            )
+            .count(),
+        2
+    );
     assert!(schematic.screen.items.iter().any(
         |item| matches!(item, SchItem::Group(Group { name, uuid, .. }) if name.as_deref() == Some("grp") && uuid.as_deref() == Some("g-1"))
     ));
