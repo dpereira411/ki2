@@ -1026,8 +1026,7 @@ impl KiCadSchematicParser {
                                 let group = current_group
                                     .as_mut()
                                     .ok_or_else(|| self.expecting("list of pin names"))?;
-                                group
-                                    .insert(self.need_symbol_or_number_atom("list of pin names")?);
+                                group.insert(self.need_dsn_string_atom("list of pin names")?);
                             }
                             TokKind::Right => {
                                 self.need_right()?;
@@ -5762,6 +5761,23 @@ impl KiCadSchematicParser {
                     self.current().atom_class,
                     Some(AtomClass::Symbol | AtomClass::Number | AtomClass::Quoted)
                 ) =>
+            {
+                let out = value.clone();
+                self.idx += 1;
+                Ok(out)
+            }
+            _ => Err(self.expecting(expected)),
+        }
+    }
+
+    fn need_dsn_string_atom(&mut self, expected: &str) -> Result<String, Error> {
+        match &self.current().kind {
+            TokKind::Atom(value)
+                if matches!(
+                    self.current().atom_class,
+                    Some(AtomClass::Quoted | AtomClass::Number)
+                ) || matches!(self.current().atom_class, Some(AtomClass::Symbol))
+                    && !self.current().is_keyword =>
             {
                 let out = value.clone();
                 self.idx += 1;

@@ -19,6 +19,7 @@ pub enum TokKind {
 pub struct Token {
     pub kind: TokKind,
     pub atom_class: Option<AtomClass>,
+    pub is_keyword: bool,
     pub span: Span,
 }
 
@@ -217,6 +218,172 @@ fn is_dsn_number(text: &str) -> bool {
     saw_number && i == len
 }
 
+fn is_schematic_keyword(text: &str) -> bool {
+    matches!(
+        text,
+        "kicad_sch"
+            | "version"
+            | "generator"
+            | "generator_version"
+            | "uuid"
+            | "paper"
+            | "page"
+            | "portrait"
+            | "title_block"
+            | "title"
+            | "date"
+            | "rev"
+            | "company"
+            | "comment"
+            | "lib_symbols"
+            | "symbol"
+            | "power"
+            | "global"
+            | "local"
+            | "body_styles"
+            | "demorgan"
+            | "pin_names"
+            | "pin_numbers"
+            | "offset"
+            | "hide"
+            | "exclude_from_sim"
+            | "in_bom"
+            | "on_board"
+            | "in_pos_files"
+            | "duplicate_pin_numbers_are_jumpers"
+            | "jumper_pin_groups"
+            | "property"
+            | "extends"
+            | "unit_name"
+            | "embedded_fonts"
+            | "embedded_files"
+            | "file"
+            | "name"
+            | "checksum"
+            | "type"
+            | "data"
+            | "datasheet"
+            | "font"
+            | "model"
+            | "worksheet"
+            | "other"
+            | "arc"
+            | "bezier"
+            | "circle"
+            | "pin"
+            | "polyline"
+            | "rectangle"
+            | "text"
+            | "text_box"
+            | "private"
+            | "start"
+            | "mid"
+            | "end"
+            | "center"
+            | "radius"
+            | "at"
+            | "length"
+            | "angles"
+            | "stroke"
+            | "fill"
+            | "pts"
+            | "xy"
+            | "width"
+            | "color"
+            | "line_spacing"
+            | "size"
+            | "thickness"
+            | "bold"
+            | "italic"
+            | "justify"
+            | "left"
+            | "right"
+            | "top"
+            | "bottom"
+            | "mirror"
+            | "href"
+            | "input"
+            | "output"
+            | "bidirectional"
+            | "tri_state"
+            | "passive"
+            | "clock"
+            | "inverted"
+            | "line"
+            | "alternate"
+            | "number"
+            | "show_name"
+            | "do_not_autoplace"
+            | "id"
+            | "fields_autoplaced"
+            | "default_instance"
+            | "instances"
+            | "project"
+            | "path"
+            | "reference"
+            | "unit"
+            | "value"
+            | "footprint"
+            | "variant"
+            | "dnp"
+            | "field"
+            | "lib_id"
+            | "lib_name"
+            | "convert"
+            | "body_style"
+            | "sheet"
+            | "background"
+            | "sheet_instances"
+            | "symbol_instances"
+            | "sheetname"
+            | "sheetfile"
+            | "pin_name"
+            | "pin_number"
+            | "junction"
+            | "no_connect"
+            | "bus_entry"
+            | "wire"
+            | "bus"
+            | "rule_area"
+            | "label"
+            | "global_label"
+            | "hierarchical_label"
+            | "directive_label"
+            | "netclass_flag"
+            | "shape"
+            | "iref"
+            | "table"
+            | "column_count"
+            | "column_widths"
+            | "row_heights"
+            | "cells"
+            | "table_cell"
+            | "span"
+            | "border"
+            | "external"
+            | "header"
+            | "separators"
+            | "rows"
+            | "cols"
+            | "image"
+            | "scale"
+            | "bus_alias"
+            | "members"
+            | "group"
+            | "locked"
+            | "yes"
+            | "no"
+            | "none"
+            | "outline"
+            | "hatch"
+            | "reverse_hatch"
+            | "cross_hatch"
+            | "solid"
+            | "dash"
+            | "|"
+    )
+}
+
 pub fn lex(input: &str) -> Result<Vec<Token>, kiutils_sexpr::ParseError> {
     let knows_bar = prescan_version(input).unwrap_or(0) >= VERSION_KNOWS_BAR;
     lex_with_bar(input, knows_bar)
@@ -312,6 +479,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 tokens.push(Token {
                     kind: TokKind::Left,
                     atom_class: None,
+                    is_keyword: false,
                     span: Span {
                         start: i,
                         end: i + 1,
@@ -323,6 +491,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 tokens.push(Token {
                     kind: TokKind::Right,
                     atom_class: None,
+                    is_keyword: false,
                     span: Span {
                         start: i,
                         end: i + 1,
@@ -347,6 +516,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                             tokens.push(Token {
                                 kind: TokKind::Atom(text),
                                 atom_class: Some(AtomClass::Quoted),
+                                is_keyword: false,
                                 span: Span { start, end: i },
                             });
                             closed = true;
@@ -370,6 +540,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 tokens.push(Token {
                     kind: TokKind::Atom("|".to_string()),
                     atom_class: Some(AtomClass::Symbol),
+                    is_keyword: true,
                     span: Span {
                         start: i,
                         end: i + 1,
@@ -395,9 +566,11 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                 } else {
                     AtomClass::Symbol
                 };
+                let is_keyword = atom_class == AtomClass::Symbol && is_schematic_keyword(&text);
                 tokens.push(Token {
                     kind: TokKind::Atom(text),
                     atom_class: Some(atom_class),
+                    is_keyword,
                     span: Span { start, end: i },
                 });
             }
@@ -407,6 +580,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
     tokens.push(Token {
         kind: TokKind::Eof,
         atom_class: None,
+        is_keyword: false,
         span: Span {
             start: input.len(),
             end: input.len(),
@@ -588,6 +762,29 @@ mod tests {
                 ("kicad_sch".to_string(), Some(AtomClass::Symbol)),
                 ("uuid".to_string(), Some(AtomClass::Symbol)),
                 ("root".to_string(), Some(AtomClass::Quoted)),
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_marks_reserved_unquoted_keywords() {
+        let tokens = lex("(items hide plain 1 \"hide\")").expect("lex");
+        let atoms: Vec<(String, Option<AtomClass>, bool)> = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokKind::Atom(value) => Some((value, token.atom_class, token.is_keyword)),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            atoms,
+            vec![
+                ("items".to_string(), Some(AtomClass::Symbol), false),
+                ("hide".to_string(), Some(AtomClass::Symbol), true),
+                ("plain".to_string(), Some(AtomClass::Symbol), false),
+                ("1".to_string(), Some(AtomClass::Number), false),
+                ("hide".to_string(), Some(AtomClass::Quoted), false),
             ]
         );
     }
