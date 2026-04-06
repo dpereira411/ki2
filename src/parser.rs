@@ -5266,15 +5266,15 @@ impl KiCadSchematicParser {
 
     fn parse_xy2(&mut self, context: &str) -> Result<[f64; 2], Error> {
         Ok([
-            self.parse_f64_atom(format!("{context} x"))?,
-            self.parse_f64_atom(format!("{context} y"))?,
+            self.parse_internal_units_atom(format!("{context} x"))?,
+            self.parse_internal_units_atom(format!("{context} y"))?,
         ])
     }
 
     fn parse_xy3(&mut self, context: &str) -> Result<[f64; 3], Error> {
         Ok([
-            self.parse_f64_atom(format!("{context} x"))?,
-            self.parse_f64_atom(format!("{context} y"))?,
+            self.parse_internal_units_atom(format!("{context} x"))?,
+            self.parse_internal_units_atom(format!("{context} y"))?,
             self.parse_f64_atom(format!("{context} angle"))?,
         ])
     }

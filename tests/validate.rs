@@ -5021,6 +5021,64 @@ fn clamps_shared_stroke_width_to_kicad_internal_unit_limit() {
 }
 
 #[test]
+fn clamps_shared_xy_coordinates_and_sizes_to_kicad_internal_unit_limit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-clamped-xy")
+  (paper "A4")
+  (text "note" (at 9999999 9999999 90))
+  (sheet (at 9999999 9999999) (size 9999999 9999999)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (wire (pts (xy 0 0) (xy 9999999 9999999)))
+)"#;
+    let path = temp_schematic("clamped_shared_xy", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let expected_max = (f64::from(i32::MAX) * 0.7071) / 1e4;
+
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    let wire = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Wire(line) if line.kind == LineKind::Wire => Some(line),
+            _ => None,
+        })
+        .expect("wire");
+
+    assert!((text.at[0] - expected_max).abs() < 1e-9);
+    assert!((text.at[1] - expected_max).abs() < 1e-9);
+    assert!((sheet.at[0] - expected_max).abs() < 1e-9);
+    assert!((sheet.at[1] - expected_max).abs() < 1e-9);
+    assert!((sheet.size[0] - expected_max).abs() < 1e-9);
+    assert!((sheet.size[1] - expected_max).abs() < 1e-9);
+    assert!((wire.points[1][0] - expected_max).abs() < 1e-9);
+    assert!((wire.points[1][1] - expected_max).abs() < 1e-9);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn global_label_starts_with_hidden_intersheet_refs_field() {
     let src = r#"(kicad_sch
   (version 20260306)
