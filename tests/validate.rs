@@ -6481,6 +6481,30 @@ fn load_tree_migrates_inferred_legacy_spice_fields_from_value() {
             .map(|property| property.value.as_str()),
         Some("2=1 1=2")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "2".to_string()),
+            ("2".to_string(), "1".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }

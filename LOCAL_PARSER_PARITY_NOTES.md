@@ -216,6 +216,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   11. default `Sim.Pins` synthesis is now locked too: source pins are filtered by the active symbol unit and ordered numerically before the migration writes the name-value map
   12. migrated and already-modern `Sim.*` field state now also hydrates a structured `Symbol.sim_model` snapshot during load, including `Sim.Library`, `Sim.Name`, `Sim.Ibis.Pin`, `Sim.Ibis.Model`, parsed `Sim.Params` name/value maps, and `Sim.Pins` mappings, so the remaining blocked simulator-model work is no longer forced to live only as flat property strings
   13. the raw `Spice_*` fallback branches are now also locked against that structured snapshot, not only flat migrated properties, across model-only, lib-only, primitive+lib, and lib-pin-backed migration cases
+  14. the currently representable inferred-value branch is now also locked on the structured snapshot: it stays side-effect-light (`Sim.Device` / `Sim.Params` absent) while still hydrating migrated `Sim.Pins`
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, the still-unported control-source/internal-model families beyond the current `DC/SIN/PULSE/EXP/AM/SFFM/PWL/TRNOISE/TRRANDOM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 
 ### More Exact Current Priority
