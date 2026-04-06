@@ -6386,13 +6386,13 @@ fn parses_text_and_label_semantics() {
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000019")
   (paper "A4")
-  (text "note" (exclude_from_sim yes) (at 1 2 90) (fields_autoplaced) (effects (font (size 1.27 1.27))) (uuid "t-1"))
-  (global_label "VCC" (shape input) (exclude_from_sim yes) (at 5 6 180) (uuid "g-1")
+  (text "note" (exclude_from_sim yes) (at 1 2 90) (fields_autoplaced) (effects (font (size 1.27 1.27))) (uuid "79000000-0000-0000-0000-000000000001"))
+  (global_label "VCC" (shape input) (exclude_from_sim yes) (at 5 6 180) (uuid "79000000-0000-0000-0000-000000000002")
     (iref 9 10)
     (property "Intersheet References" "show")
     (effects (font (size 1.27 1.27))))
-  (directive_label "D" (shape dot) (length 3.5) (at 2 3 0) (uuid "d-1"))
-  (label "LOCAL" (at 7 8 0) (uuid "l-1"))
+  (directive_label "D" (shape dot) (length 3.5) (at 2 3 0) (uuid "79000000-0000-0000-0000-000000000003"))
+  (label "LOCAL" (at 7 8 0) (uuid "79000000-0000-0000-0000-000000000004"))
 )"#;
     let path = temp_schematic("text_label_semantics", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -6476,7 +6476,7 @@ fn global_label_without_user_fields_keeps_parser_default_autoplace_state() {
   (generator "eeschema")
   (uuid "78000000-0000-0000-0000-000000000005")
   (paper "A4")
-  (global_label "GL" (at 1 2 0) (shape input) (uuid "g-1"))
+  (global_label "GL" (at 1 2 0) (shape input) (uuid "79000000-0000-0000-0000-000000000005"))
 )"#;
     let path = temp_schematic("global_label_default_autoplace", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
