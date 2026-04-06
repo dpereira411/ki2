@@ -19,9 +19,8 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. `parse_schematic` / `parse_schematic_body`
-2. local-lib flattening exactness in `flatten_local_lib_symbol`
-3. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
+1. local-lib flattening exactness in `flatten_local_lib_symbol`
+2. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
 
 ## Layer 0: Support Files
 
@@ -115,9 +114,9 @@ not drive the queue unless a parent parser routine exposes them.
 
 | Upstream routine | Local routine | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `ParseSchematic` | `parse_schematic` | `different` | broad flow is close, but top-level exactness is not fully signed off | current map + direct audit | revisit after remaining owner routines |
-| `parseHeader` | inline in `parse_schematic` | `different` | local inline header/prescan path still differs from literal upstream header routine | source comparison | audit late/version failure paths |
-| top-level dispatch loop | `parse_schematic_body` | `different` | dispatch coverage exists, but exact fallback/error flow is still being tightened | source comparison | finish after owner routines |
+| `ParseSchematic` | `parse_schematic` | `same` | direct re-audit shows the broad top-level owner flow is now structurally close enough: root/header entry, version gating, generator-version future-version timing, root-uuid seeding, and post-parse fixup ordering are no longer active parser-only bottlenecks | direct source comparison plus focused header/top-level regressions | none |
+| `parseHeader` | inline in `parse_schematic` | `not_applicable` | the header routine is intentionally inlined locally; direct re-audit shows version/default handling and late/future-version failure timing are close enough that the separate upstream helper no longer needs to stay on the active queue | direct source comparison plus focused header/version regressions | none |
+| top-level dispatch loop | `parse_schematic_body` | `same` | direct re-audit shows the remaining parser-only risk is no longer in the broad dispatch loop: accepted section set, old `page` remap, embedded-files recovery, and literal fallback text are close enough to upstream | direct source comparison plus top-level section regressions | none |
 | `parsePAGE_INFO` | `parse_page_info` | `same` | one of the closest routines | existing map/tests | none |
 | `parseTITLE_BLOCK` | `parse_title_block` | `same` | comment-slot and branch ownership are close enough | existing map/tests | none |
 | `parseLibSymbols` wrapper | `parse_sch_lib_symbols` | `same` | direct re-audit shows the wrapper loop is now structurally aligned: it owns the `lib_symbols` head, requires only `symbol` children, and dispatches directly into `parse_lib_symbol()` like upstream | direct source comparison | none |

@@ -15,10 +15,13 @@ Closest-to-upstream areas so far:
 
 ### Major Remaining Gaps
 
-1. Top-level `ParseSchematic()` switch parity is still incomplete
+1. Top-level `ParseSchematic()` broad owner flow is no longer one of the active parser-only bottlenecks
 
-- Some branches are still reduced or merged compared to upstream.
-- Not every accepted KiCad section has a routine boundary that mirrors the original parser.
+- direct re-audit shows the broad top-level entry/dispatch flow is now structurally close enough:
+  header/version handling, `generator_version` future-version timing, old `page` remap,
+  embedded-files recovery, and literal top-level fallback text are no longer the active gaps
+- the remaining parser-only risk is now narrower token/diagnostic exactness rather than a large
+  missing owner-routine mismatch at the top level
 
 2. Shared text/effects parsing is no longer one of the main parser-only bottlenecks
 
@@ -130,17 +133,16 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Revisit top-level `ParseSchematic()` / `parse_schematic_body()` for concrete remaining exactness mismatches.
-2. Tighten remaining local-lib flattening exactness where direct comparison exposes it.
-3. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
-4. Do a parser-wide token/error parity pass.
-5. Port the missing cross-file post-load pipeline.
+1. Tighten remaining local-lib flattening exactness where direct comparison exposes it.
+2. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
+3. Do a parser-wide token/error parity pass.
+4. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
-1. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
-2. Revisit narrower library helper surfaces only when direct comparison exposes a concrete remaining mismatch.
-3. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
+1. Revisit local-lib flattening and any narrower library helper surface only when direct comparison exposes a concrete remaining mismatch.
+2. Revisit shared field/property parsing only when a parent routine exposes a concrete remaining mismatch.
+3. Finish the parser-wide token/error exactness sweep.
 
 ### Bottom Line
 
@@ -148,6 +150,5 @@ The parser is still well short of 1:1 parity.
 
 The biggest remaining gaps are:
 
-- top-level `ParseSchematic()` / `parse_schematic_body()`
 - narrower library helper exactness
 - parser-wide token / error parity
