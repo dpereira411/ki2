@@ -228,6 +228,11 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   Net effect: the currently representable `MigrateSimModels` surface is now locked broadly on the structured `Symbol.sim_model` state, not only on flat migrated properties. The remaining backlog here is no longer about uncovered representable branches; it is the genuinely blocked project/library/embedded/control-model side.
   Model expansion in progress: `SimModel` now preserves ordered parameter payloads, ordered pin mappings, `Value`-field placeholder binding (`${SIM.PARAMS}` / `${SIM.NAME}`), and enabled/disabled state instead of collapsing that state away immediately, because the remaining resolved-model branch depends on more than deduplicated field maps.
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, the still-unported control-source/internal-model families beyond the current `DC/SIN/PULSE/EXP/AM/SFFM/PWL/TRNOISE/TRRANDOM` slice, and the fuller `Spice_*` inference/resolution paths that depend on richer resolved-model state. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
+  Concrete unblock requirements:
+  - a real simulation-library/model resolver layer for `.kicad_sim` / embedded model sources; the current tree has no local equivalent of KiCad `SIM_LIB_MGR::CreateModel()`
+  - model-side storage for resolved model metadata beyond flat fields/maps: resolved source/origin, generated model-pin metadata, and resolver-backed library/name identity
+  - project/embedded file-stack plumbing for model lookup, analogous to the upstream embedded-files stack passed into resolver creation
+  - only after that resolver/model layer exists should the remaining library-backed `MigrateSimModels` branch, fuller control/internal model families, and unresolved `Spice_*` inference paths be ported
 
 ### More Exact Current Priority
 
