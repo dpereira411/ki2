@@ -102,9 +102,9 @@ Current summary:
 - `parse_f64_atom` (`same`)
 - `parse_internal_units_atom` (`same`)
 - `parse_bool_atom` (`same`)
-- `parse_kiid` (`blocked`)
+- `parse_kiid` (`same`)
 - `parse_raw_kiid` (`same`)
-- `parse_kiid_atom` (`blocked`)
+- `parse_kiid_atom` (`same`)
 - `parse_maybe_absent_bool` (`same`)
 
 ## Layer 7: Shared Token Readers / Primitive Helpers
@@ -159,19 +159,7 @@ Current summary:
 
 These are the only remaining parser-only gaps recorded by the current audit:
 
-1. malformed UUID semantics
-   - blocked on migrating tests/fixtures/model assumptions away from stable symbolic IDs
-   - touches:
-     - `parse_kiid`
-     - `parse_kiid_atom`
-     - UUID normalization/uniqueness flow
-   - staged migration order:
-     1. group/member and item-reference tests without hierarchy-path coupling
-     2. parser-only single-file symbolic UUID fixtures
-     3. hierarchy/loader fixtures whose paths currently depend on symbolic IDs
-     4. then native malformed-ID replacement semantics
-
-2. exact diagnostic / error-model parity
+1. exact diagnostic / error-model parity
    - blocked on expanding the local diagnostic representation beyond the current reduced model
    - touches:
      - `Diagnostic::error`

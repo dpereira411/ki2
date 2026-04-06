@@ -8,37 +8,25 @@ Parser-only work is effectively exhausted in the current model.
 
 The remaining parser-side gaps are now blocked surfaces, not broad routine work:
 
-- native malformed-UUID semantics, which still require fixture/model migration away from stable
-  symbolic IDs
 - native diagnostic / error-format parity, which still requires expanding the local
   `Diagnostic` / `Error` model
 
 Active parity work is now in the loader / post-load pipeline.
 
-### UUID Unblock Plan
+### UUID Unblock Status
 
-The UUID block is now a fixture/model migration task, not a broad parser-routine task.
+The UUID unblock is complete.
 
-To unblock native KiCad malformed-UUID semantics:
+Done:
 
-1. migrate tests away from stable symbolic fake UUIDs like `root-u`, `sheet-a`, `sym-u`, `wire-u`
-2. prefer:
-   - valid UUID fixtures where identity only needs to stay stable
-   - short hex fixtures only in tests that explicitly lock legacy normalization
-3. rewrite expectations away from exact symbolic values and toward:
-   - normalized UUID shape
-   - referential consistency
+1. migrated parser-only and loader-path fixtures away from stable symbolic fake UUIDs
+2. rewrote the remaining expectations toward:
+   - valid UUID shape
+   - legacy short-hex normalization
    - uniqueness on creation sites
-4. keep creation-site and reference-site expectations separate:
-   - creation sites consume uniqueness
-   - references normalize without drifting away from their targets
+3. enabled native-style malformed-ID replacement semantics in `parse_kiid` / `normalize_kiid`
 
-Execution order:
-
-1. group/member and item-reference tests with symbolic UUIDs but no hierarchy-path dependency
-2. parser-only single-file fixtures with symbolic item UUIDs
-3. hierarchy/loader fixtures that currently encode symbolic UUIDs into instance paths
-4. only then enable full native malformed-ID replacement semantics in `parse_kiid`
+The parser-only blocked set no longer includes malformed UUID handling.
 
 ### Diagnostic / Error-Model Unblock Plan
 

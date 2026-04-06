@@ -24,17 +24,10 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs
-2. audit and expand the local diagnostic/error model for native parse-error parity
+1. audit and expand the local diagnostic/error model for native parse-error parity
 
 This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
 work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
-
-If UUID unblocking is chosen, execute it in this order:
-1. migrate group/member and other item-reference tests that use symbolic fake UUIDs
-2. migrate parser-only single-file fixtures with symbolic item UUIDs
-3. migrate hierarchy/loader fixtures whose instance paths currently depend on symbolic UUIDs
-4. only then switch `parse_kiid` / `normalize_kiid` to native malformed-ID replacement semantics
 
 If diagnostic/error unblocking is chosen, execute it in this order:
 1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate the parser fields lost by the current
@@ -226,10 +219,10 @@ not drive the queue unless a parent parser routine exposes them.
 | `parse_f64_atom` | `parseDouble` | `same` | parser-wide float path is stable enough | tests | none |
 | `parse_internal_units_atom` | `parseInternalUnits` | `same` | clamp behavior is now explicit and tested | tests | none |
 | `parse_bool_atom` | `parseBool` | `same` | yes/no exactness is stable enough | tests | none |
-| `parse_kiid` | `parseKIID` wrapper | `blocked` | full malformed-ID semantics still diverge from native KiCad because the current repo/test fixture set still depends on stable symbolic non-UUID IDs | parser notes + UUID regressions | unblock only with broader fixture/model migration |
+| `parse_kiid` | `parseKIID` wrapper | `same` | malformed symbolic IDs now normalize through native-style generated UUID replacement, legacy short-hex normalization, and uniqueness-on-creation behavior | UUID migration + malformed UUID regressions | none |
 | `parse_raw_kiid` | raw KIID path | `same` | raw-vs-normalized split is explicit and covered | recent UUID audits | none |
-| `parse_kiid_atom` | `parseKIID` low-level read | `blocked` | tied to the same malformed-ID semantics and fixture migration constraint as `parse_kiid` | parser notes + UUID regressions | unblock only with broader fixture/model migration |
-| `normalize_kiid` | KIID normalization/uniqueness | `blocked` | malformed non-UUID handling still differs from native KiCad and cannot be made literal without broader fixture/test migration away from symbolic IDs | parser notes + UUID regressions | unblock only with broader fixture/model migration |
+| `parse_kiid_atom` | `parseKIID` low-level read | `same` | low-level UUID reads now follow the same malformed-ID replacement semantics as the wrapper | UUID migration + malformed UUID regressions | none |
+| `normalize_kiid` | KIID normalization/uniqueness | `same` | malformed non-UUID handling now uses generated UUID replacement while legacy short-hex normalization and duplicate incrementing remain covered | UUID migration + malformed UUID regressions | none |
 | `parse_maybe_absent_bool` | `parseMaybeAbsentBool` | `same` | current behavior is close and well covered | tests | none |
 | `require_known_version` | local support | `not_applicable` | repo-local support for parser entry ordering | source inspection | none |
 | `need_left` | `NeedLEFT` | `same` | stable low-level exactness | tests | none |
