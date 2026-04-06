@@ -339,14 +339,10 @@ impl SchematicLoader {
                     path: sheet_path.instance_path.clone(),
                     reference: None,
                     unit: Some(1),
-                    value: None,
-                    footprint: None,
                     variants: std::collections::BTreeMap::new(),
                 };
                 local_instance.reference = instance.reference.clone();
                 local_instance.unit = instance.unit;
-                local_instance.value = instance.value.clone();
-                local_instance.footprint = instance.footprint.clone();
                 if local_instance.unit.is_none() {
                     local_instance.unit = Some(1);
                 }
