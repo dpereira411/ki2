@@ -356,6 +356,13 @@ fn validates_hierarchical_tree_fixture() {
     );
     assert_eq!(
         project
+            .current_sheet_path()
+            .expect("project current sheet path")
+            .instance_path,
+        ""
+    );
+    assert_eq!(
+        project
             .sheet_paths_of(&project.root_path)
             .next()
             .expect("root sheet path")
@@ -437,6 +444,13 @@ fn reuses_previously_loaded_child_schematic() {
             .page
             .as_deref(),
         Some("9")
+    );
+    assert_eq!(
+        loaded
+            .current_sheet_path()
+            .expect("load result current sheet path")
+            .instance_path,
+        ""
     );
     assert_eq!(
         loaded

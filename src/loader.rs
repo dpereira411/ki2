@@ -34,11 +34,16 @@ pub struct LoadResult {
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
+    pub current_sheet_instance_path: String,
 }
 
 impl LoadResult {
     pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
         self.sheet_path("")
+    }
+
+    pub fn current_sheet_path(&self) -> Option<&LoadedSheetPath> {
+        self.sheet_path(&self.current_sheet_instance_path)
     }
 
     pub fn children_of<'a>(
@@ -141,6 +146,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
         schematics: loader.schematics,
         links: loader.links,
         sheet_paths,
+        current_sheet_instance_path: String::new(),
     })
 }
 

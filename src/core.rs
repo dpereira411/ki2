@@ -10,6 +10,7 @@ pub struct SchematicProject {
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
+    pub current_sheet_instance_path: String,
     by_path: HashMap<PathBuf, usize>,
     sheet_paths_by_instance: HashMap<String, usize>,
 }
@@ -34,6 +35,7 @@ impl SchematicProject {
             schematics: load.schematics,
             links: load.links,
             sheet_paths: load.sheet_paths,
+            current_sheet_instance_path: load.current_sheet_instance_path,
             by_path,
             sheet_paths_by_instance,
         }
@@ -45,6 +47,10 @@ impl SchematicProject {
 
     pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
         self.sheet_path("")
+    }
+
+    pub fn current_sheet_path(&self) -> Option<&LoadedSheetPath> {
+        self.sheet_path(&self.current_sheet_instance_path)
     }
 
     pub fn schematic(&self, path: &Path) -> Option<&Schematic> {
