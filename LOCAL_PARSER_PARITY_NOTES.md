@@ -6,10 +6,9 @@ Target: true 1:1 structural and code-flow parity with upstream KiCad schematic p
 
 Parser-only work is effectively exhausted in the current model.
 
-The remaining parser-side gaps are now blocked surfaces, not broad routine work:
+The remaining parser-side gap is now a narrow formatting surface, not broad routine work:
 
-- native diagnostic / error-format parity, which still requires expanding the local
-  `Diagnostic` / `Error` model
+- final native-style diagnostic / error wording polish
 
 Active parity work is now in the loader / post-load pipeline.
 
@@ -62,7 +61,7 @@ Execution order:
      source positions
 3. lock parser-helper exactness with focused tests before touching broad wording
    - done: parser-helper kind regressions are in place
-4. tighten final `Display` formatting and source-location rendering
+4. tighten final `Display` formatting and wording polish
    - remaining active diagnostic task
 5. re-audit blocked parser helpers in `LOCAL_FUNCTION_PARITY_MAP.md`
 

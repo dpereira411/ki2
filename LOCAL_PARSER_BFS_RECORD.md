@@ -160,10 +160,10 @@ Current summary:
 These are the only remaining parser-only gaps recorded by the current audit:
 
 1. exact diagnostic / error-model parity
-   - blocked on final display/source-location fidelity after the structured diagnostic expansion
+   - blocked on final display wording fidelity after the structured diagnostic expansion
    - touches:
      - `Diagnostic::error`
-     - `Error` formatting / source-location fidelity
+     - `Error` formatting wording
    - staged unblock order:
      1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate which parser fields are flattened away
         - done
@@ -173,7 +173,7 @@ These are the only remaining parser-only gaps recorded by the current audit:
         - done
      4. lock representative parser/validation failure families with focused tests
         - done
-     5. tighten final `Display` formatting for native wording/source fidelity
+     5. tighten final `Display` formatting for native wording fidelity
         - active
 
 ## Rule Of Use

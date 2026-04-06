@@ -24,7 +24,7 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. tighten `Error` / `Diagnostic` display and source-location fidelity for native parse-error parity
+1. tighten `Error` / `Diagnostic` display wording for native parse-error parity
 
 This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
 work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
@@ -65,7 +65,7 @@ If diagnostic/error unblocking is chosen, execute it in this order:
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus byte-span and 1-based line/column source positions now exist, but native parity still needs final display/source-location wording fidelity | parser notes + diagnostic regressions | tighten final formatting/source rendering |
+| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus byte-span and 1-based line/column source positions now exist; the remaining gap is final display wording fidelity | parser notes + diagnostic regressions | tighten final formatting wording |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -76,7 +76,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist; the remaining gap is final wording and display rendering fidelity | parser notes + diagnostic regressions | tighten `Display` formatting and source rendering |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist; the remaining gap is final wording fidelity in rendered errors | parser notes + diagnostic regressions | tighten `Display` formatting wording |
 
 ### `src/model.rs` parser support methods
 
