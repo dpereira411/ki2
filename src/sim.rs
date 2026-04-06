@@ -594,11 +594,15 @@ fn collect_spice_statements(text: &str) -> Vec<String> {
 fn collect_spice_include_paths(text: &str) -> Vec<String> {
     collect_spice_statements(text)
         .into_iter()
-        .filter_map(|line| {
-            let rest = line
-                .strip_prefix(".include")
-                .or_else(|| line.strip_prefix(".INCLUDE"))?
-                .trim();
+        .filter_map(|statement| {
+            let mut parts = statement.split_whitespace();
+            let head = parts.next()?;
+
+            if !head.eq_ignore_ascii_case(".include") {
+                return None;
+            }
+
+            let rest = statement[head.len()..].trim();
 
             if rest.is_empty() {
                 return None;

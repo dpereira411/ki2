@@ -6216,6 +6216,68 @@ fn resolves_symbol_sim_model_from_embedded_spice_include_chain() {
 }
 
 #[test]
+fn resolves_symbol_sim_model_from_mixed_case_spice_include_chain() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000032d")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models/top.kicad_sim")
+      (type model)
+      (data |.InClUdE "child.lib"|))
+    (file
+      (name "models/child.lib")
+      (type model)
+      (data |.subckt MODEL IN OUT
+.ends MODEL|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models/top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_mixed_case_spice_include_chain", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "models/top.kicad_sim".to_string(),
+                },
+                kind: SimLibraryKind::Spice,
+            },
+            name: "MODEL".to_string(),
+            model_type: None,
+            diff_pin: None,
+            pins: vec!["IN".to_string(), "OUT".to_string()],
+            params: Vec::new(),
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn resolves_symbol_sim_model_from_embedded_ibis_component() {
     let src = r#"(kicad_sch
   (version 20260306)
