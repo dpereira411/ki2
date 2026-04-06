@@ -3228,6 +3228,9 @@ impl KiCadSchematicParser {
     fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("arc")?;
         let mut shape = Shape::new(ShapeKind::Arc);
+        let mut start_point = [0.0, 0.0];
+        let mut mid_point = [0.0, 0.0];
+        let mut end_point = [0.0, 0.0];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3241,17 +3244,17 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "start" => {
                     let _ = self.need_unquoted_symbol_atom("start")?;
-                    shape.points[0] = self.parse_xy2("shape start")?;
+                    start_point = self.parse_xy2("shape start")?;
                     self.need_right()?;
                 }
                 "mid" => {
                     let _ = self.need_unquoted_symbol_atom("mid")?;
-                    shape.points[1] = self.parse_xy2("shape mid")?;
+                    mid_point = self.parse_xy2("shape mid")?;
                     self.need_right()?;
                 }
                 "end" => {
                     let _ = self.need_unquoted_symbol_atom("end")?;
-                    shape.points[2] = self.parse_xy2("shape end")?;
+                    end_point = self.parse_xy2("shape end")?;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -3272,6 +3275,9 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("start, mid, end, stroke, fill or uuid")),
             }
         }
+        shape.points[0] = start_point;
+        shape.points[1] = mid_point;
+        shape.points[2] = end_point;
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
@@ -3280,6 +3286,8 @@ impl KiCadSchematicParser {
     fn parse_sch_circle(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("circle")?;
         let mut shape = Shape::new(ShapeKind::Circle);
+        let mut center = [0.0, 0.0];
+        let mut radius = 0.0;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3293,12 +3301,12 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "center" => {
                     let _ = self.need_unquoted_symbol_atom("center")?;
-                    shape.points[0] = self.parse_xy2("center")?;
+                    center = self.parse_xy2("center")?;
                     self.need_right()?;
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    shape.radius = Some(self.parse_internal_units_atom("radius length")?);
+                    radius = self.parse_internal_units_atom("radius length")?;
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -3319,6 +3327,8 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("center, radius, stroke, fill or uuid")),
             }
         }
+        shape.points[0] = center;
+        shape.radius = Some(radius);
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
@@ -3379,6 +3389,7 @@ impl KiCadSchematicParser {
     fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("bezier")?;
         let mut shape = Shape::new(ShapeKind::Bezier);
+        let mut points = [[0.0, 0.0]; 4];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3408,7 +3419,7 @@ impl KiCadSchematicParser {
                         }
                         let _ = self.need_unquoted_symbol_atom("xy")?;
                         match ii {
-                            0..=3 => shape.points[ii] = self.parse_xy2("xy")?,
+                            0..=3 => points[ii] = self.parse_xy2("xy")?,
                             _ => return Err(self.unexpected("control point")),
                         }
                         ii += 1;
@@ -3434,6 +3445,7 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("pts, stroke, fill or uuid")),
             }
         }
+        shape.points = points.into();
         Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
