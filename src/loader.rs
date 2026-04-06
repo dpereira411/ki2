@@ -1360,7 +1360,7 @@ fn take_symbol_user_field(symbol: &mut crate::model::Symbol, key: &str) -> Optio
 fn legacy_spice_pin_map_field(mut property: Property) -> Property {
     let pin_map = property
         .value
-        .split(|ch: char| matches!(ch, '{' | '}' | ':' | ',' | ';' | ' '))
+        .split(|ch: char| matches!(ch, '{' | '}' | ':' | ',' | ';') || ch.is_whitespace())
         .filter(|token| !token.is_empty())
         .enumerate()
         .map(|(index, token)| {
