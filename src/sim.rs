@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::path::Component;
 use std::path::{Path, PathBuf};
 
 use crate::model::{EmbeddedFile, EmbeddedFileType, Screen, Symbol};
@@ -20,6 +21,40 @@ pub struct ResolvedSimModel {
     pub diff_pin: Option<String>,
     pub pins: Vec<String>,
     pub params: Vec<(String, Option<String>)>,
+}
+
+fn sim_library_source_key(source: &SimLibrarySource) -> String {
+    match source {
+        SimLibrarySource::Filesystem(path) => format!("fs:{}", path.display()),
+        SimLibrarySource::SchematicEmbedded { name } => format!("sch:{name}"),
+        SimLibrarySource::SymbolEmbedded { name } => format!("sym:{name}"),
+    }
+}
+
+fn normalize_embedded_library_name(name: &str) -> String {
+    let mut normalized = PathBuf::new();
+
+    for component in Path::new(name).components() {
+        match component {
+            Component::Normal(part) => normalized.push(part),
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            Component::RootDir | Component::Prefix(_) => {}
+        }
+    }
+
+    normalized.to_string_lossy().replace('\\', "/")
+}
+
+fn resolve_relative_embedded_library_name(base_name: &str, relative: &str) -> String {
+    let base_path = Path::new(base_name);
+    let joined = base_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(relative);
+    normalize_embedded_library_name(&joined.to_string_lossy())
 }
 
 pub fn collect_symbol_sim_library_sources(
@@ -177,6 +212,123 @@ pub fn load_symbol_sim_library_content_from_embedded_files(
     })
 }
 
+fn load_sim_library_content_by_source_from_embedded_files(
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+    source: &SimLibrarySource,
+) -> Option<SimLibraryContent> {
+    match source {
+        SimLibrarySource::SchematicEmbedded { name } => embedded_files
+            .iter()
+            .find(|file| {
+                file.file_type == Some(EmbeddedFileType::Model)
+                    && file.name.as_deref() == Some(name.as_str())
+                    && file.data.is_some()
+            })
+            .map(|file| SimLibraryContent {
+                source: source.clone(),
+                text: file.data.clone().unwrap_or_default(),
+            }),
+        SimLibrarySource::SymbolEmbedded { name } => {
+            symbol.lib_symbol.as_ref().and_then(|lib_symbol| {
+                lib_symbol
+                    .embedded_files
+                    .iter()
+                    .find(|file| {
+                        file.file_type == Some(EmbeddedFileType::Model)
+                            && file.name.as_deref() == Some(name.as_str())
+                            && file.data.is_some()
+                    })
+                    .map(|file| SimLibraryContent {
+                        source: source.clone(),
+                        text: file.data.clone().unwrap_or_default(),
+                    })
+            })
+        }
+        SimLibrarySource::Filesystem(path) => {
+            fs::read_to_string(path).ok().map(|text| SimLibraryContent {
+                source: source.clone(),
+                text,
+            })
+        }
+    }
+}
+
+fn resolve_relative_sim_library_source_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+    base_source: &SimLibrarySource,
+    relative_lib: &str,
+) -> Option<SimLibrarySource> {
+    let relative_lib = relative_lib.trim_matches('"');
+
+    if relative_lib.is_empty() {
+        return None;
+    }
+
+    match base_source {
+        SimLibrarySource::Filesystem(path) => {
+            let resolved = if Path::new(relative_lib).is_absolute() {
+                PathBuf::from(relative_lib)
+            } else {
+                path.parent()
+                    .unwrap_or_else(|| Path::new(""))
+                    .join(relative_lib)
+            };
+
+            if resolved.exists() {
+                Some(SimLibrarySource::Filesystem(resolved))
+            } else {
+                None
+            }
+        }
+        SimLibrarySource::SchematicEmbedded { name } => {
+            let resolved_name = resolve_relative_embedded_library_name(name, relative_lib);
+
+            if embedded_files.iter().any(|file| {
+                file.file_type == Some(EmbeddedFileType::Model)
+                    && file.name.as_deref() == Some(resolved_name.as_str())
+            }) {
+                Some(SimLibrarySource::SchematicEmbedded {
+                    name: resolved_name,
+                })
+            } else {
+                let fs_path = resolve_sim_library_path(schematic_path, &resolved_name);
+                fs_path
+                    .exists()
+                    .then_some(SimLibrarySource::Filesystem(fs_path))
+            }
+        }
+        SimLibrarySource::SymbolEmbedded { name } => {
+            let resolved_name = resolve_relative_embedded_library_name(name, relative_lib);
+
+            if symbol.lib_symbol.as_ref().is_some_and(|lib_symbol| {
+                lib_symbol.embedded_files.iter().any(|file| {
+                    file.file_type == Some(EmbeddedFileType::Model)
+                        && file.name.as_deref() == Some(resolved_name.as_str())
+                })
+            }) {
+                Some(SimLibrarySource::SymbolEmbedded {
+                    name: resolved_name,
+                })
+            } else if embedded_files.iter().any(|file| {
+                file.file_type == Some(EmbeddedFileType::Model)
+                    && file.name.as_deref() == Some(resolved_name.as_str())
+            }) {
+                Some(SimLibrarySource::SchematicEmbedded {
+                    name: resolved_name,
+                })
+            } else {
+                let fs_path = resolve_sim_library_path(schematic_path, &resolved_name);
+                fs_path
+                    .exists()
+                    .then_some(SimLibrarySource::Filesystem(fs_path))
+            }
+        }
+    }
+}
+
 pub fn classify_symbol_sim_library_kind(
     schematic_path: &Path,
     screen: &Screen,
@@ -298,12 +450,14 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
             })
         }
         SimLibraryKind::Spice => {
-            let content = load_symbol_sim_library_content_from_embedded_files(
+            let model = resolve_spice_model_from_source(
                 schematic_path,
                 embedded_files,
                 symbol,
+                &library.source,
+                &name,
+                &mut Vec::new(),
             )?;
-            let model = resolve_spice_model(&content.text, &name)?;
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
@@ -394,6 +548,91 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
         }
 
         index += 1;
+    }
+
+    None
+}
+
+fn collect_spice_include_paths(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+
+            if line.is_empty() || line.starts_with('*') {
+                return None;
+            }
+
+            let rest = line
+                .strip_prefix(".include")
+                .or_else(|| line.strip_prefix(".INCLUDE"))?
+                .trim();
+
+            if rest.is_empty() {
+                return None;
+            }
+
+            let include = if let Some(stripped) = rest.strip_prefix('"') {
+                stripped
+                    .split_once('"')
+                    .map(|(path, _)| path)
+                    .unwrap_or(stripped)
+                    .to_string()
+            } else {
+                rest.split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            };
+
+            (!include.is_empty()).then_some(include)
+        })
+        .collect()
+}
+
+fn resolve_spice_model_from_source(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+    source: &SimLibrarySource,
+    wanted_name: &str,
+    visited: &mut Vec<String>,
+) -> Option<ResolvedSpiceModel> {
+    let source_key = sim_library_source_key(source);
+
+    if visited.contains(&source_key) {
+        return None;
+    }
+
+    visited.push(source_key);
+
+    let content =
+        load_sim_library_content_by_source_from_embedded_files(embedded_files, symbol, source)?;
+
+    if let Some(model) = resolve_spice_model(&content.text, wanted_name) {
+        return Some(model);
+    }
+
+    for include in collect_spice_include_paths(&content.text) {
+        let Some(include_source) = resolve_relative_sim_library_source_from_embedded_files(
+            schematic_path,
+            embedded_files,
+            symbol,
+            source,
+            &include,
+        ) else {
+            continue;
+        };
+
+        if let Some(model) = resolve_spice_model_from_source(
+            schematic_path,
+            embedded_files,
+            symbol,
+            &include_source,
+            wanted_name,
+            visited,
+        ) {
+            return Some(model);
+        }
     }
 
     None

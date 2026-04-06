@@ -38,6 +38,14 @@ fn temp_schematic(name: &str, src: &str) -> PathBuf {
     path
 }
 
+fn temp_dir_path(name: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    env::temp_dir().join(format!("{name}_{nanos}"))
+}
+
 #[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
@@ -6070,6 +6078,68 @@ fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
 }
 
 #[test]
+fn resolves_symbol_sim_model_from_embedded_spice_include_chain() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000321")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models/top.kicad_sim")
+      (type model)
+      (data |.include "child.lib"|))
+    (file
+      (name "models/child.lib")
+      (type model)
+      (data |.subckt MODEL IN OUT
+.ends MODEL|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models/top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_embedded_spice_include_chain", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "models/top.kicad_sim".to_string(),
+                },
+                kind: SimLibraryKind::Spice,
+            },
+            name: "MODEL".to_string(),
+            model_type: None,
+            diff_pin: None,
+            pins: vec!["IN".to_string(), "OUT".to_string()],
+            params: Vec::new(),
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn resolves_symbol_sim_model_from_embedded_ibis_component() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -6263,6 +6333,66 @@ fn load_tree_hydrates_resolved_spice_model_pins_on_symbol() {
     );
 
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_hydrates_resolved_spice_model_from_filesystem_include_chain() {
+    let dir = temp_dir_path("loader_spice_include_chain");
+    fs::create_dir_all(dir.join("models")).expect("create models dir");
+    fs::write(dir.join("models/top.kicad_sim"), ".include child.lib\n").expect("write top sim lib");
+    fs::write(dir.join("models/child.lib"), ".model MODEL NPN (BF=100)\n")
+        .expect("write child sim lib");
+
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000322")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models/top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = dir.join("include_chain.kicad_sch");
+    fs::write(&path, src).expect("write schematic");
+    let loaded = load_schematic_tree(&path).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
+        Some("NPN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_param_pairs.clone()),
+        Some(vec![("BF".to_string(), Some("100".to_string()))])
+    );
+
+    let _ = fs::remove_file(dir.join("models/top.kicad_sim"));
+    let _ = fs::remove_file(dir.join("models/child.lib"));
+    let _ = fs::remove_file(&path);
+    let _ = fs::remove_dir_all(dir);
 }
 
 #[test]
