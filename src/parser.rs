@@ -2616,13 +2616,16 @@ impl KiCadSchematicParser {
                             let pos = self.parse_xy2("text at")?;
                             let angle =
                                 Self::normalize_text_angle(self.parse_f64_atom("text angle")?);
-                            text.at = [pos[0], pos[1], angle];
+                            text.at = [pos[0], pos[1], 0.0];
+                            text.at[2] = angle;
                         }
                         ParsedSchText::Label(label) => {
                             let pos = self.parse_xy2("text at")?;
                             let angle =
                                 Self::normalize_text_angle(self.parse_f64_atom("text angle")?);
-                            label.set_position(pos, angle, Self::get_label_spin_style(angle));
+                            label.set_position(pos);
+                            label.set_angle(angle);
+                            label.set_spin(Self::get_label_spin_style(angle));
                         }
                     }
                     self.need_right()?;
@@ -3612,7 +3615,8 @@ impl KiCadSchematicParser {
                     let angle = self.parse_f64_atom("symbol orientation")?;
                     match angle as i32 {
                         0 | 90 | 180 | 270 => {
-                            symbol.set_position(pos, angle);
+                            symbol.set_position(pos);
+                            symbol.set_angle(angle);
                         }
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }

@@ -560,11 +560,9 @@ impl Label {
         })
     }
 
-    pub fn set_position(&mut self, at: [f64; 2], angle: f64, spin: LabelSpin) {
+    pub fn set_position(&mut self, at: [f64; 2]) {
         let delta = [at[0] - self.at[0], at[1] - self.at[1]];
         self.at = at;
-        self.angle = angle;
-        self.spin = spin;
 
         for property in &mut self.properties {
             if let Some(property_at) = property.at.as_mut() {
@@ -572,6 +570,14 @@ impl Label {
                 property_at[1] += delta[1];
             }
         }
+    }
+
+    pub fn set_angle(&mut self, angle: f64) {
+        self.angle = angle;
+    }
+
+    pub fn set_spin(&mut self, spin: LabelSpin) {
+        self.spin = spin;
     }
 }
 
@@ -1044,10 +1050,9 @@ impl Symbol {
         }
     }
 
-    pub fn set_position(&mut self, at: [f64; 2], angle: f64) {
+    pub fn set_position(&mut self, at: [f64; 2]) {
         let delta = [at[0] - self.at[0], at[1] - self.at[1]];
         self.at = at;
-        self.angle = angle;
 
         for property in &mut self.properties {
             if let Some(property_at) = property.at.as_mut() {
@@ -1055,6 +1060,10 @@ impl Symbol {
                 property_at[1] += delta[1];
             }
         }
+    }
+
+    pub fn set_angle(&mut self, angle: f64) {
+        self.angle = angle;
     }
 
     pub fn update_prefix_from_reference(&mut self) {
@@ -1173,10 +1182,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LibDrawItem,
-        LibSymbol, LibSymbolUnit, Line, LineKind, NoConnect, Property, PropertyKind, Shape,
-        ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, StrokeStyle,
-        Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextKind,
+        BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LabelSpin,
+        LibDrawItem, LibSymbol, LibSymbolUnit, Line, LineKind, NoConnect, Property, PropertyKind,
+        Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide,
+        StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox,
+        TextKind,
     };
 
     fn push_lib_draw_item(symbol: &mut LibSymbol, item: LibDrawItem) {
@@ -1641,6 +1651,25 @@ mod tests {
     }
 
     #[test]
+    fn moving_label_moves_attached_properties_without_changing_orientation() {
+        let mut label = Label::new(LabelKind::Global, "G".to_string());
+        label.properties[0].at = Some([1.0, 2.0]);
+        label.set_position([10.0, 20.0]);
+
+        assert_eq!(label.at, [10.0, 20.0]);
+        assert_eq!(label.angle, 0.0);
+        assert_eq!(label.spin, LabelSpin::Right);
+        assert_eq!(label.properties[0].at, Some([11.0, 22.0]));
+
+        label.set_angle(180.0);
+        label.set_spin(LabelSpin::Left);
+
+        assert_eq!(label.angle, 180.0);
+        assert_eq!(label.spin, LabelSpin::Left);
+        assert_eq!(label.properties[0].at, Some([11.0, 22.0]));
+    }
+
+    #[test]
     fn sheet_pins_start_with_default_geometry() {
         let pin = SheetPin::new("IN".to_string(), &Sheet::new());
 
@@ -1657,6 +1686,26 @@ mod tests {
         assert_eq!(pin.number, "1");
         assert_eq!(pin.alternate, None);
         assert_eq!(pin.uuid, None);
+    }
+
+    #[test]
+    fn moving_symbol_moves_attached_properties_without_changing_angle() {
+        let mut symbol = Symbol::new();
+        let reference_index = symbol
+            .properties
+            .iter()
+            .position(|property| property.kind == PropertyKind::SymbolReference)
+            .expect("reference field");
+        symbol.properties[reference_index].at = Some([3.0, 4.0]);
+
+        symbol.set_position([10.0, 20.0]);
+        assert_eq!(symbol.at, [10.0, 20.0]);
+        assert_eq!(symbol.angle, 0.0);
+        assert_eq!(symbol.properties[reference_index].at, Some([13.0, 24.0]));
+
+        symbol.set_angle(270.0);
+        assert_eq!(symbol.angle, 270.0);
+        assert_eq!(symbol.properties[reference_index].at, Some([13.0, 24.0]));
     }
 
     #[test]
