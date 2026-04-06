@@ -2616,8 +2616,8 @@ impl KiCadSchematicParser {
                             let pos = self.parse_xy2("text at")?;
                             let angle =
                                 Self::normalize_text_angle(self.parse_f64_atom("text angle")?);
-                            text.at = [pos[0], pos[1], 0.0];
-                            text.at[2] = angle;
+                            text.set_position(pos);
+                            text.set_angle(angle);
                         }
                         ParsedSchText::Label(label) => {
                             let pos = self.parse_xy2("text at")?;

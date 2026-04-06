@@ -637,6 +637,15 @@ impl Text {
             uuid: None,
         }
     }
+
+    pub fn set_position(&mut self, at: [f64; 2]) {
+        self.at[0] = at[0];
+        self.at[1] = at[1];
+    }
+
+    pub fn set_angle(&mut self, angle: f64) {
+        self.at[2] = angle;
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1648,6 +1657,17 @@ mod tests {
 
         assert_eq!(text.at, [0.0, 0.0, 0.0]);
         assert!(text.visible);
+    }
+
+    #[test]
+    fn moving_schematic_text_keeps_angle_separate_from_position() {
+        let mut text = Text::new(TextKind::Text, "note".to_string());
+
+        text.set_position([10.0, 20.0]);
+        assert_eq!(text.at, [10.0, 20.0, 0.0]);
+
+        text.set_angle(90.0);
+        assert_eq!(text.at, [10.0, 20.0, 90.0]);
     }
 
     #[test]
