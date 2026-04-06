@@ -5525,6 +5525,96 @@ fn load_tree_migrates_mid_v7_sim_field_names() {
             .map(|property| property.value.as_str()),
         Some("1=- 2=+")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("R")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("R")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("r=10k")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000909")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Sim.Device" "V")
+    (property "Sim.Type" "PULSE")
+    (property "Sim.Params" "y1=0 y2=2 td=1n")
+    (property "Sim.Pins" "1=1 2=2")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_structured_sim_model", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(!schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("y1=0 y2=2 td=1n")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }
