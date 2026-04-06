@@ -3186,7 +3186,7 @@ fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000001")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3206,7 +3206,7 @@ fn lib_symbol_text_uses_decidegree_angles_like_upstream() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000002")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3226,7 +3226,7 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
     let legacy_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000003")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3250,7 +3250,7 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
     let bad_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000004")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3272,7 +3272,7 @@ fn rejects_invalid_lib_pin_orientation() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000005")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3290,7 +3290,7 @@ fn rejects_invalid_lib_symbol_unit_name_suffix() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000006")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3310,7 +3310,7 @@ fn rejects_lib_symbol_unit_name_without_separator_as_bad_suffix() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000007")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -3330,7 +3330,7 @@ fn rejects_invalid_lib_symbol_body_style_number() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "75000000-0000-0000-0000-000000000008")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
