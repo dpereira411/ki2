@@ -1296,6 +1296,8 @@ impl Sheet {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::{
         BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LibDrawItem,
         LibSymbol, Line, LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet,
@@ -1381,7 +1383,13 @@ mod tests {
     #[test]
     fn hierarchical_references_do_not_seed_live_symbol_state_from_first_instance() {
         let mut symbol = Symbol::new();
-        let mut instance = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
+        let mut instance = SymbolLocalInstance {
+            project: "demo".to_string(),
+            path: "/A".to_string(),
+            reference: None,
+            unit: Some(1),
+            variants: BTreeMap::new(),
+        };
         instance.reference = Some("R7".to_string());
         instance.unit = Some(2);
 
@@ -1401,9 +1409,21 @@ mod tests {
     #[test]
     fn hierarchical_references_overwrite_by_path() {
         let mut symbol = Symbol::new();
-        let mut first = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
+        let mut first = SymbolLocalInstance {
+            project: "demo".to_string(),
+            path: "/A".to_string(),
+            reference: None,
+            unit: Some(1),
+            variants: BTreeMap::new(),
+        };
         first.reference = Some("R1".to_string());
-        let mut second = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
+        let mut second = SymbolLocalInstance {
+            project: "demo".to_string(),
+            path: "/A".to_string(),
+            reference: None,
+            unit: Some(1),
+            variants: BTreeMap::new(),
+        };
         second.reference = Some("R2".to_string());
         second.unit = Some(3);
 
@@ -1471,9 +1491,19 @@ mod tests {
     #[test]
     fn sheet_instance_lists_preserve_duplicates() {
         let mut sheet = Sheet::new();
-        let mut first = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
+        let mut first = SheetLocalInstance {
+            project: "demo".to_string(),
+            path: "/A".to_string(),
+            page: None,
+            variants: BTreeMap::new(),
+        };
         first.page = Some("2".to_string());
-        let mut second = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
+        let mut second = SheetLocalInstance {
+            project: "demo".to_string(),
+            path: "/A".to_string(),
+            page: None,
+            variants: BTreeMap::new(),
+        };
         second.page = Some("3".to_string());
 
         sheet.instances = vec![first, second];
@@ -2225,12 +2255,6 @@ pub struct SheetInstance {
     pub page: Option<String>,
 }
 
-impl SheetInstance {
-    pub fn new(path: String) -> Self {
-        Self { path, page: None }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SymbolInstance {
     pub path: String,
@@ -2238,18 +2262,6 @@ pub struct SymbolInstance {
     pub unit: Option<i32>,
     pub value: Option<String>,
     pub footprint: Option<String>,
-}
-
-impl SymbolInstance {
-    pub fn new(path: String) -> Self {
-        Self {
-            path,
-            reference: None,
-            unit: None,
-            value: None,
-            footprint: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2263,43 +2275,12 @@ pub struct ItemVariant {
     pub fields: BTreeMap<String, String>,
 }
 
-impl ItemVariant {
-    pub fn new(
-        dnp: bool,
-        excluded_from_sim: bool,
-        in_bom: bool,
-        on_board: bool,
-        in_pos_files: bool,
-    ) -> Self {
-        Self {
-            name: String::new(),
-            dnp,
-            excluded_from_sim,
-            in_bom,
-            on_board,
-            in_pos_files,
-            fields: BTreeMap::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SheetLocalInstance {
     pub project: String,
     pub path: String,
     pub page: Option<String>,
     pub variants: BTreeMap<String, ItemVariant>,
-}
-
-impl SheetLocalInstance {
-    pub fn new(project: String, path: String) -> Self {
-        Self {
-            project,
-            path,
-            page: None,
-            variants: BTreeMap::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2311,31 +2292,10 @@ pub struct SymbolLocalInstance {
     pub variants: BTreeMap<String, ItemVariant>,
 }
 
-impl SymbolLocalInstance {
-    pub fn new(project: String, path: String) -> Self {
-        Self {
-            project,
-            path,
-            reference: None,
-            unit: Some(1),
-            variants: BTreeMap::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct BusAlias {
     pub name: String,
     pub members: Vec<String>,
-}
-
-impl BusAlias {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            members: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2344,17 +2304,6 @@ pub struct EmbeddedFile {
     pub checksum: Option<String>,
     pub file_type: Option<EmbeddedFileType>,
     pub data: Option<String>,
-}
-
-impl EmbeddedFile {
-    pub fn new() -> Self {
-        Self {
-            name: None,
-            checksum: None,
-            file_type: None,
-            data: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
@@ -1170,9 +1170,12 @@ impl KiCadSchematicParser {
                     "name" => {
                         let _ = self.need_unquoted_symbol_atom("name")?;
                         let name = self.need_symbol_or_number_atom("name")?;
-                        let mut new_file = EmbeddedFile::new();
-                        new_file.name = Some(name);
-                        file = Some(new_file);
+                        file = Some(EmbeddedFile {
+                            name: Some(name),
+                            checksum: None,
+                            file_type: None,
+                            data: None,
+                        });
                     }
                     "checksum" => {
                         let _ = self.need_unquoted_symbol_atom("checksum")?;
@@ -2215,7 +2218,10 @@ impl KiCadSchematicParser {
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("bus_alias")?;
-        let mut alias = BusAlias::new(self.need_symbol_atom("symbol")?);
+        let mut alias = BusAlias {
+            name: self.need_symbol_atom("symbol")?,
+            members: Vec::new(),
+        };
         let version = self.require_known_version()?;
         if version < VERSION_NEW_OVERBAR_NOTATION {
             alias.name = self.convert_old_overbar_notation(alias.name);
@@ -3652,7 +3658,13 @@ impl KiCadSchematicParser {
                             }
                             let _ = self.need_unquoted_symbol_atom("path")?;
                             let path = self.need_symbol_atom("symbol")?;
-                            let mut instance = SymbolLocalInstance::new(project.clone(), path);
+                            let mut instance = SymbolLocalInstance {
+                                project: project.clone(),
+                                path,
+                                reference: None,
+                                unit: Some(1),
+                                variants: BTreeMap::new(),
+                            };
                             while !self.at_right() {
                                 self.need_left()?;
                                 let child = match &self.current().kind {
@@ -3744,13 +3756,15 @@ impl KiCadSchematicParser {
                                     }
                                     "variant" => {
                                         let _ = self.need_unquoted_symbol_atom("variant")?;
-                                        let mut variant = ItemVariant::new(
-                                            symbol.dnp,
-                                            symbol.excluded_from_sim,
-                                            symbol.in_bom,
-                                            symbol.on_board,
-                                            symbol.in_pos_files,
-                                        );
+                                        let mut variant = ItemVariant {
+                                            name: String::new(),
+                                            dnp: symbol.dnp,
+                                            excluded_from_sim: symbol.excluded_from_sim,
+                                            in_bom: symbol.in_bom,
+                                            on_board: symbol.on_board,
+                                            in_pos_files: symbol.in_pos_files,
+                                            fields: BTreeMap::new(),
+                                        };
 
                                         while !self.at_right() {
                                             self.need_left()?;
@@ -4128,7 +4142,12 @@ impl KiCadSchematicParser {
                             }
                             let _ = self.need_unquoted_symbol_atom("path")?;
                             let path = self.need_symbol_atom("symbol")?;
-                            let mut instance = SheetLocalInstance::new(project.clone(), path);
+                            let mut instance = SheetLocalInstance {
+                                project: project.clone(),
+                                path,
+                                page: None,
+                                variants: BTreeMap::new(),
+                            };
                             while !self.at_right() {
                                 self.need_left()?;
                                 let child = match &self.current().kind {
@@ -4160,13 +4179,15 @@ impl KiCadSchematicParser {
                                     }
                                     "variant" => {
                                         let _ = self.need_unquoted_symbol_atom("variant")?;
-                                        let mut variant = ItemVariant::new(
-                                            sheet.dnp,
-                                            sheet.excluded_from_sim,
-                                            sheet.in_bom,
-                                            sheet.on_board,
-                                            false,
-                                        );
+                                        let mut variant = ItemVariant {
+                                            name: String::new(),
+                                            dnp: sheet.dnp,
+                                            excluded_from_sim: sheet.excluded_from_sim,
+                                            in_bom: sheet.in_bom,
+                                            on_board: sheet.on_board,
+                                            in_pos_files: false,
+                                            fields: BTreeMap::new(),
+                                        };
 
                                         while !self.at_right() {
                                             self.need_left()?;
@@ -4441,7 +4462,10 @@ impl KiCadSchematicParser {
             }
             let _ = self.need_unquoted_symbol_atom("path")?;
             let raw_path = self.need_symbol_atom("symbol")?;
-            let mut instance = SheetInstance::new(raw_path);
+            let mut instance = SheetInstance {
+                path: raw_path,
+                page: None,
+            };
 
             if self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH {
                 if let Some(root_uuid) = self.root_uuid.as_ref() {
@@ -4543,7 +4567,13 @@ impl KiCadSchematicParser {
             } else {
                 raw_path
             };
-            let mut instance = SymbolInstance::new(path);
+            let mut instance = SymbolInstance {
+                path,
+                reference: None,
+                unit: None,
+                value: None,
+                footprint: None,
+            };
             while !self.at_right() {
                 self.need_left()?;
                 let child = match &self.current().kind {

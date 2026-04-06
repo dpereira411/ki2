@@ -334,10 +334,13 @@ impl SchematicLoader {
                     }
                 }
 
-                let mut local_instance = crate::model::SymbolLocalInstance::new(
-                    String::new(),
-                    sheet_path.instance_path.clone(),
-                );
+                let mut local_instance = crate::model::SymbolLocalInstance {
+                    project: String::new(),
+                    path: sheet_path.instance_path.clone(),
+                    reference: None,
+                    unit: Some(1),
+                    variants: std::collections::BTreeMap::new(),
+                };
                 local_instance.reference = instance.reference.clone();
                 local_instance.unit = instance.unit;
                 symbol.add_hierarchical_reference(local_instance);
