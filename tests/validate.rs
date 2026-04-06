@@ -5864,6 +5864,20 @@ fn load_tree_migrates_model_only_legacy_spice_fields_to_raw_sim_model() {
             .map(|property| property.value.as_str()),
         Some("1k")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("1k")
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -5920,6 +5934,31 @@ fn load_tree_migrates_lib_only_legacy_spice_fields_to_raw_sim_model() {
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.as_str()),
         Some("type=\"\" model=\"\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("type=\"\" model=\"\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("lib".to_string(), "models.lib".to_string()),
+            ("model".to_string(), "".to_string()),
+            ("type".to_string(), "".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
@@ -6072,6 +6111,31 @@ fn load_tree_migrates_primitive_and_lib_legacy_spice_fields_to_raw_sim_model() {
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.as_str()),
         Some("type=\"Q\" model=\"\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("type=\"Q\" model=\"\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("lib".to_string(), "models.lib".to_string()),
+            ("model".to_string(), "".to_string()),
+            ("type".to_string(), "Q".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
@@ -6303,6 +6367,42 @@ fn load_tree_migrates_legacy_spice_lib_fields_to_raw_sim_model() {
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("1=1 2=2 3=3")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("type=\"Q\" model=\"BC\\\"547\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("lib".to_string(), "models.lib".to_string()),
+            ("model".to_string(), "BC\"547".to_string()),
+            ("type".to_string(), "Q".to_string()),
+        ]))
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+            ("3".to_string(), "3".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
