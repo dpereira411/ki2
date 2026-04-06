@@ -5148,10 +5148,13 @@ impl KiCadSchematicParser {
         // Check for a URI scheme: at least one alpha char followed by ':'
         if let Some(colon_pos) = href.find(':') {
             let scheme = &href[..colon_pos];
-            return !scheme.is_empty()
-                && scheme
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'-' || b == b'.');
+            let mut bytes = scheme.bytes();
+            let Some(first) = bytes.next() else {
+                return false;
+            };
+
+            return first.is_ascii_alphabetic()
+                && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'-' || b == b'.');
         }
 
         false

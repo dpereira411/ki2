@@ -6937,6 +6937,21 @@ fn rejects_invalid_effects_hyperlink() {
 }
 
 #[test]
+fn rejects_digit_started_effects_hyperlink_scheme() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bad-effects-digit-scheme")
+  (text "note" (at 1 2 0) (effects (href "1ttp://example.com")))
+)"#;
+    let path = temp_schematic("bad_effects_digit_scheme_href", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject digit-started hyperlink scheme");
+    assert!(err.to_string().contains("invalid hyperlink url"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn converts_legacy_overbar_text_and_labels() {
     let src = r#"(kicad_sch
   (version 20210605)
