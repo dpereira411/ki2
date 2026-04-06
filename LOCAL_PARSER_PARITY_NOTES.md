@@ -207,7 +207,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   2. the explicit legacy `Spice_*` raw-SPICE fallback branch that removes `Spice_Primitive` / `Spice_Model` / `Spice_Node_Sequence` / `Spice_Lib_File` fields and synthesizes `Sim.Device=SPICE`, `Sim.Params`, and `Sim.Pins`
   3. the inferred legacy passive/source branch where `Spice_Primitive` matches the symbol prefix and the existing `Value` field remains the model source, while legacy `Spice_Node_Sequence` is still migrated into `Sim.Pins`
   4. the explicit legacy `V` / `I` DC-source branch where `Spice_Model` like `dc(1)` becomes `Sim.Device`, `Sim.Type=DC`, migrated `Sim.Pins`, and an updated `Value` field
-  5. the explicit legacy `V` / `I` built-in source branches where `Spice_Model` like `sin(...)`, `pulse(...)`, `exp(...)`, `am(...)`, and `sffm(...)` becomes `Sim.Device`, `Sim.Type`, named `Sim.Params`, and migrated/defaulted `Sim.Pins`
+  5. the explicit legacy `V` / `I` built-in source branches where `Spice_Model` like `sin(...)`, `pulse(...)`, `exp(...)`, `am(...)`, `sffm(...)`, and `pwl(...)` becomes `Sim.Device`, `Sim.Type`, named `Sim.Params`, and migrated/defaulted `Sim.Pins`
   6. raw `Spice_Lib_File` fallback now has explicit coverage for escaped-model parameter formatting and default `Sim.Pins` synthesis from lib pins when `Spice_Node_Sequence` is absent
   7. legacy `Spice_Node_Sequence` and `dc(...)` parsing now accept full decoded whitespace, not only plain spaces
   8. raw `Spice_*` fallback parameter formatting is now locked across rich, model-only, and lib-only inputs instead of only the fully populated branch

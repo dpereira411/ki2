@@ -6799,6 +6799,84 @@ fn load_tree_migrates_legacy_pulse_source_fields() {
 }
 
 #[test]
+fn load_tree_migrates_legacy_pwl_source_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090a")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "V")
+    (property "Spice_Model" "pwl(0 0 1n 5)")
+    (property "Spice_Node_Sequence" "1 2")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_legacy_pwl_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("PWL")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some(r#"pwl="0 0 1n 5""#)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.param_values.get("pwl"))
+            .map(|value| value.as_str()),
+        Some("0 0 1n 5")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=1 2=2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_defaults_source_pin_map_for_legacy_source_models() {
     let src = r#"(kicad_sch
   (version 20260306)

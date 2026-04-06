@@ -822,7 +822,7 @@ impl SchematicLoader {
                         sim_params_field.value = source_model
                             .params
                             .iter()
-                            .map(|(name, value)| format!("{name}={value}"))
+                            .map(|(name, value)| format_sim_param_pair(name, value))
                             .collect::<Vec<_>>()
                             .join(" ");
 
@@ -1399,6 +1399,18 @@ struct LegacySourceModel {
     params: Vec<(&'static str, String)>,
 }
 
+fn format_sim_param_pair(name: &str, value: &str) -> String {
+    if value
+        .chars()
+        .any(|ch| ch.is_whitespace() || matches!(ch, '"' | '\\'))
+    {
+        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        format!(r#"{name}="{escaped}""#)
+    } else {
+        format!("{name}={value}")
+    }
+}
+
 fn parse_legacy_dc_model_value(model: &str) -> Option<String> {
     let tokens = model
         .split(|ch: char| matches!(ch, '(' | ')') || ch.is_whitespace())
@@ -1421,6 +1433,14 @@ fn parse_legacy_source_model(model: &str) -> Option<LegacySourceModel> {
     }
 
     let kind = model[..open].trim();
+
+    if kind.eq_ignore_ascii_case("pwl") {
+        return Some(LegacySourceModel {
+            kind: "PWL",
+            params: vec![("pwl", model[open + 1..close].trim().to_string())],
+        });
+    }
+
     let args = model[open + 1..close]
         .split(|ch: char| matches!(ch, ' ' | '\t' | '\n' | '\r' | ','))
         .filter(|token| !token.is_empty())
