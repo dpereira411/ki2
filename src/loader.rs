@@ -71,6 +71,17 @@ impl LoadResult {
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_path(instance_path).is_some() {
             self.current_sheet_instance_path = instance_path.to_string();
+            if let Some(schematic) = self
+                .current_sheet_path()
+                .map(|sheet_path| sheet_path.schematic_path.clone())
+                .and_then(|schematic_path| {
+                    self.schematics
+                        .iter_mut()
+                        .find(|schematic| schematic.path == schematic_path)
+                })
+            {
+                apply_symbol_instance_state(schematic, instance_path);
+            }
             true
         } else {
             false
@@ -821,6 +832,39 @@ impl SchematicLoader {
                     intersheet_refs.at = Some(label.at);
                 }
             }
+        }
+    }
+}
+
+fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
+    for item in &mut schematic.screen.items {
+        let SchItem::Symbol(symbol) = item else {
+            continue;
+        };
+
+        let Some(instance) = symbol
+            .instances
+            .iter()
+            .find(|instance| instance.path == instance_path)
+            .cloned()
+        else {
+            continue;
+        };
+
+        if let Some(reference) = instance.reference {
+            symbol.set_field_text(PropertyKind::SymbolReference, reference);
+        }
+
+        if let Some(unit) = instance.unit {
+            symbol.unit = Some(unit);
+        }
+
+        if let Some(value) = instance.value {
+            symbol.set_field_text(PropertyKind::SymbolValue, value);
+        }
+
+        if let Some(footprint) = instance.footprint {
+            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
         }
     }
 }

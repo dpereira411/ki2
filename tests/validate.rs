@@ -388,10 +388,28 @@ fn validates_hierarchical_tree_fixture() {
 #[test]
 fn reuses_previously_loaded_child_schematic() {
     let child_src = r#"(kicad_sch
-  (version 20231120)
+  (version 20260306)
   (generator "eeschema")
   (uuid "child-u")
   (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "sym-u")
+    (property "Reference" "R?" (at 1 2 0))
+    (property "Value" "seed" (at 3 4 0))
+    (property "Footprint" "seed-footprint" (at 5 6 0))
+    (instances
+      (project "demo"
+        (path "/root-u/sheet-a"
+          (reference "R1")
+          (unit 1)
+          (value "10k")
+          (footprint "Resistor_SMD:R_0603"))
+        (path "/root-u/sheet-b"
+          (reference "R2")
+          (unit 2)
+          (value "22k")
+          (footprint "Resistor_SMD:R_0402")))))
 )"#;
     let root_src = r#"(kicad_sch
   (version 20231120)
@@ -488,6 +506,42 @@ fn reuses_previously_loaded_child_schematic() {
             .path,
         child_path.canonicalize().unwrap_or(child_path.clone())
     );
+    let loaded_symbol = loaded
+        .current_schematic()
+        .expect("updated current load-result schematic")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("updated child symbol");
+    assert_eq!(
+        loaded_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R2")
+    );
+    assert_eq!(loaded_symbol.unit, Some(2));
+    assert_eq!(
+        loaded_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("22k")
+    );
+    assert_eq!(
+        loaded_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0402")
+    );
     assert!(!loaded.set_current_sheet_path("/missing"));
     assert_eq!(
         loaded
@@ -544,9 +598,47 @@ fn reuses_previously_loaded_child_schematic() {
             .instance_path,
         ""
     );
-    assert_eq!(project.current_page_number(), Some("2"));
+    let mut project = project;
+    assert!(project.set_current_sheet_path("/root-u/sheet-a"));
+    assert_eq!(project.current_page_number(), Some("1"));
     assert_eq!(project.current_page_count(), Some(3));
-    assert_eq!(project.current_virtual_page_number(), Some(2));
+    assert_eq!(project.current_virtual_page_number(), Some(1));
+    let project_symbol = project
+        .current_schematic()
+        .expect("project current child schematic")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("project child symbol");
+    assert_eq!(
+        project_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(project_symbol.unit, Some(1));
+    assert_eq!(
+        project_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        project_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);

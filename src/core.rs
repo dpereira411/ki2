@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::loader::{HierarchyLink, LoadResult, LoadedSheetPath};
-use crate::model::Schematic;
+use crate::model::{PropertyKind, SchItem, Schematic};
 
 #[derive(Debug)]
 pub struct SchematicProject {
@@ -76,6 +76,13 @@ impl SchematicProject {
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_paths_by_instance.contains_key(instance_path) {
             self.current_sheet_instance_path = instance_path.to_string();
+            if let Some(schematic) = self
+                .current_sheet_path()
+                .and_then(|sheet_path| self.by_path.get(&sheet_path.schematic_path).copied())
+                .and_then(|index| self.schematics.get_mut(index))
+            {
+                apply_symbol_instance_state(schematic, instance_path);
+            }
             true
         } else {
             false
@@ -170,5 +177,38 @@ impl SchematicProject {
                     .is_some_and(|parent| parent.instance_path == instance_path)
             })
             .collect()
+    }
+}
+
+fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
+    for item in &mut schematic.screen.items {
+        let SchItem::Symbol(symbol) = item else {
+            continue;
+        };
+
+        let Some(instance) = symbol
+            .instances
+            .iter()
+            .find(|instance| instance.path == instance_path)
+            .cloned()
+        else {
+            continue;
+        };
+
+        if let Some(reference) = instance.reference {
+            symbol.set_field_text(PropertyKind::SymbolReference, reference);
+        }
+
+        if let Some(unit) = instance.unit {
+            symbol.unit = Some(unit);
+        }
+
+        if let Some(value) = instance.value {
+            symbol.set_field_text(PropertyKind::SymbolValue, value);
+        }
+
+        if let Some(footprint) = instance.footprint {
+            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+        }
     }
 }
