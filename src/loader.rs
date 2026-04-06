@@ -1827,7 +1827,7 @@ fn maybe_default_current_sim_pins(
         return false;
     }
 
-    let should_default = matches!(
+    let should_default_inferred = matches!(
         (
             sim_model.device.as_deref().map(str::trim),
             sim_model.model_type.as_deref().map(str::trim),
@@ -1838,13 +1838,40 @@ fn maybe_default_current_sim_pins(
         ) | (Some("V") | Some("I"), None | Some("") | Some("DC"))
     );
 
-    if !should_default {
+    if should_default_inferred {
+        sim_model.pin_pairs = vec![
+            (source_pins[0].clone(), "+".to_string()),
+            (source_pins[1].clone(), "-".to_string()),
+        ];
+        sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
+        return true;
+    }
+
+    let should_default_internal_source = matches!(
+        (
+            sim_model.device.as_deref().map(str::trim),
+            sim_model.model_type.as_deref().map(str::trim),
+        ),
+        (
+            Some("V") | Some("I"),
+            Some("SIN")
+                | Some("PULSE")
+                | Some("EXP")
+                | Some("AM")
+                | Some("SFFM")
+                | Some("PWL")
+                | Some("TRNOISE")
+                | Some("TRRANDOM")
+        )
+    );
+
+    if !should_default_internal_source {
         return false;
     }
 
     sim_model.pin_pairs = vec![
-        (source_pins[0].clone(), "+".to_string()),
-        (source_pins[1].clone(), "-".to_string()),
+        (source_pins[0].clone(), "1".to_string()),
+        (source_pins[1].clone(), "2".to_string()),
     ];
     sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
     true
