@@ -3470,7 +3470,7 @@ impl KiCadSchematicParser {
                 }
                 "mirror" => {
                     let _ = self.need_unquoted_symbol_atom("mirror")?;
-                    let axis = self.need_unquoted_symbol_atom("mirror axis")?;
+                    let axis = self.need_unquoted_symbol_atom("x or y")?;
                     symbol.mirror = Some(match axis.as_str() {
                         "x" => MirrorAxis::X,
                         "y" => MirrorAxis::Y,

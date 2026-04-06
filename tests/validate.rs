@@ -5546,7 +5546,7 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_mirror_path = temp_schematic("quoted_symbol_mirror", quoted_mirror);
     let err = parse_schematic_file(Path::new(&quoted_mirror_path))
         .expect_err("must reject quoted mirror axis");
-    assert!(err.to_string().contains("expecting mirror axis"));
+    assert!(err.to_string().contains("expecting x or y"));
 
     let quoted_lib_pin_type = r#"(kicad_sch
   (version 20260306)
@@ -8721,7 +8721,7 @@ fn rejects_invalid_symbol_mirror_axis_token() {
     let path = temp_schematic("bad_symbol_mirror_axis", src);
     let err =
         parse_schematic_file(Path::new(&path)).expect_err("must reject bad mirror axis token");
-    assert!(err.to_string().contains("expecting mirror axis"));
+    assert!(err.to_string().contains("expecting x or y"));
     let _ = fs::remove_file(path);
 }
 
