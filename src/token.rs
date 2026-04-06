@@ -258,12 +258,14 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "embedded_fonts"
             | "embedded_files"
             | "file"
+            | "host"
             | "name"
             | "checksum"
             | "type"
             | "data"
             | "datasheet"
             | "font"
+            | "face"
             | "model"
             | "worksheet"
             | "other"
@@ -281,6 +283,7 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "end"
             | "center"
             | "radius"
+            | "diameter"
             | "at"
             | "length"
             | "angles"
@@ -302,6 +305,9 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "bottom"
             | "mirror"
             | "href"
+            | "dot"
+            | "round"
+            | "diamond"
             | "input"
             | "output"
             | "bidirectional"
@@ -362,6 +368,7 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "border"
             | "external"
             | "header"
+            | "margins"
             | "separators"
             | "rows"
             | "cols"
@@ -785,6 +792,32 @@ mod tests {
                 ("plain".to_string(), Some(AtomClass::Symbol), false),
                 ("1".to_string(), Some(AtomClass::Number), false),
                 ("hide".to_string(), Some(AtomClass::Quoted), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_marks_parser_only_reserved_heads_as_keywords() {
+        let tokens = lex("(items host margins face diameter dot round diamond)").expect("lex");
+        let atoms: Vec<(String, bool)> = tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokKind::Atom(value) => Some((value, token.is_keyword)),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            atoms,
+            vec![
+                ("items".to_string(), false),
+                ("host".to_string(), true),
+                ("margins".to_string(), true),
+                ("face".to_string(), true),
+                ("diameter".to_string(), true),
+                ("dot".to_string(), true),
+                ("round".to_string(), true),
+                ("diamond".to_string(), true),
             ]
         );
     }
