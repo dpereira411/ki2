@@ -210,10 +210,10 @@ not drive the queue unless a parent parser routine exposes them.
 | `need_left` | `NeedLEFT` | `same` | stable low-level exactness | tests | none |
 | `need_right` | `NeedRIGHT` | `same` | stable low-level exactness | tests | none |
 | `need_symbol_atom` | `NeedSYMBOL` | `same` | quoted/symbol acceptance now matches KiCad expectations closely enough | direct audit + tests | none |
-| `need_unquoted_symbol_atom` | keyword-token path | `different` | parser-wide reserved-keyword exactness is still in progress | recent keyword work | finish token sweep |
+| `need_unquoted_symbol_atom` | keyword-token path | `same` | direct re-audit shows all real unquoted parser heads are now reserved and the helper’s keyword-only acceptance is structurally aligned with the remaining parser surfaces | direct audit against parser branch heads plus keyword-tag regressions | none |
 | `need_quoted_atom` | quoted-string helper | `not_applicable` | local support only | source inspection | none |
 | `need_symbol_or_number_atom` | `NeedSYMBOLorNUMBER` | `same` | quoted/symbol/number acceptance is stable enough | direct audit + tests | none |
-| `need_dsn_string_atom` | DSN string branch helper | `different` | depends on final keyword-tag exactness | recent keyword work | finish token sweep |
+| `need_dsn_string_atom` | DSN string branch helper | `same` | the only live parser use is `jumper_pin_groups`, and direct re-audit plus reserved-keyword regressions now cover the remaining leak paths there | direct source comparison plus jumper-pin-group keyword regressions | none |
 | `at_right` | local token helper | `not_applicable` | local parser support only | source inspection | none |
 | `at_unquoted_symbol_with` | local token helper | `not_applicable` | local parser support only | source inspection | none |
 | `current_nesting_depth` | local token helper | `not_applicable` | local parser support only | source inspection | none |
