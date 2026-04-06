@@ -41,9 +41,20 @@ impl LoadResult {
         &'a self,
         path: &'a Path,
     ) -> impl Iterator<Item = &'a HierarchyLink> + 'a {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         self.links
             .iter()
-            .filter(move |link| link.parent_path == path)
+            .filter(move |link| link.parent_path == canonical)
+    }
+
+    pub fn sheet_paths_of<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> impl Iterator<Item = &'a LoadedSheetPath> + 'a {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        self.sheet_paths
+            .iter()
+            .filter(move |sheet_path| sheet_path.schematic_path == canonical)
     }
 }
 

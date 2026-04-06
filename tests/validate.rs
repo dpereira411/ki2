@@ -420,6 +420,7 @@ fn reuses_previously_loaded_child_schematic() {
     assert_eq!(child.screen.page_number, None);
     assert_eq!(child.screen.page_count, None);
     assert_eq!(child.screen.virtual_page_number, None);
+    assert_eq!(loaded.sheet_paths_of(&child_path).count(), 2);
 
     let project = SchematicProject::from_load_result(loaded);
     assert_eq!(project.sheet_paths_of(&child_path).count(), 2);
