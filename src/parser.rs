@@ -4044,27 +4044,6 @@ impl KiCadSchematicParser {
                                 .retain(|existing| existing.path != instance.path);
 
                             symbol.instances.push(instance.clone());
-
-                            if symbol.instances.len() == 1 {
-                                if let Some(reference) = instance.reference.clone() {
-                                    let existing = symbol
-                                        .properties
-                                        .iter_mut()
-                                        .find(|property| {
-                                            property.kind == PropertyKind::SymbolReference
-                                        })
-                                        .expect("placed symbols start with mandatory fields");
-                                    existing.id = PropertyKind::SymbolReference
-                                        .default_field_id()
-                                        .or(existing.id);
-                                    existing.key =
-                                        PropertyKind::SymbolReference.canonical_key().to_string();
-                                    existing.value = reference;
-                                    symbol.update_prefix_from_reference();
-                                }
-
-                                symbol.unit = instance.unit;
-                            }
                         }
                         self.need_right()?;
                     }

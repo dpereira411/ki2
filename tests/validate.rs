@@ -8520,15 +8520,15 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolReference)
             .map(|property| property.value.as_str()),
-        Some("R2")
+        Some("")
     );
-    assert_eq!(symbol.unit, Some(3));
+    assert_eq!(symbol.unit, Some(1));
 
     let _ = fs::remove_file(path);
 }
 
 #[test]
-fn first_local_symbol_instance_seeds_live_reference_and_unit() {
+fn local_symbol_instances_do_not_seed_live_reference_and_unit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -8561,9 +8561,9 @@ fn first_local_symbol_instance_seeds_live_reference_and_unit() {
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolReference)
             .map(|property| property.value.as_str()),
-        Some("R7")
+        Some("")
     );
-    assert_eq!(symbol.unit, Some(2));
+    assert_eq!(symbol.unit, Some(1));
 
     let _ = fs::remove_file(path);
 }
