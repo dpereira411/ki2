@@ -678,6 +678,78 @@ impl SchematicLoader {
                         continue;
                     }
 
+                    let legacy_device = symbol
+                        .properties
+                        .iter()
+                        .find(|property| {
+                            property.kind.is_user_field() && property.key == "Spice_Primitive"
+                        })
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
+                    let legacy_model = symbol
+                        .properties
+                        .iter()
+                        .find(|property| {
+                            property.kind.is_user_field() && property.key == "Spice_Model"
+                        })
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
+                    let has_legacy_lib = symbol.properties.iter().any(|property| {
+                        property.kind.is_user_field() && property.key == "Spice_Lib_File"
+                    });
+
+                    if !has_legacy_lib
+                        && matches!(legacy_device.as_str(), "V" | "I")
+                        && parse_legacy_dc_model_value(&legacy_model).is_some()
+                    {
+                        let _primitive_field = take_symbol_user_field(symbol, "Spice_Primitive");
+                        let node_sequence_field =
+                            take_symbol_user_field(symbol, "Spice_Node_Sequence");
+                        let model_field = take_symbol_user_field(symbol, "Spice_Model");
+                        let _legacy_enable =
+                            take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
+                        let _lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+                        let source_pins = symbol_source_pin_numbers(symbol);
+                        let dc_value = parse_legacy_dc_model_value(
+                            model_field
+                                .as_ref()
+                                .map(|property| property.value.as_str())
+                                .unwrap_or(""),
+                        )
+                        .expect("checked above");
+
+                        symbol.set_field_text(PropertyKind::SymbolValue, dc_value);
+
+                        let device_template = model_field.clone().unwrap_or_else(|| {
+                            Property::new_named(PropertyKind::User, "", String::new(), false)
+                        });
+                        let mut sim_device_field = device_template.clone();
+                        sim_device_field.key = "Sim.Device".to_string();
+                        sim_device_field.value = legacy_device;
+                        let mut sim_type_field = device_template;
+                        sim_type_field.key = "Sim.Type".to_string();
+                        sim_type_field.value = "DC".to_string();
+                        symbol.properties.push(sim_device_field);
+                        symbol.properties.push(sim_type_field);
+
+                        if let Some(mut pin_map_field) =
+                            node_sequence_field.map(legacy_spice_pin_map_field)
+                        {
+                            pin_map_field.key = "Sim.Pins".to_string();
+                            symbol.properties.push(pin_map_field);
+                        } else if !source_pins.is_empty() {
+                            let template = model_field.unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
+                            let mut pin_map_field = default_sim_pins_field(template, &source_pins);
+                            pin_map_field.key = "Sim.Pins".to_string();
+                            symbol.properties.push(pin_map_field);
+                        }
+
+                        migrated = true;
+                        continue;
+                    }
+
                     let can_raw_migrate = symbol.properties.iter().any(|property| {
                         matches!(property.key.as_str(), "Spice_Model" | "Spice_Lib_File")
                     });
@@ -1117,6 +1189,19 @@ fn default_sim_pins_field(mut property: Property, source_pins: &[String]) -> Pro
 
 fn sim_params_field_value_escape(model: &str) -> String {
     model.replace('"', "\\\"")
+}
+
+fn parse_legacy_dc_model_value(model: &str) -> Option<String> {
+    let tokens = model
+        .split(|ch: char| matches!(ch, '(' | ')' | ' '))
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+
+    if tokens.len() == 2 && tokens[0].eq_ignore_ascii_case("dc") {
+        return Some(tokens[1].to_string());
+    }
+
+    None
 }
 
 fn migrated_sim_pins_value(prefix: &str, source_pins: &[String], pin_indexes: &[&str]) -> String {
