@@ -3876,9 +3876,6 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            if instance.unit.is_none() {
-                                instance.unit = Some(1);
-                            }
 
                             symbol
                                 .instances
