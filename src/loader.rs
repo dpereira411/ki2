@@ -1730,6 +1730,7 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
         pin_pairs,
         pins,
         value_binding: None,
+        stored_value: None,
         enabled: true,
         origin: Some(crate::model::SimModelOrigin::InferredValue),
         resolved_library: None,
@@ -1816,6 +1817,36 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
     sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
     maybe_default_current_sim_pins(sim_model, &source_pins);
     sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
+    sim_model.stored_value = Some(value.to_string());
+    true
+}
+
+fn hydrate_current_raw_spice_value(symbol: &mut Symbol) -> bool {
+    let Some(sim_model) = symbol.sim_model.as_mut() else {
+        return false;
+    };
+
+    if sim_model.origin != Some(crate::model::SimModelOrigin::RawSpice)
+        || sim_model.params.is_some()
+        || sim_model.value_binding.is_some()
+        || sim_model.stored_value.is_some()
+    {
+        return false;
+    }
+
+    let value = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .map(|property| property.value.trim())
+        .filter(|value| !value.is_empty() && !matches!(*value, "${SIM.PARAMS}" | "${SIM.NAME}"));
+
+    let Some(value) = value else {
+        return false;
+    };
+
+    sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
+    sim_model.stored_value = Some(value.to_string());
     true
 }
 
@@ -2119,6 +2150,7 @@ fn hydrate_resolved_sim_library(
     }
 
     hydrate_current_value_backed_sim_model(symbol);
+    hydrate_current_raw_spice_value(symbol);
 
     modified
 }
