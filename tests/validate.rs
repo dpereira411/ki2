@@ -3629,7 +3629,7 @@ fn parses_symbol_mirror_body_style_and_sheet_pins() {
     assert_eq!(sheet.pins[1].side, SheetSide::Right);
     assert_eq!(sheet.pins[2].side, SheetSide::Top);
     assert_eq!(sheet.pins[3].side, SheetSide::Bottom);
-    assert_eq!(sheet.pins[4].shape, SheetPinShape::Passive);
+    assert_eq!(sheet.pins[4].shape, SheetPinShape::Unspecified);
     assert!(sheet.pins[4].has_effects);
     assert!(!sheet.pins[4].visible);
     assert_eq!(

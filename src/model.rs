@@ -2253,7 +2253,7 @@ pub enum SheetPinShape {
     Output,
     Bidirectional,
     TriState,
-    Passive,
+    Unspecified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

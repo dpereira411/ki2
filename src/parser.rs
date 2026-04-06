@@ -4365,7 +4365,7 @@ impl KiCadSchematicParser {
             "output" => sheet_pin.shape = SheetPinShape::Output,
             "bidirectional" => sheet_pin.shape = SheetPinShape::Bidirectional,
             "tri_state" => sheet_pin.shape = SheetPinShape::TriState,
-            "passive" => sheet_pin.shape = SheetPinShape::Passive,
+            "passive" => sheet_pin.shape = SheetPinShape::Unspecified,
             _ => {
                 return Err(self.expecting("input, output, bidirectional, tri_state, or passive"));
             }
