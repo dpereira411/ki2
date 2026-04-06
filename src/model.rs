@@ -233,20 +233,6 @@ impl LibSymbol {
             .sort_by_key(|unit| (unit.unit_number, unit.body_style));
     }
 
-    pub fn ensure_unit_index(&mut self, name: String, unit_number: i32, body_style: i32) -> usize {
-        self.materialize_unit_counts(unit_number, body_style);
-
-        let index = self
-            .units
-            .iter()
-            .position(|existing| {
-                existing.unit_number == unit_number && existing.body_style == body_style
-            })
-            .expect("materialized lib symbol unit must exist");
-        self.units[index].name = name;
-        index
-    }
-
     pub fn add_draw_item(&mut self, item: LibDrawItem) {
         self.materialize_unit_counts(item.unit_number, item.body_style);
 
@@ -1424,7 +1410,6 @@ mod tests {
     #[test]
     fn lib_symbol_add_draw_item_routes_by_unit_and_body_style() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.ensure_unit_index("R_2_1".to_string(), 2, 1);
 
         symbol.add_draw_item(LibDrawItem::new("text", 2, 1));
 
@@ -1437,7 +1422,7 @@ mod tests {
     fn lib_symbol_materializes_missing_unit_and_body_style_slots() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
 
-        symbol.ensure_unit_index("R_2_2".to_string(), 2, 2);
+        symbol.add_draw_item(LibDrawItem::new("text", 2, 2));
 
         assert_eq!(
             symbol
@@ -1599,7 +1584,7 @@ mod tests {
     #[test]
     fn lib_symbol_unit_display_names_are_shared_across_body_styles() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.ensure_unit_index("R_1_2".to_string(), 1, 2);
+        symbol.add_draw_item(LibDrawItem::new("text", 1, 2));
         for unit in &mut symbol.units {
             if unit.unit_number == 1 {
                 unit.unit_name = Some("Amplifier".to_string());
