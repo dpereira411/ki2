@@ -223,10 +223,6 @@ struct SchematicLoader {
 #[derive(Clone)]
 struct PowerLibSymbolInfo {
     power: bool,
-    local_power: bool,
-    first_pin_name: Option<String>,
-    first_pin_electrical_type: Option<String>,
-    first_pin_visible: bool,
 }
 
 impl SchematicLoader {
@@ -551,7 +547,6 @@ impl SchematicLoader {
         }
 
         for schematic in &mut self.schematics {
-            let power_infos = Self::collect_power_lib_symbol_info(schematic);
             let mut migrated = false;
 
             for item in &mut schematic.screen.items {
@@ -559,9 +554,7 @@ impl SchematicLoader {
                     continue;
                 };
 
-                let lib_symbol_name = symbol.lib_name.as_deref().unwrap_or(symbol.lib_id.as_str());
-
-                let Some(lib_symbol) = power_infos.get(lib_symbol_name) else {
+                let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
                     continue;
                 };
 
@@ -569,13 +562,22 @@ impl SchematicLoader {
                     continue;
                 }
 
-                if lib_symbol.first_pin_electrical_type.as_deref() != Some("power_in")
-                    || lib_symbol.first_pin_visible
+                let unit_number = symbol.unit.unwrap_or(1);
+                let body_style = symbol.body_style.unwrap_or(1);
+                let first_pin = lib_symbol
+                    .units
+                    .iter()
+                    .filter(|unit| unit.unit_number == unit_number && unit.body_style == body_style)
+                    .flat_map(|unit| unit.draw_items.iter())
+                    .find(|draw_item| draw_item.kind == "pin");
+
+                if first_pin.and_then(|pin| pin.electrical_type.as_deref()) != Some("power_in")
+                    || first_pin.is_some_and(|pin| pin.visible)
                 {
                     continue;
                 }
 
-                let Some(pin_name) = lib_symbol.first_pin_name.clone() else {
+                let Some(pin_name) = first_pin.and_then(|pin| pin.name.clone()) else {
                     continue;
                 };
 
@@ -1053,21 +1055,10 @@ impl SchematicLoader {
             .lib_symbols
             .iter()
             .map(|lib_symbol| {
-                let first_pin = lib_symbol
-                    .units
-                    .iter()
-                    .flat_map(|unit| unit.draw_items.iter())
-                    .find(|draw_item| draw_item.kind == "pin");
-
                 (
                     lib_symbol.lib_id.clone(),
                     PowerLibSymbolInfo {
                         power: lib_symbol.power,
-                        local_power: lib_symbol.local_power,
-                        first_pin_name: first_pin.and_then(|pin| pin.name.clone()),
-                        first_pin_electrical_type: first_pin
-                            .and_then(|pin| pin.electrical_type.clone()),
-                        first_pin_visible: first_pin.is_some_and(|pin| pin.visible),
                     },
                 )
             })

@@ -7248,6 +7248,69 @@ fn load_tree_leaves_local_power_and_visible_power_pins_untouched() {
 }
 
 #[test]
+fn load_tree_fixes_legacy_power_symbol_value_for_active_unit_pin() {
+    let src = r##"(kicad_sch
+  (version 20230220)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090f")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:MULTI"
+      (power)
+      (property "Reference" "#PWR")
+      (property "Value" "MULTI")
+      (symbol "MULTI_1_1"
+        (pin power_in line
+          (at 0 0 180)
+          (length 2.54)
+          (hide yes)
+          (name "UNIT1")
+          (number "1")))
+      (symbol "MULTI_2_1"
+        (pin power_in line
+          (at 0 0 180)
+          (length 2.54)
+          (hide yes)
+          (name "UNIT2")
+          (number "1")))))
+  (symbol
+    (lib_id "power:MULTI")
+    (unit 2)
+    (property "Reference" "#PWR?")
+    (property "Value" "WRONG")
+    (at 1 2 0))
+)"##;
+    let path = temp_schematic("loader_fixes_legacy_power_symbol_active_unit", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("UNIT2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_preserves_mid_v7_sim_pin_indexes_without_source_pins() {
     let src = r#"(kicad_sch
   (version 20260306)
