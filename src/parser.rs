@@ -3535,7 +3535,16 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                symbol.set_value_field_text(parsed);
+                                let existing = symbol
+                                    .properties
+                                    .iter_mut()
+                                    .find(|property| property.kind == PropertyKind::SymbolValue)
+                                    .expect("placed symbols start with mandatory fields");
+                                existing.id =
+                                    PropertyKind::SymbolValue.default_field_id().or(existing.id);
+                                existing.key =
+                                    PropertyKind::SymbolValue.canonical_key().to_string();
+                                existing.value = parsed;
                                 self.need_right()?;
                             }
                             "footprint" => {
@@ -3552,7 +3561,17 @@ impl KiCadSchematicParser {
                                         value
                                     }
                                 };
-                                symbol.set_footprint_field_text(parsed);
+                                let existing = symbol
+                                    .properties
+                                    .iter_mut()
+                                    .find(|property| property.kind == PropertyKind::SymbolFootprint)
+                                    .expect("placed symbols start with mandatory fields");
+                                existing.id = PropertyKind::SymbolFootprint
+                                    .default_field_id()
+                                    .or(existing.id);
+                                existing.key =
+                                    PropertyKind::SymbolFootprint.canonical_key().to_string();
+                                existing.value = parsed;
                                 self.need_right()?;
                             }
                             _ => {
@@ -3642,7 +3661,19 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        symbol.set_value_field_text(parsed);
+                                        let existing = symbol
+                                            .properties
+                                            .iter_mut()
+                                            .find(|property| {
+                                                property.kind == PropertyKind::SymbolValue
+                                            })
+                                            .expect("placed symbols start with mandatory fields");
+                                        existing.id = PropertyKind::SymbolValue
+                                            .default_field_id()
+                                            .or(existing.id);
+                                        existing.key =
+                                            PropertyKind::SymbolValue.canonical_key().to_string();
+                                        existing.value = parsed;
                                         self.need_right()?;
                                     }
                                     "footprint" => {
@@ -3660,7 +3691,20 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        symbol.set_footprint_field_text(parsed);
+                                        let existing = symbol
+                                            .properties
+                                            .iter_mut()
+                                            .find(|property| {
+                                                property.kind == PropertyKind::SymbolFootprint
+                                            })
+                                            .expect("placed symbols start with mandatory fields");
+                                        existing.id = PropertyKind::SymbolFootprint
+                                            .default_field_id()
+                                            .or(existing.id);
+                                        existing.key = PropertyKind::SymbolFootprint
+                                            .canonical_key()
+                                            .to_string();
+                                        existing.value = parsed;
                                         self.need_right()?;
                                     }
                                     "variant" => {
