@@ -4084,7 +4084,7 @@ impl KiCadSchematicParser {
                             property.key = "Sheetname".to_string();
                             property.kind = PropertyKind::SheetName;
                             property.id = PropertyKind::SheetName.default_field_id();
-                        } else if properties.len() == 1 {
+                        } else {
                             property.key = "Sheetfile".to_string();
                             property.kind = PropertyKind::SheetFile;
                             property.id = PropertyKind::SheetFile.default_field_id();

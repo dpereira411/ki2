@@ -4637,6 +4637,45 @@ fn recovers_legacy_sheet_field_ids_during_parse() {
 }
 
 #[test]
+fn legacy_sheet_field_recovery_maps_all_later_fields_to_sheetfile() {
+    let src = r#"(kicad_sch
+  (version 20200310)
+  (generator "eeschema")
+  (uuid "root-legacy-sheet-many")
+  (paper "A4")
+  (sheet
+    (property "WrongOne" "Child" (id 0))
+    (property "WrongTwo" "child-a.kicad_sch" (id 0))
+    (property "WrongThree" "child-b.kicad_sch" (id 0)))
+)"#;
+    let path = temp_schematic("legacy_sheet_field_ids_many", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+
+    assert_eq!(sheet.properties.len(), 3);
+    assert_eq!(sheet.properties[0].kind, PropertyKind::SheetName);
+    assert_eq!(sheet.properties[0].key, "Sheetname");
+    assert_eq!(sheet.properties[0].id, Some(7));
+    assert_eq!(sheet.properties[1].kind, PropertyKind::SheetFile);
+    assert_eq!(sheet.properties[1].key, "Sheetfile");
+    assert_eq!(sheet.properties[1].id, Some(8));
+    assert_eq!(sheet.properties[2].kind, PropertyKind::SheetFile);
+    assert_eq!(sheet.properties[2].key, "Sheetfile");
+    assert_eq!(sheet.properties[2].id, Some(8));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn preserves_duplicate_local_sheet_instances_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
