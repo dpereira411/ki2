@@ -388,6 +388,8 @@ fn is_schematic_keyword(text: &str) -> bool {
             | "cols"
             | "image"
             | "scale"
+            | "x"
+            | "y"
             | "bus_alias"
             | "members"
             | "group"
@@ -813,7 +815,7 @@ mod tests {
     #[test]
     fn lex_marks_parser_only_reserved_heads_as_keywords() {
         let tokens = lex(
-            "(items host margins face diameter dot round diamond power_in inverted_clock effects)",
+            "(items host margins face diameter dot round diamond power_in inverted_clock effects x y)",
         )
         .expect("lex");
         let atoms: Vec<(String, bool)> = tokens
@@ -838,6 +840,8 @@ mod tests {
                 ("power_in".to_string(), true),
                 ("inverted_clock".to_string(), true),
                 ("effects".to_string(), true),
+                ("x".to_string(), true),
+                ("y".to_string(), true),
             ]
         );
     }
