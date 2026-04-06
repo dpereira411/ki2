@@ -7511,7 +7511,7 @@ fn rejects_invalid_bus_alias_name_token() {
 )"#;
     let path = temp_schematic("bad_bus_alias_name", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad bus alias name");
-    assert!(err.to_string().contains("expecting bus alias name"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 

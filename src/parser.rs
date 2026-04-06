@@ -2208,7 +2208,7 @@ impl KiCadSchematicParser {
 
     fn parse_bus_alias(&mut self) -> Result<(), Error> {
         let _ = self.need_unquoted_symbol_atom("bus_alias")?;
-        let mut alias = BusAlias::new(self.need_symbol_atom("bus alias name")?);
+        let mut alias = BusAlias::new(self.need_symbol_atom("symbol")?);
         let version = self.require_known_version()?;
         if version < VERSION_NEW_OVERBAR_NOTATION {
             alias.name = self.convert_old_overbar_notation(alias.name);
