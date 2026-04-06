@@ -2543,10 +2543,9 @@ impl KiCadSchematicParser {
                 },
                 "iref" => {
                     let _ = self.need_unquoted_symbol_atom("iref")?;
-                    let ParsedSchText::Label(label) = &mut item else {
-                        continue;
-                    };
-                    if matches!(label.kind, LabelKind::Global) {
+                    if let ParsedSchText::Label(label) = &mut item
+                        && matches!(label.kind, LabelKind::Global)
+                    {
                         let iref_at = self.parse_xy2("iref")?;
                         self.need_right()?;
                         let intersheet_refs = label
