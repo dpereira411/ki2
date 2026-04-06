@@ -5449,7 +5449,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let local_iref_path = temp_schematic("local_label_iref", local_iref_src);
     let err = parse_schematic_file(Path::new(&local_iref_path))
         .expect_err("must reject iref payload on local label");
-    assert!(err.to_string().contains("unexpected iref"));
+    assert!(err.to_string().contains("expecting ("));
     let _ = fs::remove_file(local_iref_path);
 
     let empty_local_iref_src = r#"(kicad_sch
@@ -5462,7 +5462,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let empty_local_iref_path = temp_schematic("local_label_empty_iref", empty_local_iref_src);
     let err = parse_schematic_file(Path::new(&empty_local_iref_path))
         .expect_err("empty legacy iref on local label should fall out to shared parser flow");
-    assert!(err.to_string().contains("unexpected iref"));
+    assert!(err.to_string().contains("expecting end of file"));
     let _ = fs::remove_file(empty_local_iref_path);
 
     let quoted_text_head_src = r#"(kicad_sch

@@ -2553,7 +2553,7 @@ impl KiCadSchematicParser {
                         return Err(self.unexpected("iref"));
                     };
                     if !matches!(label.kind, LabelKind::Global) {
-                        return Err(self.unexpected("iref"));
+                        continue;
                     }
                     let iref_at = self.parse_xy2("iref")?;
                     self.need_right()?;
