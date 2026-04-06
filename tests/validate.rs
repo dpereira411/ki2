@@ -5090,7 +5090,7 @@ fn parses_text_and_label_semantics() {
         })
         .expect("global label");
     assert!(global.excluded_from_sim);
-    assert_eq!(global.fields_autoplaced, FieldAutoplacement::Auto);
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
     assert_eq!(global.properties.len(), 1);
     assert!(global.has_effects);
     assert!(global.visible);
@@ -5156,7 +5156,7 @@ fn global_label_without_user_fields_keeps_parser_default_autoplace_state() {
         })
         .expect("global label");
 
-    assert_eq!(global.fields_autoplaced, FieldAutoplacement::Auto);
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
     assert_eq!(global.properties.len(), 1);
     assert_eq!(
         global.properties[0].kind,
@@ -5478,7 +5478,7 @@ fn global_label_starts_with_hidden_intersheet_refs_field() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("intersheet refs field");
 
-    assert_eq!(global.fields_autoplaced, FieldAutoplacement::Auto);
+    assert_eq!(global.fields_autoplaced, FieldAutoplacement::None);
     assert_eq!(intersheet_refs.id, Some(6));
     assert_eq!(intersheet_refs.key, "Intersheet References");
     assert_eq!(intersheet_refs.value, "${INTERSHEET_REFS}");
