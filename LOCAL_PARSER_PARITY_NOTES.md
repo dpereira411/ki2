@@ -198,7 +198,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `RecomputeIntersheetRefs`
   Status: loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list while preserving explicit visible-property state. Remaining gap is tighter KiCad settings/current-sheet behavior and later `UpdateAllScreenReferences` integration.
 - `UpdateAllScreenReferences`
-  Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list, and global-label default `Intersheet References` placement is refreshed after load. Remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
+  Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list for unique screens, while reused screens stay on a coherent first-instance baseline until the current-sheet selection explicitly switches them. Leaving a reused screen now restores that baseline instead of leaving the last selected occurrence stuck on the shared screen. Global-label default `Intersheet References` placement is still refreshed after load. Remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
 - `FixLegacyPowerSymbolMismatches`
   Status: first loader-side global-power value fix now handles pre-`20230221` symbols linked to global power lib symbols with hidden `power_in` pins; remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
 - `MigrateSimModels`
@@ -213,15 +213,15 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 ### More Exact Current Priority
 
 1. Tighten remaining loader/post-load exactness around reused-screen/current-sheet page semantics.
-2. Tighten remaining loader-side `UpdateAllScreenReferences` exactness against the current-sheet path.
-3. Tighten remaining loader-side `RecomputeIntersheetRefs` / `SetSheetNumberAndCount` exactness.
+2. Tighten remaining loader-side `RecomputeIntersheetRefs` / `SetSheetNumberAndCount` exactness.
+3. Tighten remaining loader-side `UpdateAllScreenReferences` beyond the current symbol/global-label subset.
 4. Leave parser-only blocked surfaces alone unless we explicitly choose fixture migration or error-model expansion.
 
 ### Recommended Next Order
 
-1. `UpdateAllScreenReferences`
-2. `SetSheetNumberAndCount`
-3. `RecomputeIntersheetRefs`
+1. `SetSheetNumberAndCount`
+2. `RecomputeIntersheetRefs`
+3. `UpdateAllScreenReferences`
 4. `UpdateSymbolInstanceData`
 5. `FixLegacyPowerSymbolMismatches`
 6. only then revisit parser blocked surfaces or the heavier blocked `MigrateSimModels` branch
