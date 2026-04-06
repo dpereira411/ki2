@@ -9423,7 +9423,7 @@ fn rejects_numeric_lib_unit_name_token() {
     let path = temp_schematic("bad_lib_unit_name_token", src);
     let err = parse_schematic_file(Path::new(&path))
         .expect_err("must reject numeric lib unit_name token");
-    assert!(err.to_string().contains("expecting )"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -11237,6 +11237,25 @@ fn rejects_bare_lib_power_branch_without_scope() {
     let err = parse_schematic_file(Path::new(&path))
         .expect_err("must reject bare lib power branch without global/local scope");
     assert!(err.to_string().contains("expecting global or local"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn rejects_invalid_nested_lib_unit_display_name_token() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bad-lib-unit-name")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R_1_1"
+        (unit_name 123)))))
+"#;
+    let path = temp_schematic("bad_nested_lib_unit_name_token", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject invalid nested lib unit display name token");
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
