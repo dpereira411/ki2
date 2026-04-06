@@ -101,6 +101,18 @@ impl LoadResult {
 
         self.sheet_path_for_symbol_path(parent_symbol_path)
     }
+
+    pub fn ancestor_sheet_paths<'a>(&'a self, instance_path: &str) -> Vec<&'a LoadedSheetPath> {
+        let mut ancestors = Vec::new();
+        let mut current = self.parent_sheet_path(instance_path);
+
+        while let Some(sheet_path) = current {
+            ancestors.push(sheet_path);
+            current = self.parent_sheet_path(&sheet_path.instance_path);
+        }
+
+        ancestors
+    }
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {

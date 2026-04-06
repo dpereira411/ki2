@@ -1099,6 +1099,16 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("1"));
     assert_eq!(loaded.sheet_paths[2].instance_path, "");
     assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("2"));
+    let ancestors = loaded.ancestor_sheet_paths("/root-u/sheet-a/sheet-b");
+    assert_eq!(ancestors.len(), 2);
+    assert_eq!(ancestors[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(ancestors[1].instance_path, "");
+
+    let project = SchematicProject::from_load_result(loaded);
+    let project_ancestors = project.ancestor_sheet_paths("/root-u/sheet-a/sheet-b");
+    assert_eq!(project_ancestors.len(), 2);
+    assert_eq!(project_ancestors[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(project_ancestors[1].instance_path, "");
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
