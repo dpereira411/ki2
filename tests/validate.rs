@@ -6122,7 +6122,7 @@ B2 SIGB MODEL_B
                 kind: SimLibraryKind::Ibis,
             },
             name: "DRIVER".to_string(),
-            model_type: None,
+            model_type: Some("MODEL_A".to_string()),
             pins: vec!["A1".to_string(), "B2".to_string()],
             params: Vec::new(),
         })
@@ -6247,6 +6247,13 @@ B2 SIGB MODEL_B
             .as_ref()
             .and_then(|sim_model| sim_model.resolved_name.as_deref()),
         Some("DRIVER")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
+        Some("MODEL_A")
     );
     assert_eq!(
         symbol

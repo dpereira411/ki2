@@ -273,12 +273,20 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
 
     match library.kind {
         SimLibraryKind::Ibis => {
+            let selected_pin = symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.ibis_pin.as_deref());
+            let selected_model = symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.ibis_model.as_deref());
             let content = load_symbol_sim_library_content_from_embedded_files(
                 schematic_path,
                 embedded_files,
                 symbol,
             )?;
-            let model = resolve_ibis_model(&content.text, &name)?;
+            let model = resolve_ibis_model(&content.text, &name, selected_pin, selected_model)?;
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
@@ -387,11 +395,17 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
     None
 }
 
-fn resolve_ibis_model(text: &str, wanted_name: &str) -> Option<ResolvedIbisModel> {
+fn resolve_ibis_model(
+    text: &str,
+    wanted_name: &str,
+    selected_pin: Option<&str>,
+    selected_model: Option<&str>,
+) -> Option<ResolvedIbisModel> {
     let mut current_component: Option<String> = None;
     let mut pending_component_name = false;
     let mut collecting_pins = false;
     let mut pins = Vec::new();
+    let mut resolved_model_type = None;
 
     for raw_line in text.lines() {
         let line = raw_line.trim();
@@ -435,6 +449,21 @@ fn resolve_ibis_model(text: &str, wanted_name: &str) -> Option<ResolvedIbisModel
             }
 
             pins.push(tokens[0].to_string());
+
+            if selected_pin.is_some_and(|pin| pin.eq_ignore_ascii_case(tokens[0])) {
+                if let Some(model_name) = selected_model {
+                    if tokens
+                        .get(2)
+                        .is_some_and(|token| token.eq_ignore_ascii_case(model_name))
+                    {
+                        resolved_model_type = Some(model_name.to_string());
+                    }
+                }
+
+                if resolved_model_type.is_none() {
+                    resolved_model_type = tokens.get(2).map(|token| token.to_string());
+                }
+            }
         }
     }
 
@@ -445,7 +474,7 @@ fn resolve_ibis_model(text: &str, wanted_name: &str) -> Option<ResolvedIbisModel
     {
         return Some(ResolvedIbisModel {
             name: wanted_name.to_string(),
-            model_type: None,
+            model_type: resolved_model_type,
             pins,
             params: Vec::new(),
         });
