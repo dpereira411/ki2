@@ -2606,6 +2606,74 @@ fn annotates_power_symbol_references_after_load() {
 }
 
 #[test]
+fn annotates_duplicate_power_symbol_references_after_load() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_power_annotation_duplicates_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000191")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:VCC"
+      (power global)
+      (property "Reference" "VCC")
+      (symbol "VCC_1_1"
+        (pin power_in line
+          hide
+          (at 0 0 0)
+          (length 0)
+          (name "VCC")
+          (number "1")))))
+  (symbol
+    (lib_id "power:VCC")
+    (property "Reference" "VCC1")
+    (at 10 10 0)
+    (uuid "71000000-0000-0000-0000-000000000192"))
+  (symbol
+    (lib_id "power:VCC")
+    (property "Reference" "VCC1")
+    (at 20 10 0)
+    (uuid "71000000-0000-0000-0000-000000000193")))
+"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let references = root
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Symbol(symbol) => symbol
+                .properties
+                .iter()
+                .find(|property| property.kind == PropertyKind::SymbolReference)
+                .map(|property| property.value.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(references, vec!["#VCC1".to_string(), "#VCC".to_string()]);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_direct_ancestor_sheet_cycles() {
     let dir = env::temp_dir().join(format!(
         "ki2_cycle_{}",
