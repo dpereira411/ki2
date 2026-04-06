@@ -5280,6 +5280,52 @@ fn load_tree_migrates_mid_v7_sim_field_names() {
 }
 
 #[test]
+fn load_tree_preserves_mid_v7_sim_pin_indexes_without_source_pins() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000304")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim_Device" "R")
+    (property "Sim_Type" "R")
+    (property "Sim_Params" "r=10k")
+    (property "Sim_Pins" "2 1")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_preserves_mid_v7_sim_pin_indexes", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("2 1")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
     let src = r#"(kicad_sch
   (version 20260306)
