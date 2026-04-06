@@ -1757,10 +1757,6 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         return false;
     };
 
-    if sim_model.library.is_some() || sim_model.name.is_some() {
-        return false;
-    }
-
     let defaulted_pins = maybe_default_current_sim_pins(sim_model, &source_pins);
 
     let value = symbol
@@ -2022,6 +2018,7 @@ fn hydrate_resolved_sim_library(
     warnings: &mut Vec<String>,
 ) -> bool {
     let mut modified = false;
+    hydrate_current_value_backed_sim_model(symbol);
     let mut resolved_library =
         resolve_symbol_sim_library_from_embedded_files(schematic_path, embedded_files, symbol);
     let mut resolved_model =
@@ -2149,7 +2146,6 @@ fn hydrate_resolved_sim_library(
         infer_symbol_sim_model(symbol);
     }
 
-    hydrate_current_value_backed_sim_model(symbol);
     hydrate_current_raw_spice_value(symbol);
 
     modified
