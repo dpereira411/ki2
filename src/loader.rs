@@ -1746,6 +1746,30 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
 }
 
 fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
+    let source_pins = symbol_source_pin_numbers(symbol);
+
+    if source_pins.len() != 2 {
+        return false;
+    }
+
+    let value = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .map(|property| property.value.trim())
+        .filter(|value| !value.is_empty() && !matches!(*value, "${SIM.PARAMS}" | "${SIM.NAME}"));
+
+    let Some(value) = value else {
+        return false;
+    };
+
+    let prefix_param = symbol
+        .prefix
+        .chars()
+        .next()
+        .map(|ch| ch.to_ascii_lowercase().to_string())
+        .unwrap_or_default();
+
     let Some(sim_model) = symbol.sim_model.as_mut() else {
         return false;
     };
@@ -1759,34 +1783,33 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         return false;
     }
 
-    let value = symbol
-        .properties
-        .iter()
-        .find(|property| property.kind == PropertyKind::SymbolValue)
-        .map(|property| property.value.trim())
-        .filter(|value| {
-            !value.is_empty()
-                && !matches!(*value, "${SIM.PARAMS}" | "${SIM.NAME}")
-                && !value.chars().any(char::is_whitespace)
-        });
-
-    let Some(value) = value else {
-        return false;
-    };
-
-    let param_name = match (
+    match (
         sim_model.device.as_deref().map(str::trim),
         sim_model.model_type.as_deref().map(str::trim),
     ) {
-        (Some("R"), None | Some("")) => "r",
-        (Some("C"), None | Some("")) => "c",
-        (Some("L"), None | Some("")) => "l",
-        (Some("V") | Some("I"), None | Some("") | Some("DC")) => "dc",
-        _ => return false,
-    };
+        (Some("R") | Some("C") | Some("L"), None | Some("")) => {
+            if looks_behavioral_value(value) {
+                sim_model.model_type = Some("=".to_string());
+            }
 
-    sim_model.param_pairs = vec![(param_name.to_string(), value.to_string())];
+            sim_model.param_pairs = vec![(prefix_param, value.to_string())];
+        }
+        (Some("V") | Some("I"), None | Some("") | Some("DC")) => {
+            let (param_name, param_value) = split_inferred_source_value(value);
+            sim_model.model_type.get_or_insert_with(|| "DC".to_string());
+            sim_model.param_pairs = vec![(param_name.to_string(), param_value)];
+        }
+        _ => return false,
+    }
+
     sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
+    if sim_model.pin_pairs.is_empty() {
+        sim_model.pin_pairs = vec![
+            (source_pins[0].clone(), "+".to_string()),
+            (source_pins[1].clone(), "-".to_string()),
+        ];
+        sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
+    }
     sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
     true
 }
