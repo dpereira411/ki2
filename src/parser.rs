@@ -4866,7 +4866,7 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "width" => {
                     let _ = self.need_unquoted_symbol_atom("width")?;
-                    stroke.width = Some(self.parse_f64_atom("stroke width")?);
+                    stroke.width = Some(self.parse_internal_units_atom("stroke width")?);
                     self.need_right()?;
                 }
                 "type" => {
