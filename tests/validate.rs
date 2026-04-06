@@ -8313,6 +8313,136 @@ fn load_tree_infers_structured_sim_model_after_legacy_pin_only_migration() {
 }
 
 #[test]
+fn load_tree_hydrates_current_resistor_sim_model_from_value() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000918")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Value" "10k")
+    (property "Sim.Device" "R")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_current_resistor_sim_model_from_value", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![("r".to_string(), "10k".to_string())])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([("r".to_string(), "10k".to_string())]))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_hydrates_current_dc_source_sim_model_from_value() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000919")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "1")
+    (property "Sim.Device" "V")
+    (property "Sim.Type" "DC")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic(
+        "loader_hydrates_current_dc_source_sim_model_from_value",
+        src,
+    );
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::BuiltIn)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![("dc".to_string(), "1".to_string())])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_fixes_legacy_global_power_symbol_value_from_hidden_power_pin() {
     let src = r##"(kicad_sch
   (version 20230220)

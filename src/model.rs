@@ -1254,6 +1254,7 @@ impl Symbol {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimValueBinding {
+    Value,
     Params,
     Name,
 }
@@ -1798,6 +1799,12 @@ mod tests {
                 .and_then(|sim_model| sim_model.origin),
             Some(SimModelOrigin::Ibis)
         );
+    }
+
+    #[test]
+    fn current_value_backed_sim_binding_variant_exists_for_loader_hydration() {
+        let _binding = SimValueBinding::Value;
+        assert_eq!(_binding, SimValueBinding::Value);
     }
 
     #[test]

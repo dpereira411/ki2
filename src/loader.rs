@@ -1745,6 +1745,52 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
     true
 }
 
+fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
+    let Some(sim_model) = symbol.sim_model.as_mut() else {
+        return false;
+    };
+
+    if sim_model.library.is_some()
+        || sim_model.name.is_some()
+        || sim_model.params.is_some()
+        || !sim_model.param_pairs.is_empty()
+        || sim_model.value_binding.is_some()
+    {
+        return false;
+    }
+
+    let value = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .map(|property| property.value.trim())
+        .filter(|value| {
+            !value.is_empty()
+                && !matches!(*value, "${SIM.PARAMS}" | "${SIM.NAME}")
+                && !value.chars().any(char::is_whitespace)
+        });
+
+    let Some(value) = value else {
+        return false;
+    };
+
+    let param_name = match (
+        sim_model.device.as_deref().map(str::trim),
+        sim_model.model_type.as_deref().map(str::trim),
+    ) {
+        (Some("R"), None | Some("")) => "r",
+        (Some("C"), None | Some("")) => "c",
+        (Some("L"), None | Some("")) => "l",
+        (Some("V") | Some("I"), None | Some("") | Some("DC")) => "dc",
+        _ => return false,
+    };
+
+    sim_model.param_pairs = vec![(param_name.to_string(), value.to_string())];
+    sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
+    sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
+    true
+}
+
 fn looks_behavioral_value(value: &str) -> bool {
     value.chars().any(|ch| {
         matches!(
@@ -1985,6 +2031,8 @@ fn hydrate_resolved_sim_library(
     {
         infer_symbol_sim_model(symbol);
     }
+
+    hydrate_current_value_backed_sim_model(symbol);
 
     modified
 }
