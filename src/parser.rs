@@ -2414,33 +2414,7 @@ impl KiCadSchematicParser {
             .map_err(|_| self.error_here("Invalid text string"))?;
         let mut item = match target {
             SchTextTarget::Text => ParsedSchText::Text(Text::new(TextKind::Text, text)),
-            SchTextTarget::Label(kind) => {
-                let mut label = Label::new(kind, text);
-
-                if matches!(label.kind, LabelKind::Global) {
-                    label.properties.push(Property {
-                        id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
-                        ordinal: PropertyKind::GlobalLabelIntersheetRefs
-                            .default_field_id()
-                            .unwrap_or(0),
-                        key: PropertyKind::GlobalLabelIntersheetRefs
-                            .canonical_key()
-                            .to_string(),
-                        value: "${INTERSHEET_REFS}".to_string(),
-                        kind: PropertyKind::GlobalLabelIntersheetRefs,
-                        is_private: false,
-                        at: Some([0.0, 0.0]),
-                        angle: None,
-                        visible: false,
-                        show_name: false,
-                        can_autoplace: true,
-                        has_effects: false,
-                        effects: None,
-                    });
-                }
-
-                ParsedSchText::Label(label)
-            }
+            SchTextTarget::Label(kind) => ParsedSchText::Label(Label::new(kind, text)),
         };
 
         while !self.at_right() {

@@ -625,6 +625,29 @@ impl Label {
             LabelKind::Directive | LabelKind::NetclassFlag => Some(2.54),
             _ => None,
         };
+        let properties = if matches!(kind, LabelKind::Global) {
+            vec![Property {
+                id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
+                ordinal: PropertyKind::GlobalLabelIntersheetRefs
+                    .default_field_id()
+                    .unwrap_or(0),
+                key: PropertyKind::GlobalLabelIntersheetRefs
+                    .canonical_key()
+                    .to_string(),
+                value: "${INTERSHEET_REFS}".to_string(),
+                kind: PropertyKind::GlobalLabelIntersheetRefs,
+                is_private: false,
+                at: Some([0.0, 0.0]),
+                angle: None,
+                visible: false,
+                show_name: false,
+                can_autoplace: true,
+                has_effects: false,
+                effects: None,
+            }]
+        } else {
+            Vec::new()
+        };
 
         Self {
             kind,
@@ -641,7 +664,7 @@ impl Label {
             has_effects: false,
             effects: None,
             uuid: None,
-            properties: Vec::new(),
+            properties,
         }
     }
 
@@ -1638,6 +1661,19 @@ mod tests {
             Label::new(LabelKind::NetclassFlag, "N".to_string()).pin_length,
             Some(2.54)
         );
+    }
+
+    #[test]
+    fn global_labels_start_with_mandatory_intersheet_refs_field() {
+        let label = Label::new(LabelKind::Global, "G".to_string());
+
+        assert_eq!(label.properties.len(), 1);
+        let property = &label.properties[0];
+        assert_eq!(property.kind, PropertyKind::GlobalLabelIntersheetRefs);
+        assert_eq!(property.key, "Intersheet References");
+        assert_eq!(property.value, "${INTERSHEET_REFS}");
+        assert_eq!(property.at, Some([0.0, 0.0]));
+        assert!(!property.visible);
     }
 
     #[test]
