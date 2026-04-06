@@ -5463,6 +5463,72 @@ fn load_tree_migrates_legacy_pulse_source_fields() {
 }
 
 #[test]
+fn load_tree_defaults_source_pin_map_for_legacy_source_models() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000109")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:V"
+      (symbol "V_1_1"
+        (pin passive line (at 0 0 180) (length 2.54) (name "+") (number "2"))
+        (pin passive line (at 10 0 0) (length 2.54) (name "-") (number "1")))))
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "V")
+    (property "Spice_Model" "pulse(0 2 1n 2n 3n 4n 5n 6)")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_defaults_legacy_source_pin_map", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=1 2=2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_migrates_legacy_exp_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
