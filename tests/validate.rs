@@ -2495,7 +2495,7 @@ fn parser_links_placed_symbols_to_local_lib_symbols_after_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-symbol")
+  (uuid "63000000-0000-0000-0000-000000000001")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -2534,7 +2534,7 @@ fn parser_links_symbols_after_lib_cache_fixups() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "root-linked-fixups")
+  (uuid "63000000-0000-0000-0000-000000000002")
   (paper "A4")
   (embedded_files (file (name "shared.bin") (checksum "sha256:123") (type font) (data |abc123|)))
   (lib_symbols
@@ -2602,7 +2602,7 @@ fn parser_flatten_keeps_child_embedded_files_without_overwriting_parent() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "root-lib-embedded-flatten")
+  (uuid "63000000-0000-0000-0000-000000000003")
   (paper "A4")
   (embedded_files
     (file (name "parent.bin") (checksum "sha256:parent") (type font) (data |aaa|))
@@ -2670,7 +2670,7 @@ fn parser_flatten_skips_intermediate_parent_embedded_files() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "root-lib-embedded-chain")
+  (uuid "63000000-0000-0000-0000-000000000004")
   (paper "A4")
   (embedded_files
     (file (name "root.bin") (checksum "sha256:root") (type font) (data |aaa|))
@@ -2733,7 +2733,7 @@ fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-items")
+  (uuid "63000000-0000-0000-0000-000000000005")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -2784,7 +2784,7 @@ fn parser_links_derived_lib_symbols_with_child_unit_field_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-unit-fields")
+  (uuid "63000000-0000-0000-0000-000000000006")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -2835,7 +2835,7 @@ fn parser_links_derived_lib_symbols_with_child_optional_metadata_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-metadata")
+  (uuid "63000000-0000-0000-0000-000000000007")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -2887,7 +2887,7 @@ fn parser_links_derived_lib_symbols_with_child_unit_name_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-unit-name")
+  (uuid "63000000-0000-0000-0000-000000000008")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -2927,7 +2927,7 @@ fn parser_links_derived_lib_symbols_with_child_body_style_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-body-styles")
+  (uuid "63000000-0000-0000-0000-000000000009")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -2966,7 +2966,7 @@ fn parser_links_derived_lib_symbols_with_child_fp_filter_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-fp-filters")
+  (uuid "63000000-0000-0000-0000-00000000000a")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -3005,7 +3005,7 @@ fn parser_does_not_link_derived_local_symbol_with_missing_parent() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-missing-parent")
+  (uuid "63000000-0000-0000-0000-00000000000b")
   (paper "A4")
   (lib_symbols
     (symbol "Child:R"
@@ -3041,7 +3041,7 @@ fn parser_links_derived_lib_symbols_with_user_field_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-linked-child-user-fields")
+  (uuid "63000000-0000-0000-0000-00000000000c")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -4287,7 +4287,7 @@ fn sheet_page_normalization_only_hashes_truly_empty_tokens() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-pages")
+  (uuid "63000000-0000-0000-0000-00000000000d")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
@@ -5136,7 +5136,7 @@ fn sheet_pin_without_at_uses_current_sheet_orientation() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-00000000000e")
   (paper "A4")
   (sheet
     (size 5 20)
@@ -5168,7 +5168,7 @@ fn sheet_pin_before_size_keeps_pre_size_default_side() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-00000000000f")
   (paper "A4")
   (sheet
     (property "Sheetname" "Child")
@@ -5199,7 +5199,7 @@ fn sheet_pin_before_at_moves_with_sheet_position() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000010")
   (paper "A4")
   (sheet
     (property "Sheetname" "Child")
@@ -5231,7 +5231,7 @@ fn sheet_pin_at_uses_explicit_side_on_sheet_edge() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000011")
   (paper "A4")
   (sheet
     (at 10 20)
@@ -5264,7 +5264,7 @@ fn sheet_size_reconstrains_existing_pin_position() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000012")
   (paper "A4")
   (sheet
     (size 50 50)
@@ -5297,7 +5297,7 @@ fn sheet_pin_without_at_uses_sheet_owner_position_defaults() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000013")
   (paper "A4")
   (sheet
     (at 11 22)
@@ -5396,7 +5396,7 @@ fn parses_property_metadata_semantics() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000014")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -5442,7 +5442,7 @@ fn parses_property_metadata_semantics() {
     let default_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000015")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -5473,7 +5473,7 @@ fn parses_property_metadata_semantics() {
     let ordinal_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000016")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -5507,7 +5507,7 @@ fn parses_property_metadata_semantics() {
     let bare_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000017")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -6064,7 +6064,7 @@ fn recovers_legacy_sheet_field_ids_during_parse() {
     let src = r#"(kicad_sch
   (version 20200310)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000018")
   (paper "A4")
   (sheet
     (property "UserField" "Child" (id 0))
@@ -6296,7 +6296,7 @@ fn parses_text_and_label_semantics() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "63000000-0000-0000-0000-000000000019")
   (paper "A4")
   (text "note" (exclude_from_sim yes) (at 1 2 90) (fields_autoplaced) (effects (font (size 1.27 1.27))) (uuid "t-1"))
   (global_label "VCC" (shape input) (exclude_from_sim yes) (at 5 6 180) (uuid "g-1")
@@ -6418,7 +6418,7 @@ fn clamps_shared_pin_lengths_to_kicad_internal_unit_limit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-pin-lengths")
+  (uuid "63000000-0000-0000-0000-00000000001a")
   (paper "A4")
   (directive_label "D" (shape dot) (length 9999999) (at 2 3 0))
   (lib_symbols
@@ -6461,7 +6461,7 @@ fn clamps_internal_unit_geometry_lengths_to_kicad_limit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-geometry-lengths")
+  (uuid "63000000-0000-0000-0000-00000000001b")
   (paper "A4")
   (junction (at 0 0) (diameter 9999999))
   (circle (center 1 2) (radius 9999999))
@@ -6523,7 +6523,7 @@ fn clamps_shared_stroke_width_to_kicad_internal_unit_limit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-stroke-width")
+  (uuid "63000000-0000-0000-0000-00000000001c")
   (paper "A4")
   (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 9999999)))
   (text_box "body" (at 0 0 0) (size 1 1) (stroke (width 9999999)))
@@ -6590,7 +6590,7 @@ fn clamps_shared_xy_coordinates_and_sizes_to_kicad_internal_unit_limit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-xy")
+  (uuid "63000000-0000-0000-0000-00000000001d")
   (paper "A4")
   (text "note" (at 9999999 9999999 90))
   (sheet (at 9999999 9999999) (size 9999999 9999999)
@@ -6648,7 +6648,7 @@ fn clamps_table_dimensions_and_rectangle_corner_radii_to_kicad_limit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-table-rect")
+  (uuid "63000000-0000-0000-0000-00000000001e")
   (paper "A4")
   (rectangle (start 0 0) (end 1 1) (radius 9999999))
   (table
@@ -6704,7 +6704,7 @@ fn global_label_starts_with_hidden_intersheet_refs_field() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-global-default-field")
+  (uuid "63000000-0000-0000-0000-00000000001f")
   (global_label "GL")
 )"#;
     let path = temp_schematic("global_label_default_intersheet_field", src);
@@ -6740,7 +6740,7 @@ fn global_label_at_moves_default_intersheet_refs_field_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-global-at-field")
+  (uuid "63000000-0000-0000-0000-000000000020")
   (paper "A4")
   (global_label "GL" (at 10 20 0))
 )"#;
@@ -9368,7 +9368,7 @@ fn repairs_group_membership_cycles_after_deferred_resolution() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-cycle")
+  (uuid "63000000-0000-0000-0000-000000000021")
   (group "A" (uuid "group-a") (members "group-b"))
   (group "B" (uuid "group-b") (members "group-a"))
 )"#;
@@ -9397,7 +9397,7 @@ fn rejects_unexpected_table_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-table-unexpected")
+  (uuid "63000000-0000-0000-0000-000000000022")
   (table
     (bogus 1)
     (cells
@@ -9497,7 +9497,7 @@ fn clamps_text_box_margins_to_kicad_internal_unit_limit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-textbox-margins")
+  (uuid "63000000-0000-0000-0000-000000000023")
   (paper "A4")
   (text_box "body" (at 0 0 0) (size 5 5) (margins 100000000000000000000 100000000000000000000 100000000000000000000 100000000000000000000))
   (lib_symbols
@@ -9534,7 +9534,7 @@ fn text_boxes_and_table_cells_keep_constructor_graphic_defaults() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-tb-defaults")
+  (uuid "63000000-0000-0000-0000-000000000024")
   (text_box "box" (at 0 0 0) (size 5 5))
   (table
     (column_count 1)
@@ -9607,7 +9607,7 @@ fn table_cells_materialize_grid_positions_from_row_spans() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-table-grid")
+  (uuid "63000000-0000-0000-0000-000000000025")
   (table
     (column_count 2)
     (column_widths 5 5)
@@ -9782,7 +9782,7 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-instance-fields")
+  (uuid "63000000-0000-0000-0000-000000000026")
   (symbol
     (lib_id "Device:R")
     (property "Value" "seed")
@@ -9836,7 +9836,7 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-duplicate-local-symbol-instance")
+  (uuid "63000000-0000-0000-0000-000000000027")
   (symbol
     (lib_id "Device:R")
     (instances
@@ -9878,7 +9878,7 @@ fn first_local_symbol_instance_seeds_live_reference_and_unit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-first-local-symbol-instance")
+  (uuid "63000000-0000-0000-0000-000000000028")
   (symbol
     (lib_id "Device:R")
     (instances
@@ -9919,7 +9919,7 @@ fn duplicate_local_sheet_instance_paths_preserve_parse_order_like_kicad() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-duplicate-local-sheet-instance")
+  (uuid "63000000-0000-0000-0000-000000000029")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
@@ -9953,7 +9953,7 @@ fn lib_symbol_draw_items_sort_like_kicad_before_return() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-draw-sort")
+  (uuid "63000000-0000-0000-0000-00000000002a")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -10059,7 +10059,7 @@ fn sheet_variant_in_bom_respects_20260306_fix_boundary() {
     let old_src = r#"(kicad_sch
   (version 20260305)
   (generator "eeschema")
-  (uuid "root-old")
+  (uuid "63000000-0000-0000-0000-00000000002b")
   (sheet
     (at 0 0)
     (size 20 10)
@@ -10088,7 +10088,7 @@ fn sheet_variant_in_bom_respects_20260306_fix_boundary() {
     let new_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-new")
+  (uuid "63000000-0000-0000-0000-00000000002c")
   (sheet
     (at 0 0)
     (size 20 10)
@@ -10123,7 +10123,7 @@ fn symbol_and_sheet_variants_inherit_parent_attributes() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-variant-inherit")
+  (uuid "63000000-0000-0000-0000-00000000002d")
   (symbol
     (lib_id "Device:R")
     (exclude_from_sim yes)
@@ -10196,7 +10196,7 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let bad_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-name")
+  (uuid "63000000-0000-0000-0000-00000000002e")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10215,7 +10215,7 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let bad_variant_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-variant")
+  (uuid "63000000-0000-0000-0000-00000000002f")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10234,7 +10234,7 @@ fn rejects_invalid_variant_field_name_and_value_tokens() {
     let bad_value = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-value")
+  (uuid "63000000-0000-0000-0000-000000000030")
   (sheet
     (at 0 0)
     (size 20 10)
@@ -10262,7 +10262,7 @@ fn duplicate_variant_names_and_fields_overwrite_by_name() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-duplicate-variants")
+  (uuid "63000000-0000-0000-0000-000000000031")
   (symbol
     (lib_id "Device:R")
     (instances
@@ -10344,7 +10344,7 @@ fn late_variant_name_preserves_provisional_empty_key() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-late-variant-name")
+  (uuid "63000000-0000-0000-0000-000000000032")
   (symbol
     (lib_id "Device:R")
     (instances
@@ -10398,7 +10398,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_symbol_project = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-project")
+  (uuid "63000000-0000-0000-0000-000000000033")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10414,7 +10414,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_sheet_path = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-path")
+  (uuid "63000000-0000-0000-0000-000000000034")
   (sheet_instances
     (path (bogus) (page "1")))
 )"#;
@@ -10426,7 +10426,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_symbol_reference = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-ref")
+  (uuid "63000000-0000-0000-0000-000000000035")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10443,7 +10443,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_placed_symbol_unit = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-placed-symbol-unit")
+  (uuid "63000000-0000-0000-0000-000000000036")
   (symbol
     (lib_id "Device:R")
     (unit (bogus)))
@@ -10457,7 +10457,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_top_level_symbol_unit = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-unit")
+  (uuid "63000000-0000-0000-0000-000000000037")
   (symbol_instances
     (path "/A" (unit (bogus))))
 )"#;
@@ -10481,7 +10481,7 @@ fn rejects_invalid_sheet_instance_page_tokens() {
     let bad_top_level = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-page")
+  (uuid "63000000-0000-0000-0000-000000000038")
   (sheet_instances
     (path "/A" (page (bogus))))
 )"#;
@@ -10493,7 +10493,7 @@ fn rejects_invalid_sheet_instance_page_tokens() {
     let bad_nested = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-nested-page")
+  (uuid "63000000-0000-0000-0000-000000000039")
   (sheet
     (at 0 0)
     (size 20 10)
@@ -10511,7 +10511,7 @@ fn rejects_invalid_sheet_instance_page_tokens() {
     let bad_nested_child = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-nested-child")
+  (uuid "63000000-0000-0000-0000-00000000003a")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
@@ -10534,7 +10534,7 @@ fn rejects_unknown_top_level_symbol_instance_child() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-instance-child")
+  (uuid "63000000-0000-0000-0000-00000000003b")
   (symbol_instances
     (path "/A" (bogus "R1")))
 )"#;
@@ -10553,7 +10553,7 @@ fn rejects_invalid_default_instance_reference() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-default-ref")
+  (uuid "63000000-0000-0000-0000-00000000003c")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10575,7 +10575,7 @@ fn rejects_invalid_symbol_instance_value_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-default-value")
+  (uuid "63000000-0000-0000-0000-00000000003d")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10599,7 +10599,7 @@ fn rejects_invalid_symbol_pin_number() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-pin")
+  (uuid "63000000-0000-0000-0000-00000000003e")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10617,7 +10617,7 @@ fn rejects_invalid_symbol_pin_uuid_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-pin-uuid")
+  (uuid "63000000-0000-0000-0000-00000000003f")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10634,7 +10634,7 @@ fn legacy_symbol_pin_uuid_tokens_do_not_consume_shared_uuid_uniqueness() {
     let src = r#"(kicad_sch
   (version 20210125)
   (generator "eeschema")
-  (uuid "root-pin-uuid-legacy")
+  (uuid "63000000-0000-0000-0000-000000000040")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10677,7 +10677,7 @@ fn rejects_invalid_symbol_pin_alternate_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-pin-alt")
+  (uuid "63000000-0000-0000-0000-000000000041")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10695,7 +10695,7 @@ fn rejects_invalid_symbol_mirror_axis_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-mirror")
+  (uuid "63000000-0000-0000-0000-000000000042")
   (symbol
     (lib_id "Device:R")
     (at 1 2 0)
@@ -10713,7 +10713,7 @@ fn rejects_invalid_lib_symbol_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-name")
+  (uuid "63000000-0000-0000-0000-000000000043")
   (lib_symbols
     (symbol (bogus)))
 )"#;
@@ -10739,7 +10739,7 @@ fn rejects_invalid_lib_symbol_parent_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-parent")
+  (uuid "63000000-0000-0000-0000-000000000044")
   (lib_symbols
     (symbol "Child:R"
       (extends (bogus))))
@@ -10756,7 +10756,7 @@ fn rejects_invalid_lib_symbol_unit_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-unit")
+  (uuid "63000000-0000-0000-0000-000000000045")
   (lib_symbols
     (symbol "Device:R"
       (symbol (bogus))))
@@ -10772,7 +10772,7 @@ fn rejects_numeric_lib_unit_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-unit-name")
+  (uuid "63000000-0000-0000-0000-000000000046")
   (lib_symbols
     (symbol "Device:R"
       (symbol "R_1_1"
@@ -10790,7 +10790,7 @@ fn lib_unit_name_applies_across_body_styles_of_same_unit() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-unit-display-name")
+  (uuid "63000000-0000-0000-0000-000000000047")
   (lib_symbols
     (symbol "Device:R"
       (symbol "R_1_1"
@@ -10814,7 +10814,7 @@ fn rejects_invalid_title_block_value_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-title")
+  (uuid "63000000-0000-0000-0000-000000000048")
   (title_block
     (title (bogus)))
 )"#;
@@ -10830,7 +10830,7 @@ fn rejects_unexpected_title_block_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-title")
+  (uuid "63000000-0000-0000-0000-000000000049")
   (title_block
     (bogus "x"))
 )"#;
@@ -10849,7 +10849,7 @@ fn rejects_invalid_schematic_text_string_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-text")
+  (uuid "63000000-0000-0000-0000-00000000004a")
   (text (bogus) (at 1 2 0))
 )"#;
     let path = temp_schematic("bad_schematic_text_string", src);
@@ -10864,7 +10864,7 @@ fn rejects_invalid_schematic_text_uuid_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-text-uuid")
+  (uuid "63000000-0000-0000-0000-00000000004b")
   (text "note" (at 1 2 0) (uuid (bogus)))
 )"#;
     let path = temp_schematic("bad_schematic_text_uuid", src);
@@ -10879,7 +10879,7 @@ fn rejects_invalid_schematic_text_box_string_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-text-box")
+  (uuid "63000000-0000-0000-0000-00000000004c")
   (text_box (bogus) (at 1 2 0) (size 3 4))
 )"#;
     let path = temp_schematic("bad_schematic_text_box_string", src);
@@ -10894,7 +10894,7 @@ fn rejects_invalid_schematic_text_box_uuid_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-text-box-uuid")
+  (uuid "63000000-0000-0000-0000-00000000004d")
   (text_box "body" (at 1 2 0) (size 3 4) (uuid (bogus)))
 )"#;
     let path = temp_schematic("bad_schematic_text_box_uuid", src);
@@ -10909,7 +10909,7 @@ fn rejects_invalid_image_uuid_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-image")
+  (uuid "63000000-0000-0000-0000-00000000004e")
   (image (at 1 2) (uuid (bogus)) (data "QUJD"))
 )"#;
     let path = temp_schematic("bad_image_uuid", src);
@@ -10933,7 +10933,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_symbol = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-uuid")
+  (uuid "63000000-0000-0000-0000-00000000004f")
   (symbol (lib_id "Device:R") (at 1 2 0) (uuid (bogus)))
 )"#;
     let bad_symbol_path = temp_schematic("bad_symbol_uuid", bad_symbol);
@@ -10944,7 +10944,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_group = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-uuid")
+  (uuid "63000000-0000-0000-0000-000000000050")
   (group "g"
     (uuid (bogus))
     (members "a")))
@@ -10957,7 +10957,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_group_member = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-member-uuid")
+  (uuid "63000000-0000-0000-0000-000000000051")
   (group "g"
     (uuid "group-uuid")
     (members (bogus))))
@@ -10970,7 +10970,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_group_child = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-child")
+  (uuid "63000000-0000-0000-0000-000000000052")
   (group "g"
     (bogus "x")))
 )"#;
@@ -10982,7 +10982,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_group_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-name")
+  (uuid "63000000-0000-0000-0000-000000000053")
   (group g
     (uuid "group-uuid")
     (members "a")))
@@ -10996,7 +10996,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bare_locked_group = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-locked")
+  (uuid "63000000-0000-0000-0000-000000000054")
   (group locked
     (uuid "group-uuid")
     (members "a")))
@@ -11010,7 +11010,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_group_lib_id = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-lib-id")
+  (uuid "63000000-0000-0000-0000-000000000055")
   (group "g"
     (uuid "group-uuid")
     (lib_id "lib:block:bad")
@@ -11027,7 +11027,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let empty_group_lib_id = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-lib-id-empty")
+  (uuid "63000000-0000-0000-0000-000000000056")
   (group "g"
     (uuid "group-uuid")
     (lib_id "lib:")
@@ -11041,7 +11041,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let bad_rectangle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-rect-uuid")
+  (uuid "63000000-0000-0000-0000-000000000057")
   (rectangle (start 0 0) (end 1 1) (uuid (bogus)))
 )"#;
     let bad_rectangle_path = temp_schematic("bad_rectangle_uuid", bad_rectangle);
@@ -11065,7 +11065,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-prop")
+  (uuid "63000000-0000-0000-0000-000000000058")
   (lib_symbols
     (symbol "Device:R"
       (property private "UserField" "R1"
@@ -11090,7 +11090,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
     let hidden_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-property-hidden")
+  (uuid "63000000-0000-0000-0000-000000000059")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -11114,7 +11114,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
     let bad_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-prop-name")
+  (uuid "63000000-0000-0000-0000-00000000005a")
   (lib_symbols
     (symbol "Device:R"
       (property (bogus) "R1")))
@@ -11127,7 +11127,7 @@ fn parses_and_rejects_lib_property_header_and_metadata_tokens() {
     let bad_value = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-prop-value")
+  (uuid "63000000-0000-0000-0000-00000000005b")
   (lib_symbols
     (symbol "Device:R"
       (property "UserField" (bogus))))
@@ -11146,7 +11146,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-name")
+  (uuid "63000000-0000-0000-0000-00000000005c")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11160,7 +11160,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_number = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-number")
+  (uuid "63000000-0000-0000-0000-00000000005d")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11174,7 +11174,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_name_trailer = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-name-trailer")
+  (uuid "63000000-0000-0000-0000-00000000005e")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11188,7 +11188,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bare_name_trailer = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-name-bare-trailer")
+  (uuid "63000000-0000-0000-0000-00000000005f")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11202,7 +11202,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_number_trailer = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-number-trailer")
+  (uuid "63000000-0000-0000-0000-000000000060")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11216,7 +11216,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bare_number_trailer = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-number-bare-trailer")
+  (uuid "63000000-0000-0000-0000-000000000061")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11231,7 +11231,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_alternate = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-alt")
+  (uuid "63000000-0000-0000-0000-000000000062")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11245,7 +11245,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_alternate_type = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-alt-type")
+  (uuid "63000000-0000-0000-0000-000000000063")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11261,7 +11261,7 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
     let bad_alternate_shape = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-alt-shape")
+  (uuid "63000000-0000-0000-0000-000000000064")
   (lib_symbols
     (symbol "Device:R"
       (pin passive line
@@ -11291,7 +11291,7 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
     let bad_type = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-type")
+  (uuid "63000000-0000-0000-0000-000000000065")
   (lib_symbols
     (symbol "Device:R"
       (pin (bogus) line)))
@@ -11306,7 +11306,7 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
     let bad_shape = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-shape")
+  (uuid "63000000-0000-0000-0000-000000000066")
   (lib_symbols
     (symbol "Device:R"
       (pin passive (bogus))))
@@ -11327,7 +11327,7 @@ fn lib_pin_alternate_names_stay_raw_symbols() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "root-lib-pin-alt-raw")
+  (uuid "63000000-0000-0000-0000-000000000067")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -11349,7 +11349,7 @@ fn duplicate_lib_pin_alternates_overwrite_by_name() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-pin-duplicate-alt")
+  (uuid "63000000-0000-0000-0000-000000000068")
   (lib_symbols
     (symbol "Device:R"
       (pin input line
@@ -11373,7 +11373,7 @@ fn rejects_invalid_lib_text_string_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-text")
+  (uuid "63000000-0000-0000-0000-000000000069")
   (lib_symbols
     (symbol "Device:R"
       (text (bogus) (at 0 0 0))))
@@ -11389,7 +11389,7 @@ fn rejects_invalid_lib_text_box_string_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-text-box")
+  (uuid "63000000-0000-0000-0000-00000000006a")
   (lib_symbols
     (symbol "Device:R"
       (text_box (bogus) (at 0 0 0) (size 1 1))))
@@ -11405,7 +11405,7 @@ fn rejects_invalid_lib_jumper_pin_group_member_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-group")
+  (uuid "63000000-0000-0000-0000-00000000006b")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups ((bogus) "2"))))
@@ -11421,7 +11421,7 @@ fn deduplicates_lib_jumper_pin_group_members_like_upstream_sets() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-sets")
+  (uuid "63000000-0000-0000-0000-00000000006c")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups ("2" "1" "2"))))
@@ -11446,7 +11446,7 @@ fn accepts_unquoted_numeric_lib_jumper_pin_group_members() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-unquoted-numbers")
+  (uuid "63000000-0000-0000-0000-00000000006d")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups (1 2 10))))
@@ -11470,7 +11470,7 @@ fn rejects_unquoted_keyword_lib_jumper_pin_group_members() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-keyword")
+  (uuid "63000000-0000-0000-0000-00000000006e")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups (hide 2))))
@@ -11487,7 +11487,7 @@ fn rejects_parser_head_keywords_as_unquoted_lib_jumper_pin_group_members() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-parser-keyword")
+  (uuid "63000000-0000-0000-0000-00000000006f")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups (margins 2))))
@@ -11504,7 +11504,7 @@ fn rejects_lib_pin_keywords_as_unquoted_lib_jumper_pin_group_members() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-lib-pin-keyword")
+  (uuid "63000000-0000-0000-0000-000000000070")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups (power_in 2))))
@@ -11521,7 +11521,7 @@ fn rejects_effects_as_unquoted_lib_jumper_pin_group_member() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-effects-keyword")
+  (uuid "63000000-0000-0000-0000-000000000071")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups (effects 2))))
@@ -11538,7 +11538,7 @@ fn rejects_mirror_axis_keywords_as_unquoted_lib_jumper_pin_group_members() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-jumper-mirror-axis-keyword")
+  (uuid "63000000-0000-0000-0000-000000000072")
   (lib_symbols
     (symbol "Device:R"
       (jumper_pin_groups (x y))))
@@ -11555,7 +11555,7 @@ fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-unexpected")
+  (uuid "63000000-0000-0000-0000-000000000073")
   (lib_symbols
     (symbol "Device:R"
       (bogus 1)))
@@ -11573,7 +11573,7 @@ fn rejects_quoted_lib_symbol_top_level_child_head_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-quoted-child")
+  (uuid "63000000-0000-0000-0000-000000000074")
   (lib_symbols
     (symbol "Device:R"
       ("power" local)))
@@ -11592,7 +11592,7 @@ fn rejects_unexpected_lib_symbol_unit_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-unit-unexpected")
+  (uuid "63000000-0000-0000-0000-000000000075")
   (lib_symbols
     (symbol "Device:R"
       (symbol "R_1_1"
@@ -11727,7 +11727,7 @@ fn legacy_bus_entry_default_stroke_does_not_rewrite_to_dash() {
     let src = r#"(kicad_sch
   (version 20211123)
   (generator "eeschema")
-  (uuid "root-legacy-bus-entry-stroke")
+  (uuid "63000000-0000-0000-0000-000000000076")
   (bus_entry (stroke (width 0.2)) (uuid "be-1"))
 )"#;
     let path = temp_schematic("legacy_bus_entry_default_stroke", src);
@@ -11756,7 +11756,7 @@ fn legacy_wire_default_stroke_does_not_rewrite_to_dash() {
     let src = r#"(kicad_sch
   (version 20211123)
   (generator "eeschema")
-  (uuid "root-legacy-wire-stroke")
+  (uuid "63000000-0000-0000-0000-000000000077")
   (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.2)) (uuid "w-1"))
 )"#;
     let path = temp_schematic("legacy_wire_default_stroke", src);
@@ -11785,7 +11785,7 @@ fn bus_entry_size_uses_distinct_height_and_width_errors() {
     let bad_height = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bus-entry-height")
+  (uuid "63000000-0000-0000-0000-000000000078")
   (bus_entry (size (bogus) 2))
 )"#;
     let bad_height_path = temp_schematic("bad_bus_entry_height", bad_height);
@@ -11796,7 +11796,7 @@ fn bus_entry_size_uses_distinct_height_and_width_errors() {
     let bad_width = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bus-entry-width")
+  (uuid "63000000-0000-0000-0000-000000000079")
   (bus_entry (size 2 (bogus)))
 )"#;
     let bad_width_path = temp_schematic("bad_bus_entry_width", bad_width);
@@ -12528,7 +12528,7 @@ fn group_members_follow_shared_uuid_normalization() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-normalized")
+  (uuid "63000000-0000-0000-0000-00000000007a")
   (wire
     (pts (xy 0 0) (xy 10 0))
     (uuid "1"))
@@ -12559,7 +12559,7 @@ fn group_members_accept_number_tokens_and_drop_unknown_entries_later() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-group-number-member")
+  (uuid "63000000-0000-0000-0000-00000000007b")
   (wire (pts (xy 0 0) (xy 1 0)) (uuid "11111111-1111-1111-1111-111111111111"))
   (group "G1" (uuid "22222222-2222-2222-2222-222222222222") (members 123 "11111111-1111-1111-1111-111111111111"))
 )"#;
@@ -12668,7 +12668,7 @@ fn hidden_lib_text_converts_to_named_user_field() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-hidden-lib-text-field")
+  (uuid "63000000-0000-0000-0000-00000000007c")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12702,7 +12702,7 @@ fn lib_property_name_collision_checks_all_symbol_units() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-property-nested-field")
+  (uuid "63000000-0000-0000-0000-00000000007d")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
