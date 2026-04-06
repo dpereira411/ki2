@@ -10454,6 +10454,43 @@ fn schematic_arc_and_circle_use_upstream_safe_defaults() {
 }
 
 #[test]
+fn schematic_shape_outline_fill_does_not_retroactively_use_later_stroke_color() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (circle
+    (fill (type outline))
+    (stroke (width 0.2) (color 10 20 30 0.5))))
+"#;
+    let path = temp_schematic("schematic_shape_fill_before_stroke", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let circle = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Circle => Some(shape),
+            _ => None,
+        })
+        .expect("circle");
+
+    assert_eq!(
+        circle.fill.as_ref().map(|fill| fill.fill_type.clone()),
+        Some(FillType::Color)
+    );
+    assert_eq!(circle.fill.as_ref().and_then(|fill| fill.color), None);
+    assert_eq!(
+        circle.stroke.as_ref().and_then(|stroke| stroke.color),
+        Some([10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 0.5])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rule_area_does_not_require_three_points() {
     let src = r#"(kicad_sch
   (version 20250114)

@@ -3246,6 +3246,7 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
                     shape.has_fill = true;
                     shape.fill = Some(self.parse_fill()?);
+                    Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -3257,7 +3258,6 @@ impl KiCadSchematicParser {
                 }
             }
         }
-        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
     }
@@ -3303,6 +3303,7 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
                     shape.has_fill = true;
                     shape.fill = Some(self.parse_fill()?);
+                    Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -3315,7 +3316,6 @@ impl KiCadSchematicParser {
         shape.points[0] = start_point;
         shape.points[1] = mid_point;
         shape.points[2] = end_point;
-        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
     }
@@ -3355,6 +3355,7 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
                     shape.has_fill = true;
                     shape.fill = Some(self.parse_fill()?);
+                    Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -3366,7 +3367,6 @@ impl KiCadSchematicParser {
         }
         shape.points[0] = center;
         shape.radius = Some(radius);
-        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
     }
@@ -3409,6 +3409,7 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
                     shape.has_fill = true;
                     shape.fill = Some(self.parse_fill()?);
+                    Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -3418,7 +3419,6 @@ impl KiCadSchematicParser {
                 _ => return Err(self.expecting("start, end, stroke, fill or uuid")),
             }
         }
-        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
     }
@@ -3473,6 +3473,7 @@ impl KiCadSchematicParser {
                     let _ = self.need_unquoted_symbol_atom("fill")?;
                     shape.has_fill = true;
                     shape.fill = Some(self.parse_fill()?);
+                    Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
@@ -3483,7 +3484,6 @@ impl KiCadSchematicParser {
             }
         }
         shape.points = points.into();
-        Self::fixup_sch_fill_mode(&mut shape.fill, &shape.stroke);
         self.need_right()?;
         Ok(shape)
     }
