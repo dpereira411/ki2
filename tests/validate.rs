@@ -4892,6 +4892,68 @@ fn clamps_shared_pin_lengths_to_kicad_internal_unit_limit() {
 }
 
 #[test]
+fn clamps_internal_unit_geometry_lengths_to_kicad_limit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-clamped-geometry-lengths")
+  (paper "A4")
+  (junction (at 0 0) (diameter 9999999))
+  (circle (center 1 2) (radius 9999999))
+  (lib_symbols
+    (symbol "Device:R"
+      (arc (radius (at 0 0) (length 9999999) (angles 0 90)) (stroke (width 0)))
+      (circle (center 0 0) (radius 9999999) (stroke (width 0)))))
+)"#;
+    let path = temp_schematic("clamped_internal_unit_geometry_lengths", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let expected_max = (f64::from(i32::MAX) * 0.7071) / 1e4;
+
+    let junction = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction),
+            _ => None,
+        })
+        .expect("junction");
+    let sch_circle = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Circle => Some(shape),
+            _ => None,
+        })
+        .expect("schematic circle");
+    let lib_units = &schematic.screen.lib_symbols[0].units[0].draw_items;
+    let lib_arc = lib_units
+        .iter()
+        .find(|item| item.kind == "arc")
+        .expect("lib arc");
+    let lib_circle = lib_units
+        .iter()
+        .find(|item| item.kind == "circle")
+        .expect("lib circle");
+
+    let measured = [
+        junction.diameter.expect("junction diameter"),
+        sch_circle.radius.expect("schematic circle radius"),
+        lib_arc.radius.expect("lib arc radius"),
+        lib_circle.radius.expect("lib circle radius"),
+    ];
+
+    for value in measured {
+        assert!(value < 9_999_999.0);
+        assert!((value - expected_max).abs() < 1e-9);
+    }
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn global_label_starts_with_hidden_intersheet_refs_field() {
     let src = r#"(kicad_sch
   (version 20260306)

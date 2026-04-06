@@ -1301,7 +1301,8 @@ impl KiCadSchematicParser {
                                 self.need_right()?;
                             }
                             "length" => {
-                                item.radius = Some(self.parse_f64_atom("radius length")?);
+                                item.radius =
+                                    Some(self.parse_internal_units_atom("radius length")?);
                                 self.need_right()?;
                             }
                             "angles" => {
@@ -1430,7 +1431,7 @@ impl KiCadSchematicParser {
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    item.radius = Some(self.parse_f64_atom("radius length")?);
+                    item.radius = Some(self.parse_internal_units_atom("radius length")?);
                     self.need_right()?;
                 }
                 "stroke" => {
@@ -2200,7 +2201,7 @@ impl KiCadSchematicParser {
                 }
                 "diameter" => {
                     let _ = self.need_unquoted_symbol_atom("diameter")?;
-                    junction.diameter = Some(self.parse_f64_atom("junction diameter")?);
+                    junction.diameter = Some(self.parse_internal_units_atom("junction diameter")?);
                     self.need_right()?;
                 }
                 "color" => {
@@ -3200,7 +3201,7 @@ impl KiCadSchematicParser {
                 }
                 "radius" => {
                     let _ = self.need_unquoted_symbol_atom("radius")?;
-                    shape.radius = Some(self.parse_f64_atom("radius length")?);
+                    shape.radius = Some(self.parse_internal_units_atom("radius length")?);
                     self.need_right()?;
                 }
                 "stroke" => {
