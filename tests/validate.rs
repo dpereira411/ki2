@@ -390,22 +390,22 @@ fn reuses_previously_loaded_child_schematic() {
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-u")
+  (uuid "70000000-0000-0000-0000-000000000005")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
-    (uuid "sym-u")
+    (uuid "70000000-0000-0000-0000-000000000004")
     (property "Reference" "R?" (at 1 2 0))
     (property "Value" "seed" (at 3 4 0))
     (property "Footprint" "seed-footprint" (at 5 6 0))
     (instances
       (project "demo"
-        (path "/root-u/sheet-a"
+        (path "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
           (reference "R1")
           (unit 1)
           (value "10k")
           (footprint "Resistor_SMD:R_0603"))
-        (path "/root-u/sheet-b"
+        (path "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003"
           (reference "R2")
           (unit 2)
           (value "22k")
@@ -414,18 +414,18 @@ fn reuses_previously_loaded_child_schematic() {
     let root_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "70000000-0000-0000-0000-000000000001")
   (paper "A4")
-  (sheet (at 0 0) (size 10 10) (uuid "sheet-a")
+  (sheet (at 0 0) (size 10 10) (uuid "70000000-0000-0000-0000-000000000002")
     (property "Sheetname" "A")
     (property "Sheetfile" "child.kicad_sch"))
-  (sheet (at 20 0) (size 10 10) (uuid "sheet-b")
+  (sheet (at 20 0) (size 10 10) (uuid "70000000-0000-0000-0000-000000000003")
     (property "Sheetname" "B")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "9"))
-    (path "/root-u/sheet-a" (page "1"))
-    (path "/root-u/sheet-b" (page "2")))
+    (path "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002" (page "1"))
+    (path "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003" (page "2")))
 )"#;
     let dir = env::temp_dir().join(format!(
         "ki2_reuse_{}",
@@ -488,13 +488,15 @@ fn reuses_previously_loaded_child_schematic() {
         root_path.canonicalize().unwrap_or(root_path.clone())
     );
     let mut loaded = loaded;
-    assert!(loaded.set_current_sheet_path("/root-u/sheet-b"));
+    assert!(loaded.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003"
+    ));
     assert_eq!(
         loaded
             .current_sheet_path()
             .expect("updated load result current sheet path")
             .instance_path,
-        "/root-u/sheet-b"
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003"
     );
     assert_eq!(loaded.current_page_number(), Some("2"));
     assert_eq!(loaded.current_page_count(), Some(3));
@@ -570,7 +572,9 @@ fn reuses_previously_loaded_child_schematic() {
     assert!(!loaded.set_current_sheet_path("/missing"));
     assert_eq!(
         loaded
-            .sheet_path("/root-u/sheet-a")
+            .sheet_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
+            )
             .expect("sheet path A")
             .page
             .as_deref(),
@@ -578,7 +582,9 @@ fn reuses_previously_loaded_child_schematic() {
     );
     assert_eq!(
         loaded
-            .sheet_path("/root-u/sheet-b")
+            .sheet_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003"
+            )
             .expect("sheet path B")
             .page
             .as_deref(),
@@ -586,14 +592,18 @@ fn reuses_previously_loaded_child_schematic() {
     );
     assert_eq!(
         loaded
-            .sheet_path_for_symbol_path("/root-u/sheet-a/sym-u")
+            .sheet_path_for_symbol_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002/70000000-0000-0000-0000-000000000004"
+            )
             .expect("load result symbol owner path")
             .instance_path,
-        "/root-u/sheet-a"
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
     );
     assert_eq!(
         loaded
-            .parent_sheet_path("/root-u/sheet-a")
+            .parent_sheet_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
+            )
             .expect("load result parent path")
             .instance_path,
         ""
@@ -603,7 +613,9 @@ fn reuses_previously_loaded_child_schematic() {
     assert_eq!(project.sheet_paths_of(&child_path).count(), 2);
     assert_eq!(
         project
-            .sheet_path("/root-u/sheet-a")
+            .sheet_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
+            )
             .expect("project sheet path A")
             .page
             .as_deref(),
@@ -611,20 +623,26 @@ fn reuses_previously_loaded_child_schematic() {
     );
     assert_eq!(
         project
-            .sheet_path_for_symbol_path("/root-u/sheet-a/sym-u")
+            .sheet_path_for_symbol_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002/70000000-0000-0000-0000-000000000004"
+            )
             .expect("project symbol owner path")
             .instance_path,
-        "/root-u/sheet-a"
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
     );
     assert_eq!(
         project
-            .parent_sheet_path("/root-u/sheet-a")
+            .parent_sheet_path(
+                "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
+            )
             .expect("project parent path")
             .instance_path,
         ""
     );
     let mut project = project;
-    assert!(project.set_current_sheet_path("/root-u/sheet-a"));
+    assert!(project.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
+    ));
     assert_eq!(project.current_page_number(), Some("1"));
     assert_eq!(project.current_page_count(), Some(3));
     assert_eq!(project.current_virtual_page_number(), Some(1));
@@ -711,11 +729,11 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     let child_src = r#"(kicad_sch
   (version 20221001)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "70000000-0000-0000-0000-000000000012")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
-    (uuid "sym-u")
+    (uuid "70000000-0000-0000-0000-000000000013")
     (property "Reference" "R?")
     (property "Value" "seed")
     (property "Footprint" "seed-footprint")
@@ -724,19 +742,19 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     let root_src = r#"(kicad_sch
   (version 20221001)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "70000000-0000-0000-0000-000000000011")
   (paper "A4")
   (sheet
     (at 0 0)
     (size 10 10)
-    (uuid "sheet-a")
+    (uuid "70000000-0000-0000-0000-000000000014")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "2"))
-    (path "/sheet-a" (page "1")))
+    (path "/70000000-0000-0000-0000-000000000014" (page "1")))
   (symbol_instances
-    (path "/sheet-a/sym-u"
+    (path "/70000000-0000-0000-0000-000000000014/70000000-0000-0000-0000-000000000013"
       (reference "R7")
       (unit 2)
       (value "47k")
@@ -748,14 +766,23 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
 
     let loaded = load_schematic_tree(&root_path).expect("load tree");
     assert_eq!(loaded.sheet_paths.len(), 2);
-    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
-    assert_eq!(loaded.sheet_paths[0].sheet_uuid.as_deref(), Some("sheet-a"));
+    assert_eq!(
+        loaded.sheet_paths[0].instance_path,
+        "/70000000-0000-0000-0000-000000000011/70000000-0000-0000-0000-000000000014"
+    );
+    assert_eq!(
+        loaded.sheet_paths[0].sheet_uuid.as_deref(),
+        Some("70000000-0000-0000-0000-000000000014")
+    );
     assert_eq!(loaded.sheet_paths[0].sheet_name.as_deref(), Some("Child"));
     assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
     assert_eq!(loaded.sheet_paths[0].sheet_number, 1);
     assert_eq!(loaded.sheet_paths[0].sheet_count, 2);
     assert_eq!(loaded.sheet_paths[1].instance_path, "");
-    assert_eq!(loaded.sheet_paths[1].sheet_uuid.as_deref(), Some("root-u"));
+    assert_eq!(
+        loaded.sheet_paths[1].sheet_uuid.as_deref(),
+        Some("70000000-0000-0000-0000-000000000011")
+    );
     assert_eq!(loaded.sheet_paths[1].sheet_name, None);
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("2"));
     assert_eq!(loaded.sheet_paths[1].sheet_number, 2);
@@ -815,7 +842,10 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     );
     assert_eq!(symbol.instances.len(), 1);
     assert_eq!(symbol.instances[0].project, "");
-    assert_eq!(symbol.instances[0].path, "/root-u/sheet-a");
+    assert_eq!(
+        symbol.instances[0].path,
+        "/70000000-0000-0000-0000-000000000011/70000000-0000-0000-0000-000000000014"
+    );
     assert_eq!(symbol.instances[0].reference.as_deref(), Some("R7"));
     assert_eq!(symbol.instances[0].unit, Some(2));
 
@@ -1151,19 +1181,19 @@ fn sorts_loaded_sheet_pages_numerically() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "70000000-0000-0000-0000-000000000041")
   (sheet
-    (uuid "sheet-a")
+    (uuid "70000000-0000-0000-0000-000000000042")
     (property "Sheetname" "A")
     (property "Sheetfile" "a.kicad_sch"))
   (sheet
-    (uuid "sheet-b")
+    (uuid "70000000-0000-0000-0000-000000000043")
     (property "Sheetname" "B")
     (property "Sheetfile" "b.kicad_sch"))
   (sheet_instances
     (path "" (page "99"))
-    (path "/root-u/sheet-a" (page "10"))
-    (path "/root-u/sheet-b" (page "2")))
+    (path "/70000000-0000-0000-0000-000000000041/70000000-0000-0000-0000-000000000042" (page "10"))
+    (path "/70000000-0000-0000-0000-000000000041/70000000-0000-0000-0000-000000000043" (page "2")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1172,9 +1202,15 @@ fn sorts_loaded_sheet_pages_numerically() {
 
     let loaded = load_schematic_tree(&root_path).expect("load tree");
 
-    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-b");
+    assert_eq!(
+        loaded.sheet_paths[0].instance_path,
+        "/70000000-0000-0000-0000-000000000041/70000000-0000-0000-0000-000000000043"
+    );
     assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("2"));
-    assert_eq!(loaded.sheet_paths[1].instance_path, "/root-u/sheet-a");
+    assert_eq!(
+        loaded.sheet_paths[1].instance_path,
+        "/70000000-0000-0000-0000-000000000041/70000000-0000-0000-0000-000000000042"
+    );
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("10"));
     assert_eq!(loaded.sheet_paths[2].instance_path, "");
     assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("99"));
@@ -1207,13 +1243,13 @@ fn initializes_sheet_pages_when_all_sheet_instance_pages_are_missing() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "70000000-0000-0000-0000-000000000021")
   (sheet
-    (uuid "sheet-a")
+    (uuid "70000000-0000-0000-0000-000000000022")
     (property "Sheetname" "A")
     (property "Sheetfile" "a.kicad_sch"))
   (sheet
-    (uuid "sheet-b")
+    (uuid "70000000-0000-0000-0000-000000000023")
     (property "Sheetname" "B")
     (property "Sheetfile" "b.kicad_sch"))
 )"#;
@@ -1224,9 +1260,15 @@ fn initializes_sheet_pages_when_all_sheet_instance_pages_are_missing() {
 
     let loaded = load_schematic_tree(&root_path).expect("load tree");
 
-    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(
+        loaded.sheet_paths[0].instance_path,
+        "/70000000-0000-0000-0000-000000000021/70000000-0000-0000-0000-000000000022"
+    );
     assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
-    assert_eq!(loaded.sheet_paths[1].instance_path, "/root-u/sheet-b");
+    assert_eq!(
+        loaded.sheet_paths[1].instance_path,
+        "/70000000-0000-0000-0000-000000000021/70000000-0000-0000-0000-000000000023"
+    );
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("2"));
     assert_eq!(loaded.sheet_paths[2].instance_path, "");
     assert_eq!(loaded.sheet_paths[2].page, None);
@@ -1261,22 +1303,22 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
   (generator "eeschema")
   (uuid "child-root")
   (sheet
-    (uuid "sheet-b")
+    (uuid "70000000-0000-0000-0000-000000000033")
     (property "Sheetname" "Grandchild")
     (property "Sheetfile" "grandchild.kicad_sch"))
 )"#;
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "70000000-0000-0000-0000-000000000031")
   (sheet
-    (uuid "sheet-a")
+    (uuid "70000000-0000-0000-0000-000000000032")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "2"))
-    (path "/root-u/sheet-a" (page "1"))
-    (path "/root-u/sheet-a/sheet-b" (page "1")))
+    (path "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032" (page "1"))
+    (path "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033" (page "1")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1286,49 +1328,77 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
     let loaded = load_schematic_tree(&root_path).expect("load tree");
 
     assert_eq!(loaded.sheet_paths.len(), 3);
-    assert_eq!(loaded.sheet_paths[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(
+        loaded.sheet_paths[0].instance_path,
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032"
+    );
     assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("1"));
     assert_eq!(
         loaded.sheet_paths[1].instance_path,
-        "/root-u/sheet-a/sheet-b"
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
     );
     assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("1"));
     assert_eq!(loaded.sheet_paths[2].instance_path, "");
     assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("2"));
-    let ancestors = loaded.ancestor_sheet_paths("/root-u/sheet-a/sheet-b");
+    let ancestors = loaded.ancestor_sheet_paths(
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
+    );
     assert_eq!(ancestors.len(), 2);
-    assert_eq!(ancestors[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(
+        ancestors[0].instance_path,
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032"
+    );
     assert_eq!(ancestors[1].instance_path, "");
     let root_children = loaded.child_sheet_paths("");
     assert_eq!(root_children.len(), 1);
-    assert_eq!(root_children[0].instance_path, "/root-u/sheet-a");
-    let child_children = loaded.child_sheet_paths("/root-u/sheet-a");
+    assert_eq!(
+        root_children[0].instance_path,
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032"
+    );
+    let child_children = loaded.child_sheet_paths(
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032",
+    );
     assert_eq!(child_children.len(), 1);
-    assert_eq!(child_children[0].instance_path, "/root-u/sheet-a/sheet-b");
+    assert_eq!(
+        child_children[0].instance_path,
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
+    );
 
     let project = SchematicProject::from_load_result(loaded);
-    let project_ancestors = project.ancestor_sheet_paths("/root-u/sheet-a/sheet-b");
+    let project_ancestors = project.ancestor_sheet_paths(
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
+    );
     assert_eq!(project_ancestors.len(), 2);
-    assert_eq!(project_ancestors[0].instance_path, "/root-u/sheet-a");
+    assert_eq!(
+        project_ancestors[0].instance_path,
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032"
+    );
     assert_eq!(project_ancestors[1].instance_path, "");
     let project_root_children = project.child_sheet_paths("");
     assert_eq!(project_root_children.len(), 1);
-    assert_eq!(project_root_children[0].instance_path, "/root-u/sheet-a");
-    let project_child_children = project.child_sheet_paths("/root-u/sheet-a");
+    assert_eq!(
+        project_root_children[0].instance_path,
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032"
+    );
+    let project_child_children = project.child_sheet_paths(
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032",
+    );
     assert_eq!(project_child_children.len(), 1);
     assert_eq!(
         project_child_children[0].instance_path,
-        "/root-u/sheet-a/sheet-b"
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
     );
 
     let mut project = project;
-    assert!(project.set_current_sheet_path("/root-u/sheet-a/sheet-b"));
+    assert!(project.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
+    ));
     assert_eq!(
         project
             .current_sheet_path()
             .expect("updated current sheet path")
             .instance_path,
-        "/root-u/sheet-a/sheet-b"
+        "/70000000-0000-0000-0000-000000000031/70000000-0000-0000-0000-000000000032/70000000-0000-0000-0000-000000000033"
     );
     assert_eq!(
         project
