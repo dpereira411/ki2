@@ -194,11 +194,11 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `UpdateSheetInstanceData`
   Status: loader-side page propagation now applies root `sheet_instances` onto the loaded sheet-path list; later per-screen page-number/count state now also derives from that sorted list. Current-sheet selection also refreshes reused-screen live page state, including explicit same-schematic occurrence switches. Page comparison exactness is now locked across numeric pages, numeric-before-string pages, and natural ordering inside string pages. Remaining gap is narrower reused-screen/current-sheet semantics beyond the currently modeled page fields.
 - `SetSheetNumberAndCount`
-  Status: loader-side sheet-number/count assignment now exists both on the loaded sheet-path list and on loaded `Screen` objects (`page_number`, `page_count`, `virtual_page_number`), plus current-sheet helpers now expose the selected occurrence page state across reused-screen entry, exit, and same-schematic occurrence switches. Remaining gap is narrower exact reused-screen/current-sheet behavior beyond the currently modeled page fields.
+  Status: loader-side sheet-number/count assignment now exists both on the loaded sheet-path list and on loaded `Screen` objects (`page_number`, `page_count`, `virtual_page_number`), plus current-sheet helpers now expose the selected occurrence page state across reused-screen entry, exit, and same-schematic occurrence switches. Direct re-audit did not find another model-visible mismatch in the current representation; treat this branch as effectively exhausted unless a new concrete page-state discrepancy appears.
 - `RecomputeIntersheetRefs`
-  Status: loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list, counts reused-screen occurrences across distinct sheet paths, and preserves explicit visible-property state. Remaining gap is tighter KiCad settings/current-sheet behavior and later `UpdateAllScreenReferences` integration.
+  Status: loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list, counts reused-screen occurrences across distinct sheet paths, and preserves explicit visible-property state. Direct re-audit did not find another model-visible mismatch in the current representation; treat this branch as effectively exhausted unless a concrete current-sheet/settings discrepancy appears.
 - `UpdateAllScreenReferences`
-  Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list for unique screens, while reused screens stay on a coherent first-instance baseline until the current-sheet selection explicitly switches them. Leaving a reused screen now restores that baseline instead of leaving the last selected occurrence stuck on the shared screen. Global-label default `Intersheet References` placement is still refreshed after load. Remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
+  Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list for unique screens, while reused screens stay on a coherent first-instance baseline until the current-sheet selection explicitly switches them. Leaving a reused screen now restores that baseline instead of leaving the last selected occurrence stuck on the shared screen. Global-label default `Intersheet References` placement is still refreshed after load. Direct re-audit did not find another model-visible mismatch in the current symbol/global-label subset; treat the remaining drift here as blocked on richer per-screen model coverage.
 - `FixLegacyPowerSymbolMismatches`
   Status: loader-side legacy power-value fix now handles the representable pre-`20230221` global-power branch and explicitly leaves local-power or visible-pin symbols untouched. Remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
 - `MigrateSimModels`
@@ -219,15 +219,14 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Tighten remaining loader/post-load exactness around reused-screen/current-sheet page semantics only if direct audit still finds real model-visible mismatches.
-2. Tighten remaining loader-side `RecomputeIntersheetRefs` / `SetSheetNumberAndCount` exactness only if direct audit still finds real model-visible mismatches.
-3. Re-open the remaining blocked `MigrateSimModels` branch on the new structured `Symbol.sim_model` state instead of flat field-only rewrites.
-4. Leave parser-only blocked surfaces alone unless we explicitly choose fixture migration or error-model expansion.
+1. Re-open the remaining blocked `MigrateSimModels` branch on the new structured `Symbol.sim_model` state instead of flat field-only rewrites.
+2. Revisit loader page/intersheet branches only if a new concrete model-visible mismatch appears.
+3. Leave parser-only blocked surfaces alone unless we explicitly choose fixture migration or error-model expansion.
 
 ### Recommended Next Order
 
-1. direct-audit `SetSheetNumberAndCount` / `RecomputeIntersheetRefs` / `UpdateAllScreenReferences` for any remaining real model-visible mismatch
-2. if that audit is effectively exhausted, move the active queue to the remaining blocked `MigrateSimModels` branch on structured `Symbol.sim_model`
+1. move the active queue to the remaining blocked `MigrateSimModels` branch on structured `Symbol.sim_model`
+2. revisit loader page/intersheet branches only when a concrete new mismatch appears
 3. only then revisit parser blocked surfaces
 
 ### Bottom Line
