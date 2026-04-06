@@ -3430,7 +3430,7 @@ fn accepts_modern_page_sniff_block() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "76000000-0000-0000-0000-000000000001")
   (page 1 1)
 )"#;
     let path = temp_schematic("modern_page", src);
@@ -3971,7 +3971,7 @@ fn accepts_future_schematic_version_without_generator_version() {
     let src = r#"(kicad_sch
   (version 20990101)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "76000000-0000-0000-0000-000000000002")
 )"#;
     let path = temp_schematic("future_version", src);
     let schematic = parse_schematic_file(Path::new(&path))
@@ -4043,7 +4043,7 @@ fn accepts_empty_generator_version_payload_like_upstream() {
 fn defaults_missing_header_version_and_rejects_late_version_section() {
     let missing_src = r#"(kicad_sch
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "76000000-0000-0000-0000-000000000003")
 )"#;
     let missing_path = temp_schematic("missing_header_version", missing_src);
     let schematic = parse_schematic_file(Path::new(&missing_path)).expect("must parse");
@@ -4057,7 +4057,7 @@ fn defaults_missing_header_version_and_rejects_late_version_section() {
 
     let explicit_a4_src = r#"(kicad_sch
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "76000000-0000-0000-0000-000000000004")
   (paper "A4")
 )"#;
     let explicit_a4_path = temp_schematic("explicit_a4_page", explicit_a4_src);
@@ -4068,7 +4068,7 @@ fn defaults_missing_header_version_and_rejects_late_version_section() {
     let late_src = r#"(kicad_sch
   (generator "eeschema")
   (version 20250114)
-  (uuid "u-1")
+  (uuid "76000000-0000-0000-0000-000000000005")
   (paper "A4")
 )"#;
     let late_path = temp_schematic("late_version_section", late_src);
@@ -4183,8 +4183,8 @@ fn duplicate_header_and_title_block_sections_use_last_value_like_upstream() {
   (generator "second")
   (generator_version "9.0")
   (generator_version "9.1")
-  (uuid "u-1")
-  (uuid "u-2")
+  (uuid "76000000-0000-0000-0000-000000000006")
+  (uuid "76000000-0000-0000-0000-000000000007")
   (paper "A4")
   (title_block (title "Old") (comment 1 "one"))
   (title_block (title "New") (comment 2 "two"))
@@ -4193,8 +4193,14 @@ fn duplicate_header_and_title_block_sections_use_last_value_like_upstream() {
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
     assert_eq!(schematic.generator, "second");
     assert_eq!(schematic.generator_version.as_deref(), Some("9.1"));
-    assert_eq!(schematic.root_sheet.uuid.as_deref(), Some("u-2"));
-    assert_eq!(schematic.screen.uuid.as_deref(), Some("u-2"));
+    assert_eq!(
+        schematic.root_sheet.uuid.as_deref(),
+        Some("76000000-0000-0000-0000-000000000007")
+    );
+    assert_eq!(
+        schematic.screen.uuid.as_deref(),
+        Some("76000000-0000-0000-0000-000000000007")
+    );
 
     let title_block = schematic.screen.title_block.as_ref().expect("title block");
     assert_eq!(title_block.title.as_deref(), Some("New"));
@@ -4209,7 +4215,7 @@ fn duplicate_title_block_comment_numbers_overwrite_existing_slots() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "76000000-0000-0000-0000-000000000008")
   (paper "A4")
   (title_block
     (comment 1 "first")
