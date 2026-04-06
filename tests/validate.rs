@@ -2171,7 +2171,15 @@ fn parser_links_derived_lib_symbols_with_child_optional_metadata_overrides() {
     let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
 
     assert_eq!(linked.keywords.as_deref(), Some("root words"));
-    assert_eq!(linked.description.as_deref(), Some("root desc"));
+    assert_eq!(linked.description.as_deref(), Some("child desc"));
+    assert_eq!(
+        linked
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolDescription)
+            .map(|property| property.value.as_str()),
+        Some("child desc")
+    );
     assert_eq!(linked.embedded_fonts, Some(true));
 
     let _ = fs::remove_file(path);

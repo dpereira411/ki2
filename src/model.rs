@@ -289,6 +289,20 @@ impl LibSymbol {
         self.units[index].push_draw_item(item);
     }
 
+    pub fn set_description_field_text(&mut self, value: String) {
+        let existing = self
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == PropertyKind::SymbolDescription)
+            .expect("lib symbols start with mandatory fields");
+        existing.id = PropertyKind::SymbolDescription
+            .default_field_id()
+            .or(existing.id);
+        existing.key = PropertyKind::SymbolDescription.canonical_key().to_string();
+        existing.value = value;
+        self.sync_description_from_property();
+    }
+
     pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
         self.add_draw_item(item);
     }
@@ -308,7 +322,17 @@ impl LibSymbol {
         self.units.iter().any(|unit| unit.body_style > 1)
     }
 
+    pub fn sync_description_from_property(&mut self) {
+        self.description = self
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolDescription)
+            .map(|property| property.value.clone())
+            .filter(|value| !value.is_empty());
+    }
+
     pub fn refresh_library_tree_caches(&mut self) {
+        self.sync_description_from_property();
         self.sort_draw_items();
     }
 

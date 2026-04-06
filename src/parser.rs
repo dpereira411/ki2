@@ -2083,10 +2083,11 @@ impl KiCadSchematicParser {
                 .find(|existing| existing.kind == property.kind)
                 .expect("lib symbols start with mandatory fields");
             *existing = property;
+            symbol.sync_description_from_property();
         } else if name == "ki_keywords" {
             symbol.keywords = Some(property.value);
         } else if name == "ki_description" {
-            symbol.description = Some(property.value);
+            symbol.set_description_field_text(property.value);
         } else if name == "ki_fp_filters" {
             symbol.fp_filters_specified = true;
             symbol.fp_filters = property
@@ -5992,10 +5993,14 @@ impl KiCadSchematicParser {
                     );
                 }
 
+                flattened.sync_description_from_property();
+
                 flattened
             }
         } else {
-            symbol.clone()
+            let mut symbol = symbol.clone();
+            symbol.sync_description_from_property();
+            symbol
         };
 
         for unit in &mut flattened.units {
@@ -6006,6 +6011,7 @@ impl KiCadSchematicParser {
                 .map(|item| item.kind.clone())
                 .collect();
         }
+        flattened.sync_description_from_property();
         stack.remove(lib_id);
         cache.insert(lib_id.to_string(), flattened.clone());
         Some(flattened)
