@@ -1256,9 +1256,7 @@ impl Symbol {
             .trim_end_matches(|ch: char| ch.is_ascii_digit() || matches!(ch, '?' | '*'))
             .trim();
 
-        if !trimmed.is_empty() {
-            self.prefix = trimmed.to_string();
-        }
+        self.prefix = trimmed.to_string();
     }
 
     pub fn next_field_ordinal(&self) -> i32 {
@@ -1421,7 +1419,7 @@ mod tests {
         assert!(!symbol.in_netlist);
 
         symbol.set_field_text(PropertyKind::SymbolReference, "".to_string());
-        assert_eq!(symbol.prefix, "#PWR");
+        assert_eq!(symbol.prefix, "");
         assert!(symbol.in_netlist);
     }
 

@@ -634,6 +634,42 @@ fn symbol_reference_property_updates_prefix() {
 }
 
 #[test]
+fn later_empty_symbol_reference_clears_prefix() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-empty-symbol-prefix")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "J12")
+    (property "Reference" "")))"#;
+    let path = temp_schematic("empty_symbol_prefix_from_reference", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.prefix, "");
+    assert!(symbol.in_netlist);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn symbol_at_moves_preparsed_properties_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)

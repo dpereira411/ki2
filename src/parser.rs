@@ -3979,17 +3979,7 @@ impl KiCadSchematicParser {
                         let kind = property.kind;
                         *existing = property;
                         if kind == PropertyKind::SymbolReference {
-                            let reference = existing.value.replace('~', " ");
-                            symbol.in_netlist = !reference.starts_with('#');
-                            let trimmed = reference
-                                .trim()
-                                .trim_end_matches(|ch: char| {
-                                    ch.is_ascii_digit() || matches!(ch, '?' | '*')
-                                })
-                                .trim();
-                            if !trimmed.is_empty() {
-                                symbol.prefix = trimmed.to_string();
-                            }
+                            symbol.update_prefix_from_reference();
                         }
                     } else if let Some(existing) = symbol
                         .properties
