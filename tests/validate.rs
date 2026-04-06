@@ -3431,6 +3431,20 @@ fn list_generator_version_payload_fails_at_branch_close() {
 }
 
 #[test]
+fn accepts_empty_generator_version_payload_like_upstream() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (generator_version)
+)"#;
+    let path = temp_schematic("empty_generator_version", src);
+    let schematic = parse_schematic_file(Path::new(&path))
+        .expect("empty generator_version should stay on the upstream close-owned path");
+    assert_eq!(schematic.generator_version.as_deref(), Some(""));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn defaults_missing_header_version_and_rejects_late_version_section() {
     let missing_src = r#"(kicad_sch
   (generator "eeschema")

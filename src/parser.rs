@@ -439,12 +439,12 @@ impl KiCadSchematicParser {
                 "generator_version" => {
                     let _ = self.need_unquoted_symbol_atom("generator_version")?;
                     match &self.current().kind {
+                        TokKind::Right => {
+                            self.generator_version = Some(String::new());
+                        }
                         TokKind::Atom(value) => {
                             self.generator_version = Some(value.clone());
                             self.idx += 1;
-                        }
-                        TokKind::Right => {
-                            return Err(self.error_here("missing generator_version"));
                         }
                         _ => {
                             self.generator_version = Some(String::new());
