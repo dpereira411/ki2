@@ -120,7 +120,7 @@ not drive the queue unless a parent parser routine exposes them.
 | top-level dispatch loop | `parse_schematic_body` | `different` | dispatch coverage exists, but exact fallback/error flow is still being tightened | source comparison | finish after owner routines |
 | `parsePAGE_INFO` | `parse_page_info` | `same` | one of the closest routines | existing map/tests | none |
 | `parseTITLE_BLOCK` | `parse_title_block` | `same` | comment-slot and branch ownership are close enough | existing map/tests | none |
-| `parseLibSymbols` wrapper | `parse_sch_lib_symbols` | `different` | structurally close, but still depends on final `parse_lib_symbol` exactness | source comparison | resolve through `parse_lib_symbol` |
+| `parseLibSymbols` wrapper | `parse_sch_lib_symbols` | `same` | direct re-audit shows the wrapper loop is now structurally aligned: it owns the `lib_symbols` head, requires only `symbol` children, and dispatches directly into `parse_lib_symbol()` like upstream | direct source comparison | none |
 
 ## Layer 2: Shared Leaves / Subparsers
 
