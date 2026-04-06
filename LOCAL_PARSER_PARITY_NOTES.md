@@ -200,7 +200,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `UpdateAllScreenReferences`
   Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list for unique screens, while reused screens stay on a coherent first-instance baseline until the current-sheet selection explicitly switches them. Leaving a reused screen now restores that baseline instead of leaving the last selected occurrence stuck on the shared screen. Global-label default `Intersheet References` placement is still refreshed after load. Remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
 - `FixLegacyPowerSymbolMismatches`
-  Status: first loader-side global-power value fix now handles pre-`20230221` symbols linked to global power lib symbols with hidden `power_in` pins; remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
+  Status: loader-side legacy power-value fix now handles the representable pre-`20230221` global-power branch and explicitly leaves local-power or visible-pin symbols untouched. Remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
 - `MigrateSimModels`
   Status: loader-side migration now covers the upstream-representable slices the current model can express:
   1. the early-return branch that rewrites mid-v7 field spellings (`Sim_Device`, `Sim_Type`, `Sim_Params`, `Sim_Pins`) and converts `Sim_Pins` index arrays into `Sim.Pins` name-value maps when source pins are available
@@ -208,6 +208,8 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   3. the inferred legacy passive/source branch where `Spice_Primitive` matches the symbol prefix and the existing `Value` field remains the model source, while legacy `Spice_Node_Sequence` is still migrated into `Sim.Pins`
   4. the explicit legacy `V` / `I` DC-source branch where `Spice_Model` like `dc(1)` becomes `Sim.Device`, `Sim.Type=DC`, migrated `Sim.Pins`, and an updated `Value` field
   5. the explicit legacy `V` / `I` built-in source branches where `Spice_Model` like `sin(...)`, `pulse(...)`, `exp(...)`, `am(...)`, and `sffm(...)` becomes `Sim.Device`, `Sim.Type`, named `Sim.Params`, and migrated/defaulted `Sim.Pins`
+  6. raw `Spice_Lib_File` fallback now has explicit coverage for escaped-model parameter formatting and default `Sim.Pins` synthesis from lib pins when `Spice_Node_Sequence` is absent
+  7. legacy `Spice_Node_Sequence` and `dc(...)` parsing now accept full decoded whitespace, not only plain spaces
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, broader internal source/model functions beyond the current `DC/SIN/PULSE/EXP/AM/SFFM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 
 ### More Exact Current Priority
