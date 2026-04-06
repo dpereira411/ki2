@@ -425,12 +425,15 @@ impl KiCadSchematicParser {
             {
                 effective_head = "paper";
             }
+            #[allow(unused_assignments)]
             let mut section_consumed_right = false;
 
             match effective_head {
                 "generator" => {
                     let _ = self.need_unquoted_symbol_atom("generator")?;
-                    self.generator = Some(self.need_symbol_atom("generator")?)
+                    self.generator = Some(self.need_symbol_atom("generator")?);
+                    self.need_right()?;
+                    section_consumed_right = true;
                 }
                 "host" => {
                     let _ = self.need_unquoted_symbol_atom("host")?;
@@ -438,6 +441,8 @@ impl KiCadSchematicParser {
                     if self.require_known_version()? < 20200827 {
                         let _ = self.need_symbol_atom("host version")?;
                     }
+                    self.need_right()?;
+                    section_consumed_right = true;
                 }
                 "generator_version" => {
                     let _ = self.need_unquoted_symbol_atom("generator_version")?;
@@ -460,12 +465,16 @@ impl KiCadSchematicParser {
                             ),
                         ));
                     }
+                    self.need_right()?;
+                    section_consumed_right = true;
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
                     let uuid = self.parse_kiid()?;
                     self.screen.uuid = Some(uuid.clone());
                     self.root_uuid = Some(uuid);
+                    self.need_right()?;
+                    section_consumed_right = true;
                 }
                 "paper" => {
                     let _ = self.need_unquoted_symbol_atom("paper")?;
@@ -491,6 +500,8 @@ impl KiCadSchematicParser {
                 "embedded_fonts" => {
                     let _ = self.need_unquoted_symbol_atom("embedded_fonts")?;
                     self.screen.embedded_fonts = Some(self.parse_bool_atom("embedded_fonts")?);
+                    self.need_right()?;
+                    section_consumed_right = true;
                 }
                 "embedded_files" => {
                     let block_depth = self.current_nesting_depth();
