@@ -6695,6 +6695,37 @@ fn load_tree_migrates_legacy_dc_source_fields() {
             .map(|property| property.value.as_str()),
         Some("1=1 2=2")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("DC")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6892,6 +6923,37 @@ fn load_tree_migrates_legacy_sin_source_fields() {
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("1=1 2=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("SIN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("dc=0 ampl=1 f=1k td=2n")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
@@ -7130,11 +7192,35 @@ fn load_tree_migrates_legacy_pwl_source_fields() {
     );
     assert_eq!(
         symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("PWL")
+    );
+    assert_eq!(
+        symbol
             .properties
             .iter()
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("1=1 2=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
@@ -7338,6 +7424,16 @@ fn load_tree_defaults_source_pin_map_for_legacy_source_models() {
             .map(|property| property.value.as_str()),
         Some("1=1 2=2")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -7382,6 +7478,16 @@ fn load_tree_migrates_punctuated_legacy_spice_pin_maps() {
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("2=1 1=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "2".to_string()),
+            ("2".to_string(), "1".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
@@ -7436,6 +7542,27 @@ fn load_tree_migrates_legacy_exp_source_fields() {
             .map(|property| property.value.as_str()),
         Some("y1=0 y2=5 td1=1n tau1=2n td2=3n tau2=4n")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("EXP")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("y1=0 y2=5 td1=1n tau1=2n td2=3n tau2=4n")
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -7487,6 +7614,27 @@ fn load_tree_migrates_legacy_am_source_fields() {
             .iter()
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.as_str()),
+        Some("vo=1 vmo=2 vma=3 fm=4k fc=5k td=6n phasem=7 phasec=8")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("AM")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
         Some("vo=1 vmo=2 vma=3 fm=4k fc=5k td=6n phasem=7 phasec=8")
     );
 
@@ -7558,6 +7706,37 @@ fn load_tree_migrates_legacy_sffm_source_fields() {
             .find(|property| property.key == "Sim.Pins")
             .map(|property| property.value.as_str()),
         Some("2=1 1=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("I")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("SFFM")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("vo=1 va=2 fm=3k mdi=4 fc=5k phasem=6 phasec=7")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "2".to_string()),
+            ("2".to_string(), "1".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);
