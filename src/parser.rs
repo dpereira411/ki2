@@ -3952,9 +3952,9 @@ impl KiCadSchematicParser {
                     value.clone()
                 }
                 _ => {
-                    return Err(
-                        self.expecting("at, size, stroke, fill, instances, uuid, property, or pin")
-                    );
+                    return Err(self.expecting(
+                        "at, size, stroke, background, instances, uuid, property, or pin",
+                    ));
                 }
             };
             match head.as_str() {
@@ -4270,9 +4270,9 @@ impl KiCadSchematicParser {
                     self.need_right()?;
                 }
                 _ => {
-                    return Err(
-                        self.expecting("at, size, stroke, fill, instances, uuid, property, or pin")
-                    );
+                    return Err(self.expecting(
+                        "at, size, stroke, background, instances, uuid, property, or pin",
+                    ));
                 }
             }
         }
