@@ -24,7 +24,7 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. audit and expand the local diagnostic/error model for native parse-error parity
+1. tighten `Error` / `Diagnostic` display and source-location fidelity for native parse-error parity
 
 This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
 work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
@@ -32,13 +32,18 @@ work in `src/parser.rs` unless one of the blocked surfaces is explicitly being u
 If diagnostic/error unblocking is chosen, execute it in this order:
 1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate the parser fields lost by the current
    reduced representation
+   - done
 2. expand the diagnostic model so parser helpers can carry structured source/location/expectation
    data
+   - done
 3. retarget `expecting`, `unexpected`, `error_here`, and `validation` to build structured
    diagnostics first
+   - done
 4. add focused exactness tests for representative parser and validation failure families
-5. only then tighten final `Display` / formatting behavior to match native KiCad wording as far as
-   the local CLI model can support
+   - done
+5. tighten final `Display` / formatting behavior to match native KiCad wording as far as the local
+   CLI model can support
+   - active
 
 ## Layer 0: Support Files
 
@@ -60,7 +65,7 @@ If diagnostic/error unblocking is chosen, execute it in this order:
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `blocked` | native parse-error parity now depends on expanding the local diagnostic model beyond `{ code, message, path, span }` so KiCad-style source/line/offset formatting and structured expectation data can be represented explicitly | parser notes + source inspection | audit `src/error.rs` / `src/diagnostic.rs`, expand structured diagnostic fields, then retarget parser helpers |
+| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds now exist, but native parity still needs final display/source-location fidelity beyond the current reduced `{ path, span }` rendering | parser notes + diagnostic regressions | tighten final formatting/source rendering |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -71,7 +76,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `blocked` | exact wording/span/source parity now depends on the same diagnostic model expansion as `Diagnostic::error`, plus a later display-format audit once structured fields exist | parser notes + source inspection | expand diagnostic fields first, then tighten `Display` formatting |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data now exists; the remaining gap is final wording and source-location rendering | parser notes + diagnostic regressions | tighten `Display` formatting and source rendering |
 
 ### `src/model.rs` parser support methods
 

@@ -116,9 +116,9 @@ Current summary:
 - `need_quoted_atom` (`not_applicable`)
 - `need_symbol_or_number_atom` (`same`)
 - `need_dsn_string_atom` (`same`)
-- `expecting` (`blocked`)
-- `unexpected` (`blocked`)
-- `error_here` (`blocked`)
+- `expecting` (`same`)
+- `unexpected` (`same`)
+- `error_here` (`same`)
 
 ## Layer 8: Parser-Support Model Methods
 
@@ -160,7 +160,7 @@ Current summary:
 These are the only remaining parser-only gaps recorded by the current audit:
 
 1. exact diagnostic / error-model parity
-   - blocked on expanding the local diagnostic representation beyond the current reduced model
+   - blocked on final display/source-location fidelity after the structured diagnostic expansion
    - touches:
      - `Diagnostic::error`
      - parser error helpers:
@@ -170,10 +170,15 @@ These are the only remaining parser-only gaps recorded by the current audit:
      - `Error` formatting / source-location fidelity
    - staged unblock order:
      1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate which parser fields are flattened away
+        - done
      2. expand the diagnostic model to preserve structured source/location/expectation data
+        - done
      3. retarget parser helper construction onto structured diagnostics
+        - done
      4. lock representative parser/validation failure families with focused tests
-     5. only then tighten final `Display` formatting for native wording/source fidelity
+        - done
+     5. tighten final `Display` formatting for native wording/source fidelity
+        - active
 
 ## Rule Of Use
 

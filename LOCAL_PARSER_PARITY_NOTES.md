@@ -34,11 +34,7 @@ The diagnostic block is now a support-model expansion task, not broad parser-rou
 
 To unblock native KiCad parse-diagnostic parity:
 
-1. inventory the exact parser surfaces that currently collapse source fidelity:
-   - `Diagnostic::error`
-   - parser helpers `expecting`, `unexpected`, `error_here`
-   - `validation`
-   - `Error` display formatting
+1. inventory the exact parser surfaces that currently collapse source fidelity
 2. expand the local diagnostic model so it can carry the fields the parser already knows at the
    failure site instead of flattening them immediately into a reduced message:
    - path
@@ -59,9 +55,14 @@ To unblock native KiCad parse-diagnostic parity:
 Execution order:
 
 1. audit current `src/error.rs` / `src/diagnostic.rs` formatting and document the missing fields
+   - done
 2. expand the diagnostic model and thread structured data through parser helper construction
+   - done: structured diagnostic kinds now distinguish generic validation, `expecting`, and
+     `unexpected` parser failures
 3. lock parser-helper exactness with focused tests before touching broad wording
+   - done: parser-helper kind regressions are in place
 4. tighten final `Display` formatting and source-location rendering
+   - remaining active diagnostic task
 5. re-audit blocked parser helpers in `LOCAL_FUNCTION_PARITY_MAP.md`
 
 Closest-to-upstream areas so far:
