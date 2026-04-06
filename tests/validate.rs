@@ -1188,7 +1188,7 @@ fn sorts_loaded_sheet_pages_numerically() {
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "70000000-0000-0000-0000-000000000044")
 )"#;
     let root_src = r#"(kicad_sch
   (version 20260306)
@@ -1250,7 +1250,7 @@ fn initializes_sheet_pages_when_all_sheet_instance_pages_are_missing() {
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "70000000-0000-0000-0000-000000000024")
 )"#;
     let root_src = r#"(kicad_sch
   (version 20260306)
@@ -1308,12 +1308,12 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
     let grandchild_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "grandchild-root")
+  (uuid "70000000-0000-0000-0000-000000000035")
 )"#;
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "70000000-0000-0000-0000-000000000034")
   (sheet
     (uuid "70000000-0000-0000-0000-000000000033")
     (property "Sheetname" "Grandchild")
@@ -1445,7 +1445,7 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "71000000-0000-0000-0000-000000000003")
   (paper "A4")
   (global_label "VCC" (shape input) (at 10 10 0))
 )"#;
@@ -1523,7 +1523,7 @@ fn recomputing_intersheet_refs_preserves_explicit_visible_property_state() {
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "71000000-0000-0000-0000-000000000013")
   (paper "A4")
   (global_label "VCC" (shape input) (at 10 10 0))
 )"#;
@@ -1596,7 +1596,7 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "71000000-0000-0000-0000-000000000033")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -1718,7 +1718,7 @@ fn update_all_screen_references_refreshes_instance_value_and_footprint_after_lat
     let child_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "child-root")
+  (uuid "71000000-0000-0000-0000-000000000053")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
