@@ -1107,6 +1107,15 @@ impl Symbol {
     }
 
     pub fn sync_sim_model_from_properties(&mut self) {
+        let value_binding = self
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .and_then(|property| match property.value.as_str() {
+                "${SIM.PARAMS}" => Some(SimValueBinding::Params),
+                "${SIM.NAME}" => Some(SimValueBinding::Name),
+                _ => None,
+            });
         let device = self
             .properties
             .iter()
@@ -1205,8 +1214,15 @@ impl Symbol {
             param_values,
             pin_pairs,
             pins,
+            value_binding,
         });
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimValueBinding {
+    Params,
+    Name,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1222,6 +1238,7 @@ pub struct SimModel {
     pub param_values: BTreeMap<String, String>,
     pub pin_pairs: Vec<(String, String)>,
     pub pins: BTreeMap<String, String>,
+    pub value_binding: Option<SimValueBinding>,
 }
 
 fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
@@ -1386,8 +1403,8 @@ mod tests {
         BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LabelSpin,
         LibDrawItem, LibSymbol, LibSymbolUnit, Line, LineKind, NoConnect, Property, PropertyKind,
         Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide,
-        StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox,
-        TextKind,
+        SimValueBinding, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell,
+        Text, TextBox, TextKind,
     };
 
     fn push_lib_draw_item(symbol: &mut LibSymbol, item: LibDrawItem) {
@@ -1637,6 +1654,13 @@ mod tests {
                 ("2".to_string(), "2".to_string()),
             ]))
         );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.value_binding),
+            None
+        );
     }
 
     #[test]
@@ -1706,6 +1730,13 @@ mod tests {
                 ("model".to_string(), "BC\"547".to_string()),
                 ("type".to_string(), "Q".to_string()),
             ]))
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.value_binding),
+            None
         );
     }
 
@@ -1779,6 +1810,39 @@ mod tests {
                 ("2".to_string(), "1".to_string()),
                 ("10".to_string(), "3".to_string()),
             ]))
+        );
+    }
+
+    #[test]
+    fn symbol_tracks_sim_value_binding_placeholders() {
+        let mut symbol = Symbol::new();
+        symbol.set_field_text(PropertyKind::SymbolValue, "${SIM.PARAMS}".to_string());
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Device",
+            "SPICE".to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.value_binding),
+            Some(SimValueBinding::Params)
+        );
+
+        symbol.set_field_text(PropertyKind::SymbolValue, "${SIM.NAME}".to_string());
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.value_binding),
+            Some(SimValueBinding::Name)
         );
     }
 
