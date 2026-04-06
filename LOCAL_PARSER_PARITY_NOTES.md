@@ -230,7 +230,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   25. the first concrete resolver-backed model parsing layer now exists for the currently representable library-backed branches:
      - SPICE `.subckt` entries resolve selected model name, generated pin names, and declared `PARAMS:` defaults
      - SPICE `.model` entries resolve selected model name, model type, and parameter defaults
-     - IBIS component files resolve selected component name and available pin identifiers
+     - IBIS component files resolve selected component name, available pin identifiers, and the selected pin's model name when that pin/model state exists on the symbol
   26. loader-side resolved metadata now also refines the coarse origin heuristic when the resolver proves an IBIS file: even without explicit `Sim.Ibis.*` fields, a resolved `.ibs` library now tags the loaded symbol as `Ibis` instead of leaving it on the generic library-reference path
   27. the library-backed loader branches now consume that resolver state:
      - already-modern and migrated library-backed symbols default `Sim.Pins` from resolved model pins when a compatible model signature exists
