@@ -6961,6 +6961,65 @@ fn resolves_embedded_spice_model_with_continuation_lines() {
 }
 
 #[test]
+fn resolves_library_model_from_sim_name_before_inline_params() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000032e")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.model MODEL NPN (BF=100)|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models.lib")
+    (property "Sim.Name" "MODEL AREA=2")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_strips_inline_sim_name_params", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "models.lib".to_string(),
+                },
+                kind: SimLibraryKind::Spice,
+            },
+            name: "MODEL".to_string(),
+            kind: ResolvedSimModelKind::SpiceModel,
+            model_type: Some("NPN".to_string()),
+            ibis_model_type: None,
+            diff_pin: None,
+            pins: Vec::new(),
+            params: vec![("BF".to_string(), Some("100".to_string()))],
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_defaults_library_backed_sim_pins_from_resolved_model() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -7154,6 +7213,68 @@ fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
             ("1".to_string(), "1".to_string()),
             ("2".to_string(), "2".to_string()),
         ]))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_resolves_sim_name_before_inline_library_params() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090a")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.model MODEL NPN (BF=100)|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models.lib")
+    (property "Sim.Name" "MODEL AREA=2")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_resolves_sim_name_before_inline_params", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_name.as_deref()),
+        Some("MODEL")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::SpiceModel)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
+        Some("NPN")
     );
 
     let _ = fs::remove_file(path);

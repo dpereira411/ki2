@@ -415,11 +415,21 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
 ) -> Option<ResolvedSimModel> {
     let library =
         resolve_symbol_sim_library_from_embedded_files(schematic_path, embedded_files, symbol)?;
-    let name = symbol
+    let raw_name = symbol
         .sim_model
         .as_ref()
         .and_then(|sim_model| sim_model.name.as_deref())?
         .trim()
+        .to_string();
+
+    if raw_name.is_empty() {
+        return None;
+    }
+
+    let name = raw_name
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
         .to_string();
 
     if name.is_empty() {
