@@ -20,12 +20,20 @@ Closest-to-upstream areas so far:
 - Some branches are still reduced or merged compared to upstream.
 - Not every accepted KiCad section has a routine boundary that mirrors the original parser.
 
-2. Shared text parsing is still not a literal port
+2. Shared text/effects parsing is still not a literal port
 
 - `parseSchText()`
 - `parseEDA_TEXT()` callers
 - label / text / text_box / directive / netclass / global / hierarchical branches
 - effects / justify / hide / hyperlink semantics still need more exact control-flow parity
+
+Direct re-audit shows `parseSchText()` itself is no longer the broad owner-routine mismatch it used to
+be:
+
+- the shared text-family object-construction loop, `shape` / `length` / `iref` / `property`
+  ownership, and final fieldless-label autoplacement behavior are now structurally close to upstream
+- the remaining text-family gap is narrower and is now concentrated more in `parseEDA_TEXT()`
+  exactness and text/effects interaction than in a missing `parseSchText()` routine shape
 
 3. Property / field parsing still needs closer upstream shape
 
@@ -119,8 +127,8 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Tighten remaining exact `parseSchText()` semantics and failure timing.
-2. Finish `parseLibSymbol()` / library draw-item routine parity.
+1. Finish `parseLibSymbol()` / library draw-item routine parity.
+2. Tighten remaining exact `parseEDA_TEXT()` and shared text/effects semantics.
 3. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
 4. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
 5. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.

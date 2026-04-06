@@ -38,7 +38,7 @@ Boundary:
 | --- | --- | --- | --- |
 | `parseStroke` | `parse_stroke` | done | token ownership mostly aligned |
 | `parseFill` | `parse_fill` | done | token ownership mostly aligned |
-| `parseEDA_TEXT` | `parse_eda_text` | partial | ownership flow is much closer, but final parser-wide token/error exactness still depends on it |
+| `parseEDA_TEXT` | `parse_eda_text` | partial | ownership flow is much closer; remaining text-family drift is now concentrated here in final token/error exactness rather than in the owning text routine |
 | `parseSchField` | `parse_sch_field` | partial | direct audit shows the main parent-sensitive classification flow is close; remaining work is exactness, not a large missing branch family |
 | `parseSchSheetPin` | `parse_sch_sheet_pin` | done | constructor defaults, shape token flow, at/uuid/effects handling, and close ownership are now close enough that it is no longer the current bottleneck |
 | `parseProperty` (lib) | `parse_lib_property` | partial | direct audit shows the constructor/order and insertion policy are close; remaining work is exactness around the surrounding lib-symbol routine |
@@ -67,7 +67,7 @@ Boundary:
 | --- | --- | --- | --- |
 | `parseSchematicSymbol` | `parse_schematic_symbol` | partial | direct comparison shows the owning flow is closer than earlier notes implied; remaining work is narrower exactness and parent-routine interaction |
 | `parseSheet` | `parse_sch_sheet` | partial | direct comparison shows the owning flow is closer than earlier notes implied; remaining work is narrower exactness and surrounding parser interaction |
-| `parseSchText` | `parse_sch_text` | partial | shared family is unified now, but still not fully signed off |
+| `parseSchText` | `parse_sch_text` | partial | direct upstream audit shows the owning shared-family loop is structurally close; remaining text-family gaps are narrower exactness and `parse_eda_text` interaction, not a missing whole-routine shape |
 | `parseSchTextBox` | `parse_sch_text_box` | done | shared owner/body split, raw uuid path, and legacy start/end/size/margins flow now line up closely enough that it is no longer the current bottleneck |
 | `parseSchTableCell` | `parse_sch_table_cell` | done | distinct cell ownership and shared textbox-body routing now match upstream closely enough that it is no longer the current bottleneck |
 | `parseSchTextBoxContent` | `parse_sch_text_box_content` | done | shared textbox body is now structurally close: caller-owned mutation, span gating, raw uuid path, and legacy size/end/margins flow are aligned enough to stop treating it as the current bottleneck |
@@ -130,8 +130,8 @@ These are still parent/owner-sensitive leaves that many higher routines depend o
 
 Pick the first routine cluster whose direct dependencies above are no longer the bottleneck:
 
-1. Revisit `parse_sch_text` against upstream `parseSchText()` for the remaining owner-flow and exactness edges.
-2. Revisit `parse_lib_symbol` against upstream `parseLibSymbol()` plus the remaining draw-item/finalization exactness.
+1. Revisit `parse_lib_symbol` against upstream `parseLibSymbol()` plus the remaining draw-item/finalization exactness.
+2. Revisit `parse_eda_text` and the remaining shared text/effects exactness exposed by direct upstream comparison.
 3. Revisit `parse_sch_sheet` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
 4. Revisit `parse_schematic_symbol` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
 5. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
