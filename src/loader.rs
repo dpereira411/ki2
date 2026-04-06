@@ -429,6 +429,14 @@ impl SchematicLoader {
         }
 
         let symbol_instances = self.schematics[root_index].screen.symbol_instances.clone();
+        let occurrence_counts: HashMap<PathBuf, usize> =
+            sheet_paths
+                .iter()
+                .fold(HashMap::new(), |mut counts, sheet_path| {
+                    *counts.entry(sheet_path.schematic_path.clone()).or_insert(0) += 1;
+                    counts
+                });
+        let mut seeded_reused_schematics = BTreeSet::new();
 
         for sheet_path in sheet_paths {
             let Some(schematic_index) = self
@@ -493,6 +501,16 @@ impl SchematicLoader {
                     .instances
                     .retain(|existing| existing.path != local_instance.path);
                 symbol.instances.push(local_instance);
+            }
+
+            if occurrence_counts
+                .get(&sheet_path.schematic_path)
+                .copied()
+                .unwrap_or(0)
+                > 1
+                && seeded_reused_schematics.insert(sheet_path.schematic_path.clone())
+            {
+                seed_first_symbol_instance_state(&mut self.schematics[schematic_index]);
             }
         }
     }

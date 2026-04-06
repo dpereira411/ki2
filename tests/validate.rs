@@ -988,6 +988,200 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
 }
 
 #[test]
+fn legacy_reused_screens_keep_first_instance_state_until_selected() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_legacy_reuse_instances_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20221001)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000101")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "70000000-0000-0000-0000-000000000102")
+    (property "Reference" "R?")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20221001)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000111")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "70000000-0000-0000-0000-000000000112")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "70000000-0000-0000-0000-000000000113")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "9"))
+    (path "/70000000-0000-0000-0000-000000000112" (page "1"))
+    (path "/70000000-0000-0000-0000-000000000113" (page "2")))
+  (symbol_instances
+    (path "/70000000-0000-0000-0000-000000000112/70000000-0000-0000-0000-000000000102"
+      (reference "R1")
+      (unit 1)
+      (value "10k")
+      (footprint "Resistor_SMD:R_0603"))
+    (path "/70000000-0000-0000-0000-000000000113/70000000-0000-0000-0000-000000000102"
+      (reference "R2")
+      (unit 2)
+      (value "22k")
+      (footprint "Resistor_SMD:R_0402")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load reused child");
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    assert_eq!(child.screen.page_number, None);
+    assert_eq!(child.screen.page_count, None);
+    assert_eq!(child.screen.virtual_page_number, None);
+    let symbol = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("child symbol");
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(symbol.unit, Some(1));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
+
+    assert!(loaded.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000111/70000000-0000-0000-0000-000000000113"
+    ));
+    let selected_child = loaded
+        .current_schematic()
+        .expect("selected child schematic");
+    let selected_symbol = selected_child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("selected child symbol");
+    assert_eq!(
+        selected_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R2")
+    );
+    assert_eq!(selected_symbol.unit, Some(2));
+    assert_eq!(
+        selected_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("22k")
+    );
+    assert_eq!(
+        selected_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0402")
+    );
+
+    assert!(loaded.set_current_sheet_path(""));
+    let reset_child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("reset child schematic");
+    let reset_symbol = reset_child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("reset child symbol");
+    assert_eq!(
+        reset_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(reset_symbol.unit, Some(1));
+    assert_eq!(
+        reset_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        reset_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn placed_symbols_start_with_mandatory_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
