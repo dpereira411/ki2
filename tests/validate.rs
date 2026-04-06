@@ -11237,7 +11237,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let schematic = parse_schematic_file(Path::new(&legacy_arc_path)).expect("must parse");
     let item = &schematic.screen.lib_symbols[0].units[0].draw_items[0];
     assert_eq!(item.kind, "arc");
-    assert_eq!(item.points, vec![[0.0, 0.0], [2.0, 0.0]]);
+    assert_eq!(item.points, vec![[2.0, 0.0], [0.0, 0.0]]);
     assert_eq!(item.arc_center, Some([1.0, -1.0]));
     assert_eq!(item.radius, Some(1.5));
     assert_eq!(item.arc_start_angle, Some(0.0));
@@ -11339,7 +11339,7 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
         .find(|item| item.kind == "arc")
         .expect("arc");
     assert_eq!(arc.kind, "arc");
-    assert_eq!(arc.points, vec![[1.0, 0.0], [0.0, 1.0]]);
+    assert_eq!(arc.points, vec![[0.0, 1.0], [1.0, 0.0]]);
     assert_eq!(arc.arc_center, Some([0.0, 0.0]));
     assert_eq!(arc.arc_start_angle, Some(0.0));
     assert_eq!(arc.arc_end_angle, Some(90.0));

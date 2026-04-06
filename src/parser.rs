@@ -1389,6 +1389,8 @@ impl KiCadSchematicParser {
 
         if saw_mid {
             item.points = vec![start_point, mid_point, end_point];
+        } else if saw_angles {
+            item.points = vec![end_point, start_point];
         } else {
             item.points = vec![start_point, end_point];
         }
