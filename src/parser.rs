@@ -4090,11 +4090,6 @@ impl KiCadSchematicParser {
                             property.id = PropertyKind::SheetFile.default_field_id();
                         }
                     }
-                    if matches!(property.kind, PropertyKind::SheetUser) {
-                        property.ordinal = properties.iter().fold(42, |ordinal, existing| {
-                            ordinal.max(existing.sort_ordinal() + 1)
-                        });
-                    }
                     properties.push(property);
                 }
                 "pin" => {

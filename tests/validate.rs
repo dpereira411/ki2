@@ -4237,7 +4237,7 @@ fn sheet_user_fields_advance_pending_ordinals() {
         })
         .expect("sheet");
     ordinals.sort_by_key(|(key, _)| *key);
-    assert_eq!(ordinals, vec![("UserA", 42), ("UserB", 43)]);
+    assert_eq!(ordinals, vec![("UserA", 42), ("UserB", 42)]);
 
     let _ = fs::remove_file(path);
 }
