@@ -5562,6 +5562,8 @@ fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
     (property "Reference" "V?")
     (property "Sim.Device" "V")
     (property "Sim.Type" "PULSE")
+    (property "Sim.Library" "models.kicad_sim")
+    (property "Sim.Name" "MyPulse")
     (property "Sim.Params" "y1=0 y2=2 td=1n")
     (property "Sim.Pins" "1=1 2=2")
     (at 1 2 0))
@@ -5597,6 +5599,20 @@ fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
             .as_ref()
             .and_then(|sim_model| sim_model.model_type.as_deref()),
         Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.library.as_deref()),
+        Some("models.kicad_sim")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        Some("MyPulse")
     );
     assert_eq!(
         symbol

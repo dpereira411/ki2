@@ -1117,6 +1117,16 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Type")
             .map(|property| property.value.clone());
+        let library = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Library")
+            .map(|property| property.value.clone());
+        let name = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Name")
+            .map(|property| property.value.clone());
         let params = self
             .properties
             .iter()
@@ -1140,7 +1150,13 @@ impl Symbol {
             })
             .unwrap_or_default();
 
-        if device.is_none() && model_type.is_none() && params.is_none() && pins.is_empty() {
+        if device.is_none()
+            && model_type.is_none()
+            && library.is_none()
+            && name.is_none()
+            && params.is_none()
+            && pins.is_empty()
+        {
             self.sim_model = None;
             return;
         }
@@ -1148,6 +1164,8 @@ impl Symbol {
         self.sim_model = Some(SimModel {
             device,
             model_type,
+            library,
+            name,
             params,
             param_values,
             pins,
@@ -1159,6 +1177,8 @@ impl Symbol {
 pub struct SimModel {
     pub device: Option<String>,
     pub model_type: Option<String>,
+    pub library: Option<String>,
+    pub name: Option<String>,
     pub params: Option<String>,
     pub param_values: BTreeMap<String, String>,
     pub pins: BTreeMap<String, String>,
@@ -1462,6 +1482,18 @@ mod tests {
         ));
         symbol.properties.push(Property::new_named(
             PropertyKind::User,
+            "Sim.Library",
+            "models.kicad_sim".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Name",
+            "2N3904".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
             "Sim.Pins",
             "1=1 2=2".to_string(),
             false,
@@ -1475,6 +1507,20 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.device.as_deref()),
             Some("SPICE")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.library.as_deref()),
+            Some("models.kicad_sim")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.name.as_deref()),
+            Some("2N3904")
         );
         assert_eq!(
             symbol
