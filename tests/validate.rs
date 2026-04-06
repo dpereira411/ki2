@@ -6120,6 +6120,80 @@ fn load_tree_hydrates_resolved_spice_model_pins_on_symbol() {
 }
 
 #[test]
+fn load_tree_defaults_library_backed_sim_pins_from_resolved_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000319")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "top.kicad_sim")
+      (type model)
+      (data |.subckt MODEL IN OUT VSS
+.ends MODEL|)))
+  (lib_symbols
+    (symbol "Device:Q"
+      (symbol "Q_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P1" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P2" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P3" (effects (font (size 1.27 1.27))))
+          (number "3" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:Q")
+    (property "Reference" "Q?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_defaults_library_backed_sim_pins", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=IN 2=OUT 3=VSS")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "IN".to_string()),
+            ("2".to_string(), "OUT".to_string()),
+            ("3".to_string(), "VSS".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
     let src = r#"(kicad_sch
   (version 20260306)

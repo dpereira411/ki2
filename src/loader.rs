@@ -907,7 +907,8 @@ impl SchematicLoader {
 
                     if !can_raw_migrate {
                         symbol.sync_sim_model_from_properties();
-                        hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                        migrated |=
+                            hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
                         continue;
                     }
 
@@ -1037,7 +1038,7 @@ impl SchematicLoader {
                 }
 
                 symbol.sync_sim_model_from_properties();
-                hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                migrated |= hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
             }
 
             if migrated {
@@ -1430,17 +1431,67 @@ fn hydrate_resolved_sim_library(
     schematic_path: &Path,
     embedded_files: &[EmbeddedFile],
     symbol: &mut Symbol,
-) {
-    let resolved_library =
+) -> bool {
+    let mut modified = false;
+    let mut resolved_library =
         resolve_symbol_sim_library_from_embedded_files(schematic_path, embedded_files, symbol);
-    let resolved_model =
+    let mut resolved_model =
         resolve_symbol_sim_model_from_embedded_files(schematic_path, embedded_files, symbol);
+
+    let should_default_resolved_pins = symbol.sim_model.as_ref().is_some_and(|sim_model| {
+        sim_model.origin == Some(crate::model::SimModelOrigin::LibraryReference)
+            && sim_model.pin_pairs.is_empty()
+    });
+
+    if should_default_resolved_pins {
+        if let Some(model) = resolved_model.as_ref() {
+            let source_pins = symbol_source_pin_numbers(symbol);
+
+            if !source_pins.is_empty() && source_pins.len() == model.pins.len() {
+                let mut pin_map_field = symbol
+                    .properties
+                    .iter()
+                    .find(|property| {
+                        matches!(
+                            property.key.as_str(),
+                            "Sim.Name" | "Sim.Library" | "Sim.Device"
+                        )
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        Property::new_named(PropertyKind::User, "", String::new(), false)
+                    });
+                pin_map_field.key = "Sim.Pins".to_string();
+                pin_map_field.value = source_pins
+                    .into_iter()
+                    .zip(model.pins.iter())
+                    .map(|(source_pin, model_pin)| format!("{source_pin}={model_pin}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                symbol.properties.push(pin_map_field);
+                symbol.sync_sim_model_from_properties();
+                resolved_library = resolve_symbol_sim_library_from_embedded_files(
+                    schematic_path,
+                    embedded_files,
+                    symbol,
+                );
+                resolved_model = resolve_symbol_sim_model_from_embedded_files(
+                    schematic_path,
+                    embedded_files,
+                    symbol,
+                );
+                modified = true;
+            }
+        }
+    }
 
     if let Some(sim_model) = symbol.sim_model.as_mut() {
         sim_model.resolved_library = resolved_library;
         sim_model.resolved_name = resolved_model.as_ref().map(|model| model.name.clone());
         sim_model.generated_pin_names = resolved_model.map(|model| model.pins).unwrap_or_default();
     }
+
+    modified
 }
 
 fn take_symbol_user_field(symbol: &mut crate::model::Symbol, key: &str) -> Option<Property> {
