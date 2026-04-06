@@ -237,11 +237,12 @@ pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
         path: path.to_path_buf(),
         source,
     })?;
-    KiCadSchematicParser::new(path.to_path_buf(), tokens).parse_schematic()
+    KiCadSchematicParser::new(path.to_path_buf(), raw, tokens).parse_schematic()
 }
 
 struct KiCadSchematicParser {
     path: PathBuf,
+    source: String,
     tokens: Vec<Token>,
     idx: usize,
     version: Option<i32>,
@@ -265,12 +266,13 @@ struct PendingGroupInfo {
 }
 
 impl KiCadSchematicParser {
-    fn new(path: PathBuf, tokens: Vec<Token>) -> Self {
+    fn new(path: PathBuf, source: String, tokens: Vec<Token>) -> Self {
         let page_info = Self::find_standard_page_info("A4").expect("A4 page info must exist");
         let [width, height] = page_info.dimensions_mm.expect("A4 dimensions must exist");
 
         Self {
             path,
+            source,
             tokens,
             idx: 0,
             version: None,
@@ -6597,11 +6599,30 @@ impl KiCadSchematicParser {
         let mut diagnostic = diagnostic.with_path(self.path.clone());
         if let Some(span) = span {
             diagnostic = diagnostic.with_span(span);
+            let (line, column) = self.offset_to_line_column(span.start);
+            diagnostic = diagnostic.with_position(line, column);
         }
         Error::Validation {
             path: self.path.clone(),
             diagnostic,
         }
+    }
+
+    fn offset_to_line_column(&self, offset: usize) -> (usize, usize) {
+        let clamped = offset.min(self.source.len());
+        let mut line = 1usize;
+        let mut column = 1usize;
+
+        for ch in self.source[..clamped].chars() {
+            if ch == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+
+        (line, column)
     }
 }
 
@@ -6636,7 +6657,11 @@ mod parser_tests {
     #[test]
     fn parse_eda_text_accepts_direct_href_entry() {
         let tokens = lex(r#"(href "https://example.com")"#).expect("lex");
-        let mut parser = KiCadSchematicParser::new(PathBuf::from("direct_href.kicad_sch"), tokens);
+        let mut parser = KiCadSchematicParser::new(
+            PathBuf::from("direct_href.kicad_sch"),
+            r#"(href "https://example.com")"#.to_string(),
+            tokens,
+        );
         parser.need_left().expect("open href section");
 
         let mut text = Text::new(TextKind::Text, "hello".to_string());

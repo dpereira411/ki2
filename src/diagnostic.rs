@@ -24,6 +24,8 @@ pub struct Diagnostic {
     pub message: String,
     pub path: Option<PathBuf>,
     pub span: Option<Span>,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
 }
 
 impl Diagnostic {
@@ -35,6 +37,8 @@ impl Diagnostic {
             message: message.into(),
             path: None,
             span: None,
+            line: None,
+            column: None,
         }
     }
 
@@ -46,6 +50,8 @@ impl Diagnostic {
             message: message.into(),
             path: None,
             span: None,
+            line: None,
+            column: None,
         }
     }
 
@@ -60,6 +66,8 @@ impl Diagnostic {
             message: format!("expecting {expected}"),
             path: None,
             span: None,
+            line: None,
+            column: None,
         }
     }
 
@@ -74,6 +82,8 @@ impl Diagnostic {
             message: format!("unexpected {found}"),
             path: None,
             span: None,
+            line: None,
+            column: None,
         }
     }
 
@@ -87,10 +97,20 @@ impl Diagnostic {
         self
     }
 
+    pub fn with_position(mut self, line: usize, column: usize) -> Self {
+        self.line = Some(line);
+        self.column = Some(column);
+        self
+    }
+
     pub fn display_span_suffix(&self) -> String {
-        match self.span {
-            Some(span) => format!(":{}..{}", span.start, span.end),
-            None => String::new(),
+        match (self.line, self.column, self.span) {
+            (Some(line), Some(column), Some(span)) => {
+                format!(":{line}:{column} (bytes {}..{})", span.start, span.end)
+            }
+            (Some(line), Some(column), None) => format!(":{line}:{column}"),
+            (None, None, Some(span)) => format!(":{}..{}", span.start, span.end),
+            _ => String::new(),
         }
     }
 }
