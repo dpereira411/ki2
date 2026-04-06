@@ -56,6 +56,16 @@ impl LoadResult {
             .iter()
             .filter(move |sheet_path| sheet_path.schematic_path == canonical)
     }
+
+    pub fn parents_of<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> impl Iterator<Item = &'a HierarchyLink> + 'a {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        self.links
+            .iter()
+            .filter(move |link| link.child_path == canonical)
+    }
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
