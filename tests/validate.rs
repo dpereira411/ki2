@@ -7549,7 +7549,7 @@ fn rejects_decoded_non_image_payload() {
 #[test]
 fn records_warning_for_invalid_top_level_embedded_files() {
     let src = r#"(kicad_sch
-  (version 20240620)
+  (version 20240706)
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
@@ -7566,7 +7566,7 @@ fn records_warning_for_invalid_top_level_embedded_files() {
 #[test]
 fn records_warning_for_invalid_embedded_files_file_head() {
     let src = r#"(kicad_sch
-  (version 20240620)
+  (version 20240706)
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
@@ -7583,7 +7583,7 @@ fn records_warning_for_invalid_embedded_files_file_head() {
 #[test]
 fn repeated_embedded_and_lib_symbol_sections_follow_upstream_accumulation_rules() {
     let src = r#"(kicad_sch
-  (version 20240620)
+  (version 20240706)
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
