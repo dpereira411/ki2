@@ -39,11 +39,13 @@ Direct re-audit shows `parseSchText()` itself is no longer an active parser-only
 - the remaining text-family risk is now mostly parser-wide token/error exactness around shared
   text/effects branches, not a broad owner-routine mismatch in `parseSchText()` itself
 
-3. Property / field parsing still needs closer upstream shape
+3. Property / field parsing is no longer one of the active parser-only bottlenecks
 
-- direct audits show `parseSchField()` and library `parseProperty()` are much closer than earlier notes implied
-- the remaining gap here is now mostly exactness and parent-routine interaction, not a large missing branch family
-- remaining field/property work should be driven by concrete parent-routine mismatches, especially under `parseSchText()`, `parseSheet()`, `parseSchematicSymbol()`, and `parseLibSymbol()`
+- direct re-audit shows both `parseSchField()` and library `parseProperty()` are now structurally
+  close enough that remaining parser-only risk is narrower support exactness rather than a broad
+  field/property routine mismatch
+- keep revisiting them only if a later support-file or diagnostic exactness check exposes a
+  concrete behavioral drift
 
 4. Symbol parsing is still not 1:1
 
@@ -134,15 +136,13 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 ### More Exact Current Priority
 
 1. Tighten remaining local-lib flattening exactness where direct comparison exposes it.
-2. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
-3. Do a parser-wide token/error parity pass.
-4. Port the missing cross-file post-load pipeline.
+2. Do a parser-wide token/error parity pass.
+3. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
 1. Revisit local-lib flattening and any narrower library helper surface only when direct comparison exposes a concrete remaining mismatch.
-2. Revisit shared field/property parsing only when a parent routine exposes a concrete remaining mismatch.
-3. Finish the parser-wide token/error exactness sweep.
+2. Finish the parser-wide token/error exactness sweep.
 
 ### Bottom Line
 

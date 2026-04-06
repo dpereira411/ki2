@@ -131,8 +131,8 @@ not drive the queue unless a parent parser routine exposes them.
 | `parseStroke` | `parse_stroke` | `same` | token ownership and internal-units flow are close enough | existing tests | none |
 | `parseFill` | `parse_fill` | `same` | token ownership and fill-type flow are close enough | existing tests | none |
 | `parseEDA_TEXT` | `parse_eda_text` | `same` | bare `font`/`justify`/`hide`/`href` heads, direct `href` entry, and native hyperlink acceptance/rejection cases are now tight enough that it is no longer the active bottleneck | direct source comparison, native `kicad-cli` probes, and focused tests | none |
-| `parseSchField` | `parse_sch_field` | `different` | parent-sensitive flow is close, but exactness still depends on parent routines and diagnostics | direct audit | revisit from active parent mismatch |
-| `parseProperty` | `parse_lib_property` | `different` | constructor/order is close, but final lib-symbol exactness still depends on it | direct audit | revisit from `parse_lib_symbol` |
+| `parseSchField` | `parse_sch_field` | `same` | direct re-audit shows the remaining parser-only risk is no longer in the broad field routine: parent-sensitive header classification, legacy `id` ignore flow, and field-object mutation timing are structurally close enough to upstream | direct source comparison plus focused field regressions | none |
+| `parseProperty` | `parse_lib_property` | `same` | direct re-audit shows the remaining parser-only risk is no longer in the broad library-property routine: constructor/order, mandatory overwrite, `ki_*` metadata flow, and duplicate user-field suffixing are structurally close enough to upstream | direct source comparison plus focused lib-property regressions | none |
 | `parseSchSheetPin` | `parse_sch_sheet_pin` | `same` | constructor defaults, side/geometry flow, and close ownership are now stable | direct audit + tests | none |
 | `parseSchTextBoxContent` | `parse_sch_text_box_content` | `same` | owner/body split is structurally close enough | direct audit + tests | none |
 | `parseSchTableCell` | `parse_sch_table_cell` | `same` | distinct cell ownership is in place | direct audit + tests | none |
