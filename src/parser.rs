@@ -583,7 +583,7 @@ impl KiCadSchematicParser {
                     section_consumed_right = true;
                 }
                 "label" | "global_label" | "hierarchical_label" | "directive_label"
-                | "class_label" | "netclass_flag" | "text" => {
+                | "netclass_flag" | "text" => {
                     let item = self.parse_sch_text()?;
                     self.screen.items.push(item);
                     section_consumed_right = true;
@@ -2417,7 +2417,7 @@ impl KiCadSchematicParser {
     fn parse_sch_text(&mut self) -> Result<SchItem, Error> {
         let target = match self
             .need_unquoted_symbol_atom(
-                "text, label, global_label, hierarchical_label, directive_label, class_label, or netclass_flag",
+                "text, label, global_label, hierarchical_label, directive_label, or netclass_flag",
             )?
             .as_str()
         {
@@ -2425,9 +2425,7 @@ impl KiCadSchematicParser {
             "label" => SchTextTarget::Label(LabelKind::Local),
             "global_label" => SchTextTarget::Label(LabelKind::Global),
             "hierarchical_label" => SchTextTarget::Label(LabelKind::Hierarchical),
-            "directive_label" | "class_label" | "netclass_flag" => {
-                SchTextTarget::Label(LabelKind::Directive)
-            }
+            "directive_label" | "netclass_flag" => SchTextTarget::Label(LabelKind::Directive),
             _ => return Err(self.error_here("invalid schematic text kind")),
         };
 
