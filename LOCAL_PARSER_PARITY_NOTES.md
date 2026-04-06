@@ -133,13 +133,13 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `UpdateSymbolInstanceData`
   Status: first loader-side legacy `< 20221002` pass now applies root `symbol_instances` across the loaded hierarchy; remaining gap is fuller hierarchical-reference/state modeling.
 - `UpdateSheetInstanceData`
-  Status: first loader-side page propagation now applies root `sheet_instances` onto the loaded sheet-path list; remaining gap is threading that state through later sheet/page-count flows.
+  Status: first loader-side page propagation now applies root `sheet_instances` onto the loaded sheet-path list; later per-screen page-number/count state now also derives from that sorted list. Remaining gap is fuller reused-screen/current-sheet semantics.
 - `SetSheetNumberAndCount`
-  Status: first loader-side sheet-number/count assignment now exists on the loaded sheet-path list after page sorting; remaining gap is propagating that state into later per-screen/page-reference behavior.
+  Status: loader-side sheet-number/count assignment now exists both on the loaded sheet-path list and on loaded `Screen` objects (`page_number`, `page_count`, `virtual_page_number`). Remaining gap is exact reused-screen/current-sheet behavior.
 - `RecomputeIntersheetRefs`
   Status: first loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list; remaining gap is tighter KiCad settings/current-sheet behavior and later `UpdateAllScreenReferences` integration.
 - `UpdateAllScreenReferences`
-  Status: first loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list; remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
+  Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list, and global-label default `Intersheet References` placement is refreshed after load. Remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
 - `FixLegacyPowerSymbolMismatches`
   Status: first loader-side global-power value fix now handles pre-`20230221` symbols linked to global power lib symbols with hidden `power_in` pins; remaining gap is fuller lib-pin/screen semantics beyond the current symbol/value model.
 - `MigrateSimModels`
@@ -151,8 +151,9 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Decide whether to unblock native malformed-UUID semantics by migrating parser/loader fixtures away from stable symbolic IDs.
-2. Decide whether to expand the local diagnostic/error model for native parse-error parity.
+1. Tighten remaining loader/post-load exactness around reused-screen/current-sheet page semantics.
+2. Decide whether to unblock native malformed-UUID semantics by migrating parser/loader fixtures away from stable symbolic IDs.
+3. Decide whether to expand the local diagnostic/error model for native parse-error parity.
 3. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
