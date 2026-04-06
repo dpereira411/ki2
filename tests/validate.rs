@@ -6404,6 +6404,21 @@ fn accepts_bare_effects_font_justify_and_href_heads() {
 }
 
 #[test]
+fn bare_effects_font_payload_cannot_have_trailing_siblings() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-font-trailing")
+  (text "note" (effects font size 1 1 bold))
+)"#;
+    let path = temp_schematic("bare_effects_font_trailing", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("bare font payload should close immediately like upstream");
+    assert!(err.to_string().contains("expecting )"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn bare_effects_href_head_cannot_have_trailing_siblings() {
     let src = r#"(kicad_sch
   (version 20260306)

@@ -5196,6 +5196,7 @@ impl KiCadSchematicParser {
 
             match head.as_str() {
                 "font" => {
+                    let mut font_consumed_right = false;
                     while !self.at_right() {
                         let font_is_list = matches!(self.current().kind, TokKind::Left);
                         if font_is_list {
@@ -5210,6 +5211,10 @@ impl KiCadSchematicParser {
                                 effects.font_face = Some(self.need_symbol_atom("symbol")?);
                                 if font_is_list {
                                     self.need_right()?;
+                                } else {
+                                    self.need_right()?;
+                                    font_consumed_right = true;
+                                    break;
                                 }
                             }
                             "size" => {
@@ -5224,6 +5229,10 @@ impl KiCadSchematicParser {
                                 effects.font_size = Some(font_size);
                                 if font_is_list {
                                     self.need_right()?;
+                                } else {
+                                    self.need_right()?;
+                                    font_consumed_right = true;
+                                    break;
                                 }
                             }
                             "thickness" => {
@@ -5231,6 +5240,10 @@ impl KiCadSchematicParser {
                                     Some(self.parse_internal_units_atom("text thickness")?);
                                 if font_is_list {
                                     self.need_right()?;
+                                } else {
+                                    self.need_right()?;
+                                    font_consumed_right = true;
+                                    break;
                                 }
                             }
                             "color" => {
@@ -5242,12 +5255,20 @@ impl KiCadSchematicParser {
                                 ]);
                                 if font_is_list {
                                     self.need_right()?;
+                                } else {
+                                    self.need_right()?;
+                                    font_consumed_right = true;
+                                    break;
                                 }
                             }
                             "line_spacing" => {
                                 effects.line_spacing = Some(self.parse_f64_atom("line spacing")?);
                                 if font_is_list {
                                     self.need_right()?;
+                                } else {
+                                    self.need_right()?;
+                                    font_consumed_right = true;
+                                    break;
                                 }
                             }
                             "bold" => {
@@ -5264,7 +5285,7 @@ impl KiCadSchematicParser {
                         }
                     }
 
-                    if section_is_list {
+                    if section_is_list && !font_consumed_right {
                         self.need_right()?;
                     }
                 }
