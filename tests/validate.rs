@@ -5581,7 +5581,7 @@ fn rejects_invalid_property_header_tokens() {
     let quoted_field_head_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-field-head")
+  (uuid "50000000-0000-0000-0000-000000000001")
   (symbol
     (lib_id "Device:R")
     (property "User" "v"
@@ -5673,7 +5673,7 @@ fn sheet_user_fields_advance_pending_ordinals() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-ordinals")
+  (uuid "50000000-0000-0000-0000-000000000002")
   (paper "A4")
   (sheet
     (at 0 0)
@@ -5713,7 +5713,7 @@ fn respects_hide_inside_property_effects() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "50000000-0000-0000-0000-000000000003")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -5749,7 +5749,7 @@ fn rejects_sheet_missing_required_properties() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "50000000-0000-0000-0000-000000000004")
   (paper "A4")
   (sheet (at 0 0) (size 20 10)
     (property "Sheetname" "Child"))
@@ -5765,7 +5765,7 @@ fn sheet_does_not_require_at_or_size() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "50000000-0000-0000-0000-000000000005")
   (paper "A4")
   (sheet
     (property "Sheetname" "Child")
@@ -5796,7 +5796,7 @@ fn rejects_unexpected_sheet_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "50000000-0000-0000-0000-000000000006")
   (paper "A4")
   (sheet (at 0 0) (size 20 10)
     (bogus 1)
@@ -5817,7 +5817,7 @@ fn canonicalizes_and_replaces_mandatory_properties() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "50000000-0000-0000-0000-000000000007")
   (paper "A4")
   (symbol
     (lib_id "Device:R")
@@ -6107,7 +6107,7 @@ fn legacy_sheet_field_recovery_maps_all_later_fields_to_sheetfile() {
     let src = r#"(kicad_sch
   (version 20200310)
   (generator "eeschema")
-  (uuid "root-legacy-sheet-many")
+  (uuid "50000000-0000-0000-0000-000000000008")
   (paper "A4")
   (sheet
     (property "WrongOne" "Child" (id 0))
@@ -6146,7 +6146,7 @@ fn preserves_duplicate_local_sheet_instances_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-dup")
+  (uuid "50000000-0000-0000-0000-000000000009")
   (paper "A4")
   (sheet
     (property "Sheetname" "Child")
@@ -6183,7 +6183,7 @@ fn rejects_unexpected_symbol_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-unexpected")
+  (uuid "50000000-0000-0000-0000-00000000000a")
   (symbol
     (lib_id "Device:R")
     (at 10 20 0)
