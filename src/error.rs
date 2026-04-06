@@ -12,9 +12,10 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
-    #[error("parse error at {path}: {source}")]
+    #[error("parse error at {path}{location}: {source}")]
     SExpr {
         path: PathBuf,
+        location: String,
         #[source]
         source: kiutils_sexpr::ParseError,
     },

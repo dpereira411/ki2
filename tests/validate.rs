@@ -158,6 +158,7 @@ fn rejects_unterminated_quoted_atoms_in_lexer() {
     let path = temp_schematic("unterminated_quoted_atom", unterminated);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject unterminated quote");
     assert!(matches!(err, Error::SExpr { .. }));
+    assert!(err.to_string().contains(":4:1 (byte 55)"));
 
     let _ = fs::remove_file(path);
 }

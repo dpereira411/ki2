@@ -235,9 +235,38 @@ pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
     })?;
     let tokens = lex(&raw).map_err(|source| Error::SExpr {
         path: path.to_path_buf(),
+        location: sexpr_error_location(&raw, &source),
         source,
     })?;
     KiCadSchematicParser::new(path.to_path_buf(), raw, tokens).parse_schematic()
+}
+
+fn sexpr_error_location(raw: &str, source: &kiutils_sexpr::ParseError) -> String {
+    let offset = match source {
+        kiutils_sexpr::ParseError::UnexpectedToken(offset)
+        | kiutils_sexpr::ParseError::MaxNestingExceeded(offset) => Some(*offset),
+        kiutils_sexpr::ParseError::UnexpectedEof => Some(raw.len()),
+        kiutils_sexpr::ParseError::ExpectedSingleRoot(_) => None,
+    };
+
+    let Some(offset) = offset else {
+        return String::new();
+    };
+
+    let clamped = offset.min(raw.len());
+    let mut line = 1usize;
+    let mut column = 1usize;
+
+    for ch in raw[..clamped].chars() {
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+
+    format!(":{line}:{column} (byte {offset})")
 }
 
 struct KiCadSchematicParser {
