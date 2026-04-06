@@ -2549,21 +2549,21 @@ impl KiCadSchematicParser {
                 },
                 "iref" => {
                     let _ = self.need_unquoted_symbol_atom("iref")?;
-                    if let ParsedSchText::Label(label) = &mut item
-                        && matches!(label.kind, LabelKind::Global)
-                    {
-                        let iref_at = self.parse_xy2("iref")?;
-                        self.need_right()?;
-                        let intersheet_refs = label
-                            .properties
-                            .iter_mut()
-                            .find(|property| {
-                                property.kind == PropertyKind::GlobalLabelIntersheetRefs
-                            })
-                            .expect("global labels start with intersheet refs property");
-                        intersheet_refs.at = Some(iref_at);
-                        intersheet_refs.visible = true;
+                    let ParsedSchText::Label(label) = &mut item else {
+                        return Err(self.unexpected("iref"));
+                    };
+                    if !matches!(label.kind, LabelKind::Global) {
+                        return Err(self.unexpected("iref"));
                     }
+                    let iref_at = self.parse_xy2("iref")?;
+                    self.need_right()?;
+                    let intersheet_refs = label
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                        .expect("global labels start with intersheet refs property");
+                    intersheet_refs.at = Some(iref_at);
+                    intersheet_refs.visible = true;
                 }
                 "uuid" => {
                     let _ = self.need_unquoted_symbol_atom("uuid")?;
