@@ -1702,14 +1702,14 @@ fn parses_extended_top_level_sections() {
             .name_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([0.8, 0.9])
+        Some([0.9, 0.8])
     );
     assert_eq!(
         lib_symbol.units[0].draw_items[4]
             .number_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([1.1, 1.2])
+        Some([1.2, 1.1])
     );
     assert_eq!(lib_symbol.units[0].draw_items[4].alternates.len(), 1);
     assert!(
@@ -3637,7 +3637,7 @@ fn parses_symbol_mirror_body_style_and_sheet_pins() {
             .effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([1.0, 2.0])
+        Some([2.0, 1.0])
     );
 
     let _ = fs::remove_file(path);
@@ -6728,7 +6728,7 @@ fn parses_shared_effects_payload_and_text_hide_override() {
     assert!(text.visible);
     let effects = text.effects.as_ref().expect("effects");
     assert_eq!(effects.font_face.as_deref(), Some("KiCad Font"));
-    assert_eq!(effects.font_size, Some([1.5, 2.5]));
+    assert_eq!(effects.font_size, Some([2.5, 1.5]));
     assert_eq!(effects.thickness, Some(0.2));
     assert!(effects.bold);
     assert!(effects.italic);
@@ -6769,7 +6769,7 @@ fn clamps_minimum_effects_font_size_for_schematic_text_family() {
 
     assert_eq!(
         text.effects.as_ref().and_then(|effects| effects.font_size),
-        Some([0.001, 250.0])
+        Some([250.0, 0.001])
     );
 
     let _ = fs::remove_file(path);
@@ -6818,21 +6818,21 @@ fn library_text_clamps_but_pin_name_and_number_effects_do_not() {
             .effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([0.001, 250.0])
+        Some([250.0, 0.001])
     );
     assert_eq!(
         lib_pin
             .name_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([0.0, 999.0])
+        Some([999.0, 0.0])
     );
     assert_eq!(
         lib_pin
             .number_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([0.0, 999.0])
+        Some([999.0, 0.0])
     );
 
     let _ = fs::remove_file(path);
@@ -7641,7 +7641,7 @@ fn applies_upstream_default_text_box_margins_when_omitted() {
         text_box.stroke.as_ref().expect("text box stroke").width,
         Some(0.2)
     );
-    let expected = 0.2 / 2.0 + 3.0 * 0.75;
+    let expected = 0.2 / 2.0 + 2.0 * 0.75;
     assert!((margins[0] - expected).abs() < 1e-9);
     assert!((margins[1] - expected).abs() < 1e-9);
     assert!((margins[2] - expected).abs() < 1e-9);

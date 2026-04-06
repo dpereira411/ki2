@@ -5026,10 +5026,9 @@ impl KiCadSchematicParser {
                                 }
                             }
                             "size" => {
-                                let mut font_size = [
-                                    self.parse_internal_units_atom("font width")?,
-                                    self.parse_internal_units_atom("font height")?,
-                                ];
+                                let text_height = self.parse_internal_units_atom("text height")?;
+                                let text_width = self.parse_internal_units_atom("text width")?;
+                                let mut font_size = [text_width, text_height];
 
                                 if enforce_min_text_size {
                                     font_size = Self::clamp_text_size(font_size);
