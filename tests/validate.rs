@@ -2188,6 +2188,94 @@ fn fixes_legacy_global_power_symbol_value_after_load() {
 }
 
 #[test]
+fn does_not_fix_local_or_visible_power_symbol_values_after_load() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_legacy_power_no_fix_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+
+    let root_src = r#"(kicad_sch
+  (version 20230220)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000161")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:LOCAL"
+      (power local)
+      (property "Value" "OLDLOCAL")
+      (symbol "LOCAL_1_1"
+        (pin power_in line
+          hide
+          (at 0 0 0)
+          (length 0)
+          (name "LOCAL")
+          (number "1"))))
+    (symbol "power:VISIBLE"
+      (power global)
+      (property "Value" "OLDVISIBLE")
+      (symbol "VISIBLE_1_1"
+        (pin power_in line
+          (at 0 0 0)
+          (length 0)
+          (name "VISIBLE")
+          (number "1")))))
+  (symbol
+    (lib_id "power:LOCAL")
+    (property "Value" "WRONG-LOCAL")
+    (at 10 10 0)
+    (uuid "71000000-0000-0000-0000-000000000162"))
+  (symbol
+    (lib_id "power:VISIBLE")
+    (property "Value" "WRONG-VISIBLE")
+    (at 20 10 0)
+    (uuid "71000000-0000-0000-0000-000000000163"))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let symbols = root
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        symbols[0]
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("WRONG-LOCAL")
+    );
+    assert_eq!(
+        symbols[1]
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("WRONG-VISIBLE")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn preserves_power_symbol_reference_metadata_during_annotation() {
     let dir = env::temp_dir().join(format!(
         "ki2_power_annotation_metadata_{}",
