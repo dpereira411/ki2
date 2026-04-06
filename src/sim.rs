@@ -17,6 +17,7 @@ pub struct ResolvedSimModel {
     pub library: ResolvedSimLibrary,
     pub name: String,
     pub pins: Vec<String>,
+    pub params: Vec<(String, Option<String>)>,
 }
 
 pub fn collect_symbol_sim_library_sources(
@@ -281,6 +282,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 library,
                 name: model.name,
                 pins: model.pins,
+                params: model.params,
             })
         }
         SimLibraryKind::Spice => {
@@ -294,6 +296,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 library,
                 name: model.name,
                 pins: model.pins,
+                params: model.params,
             })
         }
     }
@@ -311,12 +314,14 @@ fn classify_sim_library_name(name: &str) -> SimLibraryKind {
 struct ResolvedSpiceModel {
     name: String,
     pins: Vec<String>,
+    params: Vec<(String, Option<String>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedIbisModel {
     name: String,
     pins: Vec<String>,
+    params: Vec<(String, Option<String>)>,
 }
 
 fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceModel> {
@@ -330,21 +335,39 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
             return Some(ResolvedSpiceModel {
                 name: tokens[index + 1].to_string(),
                 pins: Vec::new(),
+                params: Vec::new(),
             });
         }
 
         if tokens[index].eq_ignore_ascii_case(".subckt")
             && tokens[index + 1].eq_ignore_ascii_case(wanted_name)
         {
-            let pins = tokens[index + 2..]
-                .iter()
-                .take_while(|token| !is_spice_subckt_param_token(token) && !token.starts_with('.'))
-                .map(|token| token.to_string())
-                .collect::<Vec<_>>();
+            let mut pins = Vec::new();
+            let mut params = Vec::new();
+
+            for token in &tokens[index + 2..] {
+                if token.starts_with('.') {
+                    break;
+                }
+
+                if is_spice_subckt_param_token(token) {
+                    if let Some(param) = parse_spice_subckt_param_token(token) {
+                        params.push(param);
+                    }
+                    continue;
+                }
+
+                if params.is_empty() {
+                    pins.push((*token).to_string());
+                } else if let Some(param) = parse_spice_subckt_param_token(token) {
+                    params.push(param);
+                }
+            }
 
             return Some(ResolvedSpiceModel {
                 name: tokens[index + 1].to_string(),
                 pins,
+                params,
             });
         }
 
@@ -413,6 +436,7 @@ fn resolve_ibis_model(text: &str, wanted_name: &str) -> Option<ResolvedIbisModel
         return Some(ResolvedIbisModel {
             name: wanted_name.to_string(),
             pins,
+            params: Vec::new(),
         });
     }
 
@@ -424,6 +448,28 @@ fn is_spice_subckt_param_token(token: &str) -> bool {
         || token.contains('=')
         || token.starts_with("PARAMS:")
         || token.starts_with("params:")
+}
+
+fn parse_spice_subckt_param_token(token: &str) -> Option<(String, Option<String>)> {
+    if token == "+" || token.eq_ignore_ascii_case("params:") {
+        return None;
+    }
+
+    let trimmed = token
+        .strip_prefix("PARAMS:")
+        .or_else(|| token.strip_prefix("params:"))
+        .or_else(|| token.strip_prefix('+'))
+        .unwrap_or(token);
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some((name, value)) = trimmed.split_once('=') {
+        return Some((name.to_string(), Some(value.to_string())));
+    }
+
+    Some((trimmed.to_string(), None))
 }
 
 fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {

@@ -1244,6 +1244,7 @@ impl Symbol {
             resolved_library: None,
             resolved_name: None,
             generated_pin_names: Vec::new(),
+            generated_param_pairs: Vec::new(),
         });
     }
 }
@@ -1302,6 +1303,7 @@ pub struct SimModel {
     pub resolved_library: Option<ResolvedSimLibrary>,
     pub resolved_name: Option<String>,
     pub generated_pin_names: Vec<String>,
+    pub generated_param_pairs: Vec<(String, Option<String>)>,
 }
 
 fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {

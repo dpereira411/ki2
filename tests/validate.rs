@@ -6057,6 +6057,10 @@ fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
             },
             name: "MODEL".to_string(),
             pins: vec!["IN".to_string(), "OUT".to_string(), "VSS".to_string()],
+            params: vec![
+                ("RVAL".to_string(), Some("1k".to_string())),
+                ("EXTRA".to_string(), Some("1".to_string())),
+            ],
         })
     );
 
@@ -6118,6 +6122,7 @@ B2 SIGB MODEL_B
             },
             name: "DRIVER".to_string(),
             pins: vec!["A1".to_string(), "B2".to_string()],
+            params: Vec::new(),
         })
     );
 
@@ -6135,7 +6140,7 @@ fn load_tree_hydrates_resolved_spice_model_pins_on_symbol() {
     (file
       (name "top.kicad_sim")
       (type model)
-      (data |.subckt MODEL A B C
+      (data |.subckt MODEL A B C PARAMS: RVAL=1k EXTRA=1
 .ends MODEL|)))
   (symbol
     (lib_id "Device:R")
@@ -6175,6 +6180,16 @@ fn load_tree_hydrates_resolved_spice_model_pins_on_symbol() {
             .as_ref()
             .map(|sim_model| sim_model.generated_pin_names.clone()),
         Some(vec!["A".to_string(), "B".to_string(), "C".to_string()])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_param_pairs.clone()),
+        Some(vec![
+            ("RVAL".to_string(), Some("1k".to_string())),
+            ("EXTRA".to_string(), Some("1".to_string())),
+        ])
     );
 
     let _ = fs::remove_file(path);
@@ -6237,6 +6252,13 @@ B2 SIGB MODEL_B
             .as_ref()
             .map(|sim_model| sim_model.generated_pin_names.clone()),
         Some(vec!["A1".to_string(), "B2".to_string()])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_param_pairs.clone()),
+        Some(Vec::new())
     );
 
     let _ = fs::remove_file(path);
