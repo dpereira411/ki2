@@ -3417,6 +3417,20 @@ fn future_version_generator_version_branch_still_owns_close_first() {
 }
 
 #[test]
+fn list_generator_version_payload_fails_at_branch_close() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (generator_version (bogus))
+)"#;
+    let path = temp_schematic("list_generator_version_payload", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("list generator_version payload should fail at close like upstream");
+    assert!(err.to_string().contains("expecting )"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn defaults_missing_header_version_and_rejects_late_version_section() {
     let missing_src = r#"(kicad_sch
   (generator "eeschema")

@@ -438,14 +438,19 @@ impl KiCadSchematicParser {
                 }
                 "generator_version" => {
                     let _ = self.need_unquoted_symbol_atom("generator_version")?;
-                    self.generator_version = Some(match &self.current().kind {
+                    match &self.current().kind {
                         TokKind::Atom(value) => {
-                            let out = value.clone();
+                            self.generator_version = Some(value.clone());
                             self.idx += 1;
-                            out
                         }
-                        _ => return Err(self.error_here("missing generator_version")),
-                    });
+                        TokKind::Right => {
+                            return Err(self.error_here("missing generator_version"));
+                        }
+                        _ => {
+                            self.generator_version = Some(String::new());
+                            self.idx += 1;
+                        }
+                    }
                     self.need_right()?;
                     if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
                         > SEXPR_SCHEMATIC_FILE_VERSION
