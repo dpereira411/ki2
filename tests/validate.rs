@@ -349,6 +349,13 @@ fn validates_hierarchical_tree_fixture() {
     assert_eq!(project.sheet_paths.len(), 2);
     assert_eq!(
         project
+            .root_sheet_path()
+            .expect("project root sheet path")
+            .instance_path,
+        ""
+    );
+    assert_eq!(
+        project
             .sheet_paths_of(&project.root_path)
             .next()
             .expect("root sheet path")
@@ -423,6 +430,14 @@ fn reuses_previously_loaded_child_schematic() {
     assert_eq!(child.screen.virtual_page_number, None);
     assert_eq!(loaded.sheet_paths_of(&child_path).count(), 2);
     assert_eq!(loaded.parents_of(&child_path).count(), 2);
+    assert_eq!(
+        loaded
+            .root_sheet_path()
+            .expect("load result root sheet path")
+            .page
+            .as_deref(),
+        Some("9")
+    );
     assert_eq!(
         loaded
             .sheet_path("/root-u/sheet-a")

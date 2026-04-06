@@ -37,6 +37,10 @@ pub struct LoadResult {
 }
 
 impl LoadResult {
+    pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
+        self.sheet_path("")
+    }
+
     pub fn children_of<'a>(
         &'a self,
         path: &'a Path,

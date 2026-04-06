@@ -43,6 +43,10 @@ impl SchematicProject {
         self.schematic(&self.root_path)
     }
 
+    pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
+        self.sheet_path("")
+    }
+
     pub fn schematic(&self, path: &Path) -> Option<&Schematic> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         self.by_path
