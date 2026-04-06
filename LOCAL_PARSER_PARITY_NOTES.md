@@ -20,22 +20,21 @@ Closest-to-upstream areas so far:
 - Some branches are still reduced or merged compared to upstream.
 - Not every accepted KiCad section has a routine boundary that mirrors the original parser.
 
-2. Shared text/effects parsing is still not a literal port
+2. Shared text/effects parsing is no longer one of the main parser-only bottlenecks
 
 - `parseSchText()`
 - `parseEDA_TEXT()` callers
 - label / text / text_box / directive / netclass / global / hierarchical branches
 - effects / justify / hide / hyperlink semantics still need more exact control-flow parity
 
-Direct re-audit shows `parseSchText()` itself is no longer the broad owner-routine mismatch it used to
-be:
+Direct re-audit shows `parseSchText()` itself is no longer an active parser-only bottleneck:
 
 - the shared text-family object-construction loop, `shape` / `length` / `iref` / `property`
   ownership, and final fieldless-label autoplacement behavior are now structurally close to upstream
 - `parseEDA_TEXT()` itself is now much tighter after direct-href entry, bare-head, and native
   hyperlink-validation fixes
-- the remaining text-family gap is now concentrated more in `parseSchText()` owner-level exactness
-  than in the shared effects leaf
+- the remaining text-family risk is now mostly parser-wide token/error exactness around shared
+  text/effects branches, not a broad owner-routine mismatch in `parseSchText()` itself
 
 3. Property / field parsing still needs closer upstream shape
 
@@ -130,22 +129,20 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Revisit `parseSchText()` for the remaining owner-level exactness.
-2. Finish the remaining narrower `parseLibSymbol()` exact branch / error parity.
-3. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
-4. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
-5. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
-6. Do a parser-wide token/error parity pass.
-7. Port the missing cross-file post-load pipeline.
+1. Finish the remaining narrower `parseLibSymbol()` exact branch / error parity.
+2. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
+3. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
+4. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
+5. Do a parser-wide token/error parity pass.
+6. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
-1. Port `parseSchText()` more literally where remaining owner-level exactness still differs.
-2. Finish `parseLibSymbol()` / library draw-item routine parity.
-3. Revisit `parseSheet()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
-4. Revisit `parseSchematicSymbol()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
-5. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
-6. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
+1. Finish `parseLibSymbol()` / library draw-item routine parity.
+2. Revisit `parseSheet()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
+3. Revisit `parseSchematicSymbol()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
+4. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
+5. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
 
 ### Bottom Line
 
@@ -153,7 +150,6 @@ The parser is still well short of 1:1 parity.
 
 The biggest remaining gaps are:
 
-- `parseSchText`
 - `parseLibSymbol`
 - parser-wide token / error parity
-- library symbol parsing
+- narrower `parseSheet()` / `parseSchematicSymbol()` exactness

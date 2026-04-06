@@ -19,13 +19,11 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. `parse_eda_text`
-2. `parse_sch_text`
-3. `parse_lib_symbol`
-4. `parse_schematic` / `parse_schematic_body`
-5. `parse_sch_sheet`
-6. `parse_schematic_symbol`
-7. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
+1. `parse_lib_symbol`
+2. `parse_schematic` / `parse_schematic_body`
+3. `parse_sch_sheet`
+4. `parse_schematic_symbol`
+5. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
 
 ## Layer 0: Support Files
 
@@ -167,7 +165,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `parseNoConnect` | `parse_no_connect` | `same` | constructor/default/token flow is stable enough | existing tests | none |
 | `parseBusEntry` | `parse_bus_entry` | `same` | legacy/default stroke and size flow are stable enough | existing tests | none |
 | `parseLine` | `parse_sch_line` | `same` | line/token ownership is close enough | existing tests | none |
-| `parseSchText` | `parse_sch_text` | `different` | broad owner loop is close, and `parse_eda_text` is no longer the primary blocker; the remaining active work is now owner-level exactness inside the text-family routine itself | direct audit + tightened effects tests | revisit next |
+| `parseSchText` | `parse_sch_text` | `same` | direct upstream re-audit shows the shared text-family constructor loop, `shape` / `length` / `iref` / `property` ownership, `at` owner mutation, and fieldless-label autoplacement are now close enough that it is no longer an active parser-only bottleneck | direct source comparison plus the existing focused text-family regressions | none |
 | `parseSchTextBox` | `parse_sch_text_box` | `same` | no longer a primary bottleneck | direct audit | none |
 | `parseSchTable` | `parse_sch_table` | `same` | table ownership and no-cell behavior are stable enough | direct audit + tests | none |
 | `parseImage` | `parse_sch_image` | `same` | no longer a primary bottleneck | direct audit | none |
