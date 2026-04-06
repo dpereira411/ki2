@@ -5170,7 +5170,7 @@ impl KiCadSchematicParser {
         }
 
         match value.split_once(':') {
-            Some((nickname, item)) => !nickname.is_empty() && !item.is_empty(),
+            Some((_nickname, item)) => !item.is_empty(),
             None => true,
         }
     }

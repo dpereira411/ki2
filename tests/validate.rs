@@ -11043,6 +11043,28 @@ fn parses_symbol_in_pos_files_and_validates_library_ids() {
     assert!(err.to_string().contains("Invalid symbol library ID"));
     let _ = fs::remove_file(empty_item_path);
 
+    let empty_nickname_lib_id = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id ":R") (at 1 2 0))
+)"#;
+    let empty_nickname_path = temp_schematic("symbol_lib_id_empty_nickname", empty_nickname_lib_id);
+    let schematic = parse_schematic_file(Path::new(&empty_nickname_path))
+        .expect("must accept lib_id with empty library nickname like KiCad");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    assert_eq!(symbol.lib_id, ":R");
+    let _ = fs::remove_file(empty_nickname_path);
+
     let invalid_token_lib_id = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
