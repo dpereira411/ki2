@@ -6056,7 +6056,7 @@ fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_face_path = temp_schematic("numeric_effects_font_face", numeric_face);
     let err = parse_schematic_file(Path::new(&numeric_face_path))
         .expect_err("must reject numeric font face");
-    assert!(err.to_string().contains("missing font face"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let numeric_href = r#"(kicad_sch
   (version 20260306)
@@ -6067,7 +6067,7 @@ fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_href_path = temp_schematic("numeric_effects_href", numeric_href);
     let err = parse_schematic_file(Path::new(&numeric_href_path))
         .expect_err("must reject numeric hyperlink");
-    assert!(err.to_string().contains("missing hyperlink url"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let _ = fs::remove_file(numeric_face_path);
     let _ = fs::remove_file(numeric_href_path);

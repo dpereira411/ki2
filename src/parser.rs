@@ -5050,10 +5050,7 @@ impl KiCadSchematicParser {
 
                         match head.as_str() {
                             "face" => {
-                                effects.font_face = Some(
-                                    self.need_symbol_atom("font face")
-                                        .map_err(|_| self.error_here("missing font face"))?,
-                                );
+                                effects.font_face = Some(self.need_symbol_atom("symbol")?);
                                 if font_is_list {
                                     self.need_right()?;
                                 }
@@ -5145,9 +5142,7 @@ impl KiCadSchematicParser {
                     }
                 }
                 "href" => {
-                    let href = self
-                        .need_symbol_atom("hyperlink url")
-                        .map_err(|_| self.error_here("missing hyperlink url"))?;
+                    let href = self.need_symbol_atom("symbol")?;
                     if !Self::validate_hyperlink(&href) {
                         return Err(self.error_here(format!("invalid hyperlink url `{href}`")));
                     }
