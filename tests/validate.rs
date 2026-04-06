@@ -6446,6 +6446,60 @@ fn bare_effects_href_head_cannot_have_trailing_siblings() {
 }
 
 #[test]
+fn bare_effects_hide_head_allows_siblings_but_not_bare_bool_payloads() {
+    let trailing_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-hide-trailing")
+  (text "note" (at 1 2 0) (effects hide (font (size 1 1))))
+)"#;
+    let trailing_path = temp_schematic("bare_effects_hide_trailing", trailing_src);
+    let schematic =
+        parse_schematic_file(Path::new(&trailing_path)).expect("must accept bare hide siblings");
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    let effects = text.effects.as_ref().expect("effects");
+    assert!(effects.hidden);
+    assert_eq!(effects.font_size, Some([1.0, 1.0]));
+    assert!(text.visible);
+    let _ = fs::remove_file(trailing_path);
+
+    for (name, src) in [
+        (
+            "bare_effects_hide_yes",
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-hide-yes")
+  (text "note" (at 1 2 0) (effects hide yes))
+)"#,
+        ),
+        (
+            "bare_effects_hide_no",
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-hide-no")
+  (text "note" (at 1 2 0) (effects hide no))
+)"#,
+        ),
+    ] {
+        let path = temp_schematic(name, src);
+        let err = parse_schematic_file(Path::new(&path))
+            .expect_err("bare hide bool payload should fail like native KiCad");
+        assert!(err.to_string().contains("expecting )"));
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[test]
 fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_face = r#"(kicad_sch
   (version 20260306)
