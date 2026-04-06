@@ -1112,7 +1112,7 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Device")
             .map(|property| property.value.clone());
-        let model_type = self
+        let explicit_model_type = self
             .properties
             .iter()
             .find(|property| property.key == "Sim.Type")
@@ -1146,6 +1146,12 @@ impl Symbol {
             .as_deref()
             .map(parse_sim_param_values)
             .unwrap_or_default();
+        let model_type = explicit_model_type.or_else(|| {
+            param_values
+                .get("type")
+                .filter(|value| !value.is_empty())
+                .cloned()
+        });
         let library = explicit_library.or_else(|| {
             param_values
                 .get("lib")
@@ -1581,7 +1587,7 @@ mod tests {
                 .sim_model
                 .as_ref()
                 .and_then(|sim_model| sim_model.model_type.as_deref()),
-            None
+            Some("Q")
         );
         assert_eq!(
             symbol
@@ -1630,6 +1636,13 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.device.as_deref()),
             Some("SPICE")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.model_type.as_deref()),
+            Some("Q")
         );
         assert_eq!(
             symbol

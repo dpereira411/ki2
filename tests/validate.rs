@@ -5783,6 +5783,13 @@ fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
         symbol
             .sim_model
             .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("R")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("type=\"R\" model=\"1k\" lib=\"\"")
     );
@@ -5875,6 +5882,13 @@ fn load_tree_migrates_model_only_legacy_spice_fields_to_raw_sim_model() {
         symbol
             .sim_model
             .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        None
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("1k")
     );
@@ -5941,6 +5955,13 @@ fn load_tree_migrates_lib_only_legacy_spice_fields_to_raw_sim_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.device.as_deref()),
         Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        None
     );
     assert_eq!(
         symbol
@@ -6132,6 +6153,13 @@ fn load_tree_migrates_primitive_and_lib_legacy_spice_fields_to_raw_sim_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.device.as_deref()),
         Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("Q")
     );
     assert_eq!(
         symbol
@@ -6402,6 +6430,13 @@ fn load_tree_migrates_legacy_spice_lib_fields_to_raw_sim_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.device.as_deref()),
         Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("Q")
     );
     assert_eq!(
         symbol
