@@ -2057,18 +2057,18 @@ fn rejects_direct_ancestor_sheet_cycles() {
     let root_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "72000000-0000-0000-0000-000000000001")
   (paper "A4")
-  (sheet (at 0 0) (size 10 10) (uuid "sheet-a")
+  (sheet (at 0 0) (size 10 10) (uuid "72000000-0000-0000-0000-000000000002")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
 )"#;
     let child_src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "child-u")
+  (uuid "72000000-0000-0000-0000-000000000003")
   (paper "A4")
-  (sheet (at 0 0) (size 10 10) (uuid "sheet-b")
+  (sheet (at 0 0) (size 10 10) (uuid "72000000-0000-0000-0000-000000000004")
     (property "Sheetname" "RootAgain")
     (property "Sheetfile" "root.kicad_sch"))
 )"#;
