@@ -1131,11 +1131,13 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Library")
             .map(|property| property.value.clone());
+        let has_explicit_library = explicit_library.is_some();
         let explicit_name = self
             .properties
             .iter()
             .find(|property| property.key == "Sim.Name")
             .map(|property| property.value.clone());
+        let has_explicit_name = explicit_name.is_some();
         let ibis_pin = self
             .properties
             .iter()
@@ -1188,6 +1190,27 @@ impl Symbol {
             })
             .unwrap_or_default();
         let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
+        let origin = if ibis_pin.is_some() || ibis_model.is_some() {
+            Some(SimModelOrigin::Ibis)
+        } else if device.as_deref() == Some("SPICE") && (has_explicit_library || has_explicit_name)
+        {
+            Some(SimModelOrigin::LibraryReference)
+        } else if device.as_deref() == Some("SPICE") {
+            Some(SimModelOrigin::RawSpice)
+        } else if model_type.is_some() {
+            Some(SimModelOrigin::BuiltIn)
+        } else if value_binding.is_some() {
+            Some(SimModelOrigin::InferredValue)
+        } else if device.is_some()
+            || library.is_some()
+            || name.is_some()
+            || params.is_some()
+            || !pins.is_empty()
+        {
+            Some(SimModelOrigin::Fields)
+        } else {
+            None
+        };
 
         if device.is_none()
             && model_type.is_none()
@@ -1216,6 +1239,7 @@ impl Symbol {
             pins,
             value_binding,
             enabled: !self.excluded_from_sim,
+            origin,
         });
     }
 }
@@ -1224,6 +1248,16 @@ impl Symbol {
 pub enum SimValueBinding {
     Params,
     Name,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimModelOrigin {
+    Fields,
+    RawSpice,
+    BuiltIn,
+    LibraryReference,
+    Ibis,
+    InferredValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1241,6 +1275,7 @@ pub struct SimModel {
     pub pins: BTreeMap<String, String>,
     pub value_binding: Option<SimValueBinding>,
     pub enabled: bool,
+    pub origin: Option<SimModelOrigin>,
 }
 
 fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
@@ -1405,8 +1440,8 @@ mod tests {
         BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LabelSpin,
         LibDrawItem, LibSymbol, LibSymbolUnit, Line, LineKind, NoConnect, Property, PropertyKind,
         Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide,
-        SimValueBinding, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table, TableCell,
-        Text, TextBox, TextKind,
+        SimModelOrigin, SimValueBinding, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin,
+        Table, TableCell, Text, TextBox, TextKind,
     };
 
     fn push_lib_draw_item(symbol: &mut LibSymbol, item: LibDrawItem) {
@@ -1667,6 +1702,13 @@ mod tests {
             symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
             Some(true)
         );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.origin),
+            Some(SimModelOrigin::Ibis)
+        );
     }
 
     #[test]
@@ -1747,6 +1789,13 @@ mod tests {
         assert_eq!(
             symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
             Some(true)
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.origin),
+            Some(SimModelOrigin::RawSpice)
         );
     }
 
@@ -1872,6 +1921,13 @@ mod tests {
         assert_eq!(
             symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
             Some(false)
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.origin),
+            Some(SimModelOrigin::RawSpice)
         );
     }
 

@@ -10,7 +10,7 @@ use ki2::loader::load_schematic_tree;
 use ki2::model::{
     EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelShape, LabelSpin,
     LineKind, MirrorAxis, PropertyKind, SchItem, ShapeKind, SheetPinShape, SheetSide,
-    SimValueBinding, StrokeStyle, TextHJustify, TextKind, TextVJustify,
+    SimModelOrigin, SimValueBinding, StrokeStyle, TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 use uuid::Uuid;
@@ -5587,6 +5587,13 @@ fn load_tree_hydrates_structured_sim_enable_state() {
         symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
         Some(false)
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::RawSpice)
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6714,6 +6721,13 @@ fn load_tree_migrates_value_backed_legacy_spice_fields_to_raw_sim_model() {
             .and_then(|sim_model| sim_model.value_binding),
         Some(SimValueBinding::Params)
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::RawSpice)
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6793,6 +6807,13 @@ fn load_tree_migrates_value_backed_legacy_spice_lib_fields_to_raw_sim_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.value_binding),
         Some(SimValueBinding::Params)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::RawSpice)
     );
 
     let _ = fs::remove_file(path);
@@ -6986,6 +7007,13 @@ fn load_tree_migrates_value_backed_legacy_source_fields_when_not_inferred() {
             .as_ref()
             .and_then(|sim_model| sim_model.model_type.as_deref()),
         Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::BuiltIn)
     );
     assert_eq!(
         symbol
