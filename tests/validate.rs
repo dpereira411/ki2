@@ -8658,6 +8658,102 @@ fn load_tree_defaults_legacy_library_backed_sim_pins_from_resolved_model() {
 }
 
 #[test]
+fn load_tree_defaults_explicit_ibis_sim_pins_from_resolved_component() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000090f")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+B2 SIGB MODEL_B
+C3 VSS POWER
+|)))
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P1" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P2" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P3" (effects (font (size 1.27 1.27))))
+          (number "3" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Value" "DRIVER")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (property "Sim.Ibis.Pin" "A1")
+    (property "Sim.Ibis.Model" "MODEL_A")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_defaults_explicit_ibis_sim_pins", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=A1 2=B2 3=C3")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::Ibis)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "A1".to_string()),
+            ("2".to_string(), "B2".to_string()),
+            ("3".to_string(), "C3".to_string()),
+        ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_pin_names.clone()),
+        Some(vec!["A1".to_string(), "B2".to_string(), "C3".to_string()])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_strips_inline_params_from_legacy_spice_lib_model_name() {
     let src = r#"(kicad_sch
   (version 20260306)

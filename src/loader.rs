@@ -1430,8 +1430,12 @@ fn hydrate_resolved_sim_library(
         resolve_symbol_sim_model_from_embedded_files(schematic_path, embedded_files, symbol);
 
     let should_default_resolved_pins = symbol.sim_model.as_ref().is_some_and(|sim_model| {
-        sim_model.origin == Some(crate::model::SimModelOrigin::LibraryReference)
-            && sim_model.pin_pairs.is_empty()
+        matches!(
+            sim_model.origin,
+            Some(
+                crate::model::SimModelOrigin::LibraryReference | crate::model::SimModelOrigin::Ibis
+            )
+        ) && sim_model.pin_pairs.is_empty()
     });
 
     if should_default_resolved_pins {
