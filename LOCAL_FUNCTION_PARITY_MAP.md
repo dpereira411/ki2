@@ -25,7 +25,7 @@ Status legend:
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
 1. decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs
-2. decide whether to expand the local diagnostic/error model for native parse-error parity
+2. audit and expand the local diagnostic/error model for native parse-error parity
 
 This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
 work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
@@ -35,6 +35,17 @@ If UUID unblocking is chosen, execute it in this order:
 2. migrate parser-only single-file fixtures with symbolic item UUIDs
 3. migrate hierarchy/loader fixtures whose instance paths currently depend on symbolic UUIDs
 4. only then switch `parse_kiid` / `normalize_kiid` to native malformed-ID replacement semantics
+
+If diagnostic/error unblocking is chosen, execute it in this order:
+1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate the parser fields lost by the current
+   reduced representation
+2. expand the diagnostic model so parser helpers can carry structured source/location/expectation
+   data
+3. retarget `expecting`, `unexpected`, `error_here`, and `validation` to build structured
+   diagnostics first
+4. add focused exactness tests for representative parser and validation failure families
+5. only then tighten final `Display` / formatting behavior to match native KiCad wording as far as
+   the local CLI model can support
 
 ## Layer 0: Support Files
 
@@ -56,7 +67,7 @@ If UUID unblocking is chosen, execute it in this order:
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `blocked` | native parse-error parity now depends on expanding the local diagnostic model beyond `{ code, message, path, span }` so KiCad-style source/line/offset formatting can be represented explicitly | parser notes + source inspection | unblock only with diagnostic model expansion |
+| `Diagnostic::error` | parse error construction | `blocked` | native parse-error parity now depends on expanding the local diagnostic model beyond `{ code, message, path, span }` so KiCad-style source/line/offset formatting and structured expectation data can be represented explicitly | parser notes + source inspection | audit `src/error.rs` / `src/diagnostic.rs`, expand structured diagnostic fields, then retarget parser helpers |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -67,7 +78,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `blocked` | exact wording/span/source parity now depends on the same diagnostic model expansion as `Diagnostic::error` | parser notes + source inspection | unblock only with diagnostic model expansion |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | exact wording/span/source parity now depends on the same diagnostic model expansion as `Diagnostic::error`, plus a later display-format audit once structured fields exist | parser notes + source inspection | expand diagnostic fields first, then tighten `Display` formatting |
 
 ### `src/model.rs` parser support methods
 
@@ -234,9 +245,9 @@ not drive the queue unless a parent parser routine exposes them.
 | `skip_to_block_right` | local recovery helper | `same` | used for embedded-file warning recovery only; behavior is stable enough | tests | none |
 | `current` | local token helper | `not_applicable` | local parser support only | source inspection | none |
 | `current_span` | local token helper | `not_applicable` | local parser support only | source inspection | none |
-| `expecting` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting than the current local error model can express | parser notes + source inspection | unblock only with diagnostic model expansion |
-| `unexpected` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting than the current local error model can express | parser notes + source inspection | unblock only with diagnostic model expansion |
-| `error_here` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting than the current local error model can express | parser notes + source inspection | unblock only with diagnostic model expansion |
+| `expecting` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting and preserving structured expectation payloads instead of flattening them immediately | parser notes + source inspection | retarget onto structured diagnostics after error-model expansion |
+| `unexpected` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting and preserving structured unexpected-token payloads instead of flattening them immediately | parser notes + source inspection | retarget onto structured diagnostics after error-model expansion |
+| `error_here` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting and explicit failure-site context the current reduced model discards | parser notes + source inspection | retarget onto structured diagnostics after error-model expansion |
 | `find_standard_page_info` | paper lookup support | `same` | stable and no longer active | direct behavior | none |
 | `parse_page_info` | `parsePAGE_INFO` | `same` | tracked above at owner layer; helper remains stable | direct audit | none |
 | `convert_old_overbar_notation` | legacy overbar conversion | `same` | behavior is covered and stable enough | tests | none |
@@ -250,7 +261,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `get_item_index_by_uuid` | local group support | `not_applicable` | local support only | source inspection | none |
 | `item_uuid` | local group support | `not_applicable` | local support only | source inspection | none |
 | `groups_sanity_check` | group cycle repair | `same` | covered and no longer active | tests | none |
-| `validation` | parse validation helper | `blocked` | final validation-diagnostic exactness now depends on the same diagnostic model expansion as the other parser error helpers | parser notes + source inspection | unblock only with diagnostic model expansion |
+| `validation` | parse validation helper | `blocked` | final validation-diagnostic exactness now depends on the same diagnostic model expansion as the other parser error helpers, plus preserving validation-specific context through final formatting | parser notes + source inspection | retarget onto structured diagnostics after error-model expansion |
 
 ## Implementation Rule
 

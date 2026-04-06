@@ -180,6 +180,12 @@ These are the only remaining parser-only gaps recorded by the current audit:
        - `unexpected`
        - `error_here`
      - `Error` formatting / source-location fidelity
+   - staged unblock order:
+     1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate which parser fields are flattened away
+     2. expand the diagnostic model to preserve structured source/location/expectation data
+     3. retarget parser helper construction onto structured diagnostics
+     4. lock representative parser/validation failure families with focused tests
+     5. only then tighten final `Display` formatting for native wording/source fidelity
 
 ## Rule Of Use
 

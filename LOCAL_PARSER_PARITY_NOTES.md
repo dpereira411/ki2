@@ -40,6 +40,42 @@ Execution order:
 3. hierarchy/loader fixtures that currently encode symbolic UUIDs into instance paths
 4. only then enable full native malformed-ID replacement semantics in `parse_kiid`
 
+### Diagnostic / Error-Model Unblock Plan
+
+The diagnostic block is now a support-model expansion task, not broad parser-routine work.
+
+To unblock native KiCad parse-diagnostic parity:
+
+1. inventory the exact parser surfaces that currently collapse source fidelity:
+   - `Diagnostic::error`
+   - parser helpers `expecting`, `unexpected`, `error_here`
+   - `validation`
+   - `Error` display formatting
+2. expand the local diagnostic model so it can carry the fields the parser already knows at the
+   failure site instead of flattening them immediately into a reduced message:
+   - path
+   - span
+   - line / column or byte-offset-derived source position
+   - raw expectation / unexpected-token payload
+   - enough context to distinguish parser failures from validation failures in formatting
+3. move parser helpers onto structured diagnostic construction first, without trying to force exact
+   final wording in the same patch
+4. add fixture coverage for representative exactness buckets:
+   - `Expecting(...)` parse failures
+   - `Unexpected(...)` parse failures
+   - malformed-number / malformed-bool branches
+   - validation failures that currently lose source/location fidelity
+5. only then tighten final `Display` / formatting behavior to match native KiCad error text as far
+   as the local CLI and tests can support
+
+Execution order:
+
+1. audit current `src/error.rs` / `src/diagnostic.rs` formatting and document the missing fields
+2. expand the diagnostic model and thread structured data through parser helper construction
+3. lock parser-helper exactness with focused tests before touching broad wording
+4. tighten final `Display` formatting and source-location rendering
+5. re-audit blocked parser helpers in `LOCAL_FUNCTION_PARITY_MAP.md`
+
 Closest-to-upstream areas so far:
 
 - `parsePAGE_INFO()` / top-level `paper` / modern `page`
@@ -207,6 +243,6 @@ The parser-only layer is effectively exhausted in the current model, but two blo
 prevent a literal claim of perfect parser parity:
 
 - UUID semantics blocked on fixture/model migration
-- diagnostic / error parity blocked on error-model expansion
+- diagnostic / error parity blocked on error-model expansion and formatting audit
 
 The active executable backlog is now loader/post-load parity.
