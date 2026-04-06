@@ -99,4 +99,19 @@ impl SchematicProject {
             })
             .max_by_key(|sheet_path| sheet_path.symbol_path.len())
     }
+
+    pub fn parent_sheet_path(&self, instance_path: &str) -> Option<&LoadedSheetPath> {
+        if instance_path.is_empty() {
+            return None;
+        }
+
+        let current = self.sheet_path(instance_path)?;
+        let parent_symbol_path = current
+            .symbol_path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or_default();
+
+        self.sheet_path_for_symbol_path(parent_symbol_path)
+    }
 }
