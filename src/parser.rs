@@ -1949,6 +1949,10 @@ impl KiCadSchematicParser {
                         self.need_right()?;
                         continue;
                     }
+                    if !matches!(self.current().kind, TokKind::Left) {
+                        self.idx += 1;
+                        return Err(self.expecting("effects"));
+                    }
                     self.need_left()?;
                     if !self.at_unquoted_symbol_with("effects") {
                         return Err(self.expecting("effects"));
@@ -1992,6 +1996,10 @@ impl KiCadSchematicParser {
                     if self.at_right() {
                         self.need_right()?;
                         continue;
+                    }
+                    if !matches!(self.current().kind, TokKind::Left) {
+                        self.idx += 1;
+                        return Err(self.expecting("effects"));
                     }
                     self.need_left()?;
                     if !self.at_unquoted_symbol_with("effects") {
