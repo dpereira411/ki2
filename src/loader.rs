@@ -1462,6 +1462,13 @@ fn parse_legacy_source_model(model: &str) -> Option<LegacySourceModel> {
             "SFFM",
             &["vo", "va", "fm", "mdi", "fc", "phasem", "phasec"][..],
         )),
+        "WHITENOISE" => Some(("TRNOISE", &["rms", "dt"][..])),
+        "PINKNOISE" => Some(("TRNOISE", &["rms", "slope", "dt"][..])),
+        "BURSTNOISE" => Some(("TRNOISE", &["ampl", "tcapt", "temit"][..])),
+        "RANDUNIFORM" => Some(("TRRANDOM", &["ts", "td", "range", "offset"][..])),
+        "RANDGAUSSIAN" => Some(("TRRANDOM", &["ts", "td", "stddev", "mean"][..])),
+        "RANDEXP" => Some(("TRRANDOM", &["ts", "td", "mean", "offset"][..])),
+        "RANDPOISSON" => Some(("TRRANDOM", &["ts", "td", "lambda", "offset"][..])),
         _ => None,
     }?;
 
