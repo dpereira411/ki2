@@ -1075,7 +1075,11 @@ impl KiCadSchematicParser {
                                     Some(AtomClass::Symbol | AtomClass::Quoted)
                                 )
                             {
-                                symbol.set_unit_display_name(unit_number, value);
+                                for unit in &mut symbol.units {
+                                    if unit.unit_number == unit_number {
+                                        unit.unit_name = Some(value.clone());
+                                    }
+                                }
                             }
                             self.need_right()?;
                         } else {
