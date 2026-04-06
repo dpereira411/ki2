@@ -4367,11 +4367,11 @@ impl KiCadSchematicParser {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
                     let at = self.parse_xy2("sheet pin at")?;
-                    let parsed_side = match self.parse_i32_atom("sheet pin angle")? {
-                        0 => SheetSide::Right,
-                        90 => SheetSide::Top,
-                        180 => SheetSide::Left,
-                        270 => SheetSide::Bottom,
+                    let parsed_side = match self.parse_f64_atom("sheet pin angle (side)")? {
+                        0.0 => SheetSide::Right,
+                        90.0 => SheetSide::Top,
+                        180.0 => SheetSide::Left,
+                        270.0 => SheetSide::Bottom,
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     };
                     sheet_pin.at = at;

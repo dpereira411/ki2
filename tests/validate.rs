@@ -4016,6 +4016,35 @@ fn rejects_invalid_sheet_pin_uuid_token() {
 }
 
 #[test]
+fn accepts_decimal_sheet_pin_side_angles() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "u-1")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input (at 1 2 90.0)))
+)"#;
+    let path = temp_schematic("decimal_sheet_pin_angle", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.pins.len(), 1);
+    assert_eq!(sheet.pins[0].side, SheetSide::Top);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_property_metadata_semantics() {
     let src = r#"(kicad_sch
   (version 20231120)
