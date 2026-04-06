@@ -265,16 +265,6 @@ impl LibSymbol {
         index
     }
 
-    pub fn set_unit_display_name(&mut self, unit_number: i32, unit_name: String) {
-        self.materialize_unit_counts(unit_number, 1);
-
-        for unit in &mut self.units {
-            if unit.unit_number == unit_number {
-                unit.unit_name = Some(unit_name.clone());
-            }
-        }
-    }
-
     pub fn add_draw_item(&mut self, item: LibDrawItem) {
         self.materialize_unit_counts(item.unit_number, item.body_style);
 
@@ -1652,7 +1642,11 @@ mod tests {
     fn lib_symbol_unit_display_names_are_shared_across_body_styles() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
         symbol.ensure_unit_index("R_1_2".to_string(), 1, 2);
-        symbol.set_unit_display_name(1, "Amplifier".to_string());
+        for unit in &mut symbol.units {
+            if unit.unit_number == 1 {
+                unit.unit_name = Some("Amplifier".to_string());
+            }
+        }
 
         assert_eq!(symbol.units[0].unit_name.as_deref(), Some("Amplifier"));
         assert_eq!(symbol.units[1].unit_name.as_deref(), Some("Amplifier"));
