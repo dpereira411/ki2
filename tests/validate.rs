@@ -6400,6 +6400,21 @@ fn accepts_bare_effects_font_justify_and_href_heads() {
 }
 
 #[test]
+fn bare_effects_href_head_cannot_have_trailing_siblings() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-href-trailing")
+  (text "note" (effects href "https://example.com" hide))
+)"#;
+    let path = temp_schematic("bare_effects_href_trailing", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("bare href head should close immediately like upstream");
+    assert!(err.to_string().contains("expecting )"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_face = r#"(kicad_sch
   (version 20260306)

@@ -5246,6 +5246,13 @@ impl KiCadSchematicParser {
                     effects.hyperlink = Some(href);
                     if section_is_list {
                         self.need_right()?;
+                    } else {
+                        self.need_right()?;
+                        if let Some(has_effects) = owner.has_effects {
+                            *has_effects = true;
+                        }
+                        *owner.effects = Some(effects);
+                        return Ok(());
                     }
                 }
                 "hide" => {
