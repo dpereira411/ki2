@@ -6329,30 +6329,7 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
-fn accepts_bare_effects_font_justify_and_href_heads() {
-    let bare_font_head = r#"(kicad_sch
-  (version 20260306)
-  (generator "eeschema")
-  (uuid "root-bare-font-head")
-  (text "note" (effects font (size 1 1)))
-)"#;
-    let bare_font_head_path = temp_schematic("bare_effects_font_head", bare_font_head);
-    let schematic =
-        parse_schematic_file(Path::new(&bare_font_head_path)).expect("must accept bare font head");
-    let text = schematic
-        .screen
-        .items
-        .iter()
-        .find_map(|item| match item {
-            SchItem::Text(text) => Some(text),
-            _ => None,
-        })
-        .expect("text");
-    assert_eq!(
-        text.effects.as_ref().and_then(|effects| effects.font_size),
-        Some([1.0, 1.0])
-    );
-
+fn rejects_bare_effects_font_justify_and_href_heads_but_accepts_hide() {
     let bare_font_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6376,15 +6353,15 @@ fn accepts_bare_effects_font_justify_and_href_heads() {
         Some([10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 0.5])
     );
 
-    let bare_justify_head = r#"(kicad_sch
+    let bare_hide_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-justify-head")
-  (text "note" (effects justify left top))
+  (uuid "root-bare-hide-head")
+  (text "note" (effects hide))
 )"#;
-    let bare_justify_head_path = temp_schematic("bare_effects_justify_head", bare_justify_head);
-    let schematic = parse_schematic_file(Path::new(&bare_justify_head_path))
-        .expect("must accept bare justify head");
+    let bare_hide_head_path = temp_schematic("bare_effects_hide_head", bare_hide_head);
+    let schematic =
+        parse_schematic_file(Path::new(&bare_hide_head_path)).expect("must accept bare hide head");
     let text = schematic
         .screen
         .items
@@ -6395,11 +6372,34 @@ fn accepts_bare_effects_font_justify_and_href_heads() {
         })
         .expect("text");
     let effects = text.effects.as_ref().expect("effects");
-    assert_eq!(effects.h_justify, TextHJustify::Left);
-    assert_eq!(effects.v_justify, TextVJustify::Top);
+    assert!(effects.hidden);
+    assert!(text.visible);
 
-    let _ = fs::remove_file(bare_font_head_path);
+    let bare_font_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-font-head")
+  (text "note" (effects font (size 1 1)))
+)"#;
+    let bare_font_head_path = temp_schematic("bare_effects_font_head", bare_font_head);
+    let err = parse_schematic_file(Path::new(&bare_font_head_path))
+        .expect_err("must reject bare font head like native KiCad");
+    assert!(err.to_string().contains("expecting )"));
+
+    let bare_justify_head = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bare-justify-head")
+  (text "note" (effects justify left top))
+)"#;
+    let bare_justify_head_path = temp_schematic("bare_effects_justify_head", bare_justify_head);
+    let err = parse_schematic_file(Path::new(&bare_justify_head_path))
+        .expect_err("must reject bare justify head like native KiCad");
+    assert!(err.to_string().contains("expecting )"));
+
     let _ = fs::remove_file(bare_font_color_path);
+    let _ = fs::remove_file(bare_hide_head_path);
+    let _ = fs::remove_file(bare_font_head_path);
     let _ = fs::remove_file(bare_justify_head_path);
 
     let bare_href_head = r#"(kicad_sch
@@ -6409,23 +6409,9 @@ fn accepts_bare_effects_font_justify_and_href_heads() {
   (text "note" (effects href "https://example.com"))
 )"#;
     let bare_href_head_path = temp_schematic("bare_effects_href_head", bare_href_head);
-    let schematic =
-        parse_schematic_file(Path::new(&bare_href_head_path)).expect("must accept bare href");
-    let text = schematic
-        .screen
-        .items
-        .iter()
-        .find_map(|item| match item {
-            SchItem::Text(text) => Some(text),
-            _ => None,
-        })
-        .expect("text");
-    assert_eq!(
-        text.effects
-            .as_ref()
-            .and_then(|effects| effects.hyperlink.as_deref()),
-        Some("https://example.com")
-    );
+    let err = parse_schematic_file(Path::new(&bare_href_head_path))
+        .expect_err("must reject bare href head like native KiCad");
+    assert!(err.to_string().contains("expecting )"));
     let _ = fs::remove_file(bare_href_head_path);
 }
 

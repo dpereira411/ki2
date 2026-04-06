@@ -5214,6 +5214,10 @@ impl KiCadSchematicParser {
             }
             let head = self.need_unquoted_symbol_atom("font, justify, hide or href")?;
 
+            if !section_is_list && head != "hide" {
+                return Err(self.expecting(")"));
+            }
+
             match head.as_str() {
                 "font" => {
                     let mut font_consumed_right = false;
