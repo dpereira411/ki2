@@ -72,7 +72,7 @@ Boundary:
 | `parseSchTableCell` | `parse_sch_table_cell` | done | distinct cell ownership and shared textbox-body routing now match upstream closely enough that it is no longer the current bottleneck |
 | `parseSchTextBoxContent` | `parse_sch_text_box_content` | done | shared textbox body is now structurally close: caller-owned mutation, span gating, raw uuid path, and legacy size/end/margins flow are aligned enough to stop treating it as the current bottleneck |
 | `parseSchTable` | `parse_sch_table` | done | table ownership, border/separator routing, cell grid materialization, and no-cell failure are close enough that it is no longer the current bottleneck |
-| `parseImage` | `parse_sch_image` | partial | structurally close, not final |
+| `parseImage` | `parse_sch_image` | done | direct upstream audit shows `at`/`scale`/`uuid`/`data` ownership, non-normal scale fallback, invalid-data failure, and legacy image-PPI adjustment are now close enough that it is no longer the current bottleneck |
 | `parseSchPolyLine` | `parse_sch_polyline` | partial | closer, not final |
 | `parseLine` | `parse_sch_line` | partial | closer, not final |
 | `parseSchArc` | `parse_sch_arc` | partial | closer, not final |

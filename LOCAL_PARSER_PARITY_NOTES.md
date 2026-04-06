@@ -50,10 +50,9 @@ Closest-to-upstream areas so far:
 - derived-symbol flattening is also closer now: child local-lib overlays are limited to the upstream field/keyword/fp-filter subset instead of carrying a broader repo-local inheritance model
 - remaining gaps are now more concentrated in `parseLibSymbol()` finalization and exact branch / error flow
 
-7. Shape / image parsing still has gaps
+7. Shape parsing still has gaps
 
 - `arc`, `circle`, `rectangle`, `bezier`, `polyline`, `rule_area`
-- `image`
 
 These are better than before, but still not at exact upstream routine parity.
 
@@ -62,6 +61,12 @@ These are better than before, but still not at exact upstream routine parity.
 - direct upstream comparison shows alias-name parsing, `members` section ownership, empty-members
   acceptance, invalid-member `Expecting( "quoted string" )`, and legacy overbar conversion are now
   close enough to stop treating it as a primary gap
+
+`image` is also no longer one of the active parser-only bottlenecks:
+
+- direct upstream comparison shows `at` / `scale` / `uuid` / `data` ownership, non-normal scale
+  fallback, invalid-data failure, and legacy image-PPI adjustment are now close enough to stop
+  treating it as a primary gap
 
 The table/textbox cluster is no longer the main parser-only bottleneck:
 
