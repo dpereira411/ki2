@@ -9782,6 +9782,30 @@ fn deduplicates_lib_jumper_pin_group_members_like_upstream_sets() {
 }
 
 #[test]
+fn accepts_unquoted_numeric_lib_jumper_pin_group_members() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-jumper-unquoted-numbers")
+  (lib_symbols
+    (symbol "Device:R"
+      (jumper_pin_groups (1 2 10))))
+)"#;
+    let path = temp_schematic("unquoted_numeric_jumper_pin_groups", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept bare numeric pin names");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+
+    assert_eq!(lib_symbol.jumper_pin_groups.len(), 1);
+    assert_eq!(
+        lib_symbol.jumper_pin_groups[0],
+        BTreeSet::from(["1".to_string(), "2".to_string(), "10".to_string()])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)

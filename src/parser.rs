@@ -986,13 +986,14 @@ impl KiCadSchematicParser {
                             TokKind::Atom(_)
                                 if matches!(
                                     self.current().atom_class,
-                                    Some(AtomClass::Symbol | AtomClass::Quoted)
+                                    Some(AtomClass::Symbol | AtomClass::Quoted | AtomClass::Number)
                                 ) =>
                             {
                                 let group = current_group
                                     .as_mut()
                                     .ok_or_else(|| self.expecting("list of pin names"))?;
-                                group.insert(self.need_symbol_atom("list of pin names")?);
+                                group
+                                    .insert(self.need_symbol_or_number_atom("list of pin names")?);
                             }
                             TokKind::Right => {
                                 self.need_right()?;
