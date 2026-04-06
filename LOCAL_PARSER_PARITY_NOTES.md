@@ -57,14 +57,17 @@ Direct re-audit shows `parseSchText()` itself is no longer an active parser-only
 - direct comparison now shows `parseSheet()` itself is structurally close enough to stop treating it as a primary parser-only bottleneck
 - the remaining sheet-side risk is narrower parser-wide exactness around shared leaves, diagnostics, and any future parent interaction that exposes a concrete mismatch
 
-6. Library-cache symbol parsing is no longer a broad owner-routine bottleneck
+6. Library-cache symbol parsing is no longer a broad parser-only bottleneck
 
 - `lib_symbols` improved a lot and the broad `parseLibSymbol()` owner loop is now structurally
   close enough to stop treating it as the main parser-only bottleneck
 - draw items now run on parser-owned current unit/body-style state like upstream, and helper section-head ownership is closer too
 - derived-symbol flattening is also closer now: child local-lib overlays are limited to the upstream field/keyword/fp-filter subset instead of carrying a broader repo-local inheritance model
 - parser-owned finalization is now much closer too: description-cache refresh and draw-item sorting are no longer hidden behind model helpers
-- remaining lib gaps are now concentrated in local-lib flattening exactness.
+- direct re-audit now shows local-lib flattening is also close enough to stop treating it as an
+  active parser-only bottleneck
+- remaining parser-only work should now be driven by support exactness rather than broad library
+  routine drift
 
 7. Shape parsing still has gaps
 
@@ -135,14 +138,12 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Tighten remaining local-lib flattening exactness where direct comparison exposes it.
-2. Do a parser-wide token/error parity pass.
-3. Port the missing cross-file post-load pipeline.
+1. Do a parser-wide token/error parity pass.
+2. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
-1. Revisit local-lib flattening and any narrower library helper surface only when direct comparison exposes a concrete remaining mismatch.
-2. Finish the parser-wide token/error exactness sweep.
+1. Finish the parser-wide token/error exactness sweep.
 
 ### Bottom Line
 
@@ -150,5 +151,4 @@ The parser is still well short of 1:1 parity.
 
 The biggest remaining gaps are:
 
-- narrower library helper exactness
 - parser-wide token / error parity

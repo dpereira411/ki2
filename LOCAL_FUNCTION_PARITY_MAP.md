@@ -19,8 +19,7 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. local-lib flattening exactness in `flatten_local_lib_symbol`
-2. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
+1. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
 
 ## Layer 0: Support Files
 
@@ -229,7 +228,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `unescape_string_markers` | KiCad string-marker unescape support | `same` | used narrowly and covered | tests | none |
 | `fixup_legacy_lib_symbol_alternate_body_styles` | parser post-fixup | `same` | remaining body-style ownership moved into parser/finalization already | direct audit | none |
 | `update_local_lib_symbol_links` | parser local-lib link refresh | `same` | parser-only local-lib link fixup is stable enough | tests | none |
-| `flatten_local_lib_symbol` | local-lib `Flatten()` analogue | `different` | much closer now, but still part of the remaining lib-symbol exactness surface | direct audit | revisit with `parse_lib_symbol` |
+| `flatten_local_lib_symbol` | local-lib `Flatten()` analogue | `same` | direct re-audit plus existing derived-symbol regressions now cover the remaining upstream flatten branches closely enough: parent-chain order, mandatory/user-field overrides, keyword/filter inheritance, embedded-file handling, and missing-parent behavior are no longer active parser-only bottlenecks | direct source comparison against `LIB_SYMBOL::Flatten()` plus derived-local-lib regressions | none |
 | `has_legacy_alternate_body_style` | local helper | `same` | behavior is stable enough | tests | none |
 | `fixup_embedded_data` | parser embedded-data finalization | `same` | metadata hydration/recovery is stable enough | tests | none |
 | `resolve_groups` | deferred group resolution | `same` | parser-only group finalization is no longer active | tests | none |
