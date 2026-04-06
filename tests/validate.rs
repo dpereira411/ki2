@@ -8481,7 +8481,7 @@ fn labels_do_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000031")
   (paper "A4")
   (label "LOCAL")
   (global_label "GLOBAL" (shape input))
@@ -8974,9 +8974,9 @@ fn rejects_legacy_class_label_alias_like_upstream_dispatch() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000032")
   (paper "A4")
-  (class_label "NETCLASS" (shape rectangle) (at 1 2 0) (uuid "c-1"))
+  (class_label "NETCLASS" (shape rectangle) (at 1 2 0) (uuid "60000000-0000-0000-0000-000000000033"))
 )"#;
     let path = temp_schematic("class_label_alias", src);
     let err = parse_schematic_file(Path::new(&path))
@@ -8993,7 +8993,7 @@ fn allows_properties_on_local_and_hierarchical_labels() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000034")
   (paper "A4")
   (label "LOCAL" (at 1 2 0) (property "User" "L"))
   (hierarchical_label "H" (shape input) (at 3 4 0) (property "User" "H"))
@@ -9099,7 +9099,7 @@ fn rejects_table_without_cells() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000035")
   (paper "A4")
   (table (column_count 1))
 )"#;
@@ -9114,7 +9114,7 @@ fn line_and_polyline_keep_upstream_error_text() {
     let bad_wire_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000036")
   (paper "A4")
   (wire (bogus yes))
 )"#;
@@ -9127,7 +9127,7 @@ fn line_and_polyline_keep_upstream_error_text() {
     let short_wire_pts_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000037")
   (paper "A4")
   (wire (pts (xy 0 0)))
 )"#;
@@ -9140,7 +9140,7 @@ fn line_and_polyline_keep_upstream_error_text() {
     let long_wire_pts_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000038")
   (paper "A4")
   (wire (pts (xy 0 0) (xy 1 1) (xy 2 2)))
 )"#;
@@ -9153,7 +9153,7 @@ fn line_and_polyline_keep_upstream_error_text() {
     let short_polyline_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000039")
   (paper "A4")
   (polyline (pts (xy 0 0)))
 )"#;
@@ -9169,7 +9169,7 @@ fn line_and_polyline_keep_upstream_error_text() {
     let bad_polyline_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000003a")
   (paper "A4")
   (polyline (bogus yes))
 )"#;
@@ -9188,9 +9188,9 @@ fn rejects_invalid_image_data() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000003b")
   (paper "A4")
-  (image (at 1 2) (scale 1.0) (data "%%%") (uuid "img-1"))
+  (image (at 1 2) (scale 1.0) (data "%%%") (uuid "60000000-0000-0000-0000-00000000003c"))
 )"#;
     let path = temp_schematic("bad_image_data", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject invalid image data");
@@ -9203,9 +9203,9 @@ fn rejects_invalid_image_data_token() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000003d")
   (paper "A4")
-  (image (at 1 2) (scale 1.0) (data (bogus)) (uuid "img-1"))
+  (image (at 1 2) (scale 1.0) (data (bogus)) (uuid "60000000-0000-0000-0000-00000000003e"))
 )"#;
     let path = temp_schematic("bad_image_data_token", src);
     let err =
@@ -9219,12 +9219,12 @@ fn image_does_not_require_at() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000003f")
   (paper "A4")
   (image
     (scale 1.0)
     (data "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
-    (uuid "img-1"))
+    (uuid "60000000-0000-0000-0000-000000000040"))
 )"#;
     let path = temp_schematic("image_without_at", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must accept image without at");
@@ -9246,9 +9246,9 @@ fn rejects_decoded_non_image_payload() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000041")
   (paper "A4")
-  (image (at 1 2) (scale 1.0) (data "QUJD") (uuid "img-1"))
+  (image (at 1 2) (scale 1.0) (data "QUJD") (uuid "60000000-0000-0000-0000-000000000042"))
 )"#;
     let path = temp_schematic("bad_decoded_image_data", src);
     let err =
@@ -9262,7 +9262,7 @@ fn records_warning_for_invalid_top_level_embedded_files() {
     let src = r#"(kicad_sch
   (version 20240706)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000043")
   (paper "A4")
   (embedded_files (file (name "A.bin") (bogus "x")))
 )"#;
@@ -9279,7 +9279,7 @@ fn records_warning_for_invalid_embedded_files_file_head() {
     let src = r#"(kicad_sch
   (version 20240706)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000044")
   (paper "A4")
   (embedded_files ("file" "A.bin" "aaa"))
 )"#;
@@ -9296,7 +9296,7 @@ fn repeated_embedded_and_lib_symbol_sections_follow_upstream_accumulation_rules(
     let src = r#"(kicad_sch
   (version 20240706)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000045")
   (paper "A4")
   (embedded_fonts no)
   (embedded_fonts yes)
