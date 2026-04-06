@@ -7064,7 +7064,7 @@ fn keeps_legacy_overbar_value_raw_without_effects_path() {
 }
 
 #[test]
-fn accepts_legacy_class_label_alias() {
+fn rejects_legacy_class_label_alias_like_upstream() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
@@ -7073,18 +7073,10 @@ fn accepts_legacy_class_label_alias() {
   (class_label "NETCLASS" (shape rectangle) (at 1 2 0) (uuid "c-1"))
 )"#;
     let path = temp_schematic("class_label_alias", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse class_label");
-    let label = schematic
-        .screen
-        .items
-        .iter()
-        .find_map(|item| match item {
-            SchItem::Label(label) if label.kind == LabelKind::NetclassFlag => Some(label),
-            _ => None,
-        })
-        .expect("class_label");
-    assert_eq!(label.shape, LabelShape::Rectangle);
-    assert_eq!(label.pin_length, Some(2.54));
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject class_label");
+    assert!(err.to_string().contains(
+        "expecting bitmap, bus, bus_alias, bus_entry, class_label, embedded_files, global_label, hierarchical_label, junction, label, line, no_connect, page, paper, rule_area, sheet, symbol, symbol_instances, text, title_block"
+    ));
     let _ = fs::remove_file(path);
 }
 
