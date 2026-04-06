@@ -1185,14 +1185,7 @@ impl Symbol {
             .properties
             .iter()
             .find(|property| property.key == "Sim.Pins")
-            .map(|property| {
-                property
-                    .value
-                    .split_whitespace()
-                    .filter_map(|entry| entry.split_once('='))
-                    .map(|(symbol_pin, model_pin)| (symbol_pin.to_string(), model_pin.to_string()))
-                    .collect::<Vec<_>>()
-            })
+            .map(|property| parse_sim_pin_pairs(&property.value))
             .unwrap_or_default();
         let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
         let origin = if ibis_diff || ibis_pin.is_some() || ibis_model.is_some() {
@@ -1319,71 +1312,101 @@ pub struct SimModel {
     pub generated_param_pairs: Vec<(String, Option<String>)>,
 }
 
+fn skip_sim_whitespace(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+        chars.next();
+    }
+}
+
+fn parse_sim_bare_token(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut token = String::new();
+
+    while let Some(ch) = chars.peek().copied() {
+        if ch.is_whitespace() || ch == '=' {
+            break;
+        }
+
+        token.push(ch);
+        chars.next();
+    }
+
+    token
+}
+
+fn parse_sim_quoted_token(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut token = String::new();
+
+    while let Some(ch) = chars.next() {
+        if ch == '"' {
+            break;
+        }
+
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                token.push(escaped);
+            }
+        } else {
+            token.push(ch);
+        }
+    }
+
+    token
+}
+
 fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
     let mut values = Vec::new();
     let mut chars = params.chars().peekable();
 
     while chars.peek().is_some() {
-        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-            chars.next();
-        }
+        skip_sim_whitespace(&mut chars);
 
-        let mut key = String::new();
-
-        while let Some(ch) = chars.peek().copied() {
-            if ch.is_whitespace() || ch == '=' {
-                break;
-            }
-
-            key.push(ch);
-            chars.next();
-        }
+        let key = parse_sim_bare_token(&mut chars);
 
         if key.is_empty() {
             break;
         }
 
         if chars.next_if_eq(&'=').is_none() {
-            while chars.peek().is_some_and(|ch| !ch.is_whitespace()) {
-                chars.next();
-            }
+            values.push((key, "1".to_string()));
             continue;
         }
 
         let value = if chars.next_if_eq(&'"').is_some() {
-            let mut value = String::new();
-
-            while let Some(ch) = chars.next() {
-                if ch == '"' {
-                    break;
-                }
-
-                if ch == '\\' {
-                    if let Some(escaped) = chars.next() {
-                        value.push(escaped);
-                    }
-                } else {
-                    value.push(ch);
-                }
-            }
-
-            value
+            parse_sim_quoted_token(&mut chars)
         } else {
-            let mut value = String::new();
-
-            while let Some(ch) = chars.peek().copied() {
-                if ch.is_whitespace() {
-                    break;
-                }
-
-                value.push(ch);
-                chars.next();
-            }
-
-            value
+            parse_sim_bare_token(&mut chars)
         };
 
         values.push((key, value));
+    }
+
+    values
+}
+
+fn parse_sim_pin_pairs(pins: &str) -> Vec<(String, String)> {
+    let mut values = Vec::new();
+    let mut chars = pins.chars().peekable();
+
+    while chars.peek().is_some() {
+        skip_sim_whitespace(&mut chars);
+
+        let symbol_pin = parse_sim_bare_token(&mut chars);
+
+        if symbol_pin.is_empty() {
+            break;
+        }
+
+        if chars.next_if_eq(&'=').is_none() {
+            continue;
+        }
+
+        let model_pin = if chars.next_if_eq(&'"').is_some() {
+            parse_sim_quoted_token(&mut chars)
+        } else {
+            parse_sim_bare_token(&mut chars)
+        };
+
+        values.push((symbol_pin, model_pin));
     }
 
     values
@@ -1891,6 +1914,44 @@ mod tests {
     }
 
     #[test]
+    fn symbol_preserves_flag_and_quoted_sim_param_pairs() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Params",
+            r#"flag gain=2 model="BC\"547" extra="x y""#.to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_pairs.clone()),
+            Some(vec![
+                ("flag".to_string(), "1".to_string()),
+                ("gain".to_string(), "2".to_string()),
+                ("model".to_string(), "BC\"547".to_string()),
+                ("extra".to_string(), "x y".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_values.clone()),
+            Some(BTreeMap::from([
+                ("extra".to_string(), "x y".to_string()),
+                ("flag".to_string(), "1".to_string()),
+                ("gain".to_string(), "2".to_string()),
+                ("model".to_string(), "BC\"547".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
     fn symbol_preserves_ordered_sim_pin_pairs() {
         let mut symbol = Symbol::new();
         symbol.properties.push(Property::new_named(
@@ -1922,6 +1983,40 @@ mod tests {
                 ("1".to_string(), "2".to_string()),
                 ("2".to_string(), "1".to_string()),
                 ("10".to_string(), "3".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn symbol_preserves_quoted_sim_pin_pairs() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Pins",
+            r#"1="PIN A" 2=B"#.to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.pin_pairs.clone()),
+            Some(vec![
+                ("1".to_string(), "PIN A".to_string()),
+                ("2".to_string(), "B".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.pins.clone()),
+            Some(BTreeMap::from([
+                ("1".to_string(), "PIN A".to_string()),
+                ("2".to_string(), "B".to_string()),
             ]))
         );
     }
