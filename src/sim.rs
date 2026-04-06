@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -138,8 +139,21 @@ fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {
         return library_path;
     }
 
-    schematic_path
+    let project_path = schematic_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
-        .join(library_path)
+        .join(&library_path);
+
+    if project_path.exists() {
+        return project_path;
+    }
+
+    if let Some(spice_lib_dir) = env::var_os("SPICE_LIB_DIR") {
+        let spice_path = PathBuf::from(spice_lib_dir).join(&library_path);
+        if spice_path.exists() {
+            return spice_path;
+        }
+    }
+
+    project_path
 }

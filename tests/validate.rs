@@ -5829,6 +5829,81 @@ fn loads_symbol_sim_library_content_from_filesystem() {
 }
 
 #[test]
+fn loads_symbol_sim_library_content_from_spice_lib_dir() {
+    let dir = env::temp_dir().join(format!(
+        "sim_lib_dir_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(dir.join("models")).expect("create dir");
+    fs::write(dir.join("models/model.kicad_sim"), "env-model").expect("write sim lib");
+    let old_spice_lib_dir = env::var_os("SPICE_LIB_DIR");
+    // SAFETY: tests run in-process and we restore the environment before returning.
+    unsafe {
+        env::set_var("SPICE_LIB_DIR", &dir);
+    }
+    let path = dir.join("outside/content_loader.kicad_sch");
+    fs::create_dir_all(path.parent().expect("parent")).expect("create schematic dir");
+    fs::write(
+        &path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000314")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models/model.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#,
+    )
+    .expect("write schematic");
+
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        load_symbol_sim_library_content(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryContent {
+            source: SimLibrarySource::Filesystem(dir.join("models/model.kicad_sim")),
+            text: "env-model".to_string(),
+        })
+    );
+
+    match old_spice_lib_dir {
+        Some(value) => {
+            // SAFETY: restore previous process environment after the test mutation above.
+            unsafe { env::set_var("SPICE_LIB_DIR", value) }
+        }
+        None => {
+            // SAFETY: restore previous process environment after the test mutation above.
+            unsafe { env::remove_var("SPICE_LIB_DIR") }
+        }
+    }
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
