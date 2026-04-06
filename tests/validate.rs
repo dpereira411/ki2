@@ -1440,7 +1440,7 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000001")
   (paper "A4")
   (global_label "VCC"
     (shape input)
@@ -1449,12 +1449,12 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
   (sheet
     (at 0 0)
     (size 10 10)
-    (uuid "sheet-a")
+    (uuid "71000000-0000-0000-0000-000000000002")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "2"))
-    (path "/sheet-a" (page "1")))
+    (path "/71000000-0000-0000-0000-000000000002" (page "1")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1518,7 +1518,7 @@ fn recomputing_intersheet_refs_preserves_explicit_visible_property_state() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000011")
   (paper "A4")
   (global_label "VCC"
     (shape input)
@@ -1527,12 +1527,12 @@ fn recomputing_intersheet_refs_preserves_explicit_visible_property_state() {
   (sheet
     (at 0 0)
     (size 10 10)
-    (uuid "sheet-a")
+    (uuid "71000000-0000-0000-0000-000000000012")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "2"))
-    (path "/sheet-a" (page "1")))
+    (path "/71000000-0000-0000-0000-000000000012" (page "1")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1588,14 +1588,14 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
   (paper "A4")
   (symbol
     (lib_id "Device:R")
-    (uuid "sym-u")
+    (uuid "71000000-0000-0000-0000-000000000021")
     (property "Reference" "R?" (at 1 2 90) (hide yes) (show_name no))
     (property "Value" "seed" (at 3 4 180) (do_not_autoplace yes))
     (property "Footprint" "seed-footprint" (at 5 6 270))
     (at 10 10 0)
     (instances
       (project "demo"
-        (path "/root-u/sheet-a"
+        (path "/71000000-0000-0000-0000-000000000031/71000000-0000-0000-0000-000000000032"
           (reference "R11")
           (unit 3)
           (value "22k")
@@ -1604,17 +1604,17 @@ fn updates_symbol_references_from_loaded_sheet_paths() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000031")
   (paper "A4")
   (sheet
     (at 0 0)
     (size 10 10)
-    (uuid "sheet-a")
+    (uuid "71000000-0000-0000-0000-000000000032")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "2"))
-    (path "/sheet-a" (page "1")))
+    (path "/71000000-0000-0000-0000-000000000032" (page "1")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1710,14 +1710,14 @@ fn update_all_screen_references_refreshes_instance_value_and_footprint_after_lat
   (paper "A4")
   (symbol
     (lib_id "Device:R")
-    (uuid "sym-u")
+    (uuid "71000000-0000-0000-0000-000000000041")
     (property "Reference" "R?" (at 1 2 90))
     (property "Value" "seed" (at 3 4 180))
     (property "Footprint" "seed-footprint" (at 5 6 270))
     (at 10 10 0)
     (instances
       (project "demo"
-        (path "/root-u/sheet-a"
+        (path "/71000000-0000-0000-0000-000000000051/71000000-0000-0000-0000-000000000052"
           (reference "R11")
           (unit 3)
           (value "22k")
@@ -1728,17 +1728,17 @@ fn update_all_screen_references_refreshes_instance_value_and_footprint_after_lat
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000051")
   (paper "A4")
   (sheet
     (at 0 0)
     (size 10 10)
-    (uuid "sheet-a")
+    (uuid "71000000-0000-0000-0000-000000000052")
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
   (sheet_instances
     (path "" (page "2"))
-    (path "/sheet-a" (page "1")))
+    (path "/71000000-0000-0000-0000-000000000052" (page "1")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1797,7 +1797,7 @@ fn fixes_legacy_global_power_symbol_value_after_load() {
     let root_src = r#"(kicad_sch
   (version 20230220)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000061")
   (paper "A4")
   (lib_symbols
     (symbol "power:VCC"
@@ -1814,7 +1814,7 @@ fn fixes_legacy_global_power_symbol_value_after_load() {
     (lib_id "power:VCC")
     (property "Value" "WRONG")
     (at 10 10 0)
-    (uuid "sym-u"))
+    (uuid "71000000-0000-0000-0000-000000000062"))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1875,7 +1875,7 @@ fn preserves_power_symbol_reference_metadata_during_annotation() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000071")
   (paper "A4")
   (lib_symbols
     (symbol "power:VCC"
@@ -1891,7 +1891,7 @@ fn preserves_power_symbol_reference_metadata_during_annotation() {
     (lib_id "power:VCC")
     (property "Reference" "PWR" (at 1 2 90) (hide yes))
     (at 10 10 0)
-    (uuid "sym-u"))
+    (uuid "71000000-0000-0000-0000-000000000072"))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1941,7 +1941,7 @@ fn fixes_legacy_global_label_intersheet_ref_position_after_load() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000081")
   (global_label "VCC" (at 10 20 0))
 )"#;
 
@@ -1990,7 +1990,7 @@ fn annotates_power_symbol_references_after_load() {
     let root_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-u")
+  (uuid "71000000-0000-0000-0000-000000000091")
   (paper "A4")
   (lib_symbols
     (symbol "power:VCC"
@@ -2007,7 +2007,7 @@ fn annotates_power_symbol_references_after_load() {
     (lib_id "power:VCC")
     (property "Reference" "VCC1")
     (at 10 10 0)
-    (uuid "sym-u")))
+    (uuid "71000000-0000-0000-0000-000000000092")))
 "#;
 
     fs::write(&root_path, root_src).expect("write root");
