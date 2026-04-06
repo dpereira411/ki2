@@ -6861,7 +6861,7 @@ fn label_at_offsets_existing_fields_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "label-at-field-shift")
+  (uuid "60000000-0000-0000-0000-000000000079")
   (paper "A4")
   (label "L"
     (property "User" "V" (at 3 4 0))
@@ -6895,7 +6895,7 @@ fn symbol_at_moves_default_mandatory_fields_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "symbol-at-default-fields")
+  (uuid "60000000-0000-0000-0000-00000000007a")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"))
@@ -6939,7 +6939,7 @@ fn symbol_at_offsets_existing_fields_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "symbol-at-field-shift")
+  (uuid "60000000-0000-0000-0000-00000000007b")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"))
@@ -7068,7 +7068,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let empty_local_iref_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000007c")
   (paper "A4")
   (label "L" (at 0 0 0) (iref))
 )"#;
@@ -7081,7 +7081,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let text_iref_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000007d")
   (paper "A4")
   (text "T" (at 0 0 0) (iref 1 2))
 )"#;
@@ -7094,7 +7094,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let quoted_text_head_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000007e")
   (paper "A4")
   (text "hello" ("at" 1 2 0))
 )"#;
@@ -7110,7 +7110,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let quoted_text_fields_autoplaced_head_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000007f")
   (paper "A4")
   (text "hello" ("fields_autoplaced"))
 )"#;
@@ -11053,7 +11053,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000051")
   (group "g"
-    (uuid "group-uuid")
+    (uuid "63000000-0000-0000-0000-000000000080")
     (members (bogus))))
 )"#;
     let bad_group_member_path = temp_schematic("bad_group_member_uuid", bad_group_member);
@@ -11078,7 +11078,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000053")
   (group g
-    (uuid "group-uuid")
+    (uuid "63000000-0000-0000-0000-000000000081")
     (members "a")))
 )"#;
     let bad_group_name_path = temp_schematic("bad_group_name", bad_group_name);
@@ -11092,7 +11092,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000054")
   (group locked
-    (uuid "group-uuid")
+    (uuid "63000000-0000-0000-0000-000000000082")
     (members "a")))
 )"#;
     let bare_locked_group_path = temp_schematic("bad_group_locked", bare_locked_group);
@@ -11106,7 +11106,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000055")
   (group "g"
-    (uuid "group-uuid")
+    (uuid "63000000-0000-0000-0000-000000000083")
     (lib_id "lib:block:bad")
     (members "a")))
 )"#;
@@ -11123,7 +11123,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000056")
   (group "g"
-    (uuid "group-uuid")
+    (uuid "63000000-0000-0000-0000-000000000084")
     (lib_id "lib:")
     (members "a")))
 )"#;
