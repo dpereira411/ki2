@@ -2159,6 +2159,10 @@ fn rejects_invalid_title_block_comment_number() {
             assert!(matches!(diagnostic.kind, DiagnosticKind::Validation));
             let span = diagnostic.span.expect("diagnostic span");
             assert_eq!(&src[span.start..span.end], "10");
+            assert!(
+                err.to_string()
+                    .contains(&format!(":{}..{}", span.start, span.end))
+            );
         }
         other => panic!("expected validation error, got {other:?}"),
     }
@@ -3919,6 +3923,10 @@ fn rejects_invalid_page_type() {
             assert!(matches!(diagnostic.kind, DiagnosticKind::Validation));
             let span = diagnostic.span.expect("diagnostic span");
             assert_eq!(&src[span.start..span.end], "\"BogusSize\"");
+            assert!(
+                err.to_string()
+                    .contains(&format!(":{}..{}", span.start, span.end))
+            );
         }
         _ => panic!("expected validation error"),
     }

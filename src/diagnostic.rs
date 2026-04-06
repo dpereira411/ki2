@@ -86,4 +86,11 @@ impl Diagnostic {
         self.span = Some(span);
         self
     }
+
+    pub fn display_span_suffix(&self) -> String {
+        match self.span {
+            Some(span) => format!(":{}..{}", span.start, span.end),
+            None => String::new(),
+        }
+    }
 }

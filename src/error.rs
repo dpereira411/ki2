@@ -18,7 +18,11 @@ pub enum Error {
         #[source]
         source: kiutils_sexpr::ParseError,
     },
-    #[error("validation error at {path}: {message}", message = diagnostic.message)]
+    #[error(
+        "validation error at {path}{span_suffix}: {message}",
+        span_suffix = diagnostic.display_span_suffix(),
+        message = diagnostic.message
+    )]
     Validation {
         path: PathBuf,
         diagnostic: Diagnostic,
