@@ -1144,17 +1144,6 @@ impl Symbol {
         self.pins.push(pin);
     }
 
-    pub fn add_hierarchical_reference(&mut self, mut instance: SymbolLocalInstance) {
-        if instance.unit.is_none() {
-            instance.unit = Some(1);
-        }
-
-        self.instances
-            .retain(|existing| existing.path != instance.path);
-
-        self.instances.push(instance);
-    }
-
     pub fn update_prefix_from_reference(&mut self) {
         let Some(reference) = self
             .properties
@@ -1369,7 +1358,10 @@ mod tests {
         instance.reference = Some("R7".to_string());
         instance.unit = Some(2);
 
-        symbol.add_hierarchical_reference(instance);
+        symbol
+            .instances
+            .retain(|existing| existing.path != instance.path);
+        symbol.instances.push(instance);
 
         assert_eq!(symbol.unit, Some(1));
         assert_eq!(
@@ -1403,8 +1395,14 @@ mod tests {
         second.reference = Some("R2".to_string());
         second.unit = Some(3);
 
-        symbol.add_hierarchical_reference(first);
-        symbol.add_hierarchical_reference(second);
+        symbol
+            .instances
+            .retain(|existing| existing.path != first.path);
+        symbol.instances.push(first);
+        symbol
+            .instances
+            .retain(|existing| existing.path != second.path);
+        symbol.instances.push(second);
 
         assert_eq!(symbol.instances.len(), 1);
         assert_eq!(symbol.instances[0].reference.as_deref(), Some("R2"));

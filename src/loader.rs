@@ -343,7 +343,13 @@ impl SchematicLoader {
                 };
                 local_instance.reference = instance.reference.clone();
                 local_instance.unit = instance.unit;
-                symbol.add_hierarchical_reference(local_instance);
+                if local_instance.unit.is_none() {
+                    local_instance.unit = Some(1);
+                }
+                symbol
+                    .instances
+                    .retain(|existing| existing.path != local_instance.path);
+                symbol.instances.push(local_instance);
             }
         }
     }
