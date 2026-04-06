@@ -2681,9 +2681,11 @@ impl KiCadSchematicParser {
                 "effects" => match &mut item {
                     ParsedSchText::Text(text) => {
                         self.parse_eda_text(ParsedEdaTextOwner::text(text), true, true)?;
+                        text.visible = true;
                     }
                     ParsedSchText::Label(label) => {
                         self.parse_eda_text(ParsedEdaTextOwner::label(label), true, true)?;
+                        label.visible = true;
                     }
                 },
                 "iref" => {
