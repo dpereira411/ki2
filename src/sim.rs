@@ -270,11 +270,19 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
     }
 
     match library.kind {
-        SimLibraryKind::Ibis => Some(ResolvedSimModel {
-            library,
-            name,
-            pins: Vec::new(),
-        }),
+        SimLibraryKind::Ibis => {
+            let content = load_symbol_sim_library_content_from_embedded_files(
+                schematic_path,
+                embedded_files,
+                symbol,
+            )?;
+            let model = resolve_ibis_model(&content.text, &name)?;
+            Some(ResolvedSimModel {
+                library,
+                name: model.name,
+                pins: model.pins,
+            })
+        }
         SimLibraryKind::Spice => {
             let content = load_symbol_sim_library_content_from_embedded_files(
                 schematic_path,
@@ -301,6 +309,12 @@ fn classify_sim_library_name(name: &str) -> SimLibraryKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedSpiceModel {
+    name: String,
+    pins: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedIbisModel {
     name: String,
     pins: Vec<String>,
 }
@@ -335,6 +349,71 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
         }
 
         index += 1;
+    }
+
+    None
+}
+
+fn resolve_ibis_model(text: &str, wanted_name: &str) -> Option<ResolvedIbisModel> {
+    let mut current_component: Option<String> = None;
+    let mut pending_component_name = false;
+    let mut collecting_pins = false;
+    let mut pins = Vec::new();
+
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+
+        if line.is_empty() || line.starts_with('|') {
+            continue;
+        }
+
+        if pending_component_name {
+            current_component = Some(line.to_string());
+            pending_component_name = false;
+            collecting_pins = false;
+            continue;
+        }
+
+        if let Some(rest) = line.strip_prefix("[Component]") {
+            let rest = rest.trim();
+            current_component = if rest.is_empty() {
+                pending_component_name = true;
+                None
+            } else {
+                Some(rest.to_string())
+            };
+            collecting_pins = false;
+            continue;
+        }
+
+        if line.starts_with('[') {
+            collecting_pins = line.eq_ignore_ascii_case("[Pin]")
+                && current_component
+                    .as_deref()
+                    .is_some_and(|component| component.eq_ignore_ascii_case(wanted_name));
+            continue;
+        }
+
+        if collecting_pins {
+            let tokens = line.split_whitespace().collect::<Vec<_>>();
+
+            if tokens.is_empty() || tokens[0].eq_ignore_ascii_case("pin") {
+                continue;
+            }
+
+            pins.push(tokens[0].to_string());
+        }
+    }
+
+    if current_component
+        .as_deref()
+        .is_some_and(|component| component.eq_ignore_ascii_case(wanted_name))
+        || !pins.is_empty()
+    {
+        return Some(ResolvedIbisModel {
+            name: wanted_name.to_string(),
+            pins,
+        });
     }
 
     None
