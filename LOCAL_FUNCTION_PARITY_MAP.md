@@ -19,7 +19,8 @@ Status legend:
 
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
-1. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
+1. decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs
+2. final diagnostic/error exactness in `src/error.rs` and `src/diagnostic.rs`
 
 ## Layer 0: Support Files
 
@@ -28,14 +29,14 @@ Resolve these in order unless a direct comparison shows a prerequisite blocker f
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
 | `skip_utf8_bom` | DSN lexer BOM skip | `same` | helper-only and behavior is already locked | token tests | none |
-| `prescan_version` | none; local lexer prescan | `different` | local prescan is still a repo-specific preprocessing step and exactness is not fully signed off | parser notes + token tests | keep auditing header/version edge cases |
+| `prescan_version` | none; local lexer prescan | `not_applicable` | repo-local support for early bar-mode setup only; direct re-audit plus header/version regressions cover the remaining parser-facing behavior closely enough | token tests + top-level header regressions | none |
 | `is_line_comment_start` | DSN lexer comment detection | `same` | comment start behavior is now covered and matches parser entry needs closely enough | token tests | none |
 | `skip_whitespace_and_line_comments` | DSN lexer whitespace/comment skip | `same` | line comments, BOM, and NUL whitespace are covered and stable | token tests | none |
 | `is_dsn_number` | DSN lexer number classification | `same` | current grammar matches KiCad-style number token behavior closely enough | token tests | none |
-| `is_schematic_keyword` | KiCad keyword token table | `different` | keyword tagging keeps improving and still needs full parser-wide signoff | recent keyword-tag commits | continue direct malformed-token audits |
-| `lex` | top-level lexer entry | `different` | overall token layer is still not globally signed off | parser notes | keep after routine audits |
+| `is_schematic_keyword` | KiCad keyword token table | `same` | direct re-audit now covers the remaining parser-facing keyword surfaces closely enough: real unquoted parser heads are reserved, DSN-string leak paths are locked, and the remaining parser-only risk is no longer in broad keyword tagging | keyword-tag commits plus direct branch-head audit and regressions | none |
+| `lex` | top-level lexer entry | `same` | direct re-audit plus focused tests now cover the parser-facing lexer behavior closely enough: BOM/comment/NUL skipping, number classification, quoted escapes, and bar-mode setup are no longer active bottlenecks | token tests + parser entry regressions | none |
 | `decode_quoted_escape` | DSN quoted-string escape decoding | `same` | KiCad-style escape decoding is now covered with focused tests | token tests | none |
-| `lex_with_bar` | DSN lexer body | `different` | whole-token exactness still depends on final keyword and malformed-atom parity | token tests + parser notes | continue parser-wide sweep last |
+| `lex_with_bar` | DSN lexer body | `same` | direct re-audit plus token regressions now cover the parser-facing DSN lexer behavior closely enough: quoted escapes, malformed raw newlines, bar delimiters, and keyword tagging no longer leave an active parser-only bottleneck here | token tests + parser regressions | none |
 
 ### `src/diagnostic.rs`
 
@@ -200,10 +201,10 @@ not drive the queue unless a parent parser routine exposes them.
 | `parse_f64_atom` | `parseDouble` | `same` | parser-wide float path is stable enough | tests | none |
 | `parse_internal_units_atom` | `parseInternalUnits` | `same` | clamp behavior is now explicit and tested | tests | none |
 | `parse_bool_atom` | `parseBool` | `same` | yes/no exactness is stable enough | tests | none |
-| `parse_kiid` | `parseKIID` wrapper | `different` | full malformed-ID semantics are still not fully ported | notes | revisit if test/model migration is feasible |
+| `parse_kiid` | `parseKIID` wrapper | `blocked` | full malformed-ID semantics still diverge from native KiCad because the current repo/test fixture set still depends on stable symbolic non-UUID IDs | parser notes + UUID regressions | unblock only with broader fixture/model migration |
 | `parse_raw_kiid` | raw KIID path | `same` | raw-vs-normalized split is explicit and covered | recent UUID audits | none |
-| `parse_kiid_atom` | `parseKIID` low-level read | `different` | tied to full UUID exactness still not signed off | notes | revisit with UUID semantics |
-| `normalize_kiid` | KIID normalization/uniqueness | `different` | malformed non-UUID handling still differs from native KiCad | notes | blocked on broader fixture/test migration |
+| `parse_kiid_atom` | `parseKIID` low-level read | `blocked` | tied to the same malformed-ID semantics and fixture migration constraint as `parse_kiid` | parser notes + UUID regressions | unblock only with broader fixture/model migration |
+| `normalize_kiid` | KIID normalization/uniqueness | `blocked` | malformed non-UUID handling still differs from native KiCad and cannot be made literal without broader fixture/test migration away from symbolic IDs | parser notes + UUID regressions | unblock only with broader fixture/model migration |
 | `parse_maybe_absent_bool` | `parseMaybeAbsentBool` | `same` | current behavior is close and well covered | tests | none |
 | `require_known_version` | local support | `not_applicable` | repo-local support for parser entry ordering | source inspection | none |
 | `need_left` | `NeedLEFT` | `same` | stable low-level exactness | tests | none |

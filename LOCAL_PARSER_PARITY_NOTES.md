@@ -102,11 +102,20 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - some deferred behavior exists
 - post-parse fixup flow is still not a literal match to KiCad
 
-9. Token / lexer parity is still a major remaining gap
+9. Token / lexer parity is no longer a broad parser-only bottleneck
 
-- token classes are better now, but parser-wide `NeedSYMBOL` / `NeedNUMBER` / keyword-token behavior is not yet uniformly ported
-- this still affects exact acceptance and exact failure points
-- direct upstream audit confirmed one non-gap here: KiCad `NeedSYMBOL()` and `NeedSYMBOLorNUMBER()` both accept quoted strings via `DSNLEXER::IsSymbol()`, so local shared symbol-token readers should not be tightened to reject quoted atoms
+- direct re-audit plus the current token regressions now cover the parser-facing lexer behavior
+  closely enough:
+  - BOM / comment / NUL handling
+  - DSN number grammar
+  - quoted escape decoding
+  - bar-delimited atoms
+  - reserved-keyword tagging for real parser heads and DSN-string leak paths
+- one deliberate non-gap remains documented here: KiCad `NeedSYMBOL()` and
+  `NeedSYMBOLorNUMBER()` both accept quoted strings via `DSNLEXER::IsSymbol()`, so local shared
+  symbol-token readers should not be tightened to reject quoted atoms
+- the remaining parser-only exactness is now mostly UUID semantics and diagnostic formatting, not a
+  broad lexer/token-flow mismatch
 
 10. Error behavior still is not 1:1
 
@@ -138,17 +147,20 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Do a parser-wide token/error parity pass.
-2. Port the missing cross-file post-load pipeline.
+1. Revisit UUID semantics only if the repo is willing to migrate parser/loader fixtures away from stable symbolic IDs.
+2. Finish the final diagnostic/error exactness sweep.
+3. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
-1. Finish the parser-wide token/error exactness sweep.
+1. Decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs.
+2. Finish the parser-wide diagnostic/error exactness sweep.
 
 ### Bottom Line
 
-The parser is still well short of 1:1 parity.
+The parser is not yet at full 1:1 parity.
 
-The biggest remaining gaps are:
+The biggest remaining parser-only gaps are now:
 
-- parser-wide token / error parity
+- UUID semantics blocked on fixture/model migration
+- final diagnostic / error parity
