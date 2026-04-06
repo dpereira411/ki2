@@ -346,12 +346,22 @@ fn validates_hierarchical_tree_fixture() {
     let project = SchematicProject::from_load_result(loaded);
     let root = project.root().expect("root schematic");
     assert_eq!(root.root_sheet.uuid.as_deref(), Some("root-sch-uuid-1234"));
+    assert_eq!(project.sheet_paths.len(), 2);
+    assert_eq!(
+        project
+            .sheet_paths_of(&project.root_path)
+            .next()
+            .expect("root sheet path")
+            .instance_path,
+        ""
+    );
     assert_eq!(project.children_of(&project.root_path).count(), 1);
     let child_link = project
         .children_of(&project.root_path)
         .next()
         .expect("child link");
     assert_eq!(project.parents_of(&child_link.child_path).count(), 1);
+    assert_eq!(project.sheet_paths_of(&child_link.child_path).count(), 1);
 }
 
 #[test]
