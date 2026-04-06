@@ -454,6 +454,13 @@ fn reuses_previously_loaded_child_schematic() {
             .as_deref(),
         Some("2")
     );
+    assert_eq!(
+        loaded
+            .sheet_path_for_symbol_path("/root-u/sheet-a/sym-u")
+            .expect("load result symbol owner path")
+            .instance_path,
+        "/root-u/sheet-a"
+    );
 
     let project = SchematicProject::from_load_result(loaded);
     assert_eq!(project.sheet_paths_of(&child_path).count(), 2);
@@ -464,6 +471,13 @@ fn reuses_previously_loaded_child_schematic() {
             .page
             .as_deref(),
         Some("1")
+    );
+    assert_eq!(
+        project
+            .sheet_path_for_symbol_path("/root-u/sheet-a/sym-u")
+            .expect("project symbol owner path")
+            .instance_path,
+        "/root-u/sheet-a"
     );
 
     let _ = fs::remove_file(root_path);

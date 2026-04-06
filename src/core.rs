@@ -89,4 +89,14 @@ impl SchematicProject {
             .get(instance_path)
             .and_then(|index| self.sheet_paths.get(*index))
     }
+
+    pub fn sheet_path_for_symbol_path(&self, symbol_path: &str) -> Option<&LoadedSheetPath> {
+        self.sheet_paths
+            .iter()
+            .filter(|sheet_path| {
+                symbol_path == sheet_path.symbol_path
+                    || symbol_path.starts_with(&(sheet_path.symbol_path.clone() + "/"))
+            })
+            .max_by_key(|sheet_path| sheet_path.symbol_path.len())
+    }
 }

@@ -76,6 +76,16 @@ impl LoadResult {
             .iter()
             .find(|sheet_path| sheet_path.instance_path == instance_path)
     }
+
+    pub fn sheet_path_for_symbol_path(&self, symbol_path: &str) -> Option<&LoadedSheetPath> {
+        self.sheet_paths
+            .iter()
+            .filter(|sheet_path| {
+                symbol_path == sheet_path.symbol_path
+                    || symbol_path.starts_with(&(sheet_path.symbol_path.clone() + "/"))
+            })
+            .max_by_key(|sheet_path| sheet_path.symbol_path.len())
+    }
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
