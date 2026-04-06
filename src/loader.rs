@@ -696,6 +696,11 @@ impl SchematicLoader {
                         .find(|property| property.kind == PropertyKind::SymbolValue)
                         .map(|property| property.value.trim().to_string())
                         .unwrap_or_default();
+                    let value_field_template = symbol
+                        .properties
+                        .iter()
+                        .find(|property| property.kind == PropertyKind::SymbolValue)
+                        .cloned();
                     let inferred_device = symbol
                         .properties
                         .iter()
@@ -936,14 +941,102 @@ impl SchematicLoader {
                         raw_model
                             .split_once(' ')
                             .map(|(model_name, _)| model_name.to_string())
-                            .unwrap_or(raw_model)
+                            .unwrap_or_else(|| raw_model.clone())
                     } else {
-                        raw_model
+                        raw_model.clone()
                     };
                     let lib = lib_field
                         .as_ref()
                         .map(|property| property.value.trim().to_string())
                         .unwrap_or_default();
+                    let model_line_params = if lib_field.is_some() {
+                        raw_model
+                            .split_once(' ')
+                            .map(|(_, params)| params.trim().to_string())
+                            .filter(|params| !params.is_empty())
+                    } else {
+                        None
+                    };
+
+                    if !lib.is_empty() && !model.is_empty() {
+                        let base_template = primitive_field
+                            .clone()
+                            .or_else(|| model_field.clone())
+                            .or_else(|| lib_field.clone())
+                            .or_else(|| value_field_template.clone())
+                            .unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
+                        let name_template = model_field
+                            .clone()
+                            .or_else(|| value_field_template.clone())
+                            .or_else(|| lib_field.clone())
+                            .unwrap_or_else(|| base_template.clone());
+                        let lib_template =
+                            lib_field.clone().unwrap_or_else(|| base_template.clone());
+                        let params_template = model_field
+                            .clone()
+                            .or_else(|| value_field_template.clone())
+                            .or_else(|| primitive_field.clone())
+                            .unwrap_or_else(|| base_template.clone());
+
+                        let mut sim_library_field = lib_template;
+                        sim_library_field.key = "Sim.Library".to_string();
+                        sim_library_field.value = lib.clone();
+
+                        let mut sim_name_field = name_template;
+                        sim_name_field.key = "Sim.Name".to_string();
+                        sim_name_field.value = model.clone();
+
+                        let sim_params_field = model_line_params.clone().map(|params| {
+                            let mut field = params_template;
+                            field.key = "Sim.Params".to_string();
+                            field.value = params;
+                            field
+                        });
+
+                        let mut candidate = symbol.clone();
+                        candidate.properties.push(sim_library_field.clone());
+                        candidate.properties.push(sim_name_field.clone());
+
+                        if let Some(field) = sim_params_field.clone() {
+                            candidate.properties.push(field);
+                        }
+
+                        candidate.sync_sim_model_from_properties();
+
+                        if resolve_symbol_sim_model_from_embedded_files(
+                            &schematic_path,
+                            &embedded_files,
+                            &candidate,
+                        )
+                        .is_some()
+                        {
+                            symbol.properties.push(sim_library_field);
+                            symbol.properties.push(sim_name_field);
+
+                            if let Some(field) = sim_params_field {
+                                symbol.properties.push(field);
+                            }
+
+                            if let Some(mut pin_map_field) = pin_map_field {
+                                pin_map_field.key = "Sim.Pins".to_string();
+                                symbol.properties.push(pin_map_field);
+                            }
+
+                            if model_from_value_field {
+                                symbol.set_field_text(
+                                    PropertyKind::SymbolValue,
+                                    "${SIM.NAME}".to_string(),
+                                );
+                            }
+
+                            symbol.sync_sim_model_from_properties();
+                            hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
+                            migrated = true;
+                            continue;
+                        }
+                    }
 
                     if pin_map_field.is_none() && !source_pins.is_empty() && lib_field.is_none() {
                         let template = primitive_field

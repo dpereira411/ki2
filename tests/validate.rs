@@ -8577,6 +8577,251 @@ fn load_tree_migrates_value_backed_legacy_spice_lib_fields_to_raw_sim_model() {
 }
 
 #[test]
+fn load_tree_migrates_resolved_legacy_spice_lib_fields_to_library_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030b")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.subckt BC547 C B E
+.ends BC547|)))
+  (lib_symbols
+    (symbol "Device:Q"
+      (symbol "Q_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "C" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "B" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "E" (effects (font (size 1.27 1.27))))
+          (number "3" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:Q")
+    (property "Reference" "Q?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "Q")
+    (property "Spice_Model" "BC547 area=2")
+    (property "Spice_Lib_File" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_resolved_legacy_spice_lib_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert!(!symbol.properties.iter().any(|property| matches!(
+        property.key.as_str(),
+        "Spice_Primitive" | "Spice_Model" | "Spice_Lib_File"
+    )));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Library")
+            .map(|property| property.value.as_str()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Name")
+            .map(|property| property.value.as_str()),
+        Some("BC547")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("area=2")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=C 2=B 3=E")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.library.as_deref()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        Some("BC547")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("area=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::LibraryReference)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::SpiceSubckt)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "C".to_string()),
+            ("2".to_string(), "B".to_string()),
+            ("3".to_string(), "E".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_value_backed_resolved_legacy_spice_lib_fields_to_library_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030c")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.subckt BC547 C B E
+.ends BC547|)))
+  (lib_symbols
+    (symbol "Device:Q"
+      (symbol "Q_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "C" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "B" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "E" (effects (font (size 1.27 1.27))))
+          (number "3" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:Q")
+    (property "Reference" "Q?")
+    (property "Value" "BC547")
+    (property "Spice_Primitive" "Q")
+    (property "Spice_Lib_File" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic(
+        "loader_migrates_value_backed_resolved_legacy_spice_lib_fields",
+        src,
+    );
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("${SIM.NAME}")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Library")
+            .map(|property| property.value.as_str()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Name")
+            .map(|property| property.value.as_str()),
+        Some("BC547")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Name)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::LibraryReference)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "C".to_string()),
+            ("2".to_string(), "B".to_string()),
+            ("3".to_string(), "E".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_defaults_legacy_library_backed_sim_pins_from_resolved_model() {
     let src = r#"(kicad_sch
   (version 20260306)

@@ -1190,9 +1190,7 @@ impl Symbol {
         let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
         let origin = if ibis_diff || ibis_pin.is_some() || ibis_model.is_some() {
             Some(SimModelOrigin::Ibis)
-        } else if device.as_deref() == Some("SPICE")
-            && (has_explicit_library || has_explicit_name || library.is_some())
-        {
+        } else if library.is_some() || (has_explicit_library && has_explicit_name) {
             Some(SimModelOrigin::LibraryReference)
         } else if device.as_deref() == Some("SPICE") {
             Some(SimModelOrigin::RawSpice)
