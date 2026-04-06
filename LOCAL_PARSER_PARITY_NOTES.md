@@ -47,10 +47,10 @@ Direct re-audit shows `parseSchText()` itself is no longer an active parser-only
 - direct comparison shows `parseSchematicSymbol()` is closer than earlier notes implied
 - remaining symbol work is now mostly exactness and parent-routine interaction, not a missing whole-routine shape
 
-5. Sheet parsing is still not 1:1
+5. Sheet parsing is no longer a broad owner-routine bottleneck
 
-- direct comparison shows `parseSheet()` is closer than earlier notes implied
-- remaining sheet work is now mostly exactness and surrounding parser interaction, not a missing whole-routine shape
+- direct comparison now shows `parseSheet()` itself is structurally close enough to stop treating it as a primary parser-only bottleneck
+- the remaining sheet-side risk is narrower parser-wide exactness around shared leaves, diagnostics, and any future parent interaction that exposes a concrete mismatch
 
 6. Library-cache symbol parsing is no longer a broad owner-routine bottleneck
 
@@ -134,20 +134,18 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 ### More Exact Current Priority
 
 1. Revisit top-level `ParseSchematic()` / `parse_schematic_body()` for concrete remaining exactness mismatches.
-2. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
-3. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
-4. Tighten remaining exact library helper surfaces (`parseSymbolDrawItem()`, `parseSymbolPin()`, local-lib flattening) where direct comparison exposes them.
-5. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
-6. Do a parser-wide token/error parity pass.
-7. Port the missing cross-file post-load pipeline.
+2. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
+3. Tighten remaining exact library helper surfaces (`parseSymbolDrawItem()`, `parseSymbolPin()`, local-lib flattening) where direct comparison exposes them.
+4. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
+5. Do a parser-wide token/error parity pass.
+6. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
 1. Keep walking the top-level `ParseSchematic()` branches in upstream order until each one has a clear local counterpart.
-2. Revisit `parseSheet()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
-3. Revisit `parseSchematicSymbol()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
-4. Revisit narrower library helper surfaces only when direct comparison exposes a concrete remaining mismatch.
-5. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
+2. Revisit `parseSchematicSymbol()` only if direct upstream comparison exposes a concrete remaining mismatch worth porting.
+3. Revisit narrower library helper surfaces only when direct comparison exposes a concrete remaining mismatch.
+4. Revisit the table/textbox cluster only if one of the parent owner routines exposes a concrete remaining mismatch.
 
 ### Bottom Line
 
@@ -158,4 +156,4 @@ The biggest remaining gaps are:
 - top-level `ParseSchematic()` / `parse_schematic_body()`
 - narrower library helper exactness
 - parser-wide token / error parity
-- narrower `parseSheet()` / `parseSchematicSymbol()` exactness
+- narrower `parseSchematicSymbol()` exactness

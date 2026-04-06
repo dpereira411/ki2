@@ -176,7 +176,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `parseSchBezier` | `parse_sch_bezier` | `same` | shape finalization flow is stable enough | existing tests | none |
 | `parseSchRuleArea` | `parse_sch_rule_area` | `same` | rule-area/polyline ownership is stable enough | existing tests | none |
 | `parseSchematicSymbol` | `parse_schematic_symbol` | `different` | much closer than before, but exact branch behavior still needs direct signoff | direct audit | revisit after text/lib endgame |
-| `parseSheet` | `parse_sch_sheet` | `different` | much closer than before, but exact branch behavior still needs direct signoff | direct audit | revisit after text/lib endgame |
+| `parseSheet` | `parse_sch_sheet` | `same` | direct re-audit shows the broad owner routine is now structurally close enough: upfront construction, inline `instances` walk, legacy field-ID recovery timing, owner-driven pin geometry, duplicate mandatory-field accumulation, and deferred `Sheetfile` normalization all align closely enough that it is no longer an active parser-only bottleneck | direct source comparison plus the focused sheet regressions | none |
 | `parseSchSheetInstances` | `parse_sch_sheet_instances` | `same` | parser-only behavior is stable enough; loader integration is deferred | current notes | none in parser-only phase |
 | `parseSchSymbolInstances` | `parse_sch_symbol_instances` | `same` | parser-only behavior is stable enough; loader integration is deferred | current notes | none in parser-only phase |
 | `parseGroup` | `parse_group` | `same` | deferred-resolution and cycle repair are stable enough | direct audit + tests | none |
