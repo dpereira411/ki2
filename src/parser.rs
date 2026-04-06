@@ -959,10 +959,12 @@ impl KiCadSchematicParser {
                 "power" => {
                     let _ = self.need_unquoted_symbol_atom("power")?;
                     symbol.power = true;
-                    match self.need_unquoted_symbol_atom("global or local")?.as_str() {
-                        "local" => symbol.local_power = true,
-                        "global" => symbol.local_power = false,
-                        _ => return Err(self.expecting("global or local")),
+                    if !self.at_right() {
+                        match self.need_unquoted_symbol_atom("global or local")?.as_str() {
+                            "local" => symbol.local_power = true,
+                            "global" => symbol.local_power = false,
+                            _ => return Err(self.expecting("global or local")),
+                        }
                     }
                     self.need_right()?;
                 }
@@ -1095,11 +1097,20 @@ impl KiCadSchematicParser {
                         self.need_left()?;
                         if self.at_unquoted_symbol_with("unit_name") {
                             let _ = self.need_unquoted_symbol_atom("unit_name")?;
-                            let value = self.need_symbol_atom("symbol")?;
+                            let token = self.current().clone();
 
-                            for unit in &mut symbol.units {
-                                if unit.unit_number == unit_number {
-                                    unit.unit_name = Some(value.clone());
+                            if let TokKind::Atom(value) = token.kind {
+                                if matches!(
+                                    token.atom_class,
+                                    Some(AtomClass::Symbol | AtomClass::Quoted)
+                                ) {
+                                    self.idx += 1;
+
+                                    for unit in &mut symbol.units {
+                                        if unit.unit_number == unit_number {
+                                            unit.unit_name = Some(value.clone());
+                                        }
+                                    }
                                 }
                             }
                             self.need_right()?;
