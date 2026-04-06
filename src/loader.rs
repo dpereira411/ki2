@@ -1501,6 +1501,9 @@ fn hydrate_resolved_sim_library(
     if let Some(sim_model) = symbol.sim_model.as_mut() {
         sim_model.resolved_library = resolved_library;
         sim_model.resolved_name = resolved_model.as_ref().map(|model| model.name.clone());
+        sim_model.resolved_model_type = resolved_model
+            .as_ref()
+            .and_then(|model| model.model_type.clone());
         sim_model.generated_param_pairs = resolved_model
             .as_ref()
             .map(|model| model.params.clone())

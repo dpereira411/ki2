@@ -6056,6 +6056,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
                 kind: SimLibraryKind::Spice,
             },
             name: "MODEL".to_string(),
+            model_type: None,
             pins: vec!["IN".to_string(), "OUT".to_string(), "VSS".to_string()],
             params: vec![
                 ("RVAL".to_string(), Some("1k".to_string())),
@@ -6121,6 +6122,7 @@ B2 SIGB MODEL_B
                 kind: SimLibraryKind::Ibis,
             },
             name: "DRIVER".to_string(),
+            model_type: None,
             pins: vec!["A1".to_string(), "B2".to_string()],
             params: Vec::new(),
         })
@@ -6259,6 +6261,82 @@ B2 SIGB MODEL_B
             .as_ref()
             .map(|sim_model| sim_model.generated_param_pairs.clone()),
         Some(Vec::new())
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn resolves_symbol_sim_model_from_embedded_spice_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000031c")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.model MODEL NPN (BF=100 VAF=50)|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models.lib")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_embedded_spice_model", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "models.lib".to_string(),
+                },
+                kind: SimLibraryKind::Spice,
+            },
+            name: "MODEL".to_string(),
+            model_type: Some("NPN".to_string()),
+            pins: Vec::new(),
+            params: vec![
+                ("BF".to_string(), Some("100".to_string())),
+                ("VAF".to_string(), Some("50".to_string())),
+            ],
+        })
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
+        Some("NPN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_param_pairs.clone()),
+        Some(vec![
+            ("BF".to_string(), Some("100".to_string())),
+            ("VAF".to_string(), Some("50".to_string())),
+        ])
     );
 
     let _ = fs::remove_file(path);

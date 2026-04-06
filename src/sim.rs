@@ -16,6 +16,7 @@ pub struct SimLibraryContent {
 pub struct ResolvedSimModel {
     pub library: ResolvedSimLibrary,
     pub name: String,
+    pub model_type: Option<String>,
     pub pins: Vec<String>,
     pub params: Vec<(String, Option<String>)>,
 }
@@ -281,6 +282,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
+                model_type: model.model_type,
                 pins: model.pins,
                 params: model.params,
             })
@@ -295,6 +297,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
+                model_type: model.model_type,
                 pins: model.pins,
                 params: model.params,
             })
@@ -313,6 +316,7 @@ fn classify_sim_library_name(name: &str) -> SimLibraryKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedSpiceModel {
     name: String,
+    model_type: Option<String>,
     pins: Vec<String>,
     params: Vec<(String, Option<String>)>,
 }
@@ -320,6 +324,7 @@ struct ResolvedSpiceModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedIbisModel {
     name: String,
+    model_type: Option<String>,
     pins: Vec<String>,
     params: Vec<(String, Option<String>)>,
 }
@@ -334,8 +339,12 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
         {
             return Some(ResolvedSpiceModel {
                 name: tokens[index + 1].to_string(),
+                model_type: tokens.get(index + 2).map(|token| token.to_string()),
                 pins: Vec::new(),
-                params: Vec::new(),
+                params: tokens[index + 3..]
+                    .iter()
+                    .filter_map(|token| parse_spice_model_param_token(token))
+                    .collect(),
             });
         }
 
@@ -366,6 +375,7 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
 
             return Some(ResolvedSpiceModel {
                 name: tokens[index + 1].to_string(),
+                model_type: None,
                 pins,
                 params,
             });
@@ -435,6 +445,7 @@ fn resolve_ibis_model(text: &str, wanted_name: &str) -> Option<ResolvedIbisModel
     {
         return Some(ResolvedIbisModel {
             name: wanted_name.to_string(),
+            model_type: None,
             pins,
             params: Vec::new(),
         });
@@ -460,6 +471,20 @@ fn parse_spice_subckt_param_token(token: &str) -> Option<(String, Option<String>
         .or_else(|| token.strip_prefix("params:"))
         .or_else(|| token.strip_prefix('+'))
         .unwrap_or(token);
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some((name, value)) = trimmed.split_once('=') {
+        return Some((name.to_string(), Some(value.to_string())));
+    }
+
+    Some((trimmed.to_string(), None))
+}
+
+fn parse_spice_model_param_token(token: &str) -> Option<(String, Option<String>)> {
+    let trimmed = token.trim_matches(|ch| matches!(ch, '(' | ')'));
 
     if trimmed.is_empty() {
         return None;
