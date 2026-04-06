@@ -2170,7 +2170,7 @@ impl KiCadSchematicParser {
         let _ = self.need_unquoted_symbol_atom("members")?;
 
         while !self.at_right() {
-            let mut member = self.need_quoted_atom("quoted string")?;
+            let mut member = self.need_symbol_atom("quoted string")?;
             if version < VERSION_NEW_OVERBAR_NOTATION {
                 member = self.convert_old_overbar_notation(member);
             }

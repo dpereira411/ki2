@@ -7232,6 +7232,21 @@ fn parses_upstream_bus_alias_and_legacy_overbar_notation() {
 }
 
 #[test]
+fn accepts_unquoted_bus_alias_members_like_upstream() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bus-alias-unquoted")
+  (bus_alias "ADDR" (members A0 A1))
+)"#;
+    let path = temp_schematic("unquoted_bus_alias_members", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must accept unquoted members");
+    assert_eq!(schematic.screen.bus_aliases.len(), 1);
+    assert_eq!(schematic.screen.bus_aliases[0].members, vec!["A0", "A1"]);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_invalid_bus_alias_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
