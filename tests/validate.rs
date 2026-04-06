@@ -5641,6 +5641,20 @@ fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
         symbol
             .sim_model
             .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .map(|sim_model| sim_model.pins.clone()),
         Some(BTreeMap::from([
             ("1".to_string(), "1".to_string()),
@@ -5937,6 +5951,20 @@ fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
             ("model".to_string(), "1k".to_string()),
             ("type".to_string(), "R".to_string()),
         ]))
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("R")
     );
     assert_eq!(
         symbol
