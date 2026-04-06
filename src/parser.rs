@@ -2351,7 +2351,10 @@ impl KiCadSchematicParser {
                 }
                 "size" => {
                     let _ = self.need_unquoted_symbol_atom("size")?;
-                    bus_entry.size = self.parse_xy2("bus_entry size")?;
+                    bus_entry.size = [
+                        self.parse_internal_units_atom("bus entry height")?,
+                        self.parse_internal_units_atom("bus entry width")?,
+                    ];
                     self.need_right()?;
                 }
                 "stroke" => {

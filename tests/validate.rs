@@ -10113,6 +10113,34 @@ fn legacy_wire_default_stroke_does_not_rewrite_to_dash() {
 }
 
 #[test]
+fn bus_entry_size_uses_distinct_height_and_width_errors() {
+    let bad_height = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bus-entry-height")
+  (bus_entry (size (bogus) 2))
+)"#;
+    let bad_height_path = temp_schematic("bad_bus_entry_height", bad_height);
+    let err = parse_schematic_file(Path::new(&bad_height_path))
+        .expect_err("must reject bad bus entry height");
+    assert!(err.to_string().contains("missing bus entry height"));
+
+    let bad_width = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-bus-entry-width")
+  (bus_entry (size 2 (bogus)))
+)"#;
+    let bad_width_path = temp_schematic("bad_bus_entry_width", bad_width);
+    let err = parse_schematic_file(Path::new(&bad_width_path))
+        .expect_err("must reject bad bus entry width");
+    assert!(err.to_string().contains("missing bus entry width"));
+
+    let _ = fs::remove_file(bad_height_path);
+    let _ = fs::remove_file(bad_width_path);
+}
+
+#[test]
 fn junction_no_connect_and_bus_entry_do_not_require_geometry_tokens() {
     let src = r#"(kicad_sch
   (version 20250114)
