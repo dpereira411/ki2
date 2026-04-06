@@ -5871,6 +5871,12 @@ impl KiCadSchematicParser {
 
                 let apply_overrides =
                     |target: &mut LibSymbol, derived: &LibSymbol, include_embedded_files: bool| {
+                        let root_unit_index = target
+                            .units
+                            .iter()
+                            .position(|unit| unit.unit_number == 1 && unit.body_style == 1)
+                            .expect("flattened lib symbols keep root 1_1 unit");
+
                         for property in &derived.properties {
                             if property.kind.is_mandatory() {
                                 if !property.value.is_empty() {
@@ -5900,32 +5906,21 @@ impl KiCadSchematicParser {
                                 }
 
                                 let field_name = item.name.as_deref();
-                                let mut replaced = false;
-
-                                for target_unit in &mut target.units {
-                                    if let Some(existing) =
-                                        target_unit.draw_items.iter_mut().find(|existing| {
-                                            existing.kind == "field"
-                                                && existing.name.as_deref() == field_name
-                                        })
-                                    {
-                                        *existing = item.clone();
-                                        replaced = true;
-                                        break;
-                                    }
-                                }
+                                let replaced = if let Some(existing) = target.units[root_unit_index]
+                                    .draw_items
+                                    .iter_mut()
+                                    .find(|existing| {
+                                        existing.kind == "field"
+                                            && existing.name.as_deref() == field_name
+                                    }) {
+                                    *existing = item.clone();
+                                    true
+                                } else {
+                                    false
+                                };
 
                                 if !replaced {
-                                    let unit_name = format!(
-                                        "{}_{}_{}",
-                                        target.name, item.unit_number, item.body_style
-                                    );
-                                    let unit_index = target.ensure_unit_index(
-                                        unit_name,
-                                        item.unit_number,
-                                        item.body_style,
-                                    );
-                                    target.units[unit_index].push_draw_item(item.clone());
+                                    target.units[root_unit_index].push_draw_item(item.clone());
                                 }
                             }
                         }
