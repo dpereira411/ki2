@@ -20,7 +20,7 @@ Status legend:
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
 1. `parse_schematic` / `parse_schematic_body`
-2. narrower library exactness in `parse_symbol_draw_item` / `parse_symbol_pin` / `flatten_local_lib_symbol`
+2. local-lib flattening exactness in `flatten_local_lib_symbol`
 3. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
 
 ## Layer 0: Support Files
@@ -142,7 +142,7 @@ not drive the queue unless a parent parser routine exposes them.
 
 | Upstream routine | Local routine | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `ParseSymbolDrawItem` | `parse_symbol_draw_item` | `different` | current-unit/body-style ownership is close, but branch/error exactness remains | notes + source comparison | resolve through draw-item family audit |
+| `ParseSymbolDrawItem` | `parse_symbol_draw_item` | `same` | direct re-audit shows the remaining lib exactness is no longer in the dispatcher: branch set, token ownership, and literal fallback text are structurally aligned with upstream | direct source comparison against upstream body plus existing lib draw-item regressions | none |
 | `parseLibSymbol` | `parse_lib_symbol` | `same` | direct re-audit shows the broad owner routine is now structurally close enough: root-unit construction, nested-unit parsing, metadata branches, embedded-file recovery, and parser-owned finalization are no longer the active lib bottleneck; the remaining lib drift is narrower draw-item/helper exactness | direct source comparison against upstream body plus existing lib-symbol regressions | none |
 | `parseSymbolArc` | `parse_symbol_arc` | `same` | remaining mismatches are no longer a primary bottleneck | existing arc tests | none |
 | `parseSymbolBezier` | `parse_symbol_bezier` | `same` | branch shape and malformed-point behavior are covered | existing tests | none |
