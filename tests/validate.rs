@@ -5758,6 +5758,17 @@ fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
         symbol
             .sim_model
             .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("lib".to_string(), "".to_string()),
+            ("model".to_string(), "1k".to_string()),
+            ("type".to_string(), "R".to_string()),
+        ]))
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .map(|sim_model| sim_model.pins.clone()),
         Some(BTreeMap::from([
             ("1".to_string(), "2".to_string()),
@@ -6766,6 +6777,22 @@ fn load_tree_migrates_legacy_pulse_source_fields() {
             .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("y1=0 y2=2 td=1n tr=2n tf=3n tw=4n per=5n np=6")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("np".to_string(), "6".to_string()),
+            ("per".to_string(), "5n".to_string()),
+            ("td".to_string(), "1n".to_string()),
+            ("tf".to_string(), "3n".to_string()),
+            ("tr".to_string(), "2n".to_string()),
+            ("tw".to_string(), "4n".to_string()),
+            ("y1".to_string(), "0".to_string()),
+            ("y2".to_string(), "2".to_string()),
+        ]))
     );
 
     let _ = fs::remove_file(path);

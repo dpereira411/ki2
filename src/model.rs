@@ -1122,6 +1122,10 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.clone());
+        let param_values = params
+            .as_deref()
+            .map(parse_sim_param_values)
+            .unwrap_or_default();
         let pins = self
             .properties
             .iter()
@@ -1145,6 +1149,7 @@ impl Symbol {
             device,
             model_type,
             params,
+            param_values,
             pins,
         });
     }
@@ -1155,7 +1160,78 @@ pub struct SimModel {
     pub device: Option<String>,
     pub model_type: Option<String>,
     pub params: Option<String>,
+    pub param_values: BTreeMap<String, String>,
     pub pins: BTreeMap<String, String>,
+}
+
+fn parse_sim_param_values(params: &str) -> BTreeMap<String, String> {
+    let mut values = BTreeMap::new();
+    let mut chars = params.chars().peekable();
+
+    while chars.peek().is_some() {
+        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+            chars.next();
+        }
+
+        let mut key = String::new();
+
+        while let Some(ch) = chars.peek().copied() {
+            if ch.is_whitespace() || ch == '=' {
+                break;
+            }
+
+            key.push(ch);
+            chars.next();
+        }
+
+        if key.is_empty() {
+            break;
+        }
+
+        if chars.next_if_eq(&'=').is_none() {
+            while chars.peek().is_some_and(|ch| !ch.is_whitespace()) {
+                chars.next();
+            }
+            continue;
+        }
+
+        let value = if chars.next_if_eq(&'"').is_some() {
+            let mut value = String::new();
+
+            while let Some(ch) = chars.next() {
+                if ch == '"' {
+                    break;
+                }
+
+                if ch == '\\' {
+                    if let Some(escaped) = chars.next() {
+                        value.push(escaped);
+                    }
+                } else {
+                    value.push(ch);
+                }
+            }
+
+            value
+        } else {
+            let mut value = String::new();
+
+            while let Some(ch) = chars.peek().copied() {
+                if ch.is_whitespace() {
+                    break;
+                }
+
+                value.push(ch);
+                chars.next();
+            }
+
+            value
+        };
+
+        values.insert(key, value);
+    }
+
+    values
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1367,6 +1443,60 @@ mod tests {
         assert_eq!(footprint.id, Some(3));
         assert_eq!(footprint.key, "Footprint");
         assert_eq!(footprint.value, "Resistor_SMD:R_0603");
+    }
+
+    #[test]
+    fn symbol_syncs_structured_sim_model_fields() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Device",
+            "SPICE".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Params",
+            r#"type="Q" model="BC\"547" lib="models.lib""#.to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Pins",
+            "1=1 2=2".to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.device.as_deref()),
+            Some("SPICE")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_values.clone()),
+            Some(BTreeMap::from([
+                ("lib".to_string(), "models.lib".to_string()),
+                ("model".to_string(), "BC\"547".to_string()),
+                ("type".to_string(), "Q".to_string()),
+            ]))
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.pins.clone()),
+            Some(BTreeMap::from([
+                ("1".to_string(), "1".to_string()),
+                ("2".to_string(), "2".to_string()),
+            ]))
+        );
     }
 
     #[test]
