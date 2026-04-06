@@ -113,6 +113,16 @@ impl LoadResult {
 
         ancestors
     }
+
+    pub fn child_sheet_paths<'a>(&'a self, instance_path: &str) -> Vec<&'a LoadedSheetPath> {
+        self.sheet_paths
+            .iter()
+            .filter(|sheet_path| {
+                self.parent_sheet_path(&sheet_path.instance_path)
+                    .is_some_and(|parent| parent.instance_path == instance_path)
+            })
+            .collect()
+    }
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {

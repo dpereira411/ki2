@@ -1103,12 +1103,27 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
     assert_eq!(ancestors.len(), 2);
     assert_eq!(ancestors[0].instance_path, "/root-u/sheet-a");
     assert_eq!(ancestors[1].instance_path, "");
+    let root_children = loaded.child_sheet_paths("");
+    assert_eq!(root_children.len(), 1);
+    assert_eq!(root_children[0].instance_path, "/root-u/sheet-a");
+    let child_children = loaded.child_sheet_paths("/root-u/sheet-a");
+    assert_eq!(child_children.len(), 1);
+    assert_eq!(child_children[0].instance_path, "/root-u/sheet-a/sheet-b");
 
     let project = SchematicProject::from_load_result(loaded);
     let project_ancestors = project.ancestor_sheet_paths("/root-u/sheet-a/sheet-b");
     assert_eq!(project_ancestors.len(), 2);
     assert_eq!(project_ancestors[0].instance_path, "/root-u/sheet-a");
     assert_eq!(project_ancestors[1].instance_path, "");
+    let project_root_children = project.child_sheet_paths("");
+    assert_eq!(project_root_children.len(), 1);
+    assert_eq!(project_root_children[0].instance_path, "/root-u/sheet-a");
+    let project_child_children = project.child_sheet_paths("/root-u/sheet-a");
+    assert_eq!(project_child_children.len(), 1);
+    assert_eq!(
+        project_child_children[0].instance_path,
+        "/root-u/sheet-a/sheet-b"
+    );
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
