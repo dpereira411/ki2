@@ -200,17 +200,6 @@ impl LibSymbol {
         }
     }
 
-    pub fn sort_draw_items(&mut self) {
-        for unit in &mut self.units {
-            unit.draw_items.sort();
-            unit.draw_item_kinds = unit
-                .draw_items
-                .iter()
-                .map(|item| item.kind.clone())
-                .collect();
-        }
-    }
-
     pub fn has_legacy_alternate_body_style(&self) -> bool {
         self.units.iter().any(|unit| unit.body_style > 1)
     }
@@ -1569,7 +1558,14 @@ mod tests {
             .find(|property| property.kind == PropertyKind::SymbolDescription)
             .map(|property| property.value.clone())
             .filter(|value| !value.is_empty());
-        symbol.sort_draw_items();
+        for unit in &mut symbol.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
 
         assert_eq!(symbol.units[1].body_style, 2);
         assert_eq!(symbol.units[1].draw_item_kinds, vec!["arc", "text"]);
@@ -1828,7 +1824,14 @@ mod tests {
         push_lib_draw_item(&mut symbol, field);
         push_lib_draw_item(&mut symbol, LibDrawItem::new("circle", 1, 1));
 
-        symbol.sort_draw_items();
+        for unit in &mut symbol.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
 
         assert_eq!(
             symbol.units[0]

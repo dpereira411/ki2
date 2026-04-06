@@ -1184,7 +1184,14 @@ impl KiCadSchematicParser {
             .find(|property| property.kind == PropertyKind::SymbolDescription)
             .map(|property| property.value.clone())
             .filter(|value| !value.is_empty());
-        symbol.sort_draw_items();
+        for unit in &mut symbol.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
         self.need_right()?;
         Ok(symbol)
     }
@@ -5214,9 +5221,7 @@ impl KiCadSchematicParser {
                             "bottom" => {
                                 effects.v_justify = TextVJustify::Bottom;
                             }
-                            "mirror" => {
-                                // Upstream accepts but ignores mirror for schematic text.
-                            }
+                            "mirror" => {}
                             _ => return Err(self.expecting("left, right, top, bottom, or mirror")),
                         }
                     }
@@ -6191,7 +6196,14 @@ impl KiCadSchematicParser {
             .find(|property| property.kind == PropertyKind::SymbolDescription)
             .map(|property| property.value.clone())
             .filter(|value| !value.is_empty());
-        flattened.sort_draw_items();
+        for unit in &mut flattened.units {
+            unit.draw_items.sort();
+            unit.draw_item_kinds = unit
+                .draw_items
+                .iter()
+                .map(|item| item.kind.clone())
+                .collect();
+        }
         stack.remove(lib_id);
         cache.insert(lib_id.to_string(), flattened.clone());
         Some(flattened)
