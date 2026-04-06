@@ -5519,6 +5519,159 @@ fn load_tree_migrates_lib_only_legacy_spice_fields_to_raw_sim_model() {
 }
 
 #[test]
+fn load_tree_migrates_primitive_and_lib_legacy_spice_fields_to_raw_sim_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000307")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:Q_NPN_EBC")
+    (property "Reference" "Q?")
+    (property "Spice_Primitive" "Q")
+    (property "Spice_Lib_File" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_primitive_lib_legacy_spice_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("type=\"Q\" model=\"\" lib=\"models.lib\"")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_comma_separated_legacy_source_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000308")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "V")
+    (property "Spice_Model" "pulse(0,2,1n,2n,3n,4n,5n,6)")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_comma_separated_legacy_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("y1=0 y2=2 td=1n tr=2n tf=3n tw=4n per=5n np=6")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_leaves_primitive_only_legacy_spice_fields_unchanged() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000309")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Value" "1k")
+    (property "Spice_Primitive" "Q")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_leaves_primitive_only_legacy_spice_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(!schematic.screen.content_modified);
+    assert!(
+        symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Spice_Primitive")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Device")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_migrates_legacy_spice_pin_maps_with_newline_whitespace() {
     let src = r#"(kicad_sch
   (version 20260306)
