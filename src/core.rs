@@ -75,6 +75,12 @@ impl SchematicProject {
 
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_paths_by_instance.contains_key(instance_path) {
+            refresh_current_screen_page_state(
+                &mut self.schematics,
+                &self.sheet_paths,
+                &self.current_sheet_instance_path,
+                instance_path,
+            );
             self.current_sheet_instance_path = instance_path.to_string();
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -209,6 +215,62 @@ fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
 
         if let Some(footprint) = instance.footprint {
             symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+        }
+    }
+}
+
+fn refresh_current_screen_page_state(
+    schematics: &mut [Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    previous_instance_path: &str,
+    next_instance_path: &str,
+) {
+    let previous = sheet_paths
+        .iter()
+        .find(|sheet_path| sheet_path.instance_path == previous_instance_path);
+    let next = sheet_paths
+        .iter()
+        .find(|sheet_path| sheet_path.instance_path == next_instance_path);
+
+    if let Some(previous) = previous {
+        let previous_occurrence_count = sheet_paths
+            .iter()
+            .filter(|sheet_path| sheet_path.schematic_path == previous.schematic_path)
+            .count();
+        let switching_schematic = next
+            .map(|next| next.schematic_path != previous.schematic_path)
+            .unwrap_or(true);
+
+        if previous_occurrence_count > 1 && switching_schematic {
+            if let Some(schematic) = schematics
+                .iter_mut()
+                .find(|schematic| schematic.path == previous.schematic_path)
+            {
+                schematic.screen.page_number = None;
+                schematic.screen.page_count = None;
+                schematic.screen.virtual_page_number = None;
+            }
+        }
+    }
+
+    if let Some(next) = next {
+        let next_occurrence_count = sheet_paths
+            .iter()
+            .filter(|sheet_path| sheet_path.schematic_path == next.schematic_path)
+            .count();
+
+        if next_occurrence_count > 1 {
+            if let Some(schematic) = schematics
+                .iter_mut()
+                .find(|schematic| schematic.path == next.schematic_path)
+            {
+                schematic.screen.page_number = next
+                    .page
+                    .clone()
+                    .or_else(|| Some(next.sheet_number.to_string()));
+                schematic.screen.page_count = Some(next.sheet_count);
+                schematic.screen.virtual_page_number = Some(next.sheet_number);
+            }
         }
     }
 }

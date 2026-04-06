@@ -506,6 +506,31 @@ fn reuses_previously_loaded_child_schematic() {
             .path,
         child_path.canonicalize().unwrap_or(child_path.clone())
     );
+    assert_eq!(
+        loaded
+            .current_schematic()
+            .expect("updated current load-result schematic")
+            .screen
+            .page_number
+            .as_deref(),
+        Some("2")
+    );
+    assert_eq!(
+        loaded
+            .current_schematic()
+            .expect("updated current load-result schematic")
+            .screen
+            .page_count,
+        Some(3)
+    );
+    assert_eq!(
+        loaded
+            .current_schematic()
+            .expect("updated current load-result schematic")
+            .screen
+            .virtual_page_number,
+        Some(2)
+    );
     let loaded_symbol = loaded
         .current_schematic()
         .expect("updated current load-result schematic")
@@ -603,6 +628,31 @@ fn reuses_previously_loaded_child_schematic() {
     assert_eq!(project.current_page_number(), Some("1"));
     assert_eq!(project.current_page_count(), Some(3));
     assert_eq!(project.current_virtual_page_number(), Some(1));
+    assert_eq!(
+        project
+            .current_schematic()
+            .expect("project current child schematic")
+            .screen
+            .page_number
+            .as_deref(),
+        Some("1")
+    );
+    assert_eq!(
+        project
+            .current_schematic()
+            .expect("project current child schematic")
+            .screen
+            .page_count,
+        Some(3)
+    );
+    assert_eq!(
+        project
+            .current_schematic()
+            .expect("project current child schematic")
+            .screen
+            .virtual_page_number,
+        Some(1)
+    );
     let project_symbol = project
         .current_schematic()
         .expect("project current child schematic")
