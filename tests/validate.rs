@@ -251,6 +251,35 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
         .expect_err("must reject quoted lib property angle");
     assert!(err.to_string().contains("missing text angle"));
 
+    let quoted_sheet_width = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-sheet-width")
+  (sheet
+    (size "20" 10)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+)"#;
+    let quoted_sheet_width_path = temp_schematic("quoted_sheet_width_number", quoted_sheet_width);
+    let err = parse_schematic_file(Path::new(&quoted_sheet_width_path))
+        .expect_err("must reject quoted sheet width");
+    assert!(err.to_string().contains("missing sheet width"));
+
+    let quoted_sheet_height = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-sheet-height")
+  (sheet
+    (size 20 "10")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+)"#;
+    let quoted_sheet_height_path =
+        temp_schematic("quoted_sheet_height_number", quoted_sheet_height);
+    let err = parse_schematic_file(Path::new(&quoted_sheet_height_path))
+        .expect_err("must reject quoted sheet height");
+    assert!(err.to_string().contains("missing sheet height"));
+
     let _ = fs::remove_file(quoted_comment_number_path);
     let _ = fs::remove_file(quoted_symbol_angle_path);
     let _ = fs::remove_file(quoted_text_angle_path);
@@ -258,6 +287,8 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let _ = fs::remove_file(quoted_lib_text_angle_path);
     let _ = fs::remove_file(quoted_lib_pin_angle_path);
     let _ = fs::remove_file(quoted_lib_property_angle_path);
+    let _ = fs::remove_file(quoted_sheet_width_path);
+    let _ = fs::remove_file(quoted_sheet_height_path);
 }
 
 #[test]

@@ -4034,7 +4034,10 @@ impl KiCadSchematicParser {
                 }
                 "size" => {
                     let _ = self.need_unquoted_symbol_atom("size")?;
-                    sheet.set_size(self.parse_xy2("sheet size")?);
+                    sheet.set_size([
+                        self.parse_internal_units_atom("sheet width")?,
+                        self.parse_internal_units_atom("sheet height")?,
+                    ]);
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
