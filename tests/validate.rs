@@ -6401,6 +6401,43 @@ fn load_tree_migrates_comma_separated_legacy_source_fields() {
             .map(|property| property.value.as_str()),
         Some("y1=0 y2=2 td=1n tr=2n tf=3n tw=4n per=5n np=6")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("y1=0 y2=2 td=1n tr=2n tf=3n tw=4n per=5n np=6")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("np".to_string(), "6".to_string()),
+            ("per".to_string(), "5n".to_string()),
+            ("td".to_string(), "1n".to_string()),
+            ("tf".to_string(), "3n".to_string()),
+            ("tr".to_string(), "2n".to_string()),
+            ("tw".to_string(), "4n".to_string()),
+            ("y1".to_string(), "0".to_string()),
+            ("y2".to_string(), "2".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6449,6 +6486,7 @@ fn load_tree_leaves_primitive_only_legacy_spice_fields_unchanged() {
             .iter()
             .any(|property| property.key == "Sim.Device")
     );
+    assert_eq!(symbol.sim_model, None);
 
     let _ = fs::remove_file(path);
 }
