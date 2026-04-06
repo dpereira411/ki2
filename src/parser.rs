@@ -3870,7 +3870,35 @@ impl KiCadSchematicParser {
                                 }
                             }
                             self.need_right()?;
-                            symbol.add_hierarchical_reference(instance);
+                            if instance.unit.is_none() {
+                                instance.unit = Some(1);
+                            }
+
+                            symbol
+                                .instances
+                                .retain(|existing| existing.path != instance.path);
+
+                            let seed_live_state = symbol.instances.is_empty();
+                            let reference = instance.reference.clone().unwrap_or_default();
+                            let unit = instance.unit;
+
+                            symbol.instances.push(instance);
+
+                            if seed_live_state {
+                                let existing = symbol
+                                    .properties
+                                    .iter_mut()
+                                    .find(|property| property.kind == PropertyKind::SymbolReference)
+                                    .expect("placed symbols start with mandatory fields");
+                                existing.id = PropertyKind::SymbolReference
+                                    .default_field_id()
+                                    .or(existing.id);
+                                existing.key =
+                                    PropertyKind::SymbolReference.canonical_key().to_string();
+                                existing.value = reference;
+                                symbol.update_prefix_from_reference();
+                                symbol.unit = unit;
+                            }
                         }
                         self.need_right()?;
                     }
@@ -4283,7 +4311,7 @@ impl KiCadSchematicParser {
                         }
                         self.need_right()?;
                     }
-                    sheet.set_instances(instances);
+                    sheet.instances = instances;
                     self.need_right()?;
                 }
                 _ => {
