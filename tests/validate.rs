@@ -459,6 +459,9 @@ fn reuses_previously_loaded_child_schematic() {
             .instance_path,
         ""
     );
+    assert_eq!(loaded.current_page_number(), Some("9"));
+    assert_eq!(loaded.current_page_count(), Some(3));
+    assert_eq!(loaded.current_virtual_page_number(), Some(3));
     assert_eq!(
         loaded
             .current_schematic()
@@ -466,6 +469,26 @@ fn reuses_previously_loaded_child_schematic() {
             .path,
         root_path.canonicalize().unwrap_or(root_path.clone())
     );
+    let mut loaded = loaded;
+    assert!(loaded.set_current_sheet_path("/root-u/sheet-b"));
+    assert_eq!(
+        loaded
+            .current_sheet_path()
+            .expect("updated load result current sheet path")
+            .instance_path,
+        "/root-u/sheet-b"
+    );
+    assert_eq!(loaded.current_page_number(), Some("2"));
+    assert_eq!(loaded.current_page_count(), Some(3));
+    assert_eq!(loaded.current_virtual_page_number(), Some(2));
+    assert_eq!(
+        loaded
+            .current_schematic()
+            .expect("updated load result current schematic")
+            .path,
+        child_path.canonicalize().unwrap_or(child_path.clone())
+    );
+    assert!(!loaded.set_current_sheet_path("/missing"));
     assert_eq!(
         loaded
             .sheet_path("/root-u/sheet-a")
@@ -521,6 +544,9 @@ fn reuses_previously_loaded_child_schematic() {
             .instance_path,
         ""
     );
+    assert_eq!(project.current_page_number(), Some("2"));
+    assert_eq!(project.current_page_count(), Some(3));
+    assert_eq!(project.current_virtual_page_number(), Some(2));
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);

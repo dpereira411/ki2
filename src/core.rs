@@ -53,6 +53,21 @@ impl SchematicProject {
         self.sheet_path(&self.current_sheet_instance_path)
     }
 
+    pub fn current_page_number(&self) -> Option<&str> {
+        self.current_sheet_path()
+            .and_then(|sheet_path| sheet_path.page.as_deref())
+    }
+
+    pub fn current_page_count(&self) -> Option<usize> {
+        self.current_sheet_path()
+            .map(|sheet_path| sheet_path.sheet_count)
+    }
+
+    pub fn current_virtual_page_number(&self) -> Option<usize> {
+        self.current_sheet_path()
+            .map(|sheet_path| sheet_path.sheet_number)
+    }
+
     pub fn current_schematic(&self) -> Option<&Schematic> {
         let current_sheet_path = self.current_sheet_path()?;
         self.schematic(&current_sheet_path.schematic_path)
