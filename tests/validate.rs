@@ -9358,6 +9358,34 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
         parse_schematic_file(Path::new(&bad_number_path)).expect_err("must reject bad pin number");
     assert!(err.to_string().contains("Invalid pin number"));
 
+    let bad_name_trailer = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-name-trailer")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (name "PIN" (bogus)))))
+)"#;
+    let bad_name_trailer_path = temp_schematic("bad_lib_pin_name_trailer", bad_name_trailer);
+    let err = parse_schematic_file(Path::new(&bad_name_trailer_path))
+        .expect_err("must reject bad pin name trailer");
+    assert!(err.to_string().contains("expecting effects"));
+
+    let bad_number_trailer = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-lib-pin-number-trailer")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (number "1" (bogus)))))
+)"#;
+    let bad_number_trailer_path = temp_schematic("bad_lib_pin_number_trailer", bad_number_trailer);
+    let err = parse_schematic_file(Path::new(&bad_number_trailer_path))
+        .expect_err("must reject bad pin number trailer");
+    assert!(err.to_string().contains("expecting effects"));
+
     let bad_alternate = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -9403,6 +9431,8 @@ fn rejects_invalid_lib_pin_name_number_and_alternate_name_tokens() {
 
     let _ = fs::remove_file(bad_name_path);
     let _ = fs::remove_file(bad_number_path);
+    let _ = fs::remove_file(bad_name_trailer_path);
+    let _ = fs::remove_file(bad_number_trailer_path);
     let _ = fs::remove_file(bad_alternate_path);
     let _ = fs::remove_file(bad_alternate_type_path);
     let _ = fs::remove_file(bad_alternate_shape_path);

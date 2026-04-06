@@ -1839,6 +1839,9 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
+                    if !self.at_unquoted_symbol_with("effects") {
+                        return Err(self.expecting("effects"));
+                    }
                     let mut visible = true;
                     self.parse_eda_text(
                         ParsedEdaTextOwner::detached(
@@ -1872,6 +1875,9 @@ impl KiCadSchematicParser {
                         continue;
                     }
                     self.need_left()?;
+                    if !self.at_unquoted_symbol_with("effects") {
+                        return Err(self.expecting("effects"));
+                    }
                     let mut visible = true;
                     self.parse_eda_text(
                         ParsedEdaTextOwner::detached(
