@@ -988,6 +988,7 @@ pub struct Symbol {
     pub lib_id: String,
     pub lib_name: Option<String>,
     pub lib_symbol: Option<LibSymbol>,
+    pub sim_model: Option<SimModel>,
     pub prefix: String,
     pub in_netlist: bool,
     pub at: [f64; 2],
@@ -1027,6 +1028,7 @@ impl Symbol {
             lib_id: String::new(),
             lib_name: None,
             lib_symbol: None,
+            sim_model: None,
             prefix: "U".to_string(),
             in_netlist: true,
             at: [0.0, 0.0],
@@ -1103,6 +1105,57 @@ impl Symbol {
             ordinal.max(property.sort_ordinal() + 1)
         })
     }
+
+    pub fn sync_sim_model_from_properties(&mut self) {
+        let device = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.clone());
+        let model_type = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.clone());
+        let params = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.clone());
+        let pins = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| {
+                property
+                    .value
+                    .split_whitespace()
+                    .filter_map(|entry| entry.split_once('='))
+                    .map(|(symbol_pin, model_pin)| (symbol_pin.to_string(), model_pin.to_string()))
+                    .collect::<BTreeMap<_, _>>()
+            })
+            .unwrap_or_default();
+
+        if device.is_none() && model_type.is_none() && params.is_none() && pins.is_empty() {
+            self.sim_model = None;
+            return;
+        }
+
+        self.sim_model = Some(SimModel {
+            device,
+            model_type,
+            params,
+            pins,
+        });
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimModel {
+    pub device: Option<String>,
+    pub model_type: Option<String>,
+    pub params: Option<String>,
+    pub pins: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -700,6 +700,7 @@ impl SchematicLoader {
                             symbol.properties.push(pin_map_field);
                         }
 
+                        symbol.sync_sim_model_from_properties();
                         migrated = true;
                         continue;
                     }
@@ -772,6 +773,7 @@ impl SchematicLoader {
                             symbol.properties.push(pin_map_field);
                         }
 
+                        symbol.sync_sim_model_from_properties();
                         migrated = true;
                         continue;
                     }
@@ -842,6 +844,7 @@ impl SchematicLoader {
                             symbol.properties.push(pin_map_field);
                         }
 
+                        symbol.sync_sim_model_from_properties();
                         migrated = true;
                         continue;
                     }
@@ -851,6 +854,7 @@ impl SchematicLoader {
                     });
 
                     if !can_raw_migrate {
+                        symbol.sync_sim_model_from_properties();
                         continue;
                     }
 
@@ -923,6 +927,7 @@ impl SchematicLoader {
                         symbol.properties.push(pin_map_field);
                     }
 
+                    symbol.sync_sim_model_from_properties();
                     migrated = true;
                     continue;
                 }
@@ -961,6 +966,8 @@ impl SchematicLoader {
                         _ => {}
                     }
                 }
+
+                symbol.sync_sim_model_from_properties();
             }
 
             if migrated {

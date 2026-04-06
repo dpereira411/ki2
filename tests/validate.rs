@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
@@ -5650,6 +5650,30 @@ fn load_tree_migrates_legacy_spice_fields_to_raw_sim_model() {
             .map(|property| property.value.as_str()),
         Some("2=1 1=2")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("type=\"R\" model=\"1k\" lib=\"\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "2".to_string()),
+            ("2".to_string(), "1".to_string()),
+        ]))
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6631,6 +6655,27 @@ fn load_tree_migrates_legacy_pulse_source_fields() {
             .find(|property| property.kind == PropertyKind::SymbolValue)
             .map(|property| property.value.as_str()),
         Some("seed")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("I")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("y1=0 y2=2 td=1n tr=2n tf=3n tw=4n per=5n np=6")
     );
 
     let _ = fs::remove_file(path);
