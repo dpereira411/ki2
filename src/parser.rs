@@ -2452,13 +2452,7 @@ impl KiCadSchematicParser {
                 "stroke" => {
                     let _ = self.need_unquoted_symbol_atom("stroke")?;
                     line.has_stroke = true;
-                    let mut parsed_stroke = self.parse_stroke()?;
-                    if self.require_known_version()? <= 20211123
-                        && parsed_stroke.style == StrokeStyle::Default
-                    {
-                        parsed_stroke.style = StrokeStyle::Dash;
-                    }
-                    line.stroke = Some(parsed_stroke);
+                    line.stroke = Some(self.parse_stroke()?);
                 }
                 _ => return Err(self.expecting("at, uuid or stroke")),
             }

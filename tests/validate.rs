@@ -10084,6 +10084,35 @@ fn legacy_bus_entry_default_stroke_does_not_rewrite_to_dash() {
 }
 
 #[test]
+fn legacy_wire_default_stroke_does_not_rewrite_to_dash() {
+    let src = r#"(kicad_sch
+  (version 20211123)
+  (generator "eeschema")
+  (uuid "root-legacy-wire-stroke")
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.2)) (uuid "w-1"))
+)"#;
+    let path = temp_schematic("legacy_wire_default_stroke", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let wire = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Wire(wire) => Some(wire),
+            _ => None,
+        })
+        .expect("wire");
+
+    assert_eq!(
+        wire.stroke.as_ref().expect("wire stroke").style,
+        StrokeStyle::Default
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn junction_no_connect_and_bus_entry_do_not_require_geometry_tokens() {
     let src = r#"(kicad_sch
   (version 20250114)
