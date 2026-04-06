@@ -1323,6 +1323,24 @@ impl Sheet {
         self.properties = properties;
     }
 
+    pub fn set_position(&mut self, at: [f64; 2]) {
+        let delta = [at[0] - self.at[0], at[1] - self.at[1]];
+        self.at = at;
+
+        for pin in &mut self.pins {
+            pin.at[0] += delta[0];
+            pin.at[1] += delta[1];
+        }
+    }
+
+    pub fn set_size(&mut self, size: [f64; 2]) {
+        self.size = size;
+
+        for pin in &mut self.pins {
+            pin.constrain_on_sheet_edge(self.at, self.size, false);
+        }
+    }
+
     pub fn name(&self) -> Option<&str> {
         self.properties
             .iter()
@@ -1764,18 +1782,45 @@ mod tests {
     #[test]
     fn sheet_pin_defaults_track_sheet_owner_position() {
         let mut sheet = Sheet::new();
-        sheet.at = [11.0, 22.0];
+        sheet.set_position([11.0, 22.0]);
 
         let pin = SheetPin::new("IN".to_string(), &sheet);
 
         assert_eq!(pin.at, [11.0, 0.0]);
         assert_eq!(pin.side, SheetSide::Left);
 
-        sheet.size = [5.0, 20.0];
+        sheet.set_size([5.0, 20.0]);
         let vertical_pin = SheetPin::new("OUT".to_string(), &sheet);
 
         assert_eq!(vertical_pin.at, [0.0, 22.0]);
         assert_eq!(vertical_pin.side, SheetSide::Top);
+    }
+
+    #[test]
+    fn moving_sheet_moves_existing_pins_with_owner() {
+        let mut sheet = Sheet::new();
+        let mut pin = SheetPin::new("IN".to_string(), &sheet);
+        pin.at = [0.0, 3.0];
+        sheet.add_pin(pin);
+
+        sheet.set_position([11.0, 22.0]);
+
+        assert_eq!(sheet.pins[0].at, [11.0, 25.0]);
+    }
+
+    #[test]
+    fn resizing_sheet_reconstrains_existing_pins_with_owner() {
+        let mut sheet = Sheet::new();
+        sheet.set_size([10.0, 20.0]);
+        let mut pin = SheetPin::new("IN".to_string(), &sheet);
+        pin.at = [0.0, 30.0];
+        pin.side = SheetSide::Left;
+        sheet.add_pin(pin);
+
+        sheet.set_size([10.0, 15.0]);
+
+        assert_eq!(sheet.pins[0].at, [0.0, 15.0]);
+        assert_eq!(sheet.pins[0].side, SheetSide::Left);
     }
 
     #[test]

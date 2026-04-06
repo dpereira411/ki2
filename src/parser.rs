@@ -1134,14 +1134,7 @@ impl KiCadSchematicParser {
             symbol.has_demorgan = symbol.has_legacy_alternate_body_style();
         }
 
-        for unit in &mut symbol.units {
-            unit.draw_items.sort();
-            unit.draw_item_kinds = unit
-                .draw_items
-                .iter()
-                .map(|item| item.kind.clone())
-                .collect();
-        }
+        symbol.refresh_library_tree_caches();
         self.need_right()?;
         Ok(symbol)
     }
@@ -4050,21 +4043,12 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed_at = self.parse_xy2("sheet at")?;
-                    let delta = [parsed_at[0] - sheet.at[0], parsed_at[1] - sheet.at[1]];
-                    sheet.at = parsed_at;
-                    for pin in &mut sheet.pins {
-                        pin.at[0] += delta[0];
-                        pin.at[1] += delta[1];
-                    }
+                    sheet.set_position(self.parse_xy2("sheet at")?);
                     self.need_right()?;
                 }
                 "size" => {
                     let _ = self.need_unquoted_symbol_atom("size")?;
-                    sheet.size = self.parse_xy2("sheet size")?;
-                    for pin in &mut sheet.pins {
-                        pin.constrain_on_sheet_edge(sheet.at, sheet.size, false);
-                    }
+                    sheet.set_size(self.parse_xy2("sheet size")?);
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
@@ -4376,12 +4360,7 @@ impl KiCadSchematicParser {
             }
         }
 
-        for property in &mut properties {
-            if property.kind == PropertyKind::SheetFile {
-                property.value = property.value.replace('\\', "/");
-            }
-        }
-        sheet.properties = properties;
+        sheet.set_properties(properties);
 
         if sheet.name().is_none() {
             return Err(self.error_here("Missing sheet name property"));
