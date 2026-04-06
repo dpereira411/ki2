@@ -5519,6 +5519,106 @@ fn load_tree_migrates_lib_only_legacy_spice_fields_to_raw_sim_model() {
 }
 
 #[test]
+fn load_tree_defaults_sim_pins_from_active_symbol_unit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000406")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:U"
+      (symbol "U_1_1"
+        (pin input line (at 0 0 180) (length 2.54) (name "A") (number "1")))
+      (symbol "U_2_1"
+        (pin input line (at 0 0 180) (length 2.54) (name "B") (number "2"))
+        (pin input line (at 5 0 180) (length 2.54) (name "C") (number "3")))))
+  (symbol
+    (lib_id "Device:U")
+    (unit 2)
+    (property "Reference" "U?")
+    (property "Spice_Lib_File" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_defaults_sim_pins_from_active_unit", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("2=1 3=2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_sorts_default_sim_pins_numerically() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000410")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:Q"
+      (symbol "Q_1_1"
+        (pin input line (at 0 0 180) (length 2.54) (name "A") (number "10"))
+        (pin input line (at 5 0 180) (length 2.54) (name "B") (number "2"))
+        (pin input line (at 10 0 180) (length 2.54) (name "C") (number "1")))))
+  (symbol
+    (lib_id "Device:Q")
+    (property "Reference" "Q?")
+    (property "Spice_Lib_File" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_sorts_default_sim_pins_numerically", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=1 2=2 10=3")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_migrates_primitive_and_lib_legacy_spice_fields_to_raw_sim_model() {
     let src = r#"(kicad_sch
   (version 20260306)
