@@ -7451,7 +7451,7 @@ fn rejects_digit_started_effects_hyperlink_scheme() {
 }
 
 #[test]
-fn rejects_whitespace_in_effects_hyperlink() {
+fn accepts_spaces_in_effects_hyperlink_like_native_kicad() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -7459,11 +7459,22 @@ fn rejects_whitespace_in_effects_hyperlink() {
   (text "note" (at 1 2 0) (effects (href "https://example.com bad")))
 )"#;
     let path = temp_schematic("bad_effects_space_href", src);
-    let err =
-        parse_schematic_file(Path::new(&path)).expect_err("must reject whitespace in hyperlink");
-    assert!(
-        err.to_string()
-            .contains("Invalid hyperlink url 'https://example.com bad'")
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("native KiCad accepts spaces in hyperlink");
+    let text = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Text(text) => Some(text),
+            _ => None,
+        })
+        .expect("text");
+    assert_eq!(
+        text.effects
+            .as_ref()
+            .and_then(|effects| effects.hyperlink.as_deref()),
+        Some("https://example.com bad")
     );
     let _ = fs::remove_file(path);
 }

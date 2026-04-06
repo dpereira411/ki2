@@ -5378,11 +5378,9 @@ impl KiCadSchematicParser {
             return true;
         }
 
-        // wxURI rejects URIs containing raw whitespace/control characters.
-        if href
-            .chars()
-            .any(|ch| ch.is_ascii_whitespace() || ch.is_control())
-        {
+        // Match native KiCad more closely: control characters are invalid, but spaces inside a
+        // URI-like string can still be accepted by wxURI as long as the URI has a scheme.
+        if href.chars().any(|ch| ch.is_control()) {
             return false;
         }
 
