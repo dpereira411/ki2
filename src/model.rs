@@ -1127,6 +1127,16 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Name")
             .map(|property| property.value.clone());
+        let ibis_pin = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Ibis.Pin")
+            .map(|property| property.value.clone());
+        let ibis_model = self
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Ibis.Model")
+            .map(|property| property.value.clone());
         let params = self
             .properties
             .iter()
@@ -1154,6 +1164,8 @@ impl Symbol {
             && model_type.is_none()
             && library.is_none()
             && name.is_none()
+            && ibis_pin.is_none()
+            && ibis_model.is_none()
             && params.is_none()
             && pins.is_empty()
         {
@@ -1166,6 +1178,8 @@ impl Symbol {
             model_type,
             library,
             name,
+            ibis_pin,
+            ibis_model,
             params,
             param_values,
             pins,
@@ -1179,6 +1193,8 @@ pub struct SimModel {
     pub model_type: Option<String>,
     pub library: Option<String>,
     pub name: Option<String>,
+    pub ibis_pin: Option<String>,
+    pub ibis_model: Option<String>,
     pub params: Option<String>,
     pub param_values: BTreeMap<String, String>,
     pub pins: BTreeMap<String, String>,
@@ -1494,6 +1510,18 @@ mod tests {
         ));
         symbol.properties.push(Property::new_named(
             PropertyKind::User,
+            "Sim.Ibis.Pin",
+            "A1".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Ibis.Model",
+            "TX_MODEL".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
             "Sim.Pins",
             "1=1 2=2".to_string(),
             false,
@@ -1521,6 +1549,20 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.name.as_deref()),
             Some("2N3904")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.ibis_pin.as_deref()),
+            Some("A1")
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.ibis_model.as_deref()),
+            Some("TX_MODEL")
         );
         assert_eq!(
             symbol
