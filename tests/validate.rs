@@ -8469,7 +8469,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let bad_sheet_path_path = temp_schematic("bad_sheet_instance_path", bad_sheet_path);
     let err = parse_schematic_file(Path::new(&bad_sheet_path_path))
         .expect_err("must reject bad sheet instance path");
-    assert!(err.to_string().contains("expecting sheet instance path"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_symbol_reference = r#"(kicad_sch
   (version 20260306)
@@ -8505,7 +8505,7 @@ fn rejects_invalid_sheet_instance_page_tokens() {
     let bad_top_level_path = temp_schematic("bad_sheet_instance_page", bad_top_level);
     let err = parse_schematic_file(Path::new(&bad_top_level_path))
         .expect_err("must reject bad top-level sheet page");
-    assert!(err.to_string().contains("expecting page"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_nested = r#"(kicad_sch
   (version 20260306)
@@ -8523,7 +8523,7 @@ fn rejects_invalid_sheet_instance_page_tokens() {
     let bad_nested_path = temp_schematic("bad_nested_sheet_page", bad_nested);
     let err = parse_schematic_file(Path::new(&bad_nested_path))
         .expect_err("must reject bad nested sheet page");
-    assert!(err.to_string().contains("expecting page"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_nested_child = r#"(kicad_sch
   (version 20260306)

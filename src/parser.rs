@@ -4139,7 +4139,7 @@ impl KiCadSchematicParser {
                             return Err(self.expecting("project"));
                         }
                         let _ = self.need_unquoted_symbol_atom("project")?;
-                        let project = self.need_symbol_atom("project name")?;
+                        let project = self.need_symbol_atom("symbol")?;
                         while !self.at_right() {
                             self.need_left()?;
                             let head = match &self.current().kind {
@@ -4157,7 +4157,7 @@ impl KiCadSchematicParser {
                                 return Err(self.expecting("path"));
                             }
                             let _ = self.need_unquoted_symbol_atom("path")?;
-                            let path = self.need_symbol_atom("sheet instance path")?;
+                            let path = self.need_symbol_atom("symbol")?;
                             let mut instance = SheetLocalInstance::new(project.clone(), path);
                             while !self.at_right() {
                                 self.need_left()?;
@@ -4175,7 +4175,7 @@ impl KiCadSchematicParser {
                                 match child.as_str() {
                                     "page" => {
                                         let _ = self.need_unquoted_symbol_atom("page")?;
-                                        let mut parsed_page = self.need_symbol_atom("page")?;
+                                        let mut parsed_page = self.need_symbol_atom("symbol")?;
 
                                         if parsed_page.is_empty() {
                                             parsed_page = "#".to_string();
@@ -4454,7 +4454,7 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let _ = self.need_unquoted_symbol_atom("path")?;
-            let raw_path = self.need_symbol_atom("sheet instance path")?;
+            let raw_path = self.need_symbol_atom("symbol")?;
             let mut instance = SheetInstance::new(raw_path);
 
             if self.require_known_version()? < VERSION_SHEET_INSTANCE_ROOT_PATH {
@@ -4488,7 +4488,7 @@ impl KiCadSchematicParser {
                 match child.as_str() {
                     "page" => {
                         let _ = self.need_unquoted_symbol_atom("page")?;
-                        let raw_page = self.need_symbol_atom("page")?;
+                        let raw_page = self.need_symbol_atom("symbol")?;
                         let mut parsed_page = raw_page.clone();
                         let mut replacements = 0usize;
 
@@ -4541,7 +4541,7 @@ impl KiCadSchematicParser {
                 return Err(self.expecting("path"));
             }
             let _ = self.need_unquoted_symbol_atom("path")?;
-            let raw_path = self.need_symbol_atom("symbol instance path")?;
+            let raw_path = self.need_symbol_atom("symbol")?;
             let path = if let Some(root_uuid) = self.root_uuid.as_ref() {
                 let prefix = format!("/{root_uuid}");
 
@@ -4571,7 +4571,7 @@ impl KiCadSchematicParser {
                 match child.as_str() {
                     "reference" => {
                         let _ = self.need_unquoted_symbol_atom("reference")?;
-                        instance.reference = Some(self.need_symbol_atom("reference")?)
+                        instance.reference = Some(self.need_symbol_atom("symbol")?)
                     }
                     "unit" => {
                         let _ = self.need_unquoted_symbol_atom("unit")?;
@@ -4580,7 +4580,7 @@ impl KiCadSchematicParser {
                     "value" => {
                         let _ = self.need_unquoted_symbol_atom("value")?;
                         instance.value = Some({
-                            let value = self.need_symbol_atom("value")?;
+                            let value = self.need_symbol_atom("symbol")?;
                             if self
                                 .require_known_version()
                                 .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
@@ -4596,7 +4596,7 @@ impl KiCadSchematicParser {
                     "footprint" => {
                         let _ = self.need_unquoted_symbol_atom("footprint")?;
                         instance.footprint = Some({
-                            let value = self.need_symbol_atom("footprint")?;
+                            let value = self.need_symbol_atom("symbol")?;
                             if self
                                 .require_known_version()
                                 .unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
