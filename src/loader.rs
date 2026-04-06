@@ -750,6 +750,76 @@ impl SchematicLoader {
                         continue;
                     }
 
+                    if !has_legacy_lib
+                        && matches!(legacy_device.as_str(), "V" | "I")
+                        && parse_legacy_source_model(&legacy_model).is_some()
+                    {
+                        let primitive_field = take_symbol_user_field(symbol, "Spice_Primitive");
+                        let node_sequence_field =
+                            take_symbol_user_field(symbol, "Spice_Node_Sequence");
+                        let model_field = take_symbol_user_field(symbol, "Spice_Model");
+                        let _legacy_enable =
+                            take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
+                        let _lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+                        let source_pins = symbol_source_pin_numbers(symbol);
+                        let source_model = parse_legacy_source_model(
+                            model_field
+                                .as_ref()
+                                .map(|property| property.value.as_str())
+                                .unwrap_or(""),
+                        )
+                        .expect("checked above");
+
+                        let device_template = primitive_field
+                            .clone()
+                            .or_else(|| model_field.clone())
+                            .unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
+                        let mut sim_device_field = device_template.clone();
+                        sim_device_field.key = "Sim.Device".to_string();
+                        sim_device_field.value = legacy_device;
+                        let mut sim_type_field = device_template;
+                        sim_type_field.key = "Sim.Type".to_string();
+                        sim_type_field.value = source_model.kind.to_string();
+
+                        let params_template = model_field
+                            .clone()
+                            .or_else(|| primitive_field.clone())
+                            .unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
+                        let mut sim_params_field = params_template;
+                        sim_params_field.key = "Sim.Params".to_string();
+                        sim_params_field.value = source_model
+                            .params
+                            .iter()
+                            .map(|(name, value)| format!("{name}={value}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+
+                        symbol.properties.push(sim_device_field);
+                        symbol.properties.push(sim_type_field);
+                        symbol.properties.push(sim_params_field);
+
+                        if let Some(mut pin_map_field) =
+                            node_sequence_field.map(legacy_spice_pin_map_field)
+                        {
+                            pin_map_field.key = "Sim.Pins".to_string();
+                            symbol.properties.push(pin_map_field);
+                        } else if !source_pins.is_empty() {
+                            let template = model_field.unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
+                            let mut pin_map_field = default_sim_pins_field(template, &source_pins);
+                            pin_map_field.key = "Sim.Pins".to_string();
+                            symbol.properties.push(pin_map_field);
+                        }
+
+                        migrated = true;
+                        continue;
+                    }
+
                     let can_raw_migrate = symbol.properties.iter().any(|property| {
                         matches!(property.key.as_str(), "Spice_Model" | "Spice_Lib_File")
                     });
@@ -1191,6 +1261,11 @@ fn sim_params_field_value_escape(model: &str) -> String {
     model.replace('"', "\\\"")
 }
 
+struct LegacySourceModel {
+    kind: &'static str,
+    params: Vec<(&'static str, String)>,
+}
+
 fn parse_legacy_dc_model_value(model: &str) -> Option<String> {
     let tokens = model
         .split(|ch: char| matches!(ch, '(' | ')' | ' '))
@@ -1202,6 +1277,49 @@ fn parse_legacy_dc_model_value(model: &str) -> Option<String> {
     }
 
     None
+}
+
+fn parse_legacy_source_model(model: &str) -> Option<LegacySourceModel> {
+    let open = model.find('(')?;
+    let close = model.rfind(')')?;
+
+    if close <= open {
+        return None;
+    }
+
+    let kind = model[..open].trim();
+    let args = model[open + 1..close]
+        .split(|ch: char| matches!(ch, ' ' | '\t' | '\n' | '\r' | ','))
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_string())
+        .collect::<Vec<_>>();
+
+    let param_names = match kind.to_ascii_uppercase().as_str() {
+        "SIN" => Some(("SIN", &["dc", "ampl", "f", "td", "theta", "phase"][..])),
+        "PULSE" => Some((
+            "PULSE",
+            &["y1", "y2", "td", "tr", "tf", "tw", "per", "np"][..],
+        )),
+        "EXP" => Some(("EXP", &["y1", "y2", "td1", "tau1", "td2", "tau2"][..])),
+        "AM" => Some((
+            "AM",
+            &["vo", "vmo", "vma", "fm", "fc", "td", "phasem", "phasec"][..],
+        )),
+        "SFFM" => Some((
+            "SFFM",
+            &["vo", "va", "fm", "mdi", "fc", "phasem", "phasec"][..],
+        )),
+        _ => None,
+    }?;
+
+    let (kind, names) = param_names;
+    let params = names
+        .iter()
+        .zip(args)
+        .map(|(name, value)| (*name, value))
+        .collect::<Vec<_>>();
+
+    Some(LegacySourceModel { kind, params })
 }
 
 fn migrated_sim_pins_value(prefix: &str, source_pins: &[String], pin_indexes: &[&str]) -> String {
