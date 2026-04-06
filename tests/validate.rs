@@ -5411,7 +5411,9 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
   (uuid "40000000-0000-0000-0000-000000000003")
   (paper "A4")
   (symbol (lib_id "Device:R") (at 1 2 0) (property "Sim.Enable" "0"))
-  (symbol (lib_id "Device:R") (at 3 4 0) (property "Spice_Netlist_Enabled" "N"))
+  (symbol (lib_id "Device:R") (at 3 4 0) (property "Sim.Enable" "false"))
+  (symbol (lib_id "Device:R") (at 5 6 0) (property "Sim.Enable" "no"))
+  (symbol (lib_id "Device:R") (at 7 8 0) (property "Spice_Netlist_Enabled" "N"))
 )"#;
     let path = temp_schematic("legacy_sim_enable", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -5424,11 +5426,15 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(symbols.len(), 2);
+    assert_eq!(symbols.len(), 4);
     assert!(symbols[0].excluded_from_sim);
     assert!(symbols[1].excluded_from_sim);
+    assert!(symbols[2].excluded_from_sim);
+    assert!(symbols[3].excluded_from_sim);
     assert_eq!(symbols[0].properties.len(), 5);
     assert_eq!(symbols[1].properties.len(), 5);
+    assert_eq!(symbols[2].properties.len(), 5);
+    assert_eq!(symbols[3].properties.len(), 5);
     assert!(
         symbols[0]
             .properties
@@ -5437,6 +5443,18 @@ fn maps_legacy_sim_enable_fields_to_exclude_from_sim() {
     );
     assert!(
         symbols[1]
+            .properties
+            .iter()
+            .all(|property| property.value.is_empty())
+    );
+    assert!(
+        symbols[2]
+            .properties
+            .iter()
+            .all(|property| property.value.is_empty())
+    );
+    assert!(
+        symbols[3]
             .properties
             .iter()
             .all(|property| property.value.is_empty())

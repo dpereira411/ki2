@@ -112,6 +112,14 @@ const STANDARD_PAGE_INFOS: &[StandardPageInfo] = &[
         dimensions_mm: Some([431.8, 279.4]),
     },
 ];
+
+fn legacy_sim_enable_disables(value: &str) -> bool {
+    value
+        .trim()
+        .chars()
+        .next()
+        .is_some_and(|ch| matches!(ch.to_ascii_lowercase(), '0' | 'f' | 'n'))
+}
 const SIM_LEGACY_ENABLE_FIELD: &str = "Spice_Netlist_Enabled";
 
 #[derive(Clone, Copy)]
@@ -4130,7 +4138,7 @@ impl KiCadSchematicParser {
                 "property" => {
                     let property = self.parse_sch_field(FieldParent::Symbol(&symbol))?;
                     if property.key == SIM_LEGACY_ENABLE_FIELD_V7 {
-                        symbol.excluded_from_sim = property.value == "0";
+                        symbol.excluded_from_sim = legacy_sim_enable_disables(&property.value);
                         continue;
                     }
                     if property.key == SIM_LEGACY_ENABLE_FIELD {
