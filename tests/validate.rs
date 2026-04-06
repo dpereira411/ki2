@@ -3797,6 +3797,8 @@ fn parses_property_metadata_semantics() {
         .expect("property");
     assert!(!property.show_name);
     assert_eq!(property.ordinal, 42);
+    assert_eq!(property.at, Some([0.0, 0.0]));
+    assert_eq!(property.angle, Some(0.0));
     let _ = fs::remove_file(default_path);
 
     let ordinal_src = r#"(kicad_sch
@@ -4643,7 +4645,7 @@ fn parses_text_and_label_semantics() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("default intersheet refs property");
     assert_eq!(intersheet_refs.value, "show");
-    assert_eq!(intersheet_refs.at, None);
+    assert_eq!(intersheet_refs.at, Some([0.0, 0.0]));
     assert!(intersheet_refs.visible);
 
     let local = schematic

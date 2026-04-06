@@ -625,25 +625,14 @@ impl Label {
             _ => None,
         };
         let properties = if matches!(kind, LabelKind::Global) {
-            vec![Property {
-                id: PropertyKind::GlobalLabelIntersheetRefs.default_field_id(),
-                ordinal: PropertyKind::GlobalLabelIntersheetRefs
-                    .default_field_id()
-                    .unwrap_or(0),
-                key: PropertyKind::GlobalLabelIntersheetRefs
-                    .canonical_key()
-                    .to_string(),
-                value: "${INTERSHEET_REFS}".to_string(),
-                kind: PropertyKind::GlobalLabelIntersheetRefs,
-                is_private: false,
-                at: Some([0.0, 0.0]),
-                angle: None,
-                visible: false,
-                show_name: false,
-                can_autoplace: true,
-                has_effects: false,
-                effects: None,
-            }]
+            {
+                let mut property = Property::new(
+                    PropertyKind::GlobalLabelIntersheetRefs,
+                    "${INTERSHEET_REFS}".to_string(),
+                );
+                property.visible = false;
+                vec![property]
+            }
         } else {
             Vec::new()
         };
@@ -1320,9 +1309,9 @@ impl Sheet {
 mod tests {
     use super::{
         BusEntry, FieldAutoplacement, Label, LabelKind, LabelShape, LibDrawItem, LibSymbol, Line,
-        LineKind, NoConnect, PropertyKind, Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin,
-        SheetPinShape, SheetSide, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin, Table,
-        TableCell, Text, TextBox, TextKind,
+        LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet,
+        SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol,
+        SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextKind,
     };
 
     #[test]
@@ -1671,7 +1660,17 @@ mod tests {
         assert_eq!(property.key, "Intersheet References");
         assert_eq!(property.value, "${INTERSHEET_REFS}");
         assert_eq!(property.at, Some([0.0, 0.0]));
+        assert_eq!(property.angle, Some(0.0));
         assert!(!property.visible);
+    }
+
+    #[test]
+    fn properties_start_with_default_geometry() {
+        let property = Property::new_named(PropertyKind::User, "User", "V".to_string(), false);
+
+        assert_eq!(property.at, Some([0.0, 0.0]));
+        assert_eq!(property.angle, Some(0.0));
+        assert!(property.visible);
     }
 
     #[test]
@@ -1927,8 +1926,8 @@ impl Property {
             value,
             kind,
             is_private: false,
-            at: None,
-            angle: None,
+            at: Some([0.0, 0.0]),
+            angle: Some(0.0),
             visible: true,
             show_name: false,
             can_autoplace: true,
@@ -1948,8 +1947,8 @@ impl Property {
             value,
             kind,
             is_private,
-            at: None,
-            angle: None,
+            at: Some([0.0, 0.0]),
+            angle: Some(0.0),
             visible: true,
             show_name: false,
             can_autoplace: true,
