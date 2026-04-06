@@ -6497,7 +6497,7 @@ fn load_tree_migrates_comma_separated_legacy_source_fields() {
 }
 
 #[test]
-fn load_tree_leaves_primitive_only_legacy_spice_fields_unchanged() {
+fn load_tree_migrates_primitive_only_legacy_spice_fields_from_value() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6510,7 +6510,7 @@ fn load_tree_leaves_primitive_only_legacy_spice_fields_unchanged() {
     (property "Spice_Primitive" "Q")
     (at 1 2 0))
 )"#;
-    let path = temp_schematic("loader_leaves_primitive_only_legacy_spice_fields", src);
+    let path = temp_schematic("loader_migrates_primitive_only_legacy_spice_fields", src);
     let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
     let schematic = loaded
         .schematics
@@ -6527,20 +6527,218 @@ fn load_tree_leaves_primitive_only_legacy_spice_fields_unchanged() {
         })
         .expect("symbol");
 
-    assert!(!schematic.screen.content_modified);
-    assert!(
-        symbol
-            .properties
-            .iter()
-            .any(|property| property.key == "Spice_Primitive")
-    );
+    assert!(schematic.screen.content_modified);
     assert!(
         !symbol
             .properties
             .iter()
-            .any(|property| property.key == "Sim.Device")
+            .any(|property| property.key == "Spice_Primitive")
     );
-    assert_eq!(symbol.sim_model, None);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("${SIM.PARAMS}")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("type=\"Q\" model=\"1k\" lib=\"\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("Q")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        Some("1k")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_value_backed_legacy_spice_fields_to_raw_sim_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030a")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:Q_NPN_EBC")
+    (property "Reference" "Q?")
+    (property "Value" "BC547")
+    (property "Spice_Primitive" "Q")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_value_backed_legacy_spice_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Spice_Primitive")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("${SIM.PARAMS}")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("type=\"Q\" model=\"BC547\" lib=\"\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("SPICE")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("Q")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        Some("BC547")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_value_backed_legacy_spice_lib_fields_to_raw_sim_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030b")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:Q_NPN_EBC")
+    (property "Reference" "Q?")
+    (property "Value" "BC547")
+    (property "Spice_Primitive" "Q")
+    (property "Spice_Lib_File" "models.lib")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_value_backed_legacy_spice_lib_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Spice_Primitive" || property.key == "Spice_Lib_File")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("${SIM.PARAMS}")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("type=\"Q\" model=\"BC547\" lib=\"models.lib\"")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.library.as_deref()),
+        Some("models.lib")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.name.as_deref()),
+        Some("BC547")
+    );
 
     let _ = fs::remove_file(path);
 }

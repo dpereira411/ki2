@@ -681,6 +681,12 @@ impl SchematicLoader {
                 });
 
                 if has_legacy_spice_fields {
+                    let current_value = symbol
+                        .properties
+                        .iter()
+                        .find(|property| property.kind == PropertyKind::SymbolValue)
+                        .map(|property| property.value.trim().to_string())
+                        .unwrap_or_default();
                     let inferred_device = symbol
                         .properties
                         .iter()
@@ -731,6 +737,8 @@ impl SchematicLoader {
                             property.kind.is_user_field() && property.key == "Spice_Model"
                         })
                         .map(|property| property.value.trim().to_string())
+                        .filter(|value| !value.is_empty())
+                        .or_else(|| (!current_value.is_empty()).then(|| current_value.clone()))
                         .unwrap_or_default();
                     let has_legacy_lib = symbol.properties.iter().any(|property| {
                         property.kind.is_user_field() && property.key == "Spice_Lib_File"
@@ -862,7 +870,7 @@ impl SchematicLoader {
 
                     let can_raw_migrate = symbol.properties.iter().any(|property| {
                         matches!(property.key.as_str(), "Spice_Model" | "Spice_Lib_File")
-                    });
+                    }) || !legacy_model.is_empty();
 
                     if !can_raw_migrate {
                         symbol.sync_sim_model_from_properties();
@@ -874,6 +882,7 @@ impl SchematicLoader {
                     let model_field = take_symbol_user_field(symbol, "Spice_Model");
                     let _legacy_enable = take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
                     let lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+                    let model_from_value_field = model_field.is_none() && !current_value.is_empty();
 
                     let mut pin_map_field = node_sequence_field.map(legacy_spice_pin_map_field);
                     let source_pins = symbol_source_pin_numbers(symbol);
@@ -884,7 +893,8 @@ impl SchematicLoader {
                     let model = model_field
                         .as_ref()
                         .map(|property| property.value.trim().to_string())
-                        .unwrap_or_default();
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or_else(|| current_value.clone());
                     let lib = lib_field
                         .as_ref()
                         .map(|property| property.value.trim().to_string())
@@ -936,6 +946,11 @@ impl SchematicLoader {
                     if let Some(mut pin_map_field) = pin_map_field {
                         pin_map_field.key = "Sim.Pins".to_string();
                         symbol.properties.push(pin_map_field);
+                    }
+
+                    if model_from_value_field {
+                        symbol
+                            .set_field_text(PropertyKind::SymbolValue, "${SIM.PARAMS}".to_string());
                     }
 
                     symbol.sync_sim_model_from_properties();
