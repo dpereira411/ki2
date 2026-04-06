@@ -3913,7 +3913,17 @@ impl KiCadSchematicParser {
                                 existing.key =
                                     PropertyKind::SymbolReference.canonical_key().to_string();
                                 existing.value = reference;
-                                symbol.update_prefix_from_reference();
+                                let reference = existing.value.replace('~', " ");
+                                symbol.in_netlist = !reference.starts_with('#');
+                                let trimmed = reference
+                                    .trim()
+                                    .trim_end_matches(|ch: char| {
+                                        ch.is_ascii_digit() || matches!(ch, '?' | '*')
+                                    })
+                                    .trim();
+                                if !trimmed.is_empty() {
+                                    symbol.prefix = trimmed.to_string();
+                                }
                                 symbol.unit = unit;
                             }
                         }
@@ -3948,7 +3958,17 @@ impl KiCadSchematicParser {
                         let kind = property.kind;
                         *existing = property;
                         if kind == PropertyKind::SymbolReference {
-                            symbol.update_prefix_from_reference();
+                            let reference = existing.value.replace('~', " ");
+                            symbol.in_netlist = !reference.starts_with('#');
+                            let trimmed = reference
+                                .trim()
+                                .trim_end_matches(|ch: char| {
+                                    ch.is_ascii_digit() || matches!(ch, '?' | '*')
+                                })
+                                .trim();
+                            if !trimmed.is_empty() {
+                                symbol.prefix = trimmed.to_string();
+                            }
                         }
                     } else if let Some(existing) = symbol
                         .properties
@@ -3985,7 +4005,7 @@ impl KiCadSchematicParser {
                         }
                     }
                     self.need_right()?;
-                    symbol.add_pin(pin);
+                    symbol.pins.push(pin);
                 }
                 _ => {
                     return Err(self.expecting(
@@ -4097,7 +4117,7 @@ impl KiCadSchematicParser {
                     properties.push(property);
                 }
                 "pin" => {
-                    sheet.add_pin(self.parse_sch_sheet_pin(&sheet)?);
+                    sheet.pins.push(self.parse_sch_sheet_pin(&sheet)?);
                 }
                 "instances" => {
                     let _ = self.need_unquoted_symbol_atom("instances")?;
@@ -4339,7 +4359,12 @@ impl KiCadSchematicParser {
             }
         }
 
-        sheet.set_properties(properties);
+        for property in &mut properties {
+            if property.kind == PropertyKind::SheetFile {
+                property.value = property.value.replace('\\', "/");
+            }
+        }
+        sheet.properties = properties;
 
         if sheet.name().is_none() {
             return Err(self.error_here("Missing sheet name property"));
