@@ -517,11 +517,32 @@ impl SchematicLoader {
             .collect()
     }
 
-    fn set_sheet_number_and_count(&self, sheet_paths: &mut [LoadedSheetPath]) {
+    fn set_sheet_number_and_count(&mut self, sheet_paths: &mut [LoadedSheetPath]) {
         let sheet_count = sheet_paths.len();
         for (index, sheet_path) in sheet_paths.iter_mut().enumerate() {
             sheet_path.sheet_number = index + 1;
             sheet_path.sheet_count = sheet_count;
+
+            let Some(schematic_index) = self
+                .loaded_by_canonical
+                .get(&sheet_path.schematic_path)
+                .copied()
+            else {
+                continue;
+            };
+
+            let screen = &mut self.schematics[schematic_index].screen;
+
+            if screen.virtual_page_number.is_some() {
+                continue;
+            }
+
+            screen.page_number = sheet_path
+                .page
+                .clone()
+                .or_else(|| Some(sheet_path.sheet_number.to_string()));
+            screen.page_count = Some(sheet_count);
+            screen.virtual_page_number = Some(sheet_path.sheet_number);
         }
     }
 

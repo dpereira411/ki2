@@ -470,11 +470,23 @@ fn builds_sheet_paths_and_updates_legacy_symbol_instance_data_after_load() {
     assert_eq!(loaded.sheet_paths[1].sheet_number, 2);
     assert_eq!(loaded.sheet_paths[1].sheet_count, 2);
 
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    assert_eq!(root.screen.page_number.as_deref(), Some("2"));
+    assert_eq!(root.screen.page_count, Some(2));
+    assert_eq!(root.screen.virtual_page_number, Some(2));
+
     let child = loaded
         .schematics
         .iter()
         .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
         .expect("child schematic");
+    assert_eq!(child.screen.page_number.as_deref(), Some("1"));
+    assert_eq!(child.screen.page_count, Some(2));
+    assert_eq!(child.screen.virtual_page_number, Some(1));
     let symbol = child
         .screen
         .items
