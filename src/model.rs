@@ -1230,16 +1230,7 @@ impl Symbol {
         self.instances
             .retain(|existing| existing.path != instance.path);
 
-        let seed_live_state = self.instances.is_empty();
-        let reference = instance.reference.clone().unwrap_or_default();
-        let unit = instance.unit;
-
         self.instances.push(instance);
-
-        if seed_live_state {
-            self.set_field_text(PropertyKind::SymbolReference, reference);
-            self.unit = unit;
-        }
     }
 
     pub fn update_prefix_from_reference(&mut self) {
@@ -1455,7 +1446,7 @@ mod tests {
     }
 
     #[test]
-    fn first_hierarchical_reference_seeds_live_symbol_state() {
+    fn hierarchical_references_do_not_seed_live_symbol_state() {
         let mut symbol = Symbol::new();
         let mut instance = SymbolLocalInstance::new("demo".to_string(), "/A".to_string());
         instance.reference = Some("R7".to_string());
@@ -1463,14 +1454,14 @@ mod tests {
 
         symbol.add_hierarchical_reference(instance);
 
-        assert_eq!(symbol.unit, Some(2));
+        assert_eq!(symbol.unit, Some(1));
         assert_eq!(
             symbol
                 .properties
                 .iter()
                 .find(|property| property.kind == PropertyKind::SymbolReference)
                 .map(|property| property.value.as_str()),
-            Some("R7")
+            Some("")
         );
     }
 
