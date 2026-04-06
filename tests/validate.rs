@@ -12585,7 +12585,7 @@ fn resolves_groups_after_items_and_drops_unknown_members() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000085")
   (paper "A4")
   (wire (pts (xy 0 0) (xy 1 1)) (uuid "11111111-1111-1111-1111-111111111111"))
   (group "G1" (uuid "22222222-2222-2222-2222-222222222222") (members "11111111-1111-1111-1111-111111111111" "missing"))
@@ -12823,7 +12823,7 @@ fn rejects_invalid_lib_pin_alternate_type_and_shape() {
     let bad_alt_type = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000086")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12847,7 +12847,7 @@ fn rejects_invalid_lib_pin_alternate_type_and_shape() {
     let bad_alt_shape = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000087")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12871,7 +12871,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let legacy_arc_src = r#"(kicad_sch
   (version 20230121)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000088")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12899,7 +12899,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let default_arc_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000089")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12919,7 +12919,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let bad_arc_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000008a")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12938,7 +12938,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let bad_bezier_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000008b")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12954,7 +12954,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let quoted_bezier_xy_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000008c")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -12973,7 +12973,7 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
     let src = r#"(kicad_sch
   (version 20230121)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000008d")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -13029,7 +13029,7 @@ fn library_coordinates_use_kicad_inverted_y_axis() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000008e")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -13100,7 +13100,7 @@ fn legacy_lib_symbols_infer_demorgan_body_style_from_units() {
     let legacy_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000008f")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -13115,7 +13115,7 @@ fn legacy_lib_symbols_infer_demorgan_body_style_from_units() {
     let modern_src = r#"(kicad_sch
   (version 20250827)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000090")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -13133,7 +13133,7 @@ fn legacy_derived_lib_symbols_inherit_demorgan_state_from_root() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000091")
   (paper "A4")
   (lib_symbols
     (symbol "Root:R"
@@ -13154,7 +13154,7 @@ fn mandatory_properties_keep_default_kicad_field_ids() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000092")
   (paper "A4")
   (global_label "GL" (at 1 2 0) (shape input) (iref 3 4))
   (sheet
@@ -13273,7 +13273,7 @@ fn sheetfile_properties_normalize_to_forward_slashes() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000093")
   (paper "A4")
   (sheet
     (at 10 20)
@@ -13303,7 +13303,7 @@ fn sheet_preserves_duplicate_mandatory_properties_in_parse_order() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000094")
   (paper "A4")
   (sheet
     (at 10 20)
@@ -13352,7 +13352,7 @@ fn global_label_iref_preserves_existing_intersheet_property_text() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000095")
   (paper "A4")
   (global_label "GL"
     (at 1 2 0)
