@@ -654,6 +654,14 @@ impl SchematicLoader {
                 if let Some(unit) = instance.unit {
                     symbol.unit = Some(unit);
                 }
+
+                if let Some(value) = instance.value {
+                    symbol.set_field_text(PropertyKind::SymbolValue, value);
+                }
+
+                if let Some(footprint) = instance.footprint {
+                    symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+                }
             }
 
             for item in &mut self.schematics[schematic_index].screen.items {
