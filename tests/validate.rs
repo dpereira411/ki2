@@ -6829,7 +6829,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
 }
 
 #[test]
-fn accepts_bare_nested_lib_pin_hide_like_upstream() {
+fn rejects_bare_nested_lib_pin_hide_like_upstream() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6844,15 +6844,8 @@ fn accepts_bare_nested_lib_pin_hide_like_upstream() {
         (number "1"))))
 )"#;
     let path = temp_schematic("bare_lib_pin_hide", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must accept bare nested hide");
-    let lib_symbol = &schematic.screen.lib_symbols[0];
-    let pin = lib_symbol
-        .units
-        .iter()
-        .flat_map(|unit| unit.draw_items.iter())
-        .find(|item| item.kind == "pin")
-        .expect("pin draw item");
-    assert!(!pin.visible);
+    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bare nested hide");
+    assert!(err.to_string().contains("expecting yes or no"));
     let _ = fs::remove_file(path);
 }
 
