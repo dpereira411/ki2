@@ -190,7 +190,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `BuildSheetListSortedByPageNumbers`
   Status: first loader-side sheet-path list now exists and is fed from hierarchy links plus root `sheet_instances`; exact KiCad ordering/metadata is still incomplete.
 - `UpdateSymbolInstanceData`
-  Status: loader-side legacy `< 20221002` pass now applies root `symbol_instances` across the loaded hierarchy, seeds live symbol state from local instances, and preserves local instance value/footprint state. Remaining gap is fuller hierarchical-reference/state modeling.
+  Status: loader-side legacy `< 20221002` pass now applies root `symbol_instances` across the loaded hierarchy, preserves local instance value/footprint state, and keeps reused screens on the same first-instance-baseline / selected-occurrence model as the modern loader flow. Remaining gap is narrower hierarchical-reference/state modeling beyond the current symbol fields.
 - `UpdateSheetInstanceData`
   Status: loader-side page propagation now applies root `sheet_instances` onto the loaded sheet-path list; later per-screen page-number/count state now also derives from that sorted list. Current-sheet selection also refreshes reused-screen live page state. Remaining gap is fuller reused-screen/current-sheet semantics.
 - `SetSheetNumberAndCount`
