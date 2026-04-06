@@ -47,7 +47,7 @@ Boundary:
 
 | Upstream | Local | Status | Notes |
 | --- | --- | --- | --- |
-| `parseLibSymbol` | `parse_lib_symbol` | partial | helper boundaries, parser-owned lib unit/body-style state, and derived-symbol flattening are much closer; remaining work is finalization and exactness |
+| `parseLibSymbol` | `parse_lib_symbol` | partial | helper boundaries, parser-owned lib unit/body-style state, derived-symbol flattening, and finalization are much closer; remaining work is narrower exactness rather than broad ownership |
 | `parseBodyStyles` | `parse_body_styles` | done | helper boundary restored |
 | `parsePinNames` | `parse_pin_names` | done | helper boundary restored |
 | `parsePinNumbers` | `parse_pin_numbers` | done | helper boundary restored |
@@ -130,11 +130,12 @@ These are still parent/owner-sensitive leaves that many higher routines depend o
 
 Pick the first routine cluster whose direct dependencies above are no longer the bottleneck:
 
-1. Revisit `parse_lib_symbol` against upstream `parseLibSymbol()` plus the remaining draw-item/finalization exactness.
-2. Revisit `parse_eda_text` and the remaining shared text/effects exactness exposed by direct upstream comparison.
-3. Revisit `parse_sch_sheet` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
-4. Revisit `parse_schematic_symbol` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
-5. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
+1. Revisit `parse_eda_text` and the remaining shared text/effects exactness exposed by direct upstream comparison.
+2. Revisit `parse_sch_text` where shared text-family behavior still depends on those effects semantics.
+3. Revisit `parse_lib_symbol` only for concrete remaining exactness mismatches, not broad helper/finalization cleanup.
+4. Revisit `parse_sch_sheet` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
+5. Revisit `parse_schematic_symbol` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
+6. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
 
 ### Explicitly Deferred Until After This Map Is Exhausted
 

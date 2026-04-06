@@ -56,7 +56,8 @@ be:
 - `lib_symbols` improved a lot, but it is still not a true routine-by-routine port of upstream library symbol parsing
 - draw items now run on parser-owned current unit/body-style state like upstream, and helper section-head ownership is closer too
 - derived-symbol flattening is also closer now: child local-lib overlays are limited to the upstream field/keyword/fp-filter subset instead of carrying a broader repo-local inheritance model
-- remaining gaps are now more concentrated in `parseLibSymbol()` finalization and exact branch / error flow
+- parser-owned finalization is now much closer too: description-cache refresh and draw-item sorting are no longer hidden behind model helpers
+- remaining gaps are now more concentrated in narrower `parseLibSymbol()` branch / error exactness than in broad ownership or finalization flow
 
 7. Shape parsing still has gaps
 
@@ -127,13 +128,14 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Finish `parseLibSymbol()` / library draw-item routine parity.
-2. Tighten remaining exact `parseEDA_TEXT()` and shared text/effects semantics.
-3. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
-4. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
-5. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
-6. Do a parser-wide token/error parity pass.
-7. Port the missing cross-file post-load pipeline.
+1. Tighten remaining exact `parseEDA_TEXT()` and shared text/effects semantics.
+2. Revisit `parseSchText()` where that shared text/effects exactness still leaks into the owner routine.
+3. Finish the remaining narrower `parseLibSymbol()` exact branch / error parity.
+4. Revisit `parseSheet()` only for concrete remaining exactness mismatches.
+5. Revisit `parseSchematicSymbol()` only for concrete remaining exactness mismatches.
+6. Tighten remaining exact `parseSchField()` / library `parseProperty()` semantics when a parent routine exposes them.
+7. Do a parser-wide token/error parity pass.
+8. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
