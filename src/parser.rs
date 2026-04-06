@@ -3139,7 +3139,6 @@ impl KiCadSchematicParser {
     fn parse_sch_arc(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("arc")?;
         let mut shape = Shape::new(ShapeKind::Arc);
-        shape.points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3192,8 +3191,6 @@ impl KiCadSchematicParser {
     fn parse_sch_circle(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("circle")?;
         let mut shape = Shape::new(ShapeKind::Circle);
-        shape.points = vec![[0.0, 0.0]];
-        shape.radius = Some(0.0);
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3241,7 +3238,6 @@ impl KiCadSchematicParser {
     fn parse_sch_rectangle(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("rectangle")?;
         let mut shape = Shape::new(ShapeKind::Rectangle);
-        shape.points = vec![[0.0, 0.0], [0.0, 0.0]];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3294,7 +3290,6 @@ impl KiCadSchematicParser {
     fn parse_sch_bezier(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("bezier")?;
         let mut shape = Shape::new(ShapeKind::Bezier);
-        shape.points = vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]];
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {

@@ -1074,10 +1074,18 @@ impl Shape {
         let mut stroke = Stroke::new();
         stroke.width = Some(0.0);
 
+        let (points, radius) = match kind {
+            ShapeKind::Arc => (vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], None),
+            ShapeKind::Circle => (vec![[0.0, 0.0]], Some(0.0)),
+            ShapeKind::Rectangle => (vec![[0.0, 0.0], [0.0, 0.0]], None),
+            ShapeKind::Bezier => (vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], None),
+            ShapeKind::Polyline | ShapeKind::RuleArea => (Vec::new(), None),
+        };
+
         Self {
             kind,
-            points: Vec::new(),
-            radius: None,
+            points,
+            radius,
             corner_radius: None,
             has_stroke: false,
             has_fill: false,
@@ -1928,18 +1936,28 @@ mod tests {
 
     #[test]
     fn shapes_start_with_graphic_defaults() {
-        let shape = Shape::new(ShapeKind::Arc);
+        let arc = Shape::new(ShapeKind::Arc);
+        let circle = Shape::new(ShapeKind::Circle);
+        let rectangle = Shape::new(ShapeKind::Rectangle);
+        let bezier = Shape::new(ShapeKind::Bezier);
+        let polyline = Shape::new(ShapeKind::Polyline);
 
+        assert_eq!(arc.stroke.as_ref().expect("shape stroke").width, Some(0.0));
         assert_eq!(
-            shape.stroke.as_ref().expect("shape stroke").width,
-            Some(0.0)
-        );
-        assert_eq!(
-            shape.fill.as_ref().expect("shape fill").fill_type,
+            arc.fill.as_ref().expect("shape fill").fill_type,
             super::FillType::None
         );
-        assert!(!shape.has_stroke);
-        assert!(!shape.has_fill);
+        assert_eq!(arc.points, vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]);
+        assert_eq!(circle.points, vec![[0.0, 0.0]]);
+        assert_eq!(circle.radius, Some(0.0));
+        assert_eq!(rectangle.points, vec![[0.0, 0.0], [0.0, 0.0]]);
+        assert_eq!(
+            bezier.points,
+            vec![[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]
+        );
+        assert!(polyline.points.is_empty());
+        assert!(!arc.has_stroke);
+        assert!(!arc.has_fill);
     }
 
     #[test]
