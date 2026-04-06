@@ -913,11 +913,19 @@ impl SchematicLoader {
                         .as_ref()
                         .map(|property| property.value.trim().to_string())
                         .unwrap_or_default();
-                    let model = model_field
+                    let raw_model = model_field
                         .as_ref()
                         .map(|property| property.value.trim().to_string())
                         .filter(|value| !value.is_empty())
                         .unwrap_or_else(|| current_value.clone());
+                    let model = if lib_field.is_some() {
+                        raw_model
+                            .split_once(' ')
+                            .map(|(model_name, _)| model_name.to_string())
+                            .unwrap_or(raw_model)
+                    } else {
+                        raw_model
+                    };
                     let lib = lib_field
                         .as_ref()
                         .map(|property| property.value.trim().to_string())
