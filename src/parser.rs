@@ -3734,6 +3734,8 @@ impl KiCadSchematicParser {
                                 path,
                                 reference: None,
                                 unit: Some(1),
+                                value: None,
+                                footprint: None,
                                 variants: BTreeMap::new(),
                             };
                             while !self.at_right() {
@@ -3766,7 +3768,7 @@ impl KiCadSchematicParser {
                                     }
                                     "value" => {
                                         let _ = self.need_unquoted_symbol_atom("value")?;
-                                        let parsed = {
+                                        instance.value = Some({
                                             let value = self.need_symbol_atom("symbol")?;
                                             if self
                                                 .require_known_version()
@@ -3778,7 +3780,7 @@ impl KiCadSchematicParser {
                                             } else {
                                                 value
                                             }
-                                        };
+                                        });
                                         let existing = symbol
                                             .properties
                                             .iter_mut()
@@ -3791,12 +3793,15 @@ impl KiCadSchematicParser {
                                             .or(existing.id);
                                         existing.key =
                                             PropertyKind::SymbolValue.canonical_key().to_string();
-                                        existing.value = parsed;
+                                        existing.value = instance
+                                            .value
+                                            .clone()
+                                            .expect("instance value just parsed");
                                         self.need_right()?;
                                     }
                                     "footprint" => {
                                         let _ = self.need_unquoted_symbol_atom("footprint")?;
-                                        let parsed = {
+                                        instance.footprint = Some({
                                             let value = self.need_symbol_atom("symbol")?;
                                             if self
                                                 .require_known_version()
@@ -3808,7 +3813,7 @@ impl KiCadSchematicParser {
                                             } else {
                                                 value
                                             }
-                                        };
+                                        });
                                         let existing = symbol
                                             .properties
                                             .iter_mut()
@@ -3822,7 +3827,10 @@ impl KiCadSchematicParser {
                                         existing.key = PropertyKind::SymbolFootprint
                                             .canonical_key()
                                             .to_string();
-                                        existing.value = parsed;
+                                        existing.value = instance
+                                            .footprint
+                                            .clone()
+                                            .expect("instance footprint just parsed");
                                         self.need_right()?;
                                     }
                                     "variant" => {

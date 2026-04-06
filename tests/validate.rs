@@ -8351,6 +8351,11 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
     assert_eq!(symbol.pins[0].uuid.as_deref(), Some("pin-u"));
     assert_eq!(symbol.instances[0].project, "demo");
     assert_eq!(symbol.instances[0].path, "/A");
+    assert_eq!(symbol.instances[0].value.as_deref(), Some("10k"));
+    assert_eq!(
+        symbol.instances[0].footprint.as_deref(),
+        Some("Resistor_SMD:R_0603")
+    );
     assert_eq!(symbol.instances[0].variants.len(), 1);
     let sym_variant = symbol.instances[0]
         .variants
@@ -8419,6 +8424,11 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
 
     assert_eq!(symbol.instances[0].reference, None);
     assert_eq!(symbol.instances[0].unit, Some(1));
+    assert_eq!(symbol.instances[0].value.as_deref(), Some("instance-value"));
+    assert_eq!(
+        symbol.instances[0].footprint.as_deref(),
+        Some("instance-footprint")
+    );
     assert_eq!(
         symbol
             .properties
