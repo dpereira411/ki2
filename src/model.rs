@@ -303,10 +303,6 @@ impl LibSymbol {
         self.sync_description_from_property();
     }
 
-    pub fn push_root_draw_item(&mut self, item: LibDrawItem) {
-        self.add_draw_item(item);
-    }
-
     pub fn sort_draw_items(&mut self) {
         for unit in &mut self.units {
             unit.draw_items.sort();
@@ -1885,7 +1881,7 @@ mod tests {
 
         let mut field = LibDrawItem::new("field", 1, 1);
         field.field_ordinal = Some(42);
-        symbol.push_root_draw_item(field);
+        symbol.add_draw_item(field);
 
         assert_eq!(symbol.next_field_ordinal(), 43);
     }
@@ -1928,13 +1924,13 @@ mod tests {
     #[test]
     fn lib_symbol_sorts_draw_items_by_kicad_type_order() {
         let mut symbol = LibSymbol::new("Device:R".to_string());
-        symbol.push_root_draw_item(LibDrawItem::new("pin", 1, 1));
-        symbol.push_root_draw_item(LibDrawItem::new("text_box", 1, 1));
-        symbol.push_root_draw_item(LibDrawItem::new("text", 1, 1));
+        symbol.add_draw_item(LibDrawItem::new("pin", 1, 1));
+        symbol.add_draw_item(LibDrawItem::new("text_box", 1, 1));
+        symbol.add_draw_item(LibDrawItem::new("text", 1, 1));
         let mut field = LibDrawItem::new("field", 1, 1);
         field.field_ordinal = Some(42);
-        symbol.push_root_draw_item(field);
-        symbol.push_root_draw_item(LibDrawItem::new("circle", 1, 1));
+        symbol.add_draw_item(field);
+        symbol.add_draw_item(LibDrawItem::new("circle", 1, 1));
 
         symbol.sort_draw_items();
 
