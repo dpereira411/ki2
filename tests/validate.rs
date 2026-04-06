@@ -6454,6 +6454,22 @@ fn load_tree_migrates_comma_separated_legacy_source_fields() {
         symbol
             .sim_model
             .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![
+            ("y1".to_string(), "0".to_string()),
+            ("y2".to_string(), "2".to_string()),
+            ("td".to_string(), "1n".to_string()),
+            ("tr".to_string(), "2n".to_string()),
+            ("tf".to_string(), "3n".to_string()),
+            ("tw".to_string(), "4n".to_string()),
+            ("per".to_string(), "5n".to_string()),
+            ("np".to_string(), "6".to_string()),
+        ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .map(|sim_model| sim_model.param_values.clone()),
         Some(BTreeMap::from([
             ("np".to_string(), "6".to_string()),

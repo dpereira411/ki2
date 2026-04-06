@@ -1142,10 +1142,11 @@ impl Symbol {
             .iter()
             .find(|property| property.key == "Sim.Params")
             .map(|property| property.value.clone());
-        let param_values = params
+        let param_pairs = params
             .as_deref()
-            .map(parse_sim_param_values)
+            .map(parse_sim_param_pairs)
             .unwrap_or_default();
+        let param_values = param_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
         let model_type = explicit_model_type.or_else(|| {
             param_values
                 .get("type")
@@ -1199,6 +1200,7 @@ impl Symbol {
             ibis_pin,
             ibis_model,
             params,
+            param_pairs,
             param_values,
             pins,
         });
@@ -1214,12 +1216,13 @@ pub struct SimModel {
     pub ibis_pin: Option<String>,
     pub ibis_model: Option<String>,
     pub params: Option<String>,
+    pub param_pairs: Vec<(String, String)>,
     pub param_values: BTreeMap<String, String>,
     pub pins: BTreeMap<String, String>,
 }
 
-fn parse_sim_param_values(params: &str) -> BTreeMap<String, String> {
-    let mut values = BTreeMap::new();
+fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
+    let mut values = Vec::new();
     let mut chars = params.chars().peekable();
 
     while chars.peek().is_some() {
@@ -1282,7 +1285,7 @@ fn parse_sim_param_values(params: &str) -> BTreeMap<String, String> {
             value
         };
 
-        values.insert(key, value);
+        values.push((key, value));
     }
 
     values
@@ -1593,6 +1596,17 @@ mod tests {
             symbol
                 .sim_model
                 .as_ref()
+                .map(|sim_model| sim_model.param_pairs.clone()),
+            Some(vec![
+                ("type".to_string(), "Q".to_string()),
+                ("model".to_string(), "BC\"547".to_string()),
+                ("lib".to_string(), "models.lib".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
                 .map(|sim_model| sim_model.param_values.clone()),
             Some(BTreeMap::from([
                 ("lib".to_string(), "models.lib".to_string()),
@@ -1662,11 +1676,59 @@ mod tests {
             symbol
                 .sim_model
                 .as_ref()
+                .map(|sim_model| sim_model.param_pairs.clone()),
+            Some(vec![
+                ("type".to_string(), "Q".to_string()),
+                ("model".to_string(), "BC\"547".to_string()),
+                ("lib".to_string(), "models.lib".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
                 .map(|sim_model| sim_model.param_values.clone()),
             Some(BTreeMap::from([
                 ("lib".to_string(), "models.lib".to_string()),
                 ("model".to_string(), "BC\"547".to_string()),
                 ("type".to_string(), "Q".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn symbol_preserves_duplicate_and_ordered_sim_param_pairs() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Params",
+            r#"gain=1 gain=2 mode="fast" extra="x y""#.to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_pairs.clone()),
+            Some(vec![
+                ("gain".to_string(), "1".to_string()),
+                ("gain".to_string(), "2".to_string()),
+                ("mode".to_string(), "fast".to_string()),
+                ("extra".to_string(), "x y".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_values.clone()),
+            Some(BTreeMap::from([
+                ("extra".to_string(), "x y".to_string()),
+                ("gain".to_string(), "2".to_string()),
+                ("mode".to_string(), "fast".to_string()),
             ]))
         );
     }
