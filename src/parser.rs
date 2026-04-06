@@ -1594,9 +1594,9 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3_lib("text at")?;
-                    item.at = Some([parsed[0], parsed[1]]);
-                    item.angle = Some(parsed[2] / 10.0);
+                    let pos = self.parse_xy2_lib("text at")?;
+                    item.at = Some(pos);
+                    item.angle = Some(self.parse_f64_atom("text angle")? / 10.0);
                     self.need_right()?;
                 }
                 "effects" => {
@@ -1666,9 +1666,8 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3_lib("text_box at")?;
-                    pos = Some([parsed[0], parsed[1]]);
-                    item.angle = Some(parsed[2]);
+                    pos = Some(self.parse_xy2_lib("text_box at")?);
+                    item.angle = Some(self.parse_f64_atom("textbox angle")?);
                     self.need_right()?;
                 }
                 "size" => {
@@ -2471,18 +2470,18 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("text at")?;
                     match &mut item {
                         ParsedSchText::Text(text) => {
-                            text.at = [parsed[0], parsed[1], Self::normalize_text_angle(parsed[2])];
+                            let pos = self.parse_xy2("text at")?;
+                            let angle =
+                                Self::normalize_text_angle(self.parse_f64_atom("text angle")?);
+                            text.at = [pos[0], pos[1], angle];
                         }
                         ParsedSchText::Label(label) => {
-                            let angle = Self::normalize_text_angle(parsed[2]);
-                            label.set_position(
-                                [parsed[0], parsed[1]],
-                                angle,
-                                Self::get_label_spin_style(angle),
-                            );
+                            let pos = self.parse_xy2("text at")?;
+                            let angle =
+                                Self::normalize_text_angle(self.parse_f64_atom("text angle")?);
+                            label.set_position(pos, angle, Self::get_label_spin_style(angle));
                         }
                     }
                     self.need_right()?;
@@ -2701,11 +2700,11 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("text_box at")?;
-                    pos = Some([parsed[0], parsed[1]]);
+                    pos = Some(self.parse_xy2("text_box at")?);
+                    let angle = self.parse_f64_atom("textbox angle")?;
                     match &mut owner {
-                        ParsedTextBoxOwner::TextBox(text_box) => text_box.angle = parsed[2],
-                        ParsedTextBoxOwner::TableCell(text_box) => text_box.angle = parsed[2],
+                        ParsedTextBoxOwner::TextBox(text_box) => text_box.angle = angle,
+                        ParsedTextBoxOwner::TableCell(text_box) => text_box.angle = angle,
                     }
                     self.need_right()?;
                 }
@@ -3467,10 +3466,11 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("symbol at")?;
-                    match parsed[2] as i32 {
+                    let pos = self.parse_xy2("symbol at")?;
+                    let angle = self.parse_f64_atom("symbol orientation")?;
+                    match angle as i32 {
                         0 | 90 | 180 | 270 => {
-                            symbol.set_position([parsed[0], parsed[1]], parsed[2]);
+                            symbol.set_position(pos, angle);
                         }
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }
@@ -4388,15 +4388,15 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("sheet pin at")?;
-                    let parsed_side = match parsed[2] as i32 {
+                    let at = self.parse_xy2("sheet pin at")?;
+                    let parsed_side = match self.parse_i32_atom("sheet pin angle")? {
                         0 => SheetSide::Right,
                         90 => SheetSide::Top,
                         180 => SheetSide::Left,
                         270 => SheetSide::Bottom,
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     };
-                    sheet_pin.at = [parsed[0], parsed[1]];
+                    sheet_pin.at = at;
                     sheet_pin.constrain_on_sheet_edge(sheet.at, sheet.size, true);
                     sheet_pin.set_side_with_sheet_geometry(sheet.at, sheet.size, parsed_side);
                     self.need_right()?;
@@ -4786,9 +4786,8 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("property at")?;
-                    property.at = Some([parsed[0], parsed[1]]);
-                    property.angle = Some(parsed[2]);
+                    property.at = Some(self.parse_xy2("property at")?);
+                    property.angle = Some(self.parse_f64_atom("text angle")?);
                     self.need_right()?;
                 }
                 "hide" => {
@@ -5304,14 +5303,6 @@ impl KiCadSchematicParser {
         Ok([
             self.parse_internal_units_atom(format!("{context} x"))?,
             self.parse_internal_units_atom(format!("{context} y"))?,
-        ])
-    }
-
-    fn parse_xy3(&mut self, context: &str) -> Result<[f64; 3], Error> {
-        Ok([
-            self.parse_internal_units_atom(format!("{context} x"))?,
-            self.parse_internal_units_atom(format!("{context} y"))?,
-            self.parse_f64_atom(format!("{context} angle"))?,
         ])
     }
 
