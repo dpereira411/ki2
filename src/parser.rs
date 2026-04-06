@@ -5201,7 +5201,11 @@ impl KiCadSchematicParser {
         effects.h_justify = TextHJustify::Center;
         effects.v_justify = TextVJustify::Center;
 
-        let _ = self.need_unquoted_symbol_atom("effects")?;
+        if self.at_unquoted_symbol_with("effects") {
+            let _ = self.need_unquoted_symbol_atom("effects")?;
+        } else if !self.at_unquoted_symbol_with("href") {
+            return Err(self.expecting("effects"));
+        }
 
         while !self.at_right() {
             let section_is_list = matches!(self.current().kind, TokKind::Left);
@@ -6591,7 +6595,9 @@ impl KiCadSchematicParser {
 
 #[cfg(test)]
 mod parser_tests {
-    use super::KiCadSchematicParser;
+    use super::{KiCadSchematicParser, ParsedEdaTextOwner, Text, TextKind};
+    use crate::token::lex;
+    use std::path::PathBuf;
 
     #[test]
     fn reads_jfif_jpeg_ppi_in_inches() {
@@ -6613,5 +6619,25 @@ mod parser_tests {
 
         assert_eq!(KiCadSchematicParser::read_jpeg_ppi(&data), Some(299.72));
         assert_eq!(KiCadSchematicParser::read_image_ppi(&data), Some(299.72));
+    }
+
+    #[test]
+    fn parse_eda_text_accepts_direct_href_entry() {
+        let tokens = lex(r#"(href "https://example.com")"#).expect("lex");
+        let mut parser = KiCadSchematicParser::new(PathBuf::from("direct_href.kicad_sch"), tokens);
+        parser.need_left().expect("open href section");
+
+        let mut text = Text::new(TextKind::Text, "hello".to_string());
+        parser
+            .parse_eda_text(ParsedEdaTextOwner::text(&mut text), true, true)
+            .expect("direct href should parse like upstream");
+
+        assert_eq!(
+            text.effects
+                .as_ref()
+                .and_then(|effects| effects.hyperlink.as_deref()),
+            Some("https://example.com")
+        );
+        assert_eq!(parser.idx, parser.tokens.len() - 1);
     }
 }
