@@ -14,7 +14,8 @@ use ki2::model::{
 };
 use ki2::parser::parse_schematic_file;
 use ki2::sim::{
-    SimLibrarySource, collect_symbol_sim_library_sources, resolve_symbol_sim_library_source,
+    SimLibraryContent, SimLibrarySource, collect_symbol_sim_library_sources,
+    load_symbol_sim_library_content, resolve_symbol_sim_library_source,
 };
 use uuid::Uuid;
 
@@ -5712,6 +5713,119 @@ fn resolves_symbol_sim_library_source_to_filesystem_when_not_embedded() {
     );
 
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn loads_symbol_sim_library_content_from_embedded_source() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000312")
+  (paper "A4")
+  (embedded_files
+    (file (name "top.kicad_sim") (type model) (data |model-text|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_embedded_sim_library_content", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        load_symbol_sim_library_content(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryContent {
+            source: SimLibrarySource::SchematicEmbedded {
+                name: "top.kicad_sim".to_string(),
+            },
+            text: "model-text".to_string(),
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn loads_symbol_sim_library_content_from_filesystem() {
+    let dir = env::temp_dir().join(format!(
+        "sim_lib_content_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(dir.join("models")).expect("create dir");
+    fs::write(dir.join("models/model.kicad_sim"), "file-model").expect("write sim lib");
+    let path = dir.join("content_loader.kicad_sch");
+    fs::write(
+        &path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000313")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models/model.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#,
+    )
+    .expect("write schematic");
+
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        load_symbol_sim_library_content(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryContent {
+            source: SimLibrarySource::Filesystem(
+                schematic
+                    .path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join("models/model.kicad_sim"),
+            ),
+            text: "file-model".to_string(),
+        })
+    );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
+    let _ = fs::remove_dir(dir.join("models"));
+    let _ = fs::remove_dir(dir);
 }
 
 #[test]
