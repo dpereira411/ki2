@@ -3744,8 +3744,11 @@ impl KiCadSchematicParser {
                                                 "name" => {
                                                     let _ =
                                                         self.need_unquoted_symbol_atom("name")?;
-                                                    variant.name =
-                                                        self.need_symbol_atom("symbol")?;
+                                                    variant.name = self
+                                                        .need_symbol_atom("symbol")
+                                                        .map_err(|_| {
+                                                            self.error_here("Invalid variant name")
+                                                        })?;
                                                     self.need_right()?;
                                                 }
                                                 "dnp" => {
@@ -3820,7 +3823,12 @@ impl KiCadSchematicParser {
                                                                         "name",
                                                                     )?;
                                                                 field_name = self
-                                                                    .need_symbol_atom("symbol")?;
+                                                                    .need_symbol_atom("symbol")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field name",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             "value" => {
@@ -3829,7 +3837,12 @@ impl KiCadSchematicParser {
                                                                         "value",
                                                                     )?;
                                                                 field_value = self
-                                                                    .need_symbol_atom("symbol")?;
+                                                                    .need_symbol_atom("symbol")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field value",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             _ => {
@@ -4150,8 +4163,11 @@ impl KiCadSchematicParser {
                                                 "name" => {
                                                     let _ =
                                                         self.need_unquoted_symbol_atom("name")?;
-                                                    variant.name =
-                                                        self.need_symbol_atom("symbol")?;
+                                                    variant.name = self
+                                                        .need_symbol_atom("symbol")
+                                                        .map_err(|_| {
+                                                            self.error_here("Invalid variant name")
+                                                        })?;
                                                     self.need_right()?;
                                                 }
                                                 "dnp" => {
@@ -4226,7 +4242,12 @@ impl KiCadSchematicParser {
                                                                         "name",
                                                                     )?;
                                                                 field_name = self
-                                                                    .need_symbol_atom("symbol")?;
+                                                                    .need_symbol_atom("symbol")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field name",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             "value" => {
@@ -4235,7 +4256,12 @@ impl KiCadSchematicParser {
                                                                         "value",
                                                                     )?;
                                                                 field_value = self
-                                                                    .need_symbol_atom("symbol")?;
+                                                                    .need_symbol_atom("symbol")
+                                                                    .map_err(|_| {
+                                                                        self.error_here(
+                                                                            "Invalid variant field value",
+                                                                        )
+                                                                    })?;
                                                                 self.need_right()?;
                                                             }
                                                             _ => {
