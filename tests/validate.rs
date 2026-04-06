@@ -7789,7 +7789,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_text_box_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-text-box-head")
+  (uuid "60000000-0000-0000-0000-000000000001")
   (text_box "body" ("size" 3 4))
 )"#;
     let quoted_text_box_head_path = temp_schematic("quoted_text_box_head", quoted_text_box_head);
@@ -7803,7 +7803,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_text_box_margins_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-text-box-margins-head")
+  (uuid "60000000-0000-0000-0000-000000000002")
   (text_box "body" ("margins" 1 2 3 4) (size 3 4))
 )"#;
     let quoted_text_box_margins_head_path =
@@ -7818,7 +7818,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_table_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-table-head")
+  (uuid "60000000-0000-0000-0000-000000000003")
   (table
     ("column_count" 1)
     (cells (table_cell "c" (at 0 0 0) (size 5 5))))
@@ -7833,7 +7833,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_table_cell_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-table-cell-head")
+  (uuid "60000000-0000-0000-0000-000000000004")
   (table
     (column_count 1)
     (cells ("table_cell" "c" (at 0 0 0) (size 5 5))))
@@ -7847,7 +7847,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_table_cell_span_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-table-cell-span-head")
+  (uuid "60000000-0000-0000-0000-000000000005")
   (table
     (column_count 1)
     (cells (table_cell "c" ("span" 1 1) (at 0 0 0) (size 5 5))))
@@ -7864,7 +7864,7 @@ fn rejects_quoted_text_box_table_and_image_keyword_heads() {
     let quoted_image_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-image-head")
+  (uuid "60000000-0000-0000-0000-000000000006")
   (image ("scale" 2.0) (data "AA=="))
 )"#;
     let quoted_image_head_path = temp_schematic("quoted_image_head", quoted_image_head);
@@ -7888,7 +7888,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
     let quoted_polyline_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-polyline-head")
+  (uuid "60000000-0000-0000-0000-000000000007")
   (polyline ("pts" (xy 0 0) (xy 1 1)))
 )"#;
     let quoted_polyline_head_path = temp_schematic("quoted_polyline_head", quoted_polyline_head);
@@ -7902,7 +7902,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
     let quoted_arc_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-arc-head")
+  (uuid "60000000-0000-0000-0000-000000000008")
   (arc ("start" 0 0) (mid 1 1) (end 2 0))
 )"#;
     let quoted_arc_head_path = temp_schematic("quoted_arc_head", quoted_arc_head);
@@ -7916,7 +7916,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
     let quoted_circle_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-circle-head")
+  (uuid "60000000-0000-0000-0000-000000000009")
   (circle ("center" 0 0) (radius 5))
 )"#;
     let quoted_circle_head_path = temp_schematic("quoted_circle_head", quoted_circle_head);
@@ -7930,7 +7930,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
     let quoted_rectangle_radius_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-rectangle-radius-head")
+  (uuid "60000000-0000-0000-0000-00000000000a")
   (rectangle (start 0 0) (end 1 1) ("radius" 0.5))
 )"#;
     let quoted_rectangle_radius_head_path =
@@ -7945,7 +7945,7 @@ fn rejects_quoted_schematic_shape_keyword_heads() {
     let quoted_rule_area_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-rule-area-head")
+  (uuid "60000000-0000-0000-0000-00000000000b")
   (rule_area ("polyline" (pts (xy 0 0) (xy 1 0) (xy 1 1))))
 )"#;
     let quoted_rule_area_head_path = temp_schematic("quoted_rule_area_head", quoted_rule_area_head);
@@ -7968,7 +7968,7 @@ fn rejects_quoted_junction_no_connect_and_bus_entry_heads() {
     let quoted_junction_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-junction-head")
+  (uuid "60000000-0000-0000-0000-00000000000c")
   (junction ("at" 1 2))
 )"#;
     let quoted_junction_head_path = temp_schematic("quoted_junction_head", quoted_junction_head);
@@ -7982,7 +7982,7 @@ fn rejects_quoted_junction_no_connect_and_bus_entry_heads() {
     let quoted_no_connect_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-no-connect-head")
+  (uuid "60000000-0000-0000-0000-00000000000d")
   (no_connect ("at" 1 2))
 )"#;
     let quoted_no_connect_head_path =
@@ -7994,7 +7994,7 @@ fn rejects_quoted_junction_no_connect_and_bus_entry_heads() {
     let quoted_bus_entry_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-bus-entry-head")
+  (uuid "60000000-0000-0000-0000-00000000000e")
   (bus_entry ("at" 1 2) (size 3 4))
 )"#;
     let quoted_bus_entry_head_path = temp_schematic("quoted_bus_entry_head", quoted_bus_entry_head);
@@ -8015,7 +8015,7 @@ fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
     let quoted_power_scope = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-power-scope")
+  (uuid "60000000-0000-0000-0000-00000000000f")
   (lib_symbols
     (symbol "MyLib:U"
       (power "local")))
@@ -8028,7 +8028,7 @@ fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
     let quoted_stroke_type = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-stroke-type")
+  (uuid "60000000-0000-0000-0000-000000000010")
   (wire (pts (xy 0 0) (xy 1 1)) (stroke (type "dash")))
 )"#;
     let quoted_stroke_type_path = temp_schematic("quoted_stroke_type", quoted_stroke_type);
@@ -8042,7 +8042,7 @@ fn rejects_quoted_lib_power_and_stroke_fill_type_tokens() {
     let quoted_fill_type = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-fill-type")
+  (uuid "60000000-0000-0000-0000-000000000011")
   (polyline (pts (xy 0 0) (xy 1 0) (xy 1 1)) (fill (type "color")))
 )"#;
     let quoted_fill_type_path = temp_schematic("quoted_fill_type", quoted_fill_type);
@@ -8062,7 +8062,7 @@ fn rejects_quoted_bare_hide_in_lib_pin_names_and_numbers() {
     let quoted_pin_names_hide = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-pin-names-hide")
+  (uuid "60000000-0000-0000-0000-000000000012")
   (lib_symbols
     (symbol "MyLib:U"
       (pin_names "hide")))
@@ -8075,7 +8075,7 @@ fn rejects_quoted_bare_hide_in_lib_pin_names_and_numbers() {
     let quoted_pin_numbers_hide = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-pin-numbers-hide")
+  (uuid "60000000-0000-0000-0000-000000000013")
   (lib_symbols
     (symbol "MyLib:U"
       (pin_numbers "hide")))
@@ -8095,7 +8095,7 @@ fn quoted_demorgan_in_body_styles_is_not_the_keyword_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-demorgan")
+  (uuid "60000000-0000-0000-0000-000000000014")
   (lib_symbols
     (symbol "MyLib:U"
       (body_styles "demorgan" "ALT")))
@@ -8119,7 +8119,7 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
     let quoted_pin_names_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-pin-names-head")
+  (uuid "60000000-0000-0000-0000-000000000015")
   (lib_symbols
     (symbol "MyLib:U"
       (pin_names ("hide" yes))))
@@ -8132,7 +8132,7 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
     let quoted_pin_numbers_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-pin-numbers-head")
+  (uuid "60000000-0000-0000-0000-000000000016")
   (lib_symbols
     (symbol "MyLib:U"
       (pin_numbers ("hide" yes))))
@@ -8146,7 +8146,7 @@ fn rejects_quoted_pin_names_and_pin_numbers_list_heads() {
     let quoted_pin_names_offset = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-pin-names-offset")
+  (uuid "60000000-0000-0000-0000-000000000017")
   (lib_symbols
     (symbol "MyLib:U"
       (pin_names ("offset" 0.5))))
@@ -8167,7 +8167,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
     let quoted_group_locked = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-locked")
+  (uuid "60000000-0000-0000-0000-000000000018")
   (group "locked" (uuid "g-1") (members))
 )"#;
     let quoted_group_locked_path = temp_schematic("quoted_group_locked", quoted_group_locked);
@@ -8181,7 +8181,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
     let quoted_property_private = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-private")
+  (uuid "60000000-0000-0000-0000-000000000019")
   (symbol
     (lib_id "Device:R")
     (property "private" "x"))
@@ -8210,7 +8210,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
     let quoted_lib_text_private = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-text-private")
+  (uuid "60000000-0000-0000-0000-00000000001a")
   (lib_symbols
     (symbol "MyLib:U"
       (symbol "U_1_1"
@@ -8233,7 +8233,7 @@ fn rejects_quoted_private_locked_and_bare_lib_pin_hide_keywords() {
     let quoted_lib_pin_hide = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-pin-hide")
+  (uuid "60000000-0000-0000-0000-00000000001b")
   (lib_symbols
     (symbol "MyLib:U"
       (pin input line "hide" (at 0 0 0) (length 2.54) (name "PIN") (number "1"))))
@@ -8254,7 +8254,7 @@ fn rejects_bare_nested_lib_pin_hide_like_upstream() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-lib-pin-hide")
+  (uuid "60000000-0000-0000-0000-00000000001c")
   (lib_symbols
     (symbol "MyLib:U"
       (pin input line
@@ -8275,7 +8275,7 @@ fn accepts_unquoted_jumper_pin_group_names() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-unquoted-jumper-pin-group")
+  (uuid "60000000-0000-0000-0000-00000000001d")
   (lib_symbols
     (symbol "MyLib:U"
       (jumper_pin_groups
@@ -8303,7 +8303,7 @@ fn rejects_unquoted_stroke_keywords_in_jumper_pin_groups() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-keyword-jumper-pin-group")
+  (uuid "60000000-0000-0000-0000-00000000001e")
   (lib_symbols
     (symbol "MyLib:U"
       (jumper_pin_groups
@@ -8321,7 +8321,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
     let quoted_lib_rectangle_start = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-rectangle-start")
+  (uuid "60000000-0000-0000-0000-00000000001f")
   (lib_symbols
     (symbol "MyLib:U"
       (rectangle ("start" 0 0) (end 1 1))))
@@ -8338,7 +8338,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
     let quoted_lib_rectangle_radius = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-rectangle-radius")
+  (uuid "60000000-0000-0000-0000-000000000020")
   (lib_symbols
     (symbol "MyLib:U"
       (rectangle (start 0 0) (end 1 1) ("radius" 0.5))))
@@ -8355,7 +8355,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
     let quoted_lib_text_at = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-text-at")
+  (uuid "60000000-0000-0000-0000-000000000021")
   (lib_symbols
     (symbol "MyLib:U"
       (text "TXT" ("at" 0 0 90))))
@@ -8368,7 +8368,7 @@ fn rejects_quoted_lib_draw_item_list_heads() {
     let quoted_lib_text_box_effects = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-textbox-effects")
+  (uuid "60000000-0000-0000-0000-000000000022")
   (lib_symbols
     (symbol "MyLib:U"
       (text_box "TXT" ("effects" (font (size 1 1))) (size 1 1))))
@@ -8431,7 +8431,7 @@ fn parses_shared_effects_payload_and_text_hide_override() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "60000000-0000-0000-0000-000000000023")
   (paper "A4")
   (text "note" (at 1 2 180)
     (effects
@@ -8478,7 +8478,7 @@ fn clamps_minimum_effects_font_size_for_schematic_text_family() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-text-size")
+  (uuid "60000000-0000-0000-0000-000000000024")
   (paper "A4")
   (text "note" (effects (font (size 0 999))))
 )"#;
@@ -8508,7 +8508,7 @@ fn library_text_clamps_but_pin_name_and_number_effects_do_not() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-lib-unclamped-text-size")
+  (uuid "60000000-0000-0000-0000-000000000025")
   (lib_symbols
     (symbol "Device:R"
       (symbol "R_1_1"
@@ -8571,7 +8571,7 @@ fn clamps_internal_unit_effects_and_pin_name_offset() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-clamped-effects-units")
+  (uuid "60000000-0000-0000-0000-000000000026")
   (paper "A4")
   (text "note" (effects (font (size 9999999 9999999) (thickness 9999999))))
   (lib_symbols
@@ -8623,7 +8623,7 @@ fn shared_text_family_forces_visible_after_effects_hide() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "60000000-0000-0000-0000-000000000027")
   (paper "A4")
   (global_label "GL" (shape input) (at 1 2 180)
     (effects
@@ -8654,7 +8654,7 @@ fn rejects_invalid_effects_hyperlink() {
     let src = r#"(kicad_sch
   (version 20231120)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "60000000-0000-0000-0000-000000000028")
   (paper "A4")
   (text "note" (at 1 2 0) (effects (href "not-a-url")))
 )"#;
@@ -8672,7 +8672,7 @@ fn rejects_digit_started_effects_hyperlink_scheme() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bad-effects-digit-scheme")
+  (uuid "60000000-0000-0000-0000-000000000029")
   (text "note" (at 1 2 0) (effects (href "1ttp://example.com")))
 )"#;
     let path = temp_schematic("bad_effects_digit_scheme_href", src);
@@ -8690,7 +8690,7 @@ fn accepts_spaces_in_effects_hyperlink_like_native_kicad() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bad-effects-space")
+  (uuid "60000000-0000-0000-0000-00000000002a")
   (text "note" (at 1 2 0) (effects (href "https://example.com bad")))
 )"#;
     let path = temp_schematic("bad_effects_space_href", src);
@@ -8719,7 +8719,7 @@ fn converts_legacy_overbar_text_and_labels() {
     let src = r#"(kicad_sch
   (version 20210605)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "60000000-0000-0000-0000-00000000002b")
   (paper "A4")
   (text "~RST~" (at 1 2 180) (effects (font (size 1 1))))
   (global_label "~BUS~" (shape input) (at 5 6 180) (effects (font (size 1 1))))
@@ -8932,7 +8932,7 @@ fn parses_upstream_bus_alias_and_legacy_overbar_notation() {
     let src = r#"(kicad_sch
   (version 20210620)
   (generator "eeschema")
-  (uuid "root-uuid")
+  (uuid "60000000-0000-0000-0000-00000000002c")
   (paper "A4")
   (bus_alias "~BUS~" (members "~A0~" "~A1~"))
 )"#;
@@ -8952,7 +8952,7 @@ fn accepts_unquoted_bus_alias_members_like_upstream() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bus-alias-unquoted")
+  (uuid "60000000-0000-0000-0000-00000000002d")
   (bus_alias "ADDR" (members A0 A1))
 )"#;
     let path = temp_schematic("unquoted_bus_alias_members", src);
@@ -8967,7 +8967,7 @@ fn rejects_invalid_bus_alias_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bus-alias")
+  (uuid "60000000-0000-0000-0000-00000000002e")
   (bus_alias (bogus) (members "A0" "A1"))
 )"#;
     let path = temp_schematic("bad_bus_alias_name", src);
@@ -8981,7 +8981,7 @@ fn rejects_invalid_bus_alias_member_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bus-alias-member")
+  (uuid "60000000-0000-0000-0000-00000000002f")
   (bus_alias "ADDR" (members (bogus)))
 )"#;
     let path = temp_schematic("bad_bus_alias_member", src);
@@ -8995,7 +8995,7 @@ fn allows_empty_bus_alias_members_like_upstream() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bus-alias-empty")
+  (uuid "60000000-0000-0000-0000-000000000030")
   (bus_alias "ADDR" (members))
 )"#;
     let path = temp_schematic("empty_bus_alias_members", src);
