@@ -14,10 +14,10 @@ use ki2::model::{
 use ki2::parser::parse_schematic_file;
 
 fn fixture(path: &str) -> PathBuf {
-    PathBuf::from(
-        "/Users/Daniel/Desktop/modular/tools/kiutils-rs/crates/kiutils_kicad/tests/fixtures",
-    )
-    .join(path)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(path)
 }
 
 fn temp_schematic(name: &str, src: &str) -> PathBuf {
@@ -325,12 +325,21 @@ fn validates_hierarchical_tree_fixture() {
     let loaded = load_schematic_tree(&fixture("hierarchical.kicad_sch")).expect("tree must load");
     assert_eq!(loaded.schematics.len(), 2);
     assert_eq!(loaded.links.len(), 1);
-    assert_eq!(loaded.links[0].sheet_uuid.as_deref(), Some("sheet-uuid-1"));
+    assert_eq!(
+        loaded.links[0].sheet_uuid.as_deref(),
+        Some("73000000-0000-0000-0000-000000000002")
+    );
     assert_eq!(loaded.links[0].sheet_name.as_deref(), Some("PowerSection"));
 
     let root = &loaded.schematics[0];
-    assert_eq!(root.root_sheet.uuid.as_deref(), Some("root-sch-uuid-1234"));
-    assert_eq!(root.screen.uuid.as_deref(), Some("root-sch-uuid-1234"));
+    assert_eq!(
+        root.root_sheet.uuid.as_deref(),
+        Some("73000000-0000-0000-0000-000000000001")
+    );
+    assert_eq!(
+        root.screen.uuid.as_deref(),
+        Some("73000000-0000-0000-0000-000000000001")
+    );
     assert_eq!(root.screen.sheet_instances.len(), 1);
     assert_eq!(root.screen.symbol_instances.len(), 2);
     assert!(
@@ -345,7 +354,10 @@ fn validates_hierarchical_tree_fixture() {
 
     let project = SchematicProject::from_load_result(loaded);
     let root = project.root().expect("root schematic");
-    assert_eq!(root.root_sheet.uuid.as_deref(), Some("root-sch-uuid-1234"));
+    assert_eq!(
+        root.root_sheet.uuid.as_deref(),
+        Some("73000000-0000-0000-0000-000000000001")
+    );
     assert_eq!(project.sheet_paths.len(), 2);
     assert_eq!(
         project
