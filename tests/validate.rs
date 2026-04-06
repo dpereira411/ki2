@@ -8817,7 +8817,7 @@ fn rejects_invalid_lib_symbol_unit_name_token() {
 }
 
 #[test]
-fn ignores_numeric_lib_unit_name_token() {
+fn rejects_numeric_lib_unit_name_token() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -8828,12 +8828,9 @@ fn ignores_numeric_lib_unit_name_token() {
         (unit_name 123))))
 )"#;
     let path = temp_schematic("bad_lib_unit_name_token", src);
-    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
-    assert_eq!(schematic.screen.lib_symbols.len(), 1);
-    assert_eq!(schematic.screen.lib_symbols[0].units.len(), 1);
-    assert_eq!(schematic.screen.lib_symbols[0].units[0].name, "R_1_1");
-    assert_eq!(schematic.screen.lib_symbols[0].units[0].unit_name, None);
-    assert!(schematic.screen.parse_warnings.is_empty());
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject numeric lib unit_name token");
+    assert!(err.to_string().contains("expecting )"));
     let _ = fs::remove_file(path);
 }
 
