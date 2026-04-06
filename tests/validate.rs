@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 use ki2::core::SchematicProject;
+use ki2::diagnostic::DiagnosticKind;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
@@ -2155,6 +2156,7 @@ fn rejects_invalid_title_block_comment_number() {
     );
     match &err {
         Error::Validation { diagnostic, .. } => {
+            assert!(matches!(diagnostic.kind, DiagnosticKind::Validation));
             let span = diagnostic.span.expect("diagnostic span");
             assert_eq!(&src[span.start..span.end], "10");
         }
@@ -3914,6 +3916,7 @@ fn rejects_invalid_page_type() {
     assert!(err.to_string().contains("Invalid page type"));
     match &err {
         Error::Validation { diagnostic, .. } => {
+            assert!(matches!(diagnostic.kind, DiagnosticKind::Validation));
             let span = diagnostic.span.expect("diagnostic span");
             assert_eq!(&src[span.start..span.end], "\"BogusSize\"");
         }
@@ -3949,6 +3952,50 @@ fn rejects_invalid_page_type() {
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject numeric page type");
     assert!(err.to_string().contains("missing paper kind"));
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn structured_diagnostics_tag_expecting_and_unexpected_parser_failures() {
+    let expecting_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-000000000007")
+  (paper "A4")
+  (wire (pts (bogus 0 0) (xy 1 1)))
+)"#;
+    let expecting_path = temp_schematic("structured_expect_diagnostic", expecting_src);
+    let err = parse_schematic_file(Path::new(&expecting_path)).expect_err("must reject bad pts");
+    match &err {
+        Error::Validation { diagnostic, .. } => {
+            assert!(matches!(
+                diagnostic.kind,
+                DiagnosticKind::Expecting { ref expected } if expected == "xy"
+            ));
+        }
+        other => panic!("expected validation error, got {other:?}"),
+    }
+    let _ = fs::remove_file(expecting_path);
+
+    let unexpected_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-000000000008")
+  (paper "A4")
+  (text "hello" (property "X" "Y"))
+)"#;
+    let unexpected_path = temp_schematic("structured_unexpected_diagnostic", unexpected_src);
+    let err =
+        parse_schematic_file(Path::new(&unexpected_path)).expect_err("must reject bad property");
+    match &err {
+        Error::Validation { diagnostic, .. } => {
+            assert!(matches!(
+                diagnostic.kind,
+                DiagnosticKind::Unexpected { ref found } if found == "property"
+            ));
+        }
+        other => panic!("expected validation error, got {other:?}"),
+    }
+    let _ = fs::remove_file(unexpected_path);
 }
 
 #[test]

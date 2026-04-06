@@ -5845,11 +5845,17 @@ impl KiCadSchematicParser {
     }
 
     fn expecting(&self, expected: &str) -> Error {
-        self.error_here(format!("expecting {expected}"))
+        self.validation_diagnostic(
+            Some(self.current_span()),
+            Diagnostic::expecting("schematic-parse", expected.to_string()),
+        )
     }
 
     fn unexpected(&self, found: &str) -> Error {
-        self.error_here(format!("unexpected {found}"))
+        self.validation_diagnostic(
+            Some(self.current_span()),
+            Diagnostic::unexpected("schematic-parse", found.to_string()),
+        )
     }
 
     fn error_here(&self, message: impl Into<String>) -> Error {
@@ -6581,8 +6587,14 @@ impl KiCadSchematicParser {
     }
 
     fn validation(&self, span: Option<Span>, message: impl Into<String>) -> Error {
-        let mut diagnostic =
-            Diagnostic::error("schematic-parse", message.into()).with_path(self.path.clone());
+        self.validation_diagnostic(
+            span,
+            Diagnostic::validation("schematic-parse", message.into()),
+        )
+    }
+
+    fn validation_diagnostic(&self, span: Option<Span>, diagnostic: Diagnostic) -> Error {
+        let mut diagnostic = diagnostic.with_path(self.path.clone());
         if let Some(span) = span {
             diagnostic = diagnostic.with_span(span);
         }
