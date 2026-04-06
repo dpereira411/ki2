@@ -9,9 +9,9 @@ use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
     EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelShape, LabelSpin,
-    LineKind, MirrorAxis, PropertyKind, ResolvedSimLibrary, SchItem, ShapeKind, SheetPinShape,
-    SheetSide, SimLibraryKind, SimLibrarySource, SimModelOrigin, SimValueBinding, StrokeStyle,
-    TextHJustify, TextKind, TextVJustify,
+    LineKind, MirrorAxis, PropertyKind, ResolvedSimLibrary, ResolvedSimModelKind, SchItem,
+    ShapeKind, SheetPinShape, SheetSide, SimLibraryKind, SimLibrarySource, SimModelOrigin,
+    SimValueBinding, StrokeStyle, TextHJustify, TextKind, TextVJustify,
 };
 use ki2::parser::parse_schematic_file;
 use ki2::sim::{
@@ -6140,6 +6140,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
                 kind: SimLibraryKind::Spice,
             },
             name: "MODEL".to_string(),
+            kind: ResolvedSimModelKind::SpiceSubckt,
             model_type: None,
             diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string(), "VSS".to_string()],
@@ -6205,6 +6206,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_include_chain() {
                 kind: SimLibraryKind::Spice,
             },
             name: "MODEL".to_string(),
+            kind: ResolvedSimModelKind::SpiceSubckt,
             model_type: None,
             diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string()],
@@ -6267,6 +6269,7 @@ fn resolves_symbol_sim_model_from_mixed_case_spice_include_chain() {
                 kind: SimLibraryKind::Spice,
             },
             name: "MODEL".to_string(),
+            kind: ResolvedSimModelKind::SpiceSubckt,
             model_type: None,
             diff_pin: None,
             pins: vec!["IN".to_string(), "OUT".to_string()],
@@ -6331,6 +6334,7 @@ B2 SIGB MODEL_B
                 kind: SimLibraryKind::Ibis,
             },
             name: "DRIVER".to_string(),
+            kind: ResolvedSimModelKind::IbisComponent,
             model_type: Some("MODEL_A".to_string()),
             diff_pin: None,
             pins: vec!["A1".to_string(), "B2".to_string()],
@@ -6397,6 +6401,7 @@ A1 B2
                 kind: SimLibraryKind::Ibis,
             },
             name: "DRIVER".to_string(),
+            kind: ResolvedSimModelKind::IbisComponent,
             model_type: Some("MODEL_A".to_string()),
             diff_pin: Some("B2".to_string()),
             pins: vec!["A1".to_string(), "B2".to_string()],
@@ -6451,6 +6456,13 @@ fn load_tree_hydrates_resolved_spice_model_pins_on_symbol() {
             .as_ref()
             .and_then(|sim_model| sim_model.resolved_name.as_deref()),
         Some("MODEL")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::SpiceSubckt)
     );
     assert_eq!(
         symbol
@@ -6583,6 +6595,13 @@ B2 SIGB MODEL_B
             .as_ref()
             .and_then(|sim_model| sim_model.resolved_name.as_deref()),
         Some("DRIVER")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::IbisComponent)
     );
     assert_eq!(
         symbol
@@ -6773,6 +6792,7 @@ fn resolves_symbol_sim_model_from_embedded_spice_model() {
                 kind: SimLibraryKind::Spice,
             },
             name: "MODEL".to_string(),
+            kind: ResolvedSimModelKind::SpiceModel,
             model_type: Some("NPN".to_string()),
             diff_pin: None,
             pins: Vec::new(),
@@ -6788,6 +6808,13 @@ fn resolves_symbol_sim_model_from_embedded_spice_model() {
             .as_ref()
             .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
         Some("NPN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::SpiceModel)
     );
     assert_eq!(
         symbol
@@ -6852,6 +6879,7 @@ fn resolves_embedded_spice_model_from_single_statement_only() {
                 kind: SimLibraryKind::Spice,
             },
             name: "MODEL".to_string(),
+            kind: ResolvedSimModelKind::SpiceModel,
             model_type: Some("NPN".to_string()),
             diff_pin: None,
             pins: Vec::new(),

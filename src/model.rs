@@ -1244,6 +1244,7 @@ impl Symbol {
             origin,
             resolved_library: None,
             resolved_name: None,
+            resolved_kind: None,
             resolved_model_type: None,
             resolved_ibis_diff_pin: None,
             generated_pin_names: Vec::new(),
@@ -1287,6 +1288,13 @@ pub struct ResolvedSimLibrary {
     pub kind: SimLibraryKind,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedSimModelKind {
+    SpiceModel,
+    SpiceSubckt,
+    IbisComponent,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimModel {
     pub device: Option<String>,
@@ -1306,6 +1314,7 @@ pub struct SimModel {
     pub origin: Option<SimModelOrigin>,
     pub resolved_library: Option<ResolvedSimLibrary>,
     pub resolved_name: Option<String>,
+    pub resolved_kind: Option<ResolvedSimModelKind>,
     pub resolved_model_type: Option<String>,
     pub resolved_ibis_diff_pin: Option<String>,
     pub generated_pin_names: Vec<String>,

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Component;
 use std::path::{Path, PathBuf};
 
-use crate::model::{EmbeddedFile, EmbeddedFileType, Screen, Symbol};
+use crate::model::{EmbeddedFile, EmbeddedFileType, ResolvedSimModelKind, Screen, Symbol};
 
 pub use crate::model::{ResolvedSimLibrary, SimLibraryKind, SimLibrarySource};
 
@@ -17,6 +17,7 @@ pub struct SimLibraryContent {
 pub struct ResolvedSimModel {
     pub library: ResolvedSimLibrary,
     pub name: String,
+    pub kind: ResolvedSimModelKind,
     pub model_type: Option<String>,
     pub diff_pin: Option<String>,
     pub pins: Vec<String>,
@@ -443,6 +444,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
+                kind: model.kind,
                 model_type: model.model_type,
                 diff_pin: model.diff_pin,
                 pins: model.pins,
@@ -461,6 +463,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
+                kind: model.kind,
                 model_type: model.model_type,
                 diff_pin: None,
                 pins: model.pins,
@@ -481,6 +484,7 @@ fn classify_sim_library_name(name: &str) -> SimLibraryKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedSpiceModel {
     name: String,
+    kind: ResolvedSimModelKind,
     model_type: Option<String>,
     pins: Vec<String>,
     params: Vec<(String, Option<String>)>,
@@ -489,6 +493,7 @@ struct ResolvedSpiceModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedIbisModel {
     name: String,
+    kind: ResolvedSimModelKind,
     model_type: Option<String>,
     diff_pin: Option<String>,
     pins: Vec<String>,
@@ -506,6 +511,7 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
         if tokens[0].eq_ignore_ascii_case(".model") && tokens[1].eq_ignore_ascii_case(wanted_name) {
             return Some(ResolvedSpiceModel {
                 name: tokens[1].to_string(),
+                kind: ResolvedSimModelKind::SpiceModel,
                 model_type: tokens.get(2).map(|token| token.to_string()),
                 pins: Vec::new(),
                 params: tokens[3..]
@@ -541,6 +547,7 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
 
             return Some(ResolvedSpiceModel {
                 name: tokens[1].to_string(),
+                kind: ResolvedSimModelKind::SpiceSubckt,
                 model_type: None,
                 pins,
                 params,
@@ -776,6 +783,7 @@ fn resolve_ibis_model(
     {
         return Some(ResolvedIbisModel {
             name: wanted_name.to_string(),
+            kind: ResolvedSimModelKind::IbisComponent,
             model_type: resolved_model_type,
             diff_pin: resolved_diff_pin,
             pins,
