@@ -184,7 +184,7 @@ not drive the queue unless a parent parser routine exposes them.
 | --- | --- | --- | --- | --- | --- |
 | `fixup_sch_fill_mode` | schematic fill fixup helper | `same` | branch timing is now on owning fill path | existing tests | none |
 | `find_invalid_lib_id_char` | `LIB_ID::Parse` helper split | `same` | used to preserve upstream error text shape | current behavior | none |
-| `is_valid_lib_id_shape` | `LIB_ID::Parse` helper split | `different` | validation shape is still local rather than the real KiCad parser implementation | direct audit | revisit during lib endgame if behavior diverges |
+| `is_valid_lib_id_shape` | `LIB_ID::Parse` helper split | `same` | direct re-audit plus the empty-nickname regression now cover the real remaining shape split against KiCad `LIB_ID::Parse()`: item-name emptiness still fails, empty nicknames are accepted, and invalid characters are still handled by the sibling illegal-character path | direct source comparison plus lib-ID regressions | none |
 | `clamp_text_size` | text size enforcement | `same` | current branch behavior is tested and stable | tests | none |
 | `validate_hyperlink` | `EDA_TEXT::ValidateHyperlink` | `same` | scheme handling, `#page` handling, digit-scheme rejection, malformed-url rejection, and native whitespace acceptance are now close enough | source comparison, native `kicad-cli` probes, and focused tests | none |
 | `get_label_spin_style` | label spin mapping | `same` | now separated cleanly from position flow | tests | none |
