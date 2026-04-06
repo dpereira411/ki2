@@ -1678,7 +1678,7 @@ fn parses_extended_top_level_sections() {
         lib_symbol.units[0].draw_items[2].text.as_deref(),
         Some("AMP")
     );
-    assert_eq!(lib_symbol.units[0].draw_items[2].at, Some([3.0, 4.0]));
+    assert_eq!(lib_symbol.units[0].draw_items[2].at, Some([3.0, -4.0]));
     assert_eq!(lib_symbol.units[0].draw_items[2].angle, Some(9.0));
     assert_eq!(lib_symbol.units[0].draw_items[2].kind, "field");
     assert_eq!(lib_symbol.units[0].draw_items[2].field_id, Some(0));
@@ -2504,8 +2504,8 @@ fn lib_symbol_text_box_supports_legacy_start_end_and_rejects_schematic_only_toke
     let schematic = parse_schematic_file(Path::new(&legacy_path)).expect("must parse");
     let item = &schematic.screen.lib_symbols[0].units[0].draw_items[0];
     assert_eq!(item.kind, "text_box");
-    assert_eq!(item.at, Some([1.0, 2.0]));
-    assert_eq!(item.end, Some([4.0, 6.0]));
+    assert_eq!(item.at, Some([1.0, -2.0]));
+    assert_eq!(item.end, Some([4.0, -6.0]));
     let margins = item.margins.expect("default lib text_box margins");
     let expected = 0.1524 / 2.0 + 1.0 * 0.75;
     assert!((margins[0] - expected).abs() < 1e-9);
@@ -10422,7 +10422,7 @@ fn lib_symbol_arc_and_bezier_follow_upstream_token_sets() {
     let item = &schematic.screen.lib_symbols[0].units[0].draw_items[0];
     assert_eq!(item.kind, "arc");
     assert_eq!(item.points, vec![[0.0, 0.0], [2.0, 0.0]]);
-    assert_eq!(item.arc_center, Some([1.0, 1.0]));
+    assert_eq!(item.arc_center, Some([1.0, -1.0]));
     assert_eq!(item.radius, Some(1.5));
     assert_eq!(item.arc_start_angle, Some(0.0));
     assert_eq!(item.arc_end_angle, Some(90.0));
@@ -10552,6 +10552,77 @@ fn lib_symbol_arc_and_circle_inherit_upstream_safe_defaults() {
         circle.fill.as_ref().expect("lib circle fill").fill_type,
         FillType::None
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn library_coordinates_use_kicad_inverted_y_axis() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (at 1 2 0))
+      (symbol "R_1_1"
+        (polyline (pts (xy 1 2) (xy 3 4)))
+        (rectangle (start 5 6) (end 7 8))
+        (text "TXT" (at 9 10 90) (effects (font (size 1 1))))
+        (text_box "TB" (at 11 12 0) (size 3 4))
+        (pin input line (at 13 14 180) (name "P") (number "1")))))
+)"#;
+    let path = temp_schematic("lib_inverted_y_coordinates", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+
+    let reference = lib_symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolReference)
+        .expect("reference property");
+    assert_eq!(reference.at, Some([1.0, -2.0]));
+
+    let unit = &lib_symbol.units[0];
+    let polyline = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "polyline")
+        .expect("polyline");
+    assert_eq!(polyline.points, vec![[1.0, -2.0], [3.0, -4.0]]);
+
+    let rectangle = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "rectangle")
+        .expect("rectangle");
+    assert_eq!(rectangle.points, vec![[5.0, -6.0]]);
+    assert_eq!(rectangle.end, Some([7.0, -8.0]));
+
+    let text = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "text")
+        .expect("text");
+    assert_eq!(text.at, Some([9.0, -10.0]));
+    assert_eq!(text.angle, Some(9.0));
+
+    let text_box = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "text_box")
+        .expect("text_box");
+    assert_eq!(text_box.at, Some([11.0, -12.0]));
+    assert_eq!(text_box.end, Some([14.0, -16.0]));
+
+    let pin = unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "pin")
+        .expect("pin");
+    assert_eq!(pin.at, Some([13.0, -14.0]));
+    assert_eq!(pin.angle, Some(180.0));
 
     let _ = fs::remove_file(path);
 }

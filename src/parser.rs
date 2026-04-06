@@ -1273,19 +1273,19 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "start" => {
                     let _ = self.need_unquoted_symbol_atom("start")?;
-                    item.points[0] = self.parse_xy2("arc start")?;
+                    item.points[0] = self.parse_xy2_lib("arc start")?;
                     saw_start = true;
                     self.need_right()?;
                 }
                 "mid" => {
                     let _ = self.need_unquoted_symbol_atom("mid")?;
-                    item.points[1] = self.parse_xy2("arc mid")?;
+                    item.points[1] = self.parse_xy2_lib("arc mid")?;
                     saw_mid = true;
                     self.need_right()?;
                 }
                 "end" => {
                     let _ = self.need_unquoted_symbol_atom("end")?;
-                    item.points[2] = self.parse_xy2("arc end")?;
+                    item.points[2] = self.parse_xy2_lib("arc end")?;
                     saw_end = true;
                     self.need_right()?;
                 }
@@ -1298,7 +1298,7 @@ impl KiCadSchematicParser {
                             .as_str()
                         {
                             "at" => {
-                                item.arc_center = Some(self.parse_xy2("arc center")?);
+                                item.arc_center = Some(self.parse_xy2_lib("arc center")?);
                                 self.need_right()?;
                             }
                             "length" => {
@@ -1380,7 +1380,7 @@ impl KiCadSchematicParser {
                         if points.len() >= 4 {
                             return Err(self.error_here("unexpected control point"));
                         }
-                        points.push(self.parse_xy2("bezier point")?);
+                        points.push(self.parse_xy2_lib("bezier point")?);
                         self.need_right()?;
                     }
                     item.points = points;
@@ -1427,7 +1427,7 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "center" => {
                     let _ = self.need_unquoted_symbol_atom("center")?;
-                    item.points[0] = self.parse_xy2("circle center")?;
+                    item.points[0] = self.parse_xy2_lib("circle center")?;
                     self.need_right()?;
                 }
                 "radius" => {
@@ -1489,7 +1489,7 @@ impl KiCadSchematicParser {
                             return Err(self.expecting("xy"));
                         }
                         let _ = self.need_unquoted_symbol_atom("xy")?;
-                        points.push(self.parse_xy2("xy")?);
+                        points.push(self.parse_xy2_lib("xy")?);
                         self.need_right()?;
                     }
                     item.points = points;
@@ -1534,12 +1534,12 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "start" => {
                     let _ = self.need_unquoted_symbol_atom("start")?;
-                    item.points.push(self.parse_xy2("rectangle start")?);
+                    item.points.push(self.parse_xy2_lib("rectangle start")?);
                     self.need_right()?;
                 }
                 "end" => {
                     let _ = self.need_unquoted_symbol_atom("end")?;
-                    item.end = Some(self.parse_xy2("rectangle end")?);
+                    item.end = Some(self.parse_xy2_lib("rectangle end")?);
                     self.need_right()?;
                 }
                 "radius" => {
@@ -1591,7 +1591,7 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("text at")?;
+                    let parsed = self.parse_xy3_lib("text at")?;
                     item.at = Some([parsed[0], parsed[1]]);
                     item.angle = Some(parsed[2] / 10.0);
                     self.need_right()?;
@@ -1652,25 +1652,25 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "start" => {
                     let _ = self.need_unquoted_symbol_atom("start")?;
-                    pos = Some(self.parse_xy2("text_box start")?);
+                    pos = Some(self.parse_xy2_lib("text_box start")?);
                     self.need_right()?;
                 }
                 "end" => {
                     let _ = self.need_unquoted_symbol_atom("end")?;
-                    end = Some(self.parse_xy2("text_box end")?);
+                    end = Some(self.parse_xy2_lib("text_box end")?);
                     found_end = true;
                     self.need_right()?;
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("text_box at")?;
+                    let parsed = self.parse_xy3_lib("text_box at")?;
                     pos = Some([parsed[0], parsed[1]]);
                     item.angle = Some(parsed[2]);
                     self.need_right()?;
                 }
                 "size" => {
                     let _ = self.need_unquoted_symbol_atom("size")?;
-                    size = Some(self.parse_xy2("text_box size")?);
+                    size = Some(self.parse_xy2_lib("text_box size")?);
                     found_size = true;
                     self.need_right()?;
                 }
@@ -1797,7 +1797,7 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("pin at")?;
+                    let parsed = self.parse_xy3_lib("pin at")?;
                     match parsed[2] as i32 {
                         0 | 90 | 180 | 270 => {}
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
@@ -2026,7 +2026,7 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3("property at")?;
+                    let parsed = self.parse_xy3_lib("property at")?;
                     property.at = Some([parsed[0], parsed[1]]);
                     property.angle = Some(parsed[2]);
                     self.need_right()?;
@@ -5276,6 +5276,21 @@ impl KiCadSchematicParser {
         Ok([
             self.parse_internal_units_atom(format!("{context} x"))?,
             self.parse_internal_units_atom(format!("{context} y"))?,
+            self.parse_f64_atom(format!("{context} angle"))?,
+        ])
+    }
+
+    fn parse_xy2_lib(&mut self, context: &str) -> Result<[f64; 2], Error> {
+        Ok([
+            self.parse_internal_units_atom(format!("{context} x"))?,
+            -self.parse_internal_units_atom(format!("{context} y"))?,
+        ])
+    }
+
+    fn parse_xy3_lib(&mut self, context: &str) -> Result<[f64; 3], Error> {
+        Ok([
+            self.parse_internal_units_atom(format!("{context} x"))?,
+            -self.parse_internal_units_atom(format!("{context} y"))?,
             self.parse_f64_atom(format!("{context} angle"))?,
         ])
     }
