@@ -7132,7 +7132,7 @@ fn non_local_labels_do_not_require_shape() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000096")
   (paper "A4")
   (global_label "VCC" (at 5 6 180) (uuid "78000000-0000-0000-0000-00000000000c"))
   (hierarchical_label "NET_A" (at 7 8 90) (uuid "78000000-0000-0000-0000-00000000000d"))
@@ -7558,7 +7558,7 @@ fn rejects_quoted_top_level_section_head_with_dispatch_expect_list() {
   (version 20260306)
   (generator "eeschema")
   (uuid "60000000-0000-0000-0000-000000000017")
-  ("group" "G" (uuid "g-1") (members))
+  ("group" "G" (uuid "60000000-0000-0000-0000-000000000097") (members))
 )"#;
     let path = temp_schematic("quoted_top_level_section_head", src);
     let err = parse_schematic_file(Path::new(&path))
