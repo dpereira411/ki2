@@ -2608,12 +2608,7 @@ impl KiCadSchematicParser {
         Ok(match item {
             ParsedSchText::Text(text) => SchItem::Text(text),
             ParsedSchText::Label(mut label) => {
-                let has_user_fields = label
-                    .properties
-                    .iter()
-                    .any(|property| property.kind != PropertyKind::GlobalLabelIntersheetRefs);
-
-                if !has_user_fields {
+                if label.properties.is_empty() {
                     label.fields_autoplaced = FieldAutoplacement::Auto;
                 }
                 SchItem::Label(label)
