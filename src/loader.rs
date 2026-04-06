@@ -1742,6 +1742,12 @@ fn hydrate_resolved_sim_library(
         }
     }
 
+    if let Some(warning) = unresolved_builtin_sim_model_warning(symbol) {
+        if !warnings.iter().any(|existing| existing == &warning) {
+            warnings.push(warning);
+        }
+    }
+
     modified
 }
 
@@ -1794,6 +1800,54 @@ fn display_sim_library_source(source: &SimLibrarySource) -> String {
         SimLibrarySource::Filesystem(path) => path.display().to_string(),
         SimLibrarySource::SchematicEmbedded { name }
         | SimLibrarySource::SymbolEmbedded { name } => name.clone(),
+    }
+}
+
+fn unresolved_builtin_sim_model_warning(symbol: &Symbol) -> Option<String> {
+    let sim_model = symbol.sim_model.as_ref()?;
+
+    if sim_model.library.is_some() {
+        return None;
+    }
+
+    let device = sim_model.device.as_deref()?.trim();
+    let model_type = sim_model.model_type.as_deref()?.trim();
+
+    if device.is_empty()
+        || model_type.is_empty()
+        || is_supported_builtin_sim_type(device, model_type)
+    {
+        return None;
+    }
+
+    let reference = symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolReference)
+        .map(|property| property.value.as_str())
+        .unwrap_or_default();
+
+    if reference.is_empty() {
+        Some("No simulation model definition found.".to_string())
+    } else {
+        Some(format!(
+            "No simulation model definition found for symbol '{}'.",
+            reference
+        ))
+    }
+}
+
+fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
+    match (
+        device.trim(),
+        model_type.trim().to_ascii_uppercase().as_str(),
+    ) {
+        ("R", "POT") => true,
+        (
+            "V" | "I",
+            "DC" | "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "PWL" | "TRNOISE" | "TRRANDOM",
+        ) => true,
+        _ => false,
     }
 }
 

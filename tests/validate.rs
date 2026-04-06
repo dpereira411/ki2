@@ -7945,6 +7945,69 @@ fn load_tree_records_warning_for_missing_library_base_model() {
 }
 
 #[test]
+fn load_tree_records_warning_for_invalid_current_sim_type_pair() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000911")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "R")
+    (property "Sim.Type" "PULSE")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_warns_invalid_current_sim_pair", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+
+    assert!(
+        schematic.screen.parse_warnings.iter().any(
+            |warning| warning.contains("No simulation model definition found for symbol 'R?'."),
+        )
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_records_warning_for_invalid_current_sim_type_without_reference() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000912")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Sim.Device" "I")
+    (property "Sim.Type" "DEVICE")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_warns_invalid_current_sim_without_ref", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .any(|warning| warning.contains("No simulation model definition found."),)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_fixes_legacy_global_power_symbol_value_from_hidden_power_pin() {
     let src = r##"(kicad_sch
   (version 20230220)
