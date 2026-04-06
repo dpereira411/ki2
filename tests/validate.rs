@@ -6744,6 +6744,146 @@ fn load_tree_migrates_value_backed_legacy_spice_lib_fields_to_raw_sim_model() {
 }
 
 #[test]
+fn load_tree_migrates_value_backed_legacy_dc_source_fields_when_not_inferred() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030c")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "X?")
+    (property "Value" "dc(1)")
+    (property "Spice_Primitive" "V")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_value_backed_legacy_dc_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("1")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("DC")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("DC")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_value_backed_legacy_source_fields_when_not_inferred() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030d")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "X?")
+    (property "Value" "pulse(0 2 1n 2n 3n 4n 5n 6)")
+    (property "Spice_Primitive" "V")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_value_backed_legacy_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("${SIM.PARAMS}")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("PULSE")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("y1=0 y2=2 td=1n tr=2n tf=3n tw=4n per=5n np=6")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("V")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("PULSE")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_migrates_legacy_spice_pin_maps_with_newline_whitespace() {
     let src = r#"(kicad_sch
   (version 20260306)

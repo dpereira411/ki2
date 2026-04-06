@@ -755,20 +755,34 @@ impl SchematicLoader {
                         let _legacy_enable =
                             take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
                         let _lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+                        let model_from_value_field =
+                            model_field.is_none() && !current_value.is_empty();
                         let source_pins = symbol_source_pin_numbers(symbol);
                         let dc_value = parse_legacy_dc_model_value(
                             model_field
                                 .as_ref()
                                 .map(|property| property.value.as_str())
-                                .unwrap_or(""),
+                                .unwrap_or(current_value.as_str()),
                         )
                         .expect("checked above");
 
                         symbol.set_field_text(PropertyKind::SymbolValue, dc_value);
 
-                        let device_template = model_field.clone().unwrap_or_else(|| {
-                            Property::new_named(PropertyKind::User, "", String::new(), false)
-                        });
+                        let device_template = model_field
+                            .clone()
+                            .or_else(|| {
+                                model_from_value_field.then(|| {
+                                    Property::new_named(
+                                        PropertyKind::User,
+                                        "",
+                                        String::new(),
+                                        false,
+                                    )
+                                })
+                            })
+                            .unwrap_or_else(|| {
+                                Property::new_named(PropertyKind::User, "", String::new(), false)
+                            });
                         let mut sim_device_field = device_template.clone();
                         sim_device_field.key = "Sim.Device".to_string();
                         sim_device_field.value = legacy_device;
@@ -808,12 +822,14 @@ impl SchematicLoader {
                         let _legacy_enable =
                             take_symbol_user_field(symbol, "Spice_Netlist_Enabled");
                         let _lib_field = take_symbol_user_field(symbol, "Spice_Lib_File");
+                        let model_from_value_field =
+                            model_field.is_none() && !current_value.is_empty();
                         let source_pins = symbol_source_pin_numbers(symbol);
                         let source_model = parse_legacy_source_model(
                             model_field
                                 .as_ref()
                                 .map(|property| property.value.as_str())
-                                .unwrap_or(""),
+                                .unwrap_or(current_value.as_str()),
                         )
                         .expect("checked above");
 
@@ -861,6 +877,13 @@ impl SchematicLoader {
                             let mut pin_map_field = default_sim_pins_field(template, &source_pins);
                             pin_map_field.key = "Sim.Pins".to_string();
                             symbol.properties.push(pin_map_field);
+                        }
+
+                        if model_from_value_field {
+                            symbol.set_field_text(
+                                PropertyKind::SymbolValue,
+                                "${SIM.PARAMS}".to_string(),
+                            );
                         }
 
                         symbol.sync_sim_model_from_properties();
