@@ -10603,11 +10603,11 @@ fn hidden_lib_text_converts_to_named_user_field() {
         .collect::<Vec<_>>();
 
     assert_eq!(extra_fields.len(), 2);
-    assert_eq!(extra_fields[0].name.as_deref(), Some("Field42"));
+    assert_eq!(extra_fields[0].name.as_deref(), Some("Field"));
     assert_eq!(extra_fields[0].text.as_deref(), Some("A"));
     assert_eq!(extra_fields[0].field_id, Some(0));
     assert_eq!(extra_fields[0].field_ordinal, Some(42));
-    assert_eq!(extra_fields[1].name.as_deref(), Some("Field43"));
+    assert_eq!(extra_fields[1].name.as_deref(), Some("Field"));
     assert_eq!(extra_fields[1].text.as_deref(), Some("B"));
     assert_eq!(extra_fields[1].field_id, Some(0));
     assert_eq!(extra_fields[1].field_ordinal, Some(43));
@@ -10637,7 +10637,7 @@ fn lib_property_name_collision_checks_all_symbol_units() {
         .find(|item| item.kind == "field" && item.text.as_deref() == Some("PROP"))
         .expect("property field");
 
-    assert_eq!(property_field.name.as_deref(), Some("Field"));
+    assert_eq!(property_field.name.as_deref(), Some("Field_1"));
 
     let _ = fs::remove_file(path);
 }

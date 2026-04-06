@@ -1611,7 +1611,7 @@ impl KiCadSchematicParser {
             item.kind = "field".to_string();
             item.field_id = PropertyKind::User.default_field_id();
             item.field_ordinal = Some(field_ordinal);
-            item.name = Some(format!("Field{field_ordinal}"));
+            item.name = Some("Field".to_string());
             self.lib_next_field_ordinal += 1;
         }
 
