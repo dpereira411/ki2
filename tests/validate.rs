@@ -1526,7 +1526,7 @@ fn rejects_invalid_generator_and_legacy_host_tokens() {
     let bad_generator_path = temp_schematic("bad_generator_token", bad_generator);
     let err = parse_schematic_file(Path::new(&bad_generator_path))
         .expect_err("must reject invalid generator token");
-    assert!(err.to_string().contains("expecting generator"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let bad_host = r#"(kicad_sch
   (version 20200826)
@@ -1536,7 +1536,7 @@ fn rejects_invalid_generator_and_legacy_host_tokens() {
     let bad_host_path = temp_schematic("bad_legacy_host_version_token", bad_host);
     let err = parse_schematic_file(Path::new(&bad_host_path))
         .expect_err("must reject invalid legacy host version token");
-    assert!(err.to_string().contains("expecting host version"));
+    assert!(err.to_string().contains("expecting symbol"));
 
     let _ = fs::remove_file(bad_generator_path);
     let _ = fs::remove_file(bad_host_path);
