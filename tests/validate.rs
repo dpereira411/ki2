@@ -1624,6 +1624,130 @@ fn sorts_loaded_sheet_pages_numerically() {
 }
 
 #[test]
+fn sorts_loaded_sheet_pages_with_numeric_before_string_pages() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_sheet_page_numeric_before_string_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let a_path = dir.join("a.kicad_sch");
+    let b_path = dir.join("b.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000144")
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000141")
+  (sheet
+    (uuid "70000000-0000-0000-0000-000000000142")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "a.kicad_sch"))
+  (sheet
+    (uuid "70000000-0000-0000-0000-000000000143")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "b.kicad_sch"))
+  (sheet_instances
+    (path "" (page "Z"))
+    (path "/70000000-0000-0000-0000-000000000141/70000000-0000-0000-0000-000000000142" (page "A1"))
+    (path "/70000000-0000-0000-0000-000000000141/70000000-0000-0000-0000-000000000143" (page "2")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&a_path, child_src).expect("write child a");
+    fs::write(&b_path, child_src).expect("write child b");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+
+    assert_eq!(
+        loaded.sheet_paths[0].instance_path,
+        "/70000000-0000-0000-0000-000000000141/70000000-0000-0000-0000-000000000143"
+    );
+    assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("2"));
+    assert_eq!(
+        loaded.sheet_paths[1].instance_path,
+        "/70000000-0000-0000-0000-000000000141/70000000-0000-0000-0000-000000000142"
+    );
+    assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("A1"));
+    assert_eq!(loaded.sheet_paths[2].instance_path, "");
+    assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("Z"));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(a_path);
+    let _ = fs::remove_file(b_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn sorts_loaded_sheet_pages_with_natural_string_ordering() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_sheet_page_natural_order_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let a_path = dir.join("a.kicad_sch");
+    let b_path = dir.join("b.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000154")
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000151")
+  (sheet
+    (uuid "70000000-0000-0000-0000-000000000152")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "a.kicad_sch"))
+  (sheet
+    (uuid "70000000-0000-0000-0000-000000000153")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "b.kicad_sch"))
+  (sheet_instances
+    (path "" (page "Z"))
+    (path "/70000000-0000-0000-0000-000000000151/70000000-0000-0000-0000-000000000152" (page "A10"))
+    (path "/70000000-0000-0000-0000-000000000151/70000000-0000-0000-0000-000000000153" (page "A2")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&a_path, child_src).expect("write child a");
+    fs::write(&b_path, child_src).expect("write child b");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+
+    assert_eq!(
+        loaded.sheet_paths[0].instance_path,
+        "/70000000-0000-0000-0000-000000000151/70000000-0000-0000-0000-000000000153"
+    );
+    assert_eq!(loaded.sheet_paths[0].page.as_deref(), Some("A2"));
+    assert_eq!(
+        loaded.sheet_paths[1].instance_path,
+        "/70000000-0000-0000-0000-000000000151/70000000-0000-0000-0000-000000000152"
+    );
+    assert_eq!(loaded.sheet_paths[1].page.as_deref(), Some("A10"));
+    assert_eq!(loaded.sheet_paths[2].instance_path, "");
+    assert_eq!(loaded.sheet_paths[2].page.as_deref(), Some("Z"));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(a_path);
+    let _ = fs::remove_file(b_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn initializes_sheet_pages_when_all_sheet_instance_pages_are_missing() {
     let dir = env::temp_dir().join(format!(
         "ki2_sheet_page_init_{}",
