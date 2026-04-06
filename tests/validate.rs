@@ -11707,10 +11707,10 @@ fn preserves_shape_stroke_and_fill_presence() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000052")
   (paper "A4")
-  (arc (start 0 0) (mid 1 1) (end 2 0) (stroke (width 0.1) (color 10 20 30 0.5)) (fill (type outline)) (uuid "a-1"))
-  (rule_area (polyline (pts (xy 0 0) (xy 2 0) (xy 2 2)) (stroke (width 0.2)) (fill (type background)) (uuid "ra-1")))
+  (arc (start 0 0) (mid 1 1) (end 2 0) (stroke (width 0.1) (color 10 20 30 0.5)) (fill (type outline)) (uuid "60000000-0000-0000-0000-000000000053"))
+  (rule_area (polyline (pts (xy 0 0) (xy 2 0) (xy 2 2)) (stroke (width 0.2)) (fill (type background)) (uuid "60000000-0000-0000-0000-000000000054")))
 )"#;
     let path = temp_schematic("shape_stroke_fill", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -11756,10 +11756,10 @@ fn parses_explicit_sheet_line_and_bus_entry_stroke_tokens() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000055")
   (paper "A4")
-  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.15)) (uuid "w-1"))
-  (bus_entry (at 1 1) (size 2 3) (stroke (width 0.2)) (uuid "be-1"))
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.15)) (uuid "60000000-0000-0000-0000-000000000056"))
+  (bus_entry (at 1 1) (size 2 3) (stroke (width 0.2)) (uuid "60000000-0000-0000-0000-000000000057"))
   (sheet
     (at 0 0)
     (size 20 10)
@@ -11822,7 +11822,7 @@ fn legacy_bus_entry_default_stroke_does_not_rewrite_to_dash() {
   (version 20211123)
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000076")
-  (bus_entry (stroke (width 0.2)) (uuid "be-1"))
+  (bus_entry (stroke (width 0.2)) (uuid "60000000-0000-0000-0000-000000000058"))
 )"#;
     let path = temp_schematic("legacy_bus_entry_default_stroke", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -11851,7 +11851,7 @@ fn legacy_wire_default_stroke_does_not_rewrite_to_dash() {
   (version 20211123)
   (generator "eeschema")
   (uuid "63000000-0000-0000-0000-000000000077")
-  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.2)) (uuid "w-1"))
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.2)) (uuid "60000000-0000-0000-0000-000000000059"))
 )"#;
     let path = temp_schematic("legacy_wire_default_stroke", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -11907,7 +11907,7 @@ fn junction_no_connect_and_bus_entry_do_not_require_geometry_tokens() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000005a")
   (paper "A4")
   (junction)
   (no_connect)
@@ -11968,7 +11968,7 @@ fn wire_and_bus_do_not_require_pts() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000005b")
   (paper "A4")
   (wire)
   (bus)
@@ -12001,7 +12001,7 @@ fn schematic_arc_and_circle_use_upstream_safe_defaults() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000005c")
   (paper "A4")
   (arc)
   (circle)
@@ -12041,7 +12041,7 @@ fn schematic_shape_outline_fill_does_not_retroactively_use_later_stroke_color() 
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000005d")
   (paper "A4")
   (circle
     (fill (type outline))
@@ -12078,7 +12078,7 @@ fn rule_area_does_not_require_three_points() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000005e")
   (paper "A4")
   (rule_area (polyline (pts (xy 0 0) (xy 1 0))))
 )"#;
@@ -12103,7 +12103,7 @@ fn rectangle_uses_upstream_safe_defaults() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-00000000005f")
   (paper "A4")
   (rectangle)
 )"#;
@@ -12128,7 +12128,7 @@ fn schematic_bezier_follows_upstream_control_point_rules() {
     let short_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000060")
   (paper "A4")
   (bezier (pts (xy 0 0) (xy 1 1)))
 )"#;
@@ -12153,7 +12153,7 @@ fn schematic_bezier_follows_upstream_control_point_rules() {
     let extra_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000061")
   (paper "A4")
   (bezier (pts (xy 0 0) (xy 1 1) (xy 2 2) (xy 3 3) (xy 4 4)))
 )"#;
@@ -12169,10 +12169,10 @@ fn parses_stroke_and_fill_payload_details() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000062")
   (paper "A4")
-  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.15) (type dash_dot) (color 10 20 30 0.5)) (uuid "w-1"))
-  (text_box "body" (at 10 20 90) (size 3 4) (stroke (width 0.2) (type dot)) (fill (type color) (color 1 2 3 0.25)) (uuid "tb"))
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke (width 0.15) (type dash_dot) (color 10 20 30 0.5)) (uuid "60000000-0000-0000-0000-000000000063"))
+  (text_box "body" (at 10 20 90) (size 3 4) (stroke (width 0.2) (type dot)) (fill (type color) (color 1 2 3 0.25)) (uuid "60000000-0000-0000-0000-000000000064"))
 )"#;
     let path = temp_schematic("stroke_fill_payload", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -12224,7 +12224,7 @@ fn legacy_schematic_polyline_defaults_to_dash_stroke() {
     let src = r#"(kicad_sch
   (version 20211123)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000065")
   (paper "A4")
   (polyline (pts (xy 0 0) (xy 1 1)) (stroke (width 0.15)))
 )"#;
@@ -12251,9 +12251,9 @@ fn rejects_unknown_stroke_children() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000066")
   (paper "A4")
-  (wire (pts (xy 0 0) (xy 1 1)) (stroke (bogus 1)) (uuid "w-1"))
+  (wire (pts (xy 0 0) (xy 1 1)) (stroke (bogus 1)) (uuid "60000000-0000-0000-0000-000000000067"))
 )"#;
     let path = temp_schematic("bad_stroke_child", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad stroke child");
@@ -12266,7 +12266,7 @@ fn rejects_unknown_children_in_strict_item_parsers() {
     let bad_no_connect = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "60000000-0000-0000-0000-000000000068")
   (paper "A4")
   (no_connect (at 1 2) (bogus yes))
 )"#;
