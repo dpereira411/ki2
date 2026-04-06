@@ -212,6 +212,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   7. legacy `Spice_Node_Sequence` and `dc(...)` parsing now accept full decoded whitespace, not only plain spaces
   8. raw `Spice_*` fallback parameter formatting is now locked across rich, model-only, and lib-only inputs instead of only the fully populated branch
   9. remaining simple representable migration branches are now locked too: comma-separated legacy source models still parse, and primitive-only junk fields correctly do not migrate
+  10. legacy helper exactness is now locked too: mixed-case `dc` / source-model kinds still migrate, and punctuation-heavy `Spice_Node_Sequence` payloads still decode into `Sim.Pins`
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, broader internal source/model functions beyond the current `DC/SIN/PULSE/EXP/AM/SFFM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
 
 ### More Exact Current Priority
