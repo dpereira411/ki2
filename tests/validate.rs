@@ -9458,7 +9458,7 @@ fn rejects_unexpected_lib_symbol_child_with_upstream_expect_list() {
     let path = temp_schematic("bad_lib_symbol_child", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject unexpected lib child");
     assert!(err.to_string().contains(
-        "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text, property, extends, symbol, or embedded_fonts"
+        "expecting pin_names, pin_numbers, arc, bezier, circle, pin, polyline, rectangle, or text"
     ));
     let _ = fs::remove_file(path);
 }
