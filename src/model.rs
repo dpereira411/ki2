@@ -1140,10 +1140,6 @@ impl Symbol {
         }
     }
 
-    pub fn add_pin(&mut self, pin: SymbolPin) {
-        self.pins.push(pin);
-    }
-
     pub fn update_prefix_from_reference(&mut self) {
         let Some(reference) = self
             .properties
@@ -1242,10 +1238,6 @@ impl Sheet {
             .iter()
             .find(|property| property.kind == PropertyKind::SheetFile)
             .map(|property| property.value.as_str())
-    }
-
-    pub fn add_pin(&mut self, pin: SheetPin) {
-        self.pins.push(pin);
     }
 
     pub fn is_vertical_orientation(&self) -> bool {
@@ -1724,7 +1716,7 @@ mod tests {
         let mut sheet = Sheet::new();
         let mut pin = SheetPin::new("IN".to_string(), &sheet);
         pin.at = [0.0, 3.0];
-        sheet.add_pin(pin);
+        sheet.pins.push(pin);
 
         sheet.set_position([11.0, 22.0]);
 
@@ -1738,7 +1730,7 @@ mod tests {
         let mut pin = SheetPin::new("IN".to_string(), &sheet);
         pin.at = [0.0, 30.0];
         pin.side = SheetSide::Left;
-        sheet.add_pin(pin);
+        sheet.pins.push(pin);
 
         sheet.set_size([10.0, 15.0]);
 
