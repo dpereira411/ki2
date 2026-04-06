@@ -657,6 +657,56 @@ fn reuses_previously_loaded_child_schematic() {
             .instance_path,
         ""
     );
+    assert!(loaded.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000002"
+    ));
+    assert_eq!(loaded.current_page_number(), Some("1"));
+    assert_eq!(loaded.current_page_count(), Some(3));
+    assert_eq!(loaded.current_virtual_page_number(), Some(1));
+    let switched_a_symbol = loaded
+        .current_schematic()
+        .expect("switched load-result child schematic A")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("switched load-result child symbol A");
+    assert_eq!(
+        switched_a_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert!(loaded.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003"
+    ));
+    assert_eq!(loaded.current_page_number(), Some("2"));
+    assert_eq!(loaded.current_page_count(), Some(3));
+    assert_eq!(loaded.current_virtual_page_number(), Some(2));
+    let switched_b_symbol = loaded
+        .current_schematic()
+        .expect("switched load-result child schematic B")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("switched load-result child symbol B");
+    assert_eq!(
+        switched_b_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R2")
+    );
     assert!(loaded.set_current_sheet_path(""));
     let reset_child = loaded
         .schematics
@@ -798,6 +848,31 @@ fn reuses_previously_loaded_child_schematic() {
             .find(|property| property.kind == PropertyKind::SymbolFootprint)
             .map(|property| property.value.as_str()),
         Some("Resistor_SMD:R_0603")
+    );
+    assert!(project.set_current_sheet_path(
+        "/70000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-000000000003"
+    ));
+    assert_eq!(project.current_page_number(), Some("2"));
+    assert_eq!(project.current_page_count(), Some(3));
+    assert_eq!(project.current_virtual_page_number(), Some(2));
+    let project_symbol_b = project
+        .current_schematic()
+        .expect("project current child schematic B")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("project child symbol B");
+    assert_eq!(
+        project_symbol_b
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R2")
     );
     assert!(project.set_current_sheet_path(""));
     let reset_project_child = project
