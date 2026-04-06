@@ -7,7 +7,9 @@ use crate::model::{
     EmbeddedFile, Property, PropertyKind, SchItem, Schematic, SheetReference, Symbol,
 };
 use crate::parser::parse_schematic_file;
-use crate::sim::resolve_symbol_sim_library_from_embedded_files;
+use crate::sim::{
+    resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HierarchyLink {
@@ -1431,9 +1433,13 @@ fn hydrate_resolved_sim_library(
 ) {
     let resolved_library =
         resolve_symbol_sim_library_from_embedded_files(schematic_path, embedded_files, symbol);
+    let resolved_model =
+        resolve_symbol_sim_model_from_embedded_files(schematic_path, embedded_files, symbol);
 
     if let Some(sim_model) = symbol.sim_model.as_mut() {
         sim_model.resolved_library = resolved_library;
+        sim_model.resolved_name = resolved_model.as_ref().map(|model| model.name.clone());
+        sim_model.generated_pin_names = resolved_model.map(|model| model.pins).unwrap_or_default();
     }
 }
 

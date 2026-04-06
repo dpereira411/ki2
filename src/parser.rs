@@ -1312,10 +1312,18 @@ impl KiCadSchematicParser {
                         if bar != "|" {
                             return Err(self.expecting("|"));
                         }
-                        let mut encoded = String::new();
+                        let data_start = self.current().span.start;
+
                         while !self.at_unquoted_symbol_with("|") {
-                            encoded.push_str(&self.need_symbol_atom("base64 file data")?);
+                            if matches!(self.current().kind, TokKind::Eof) {
+                                return Err(self.expecting("|"));
+                            }
+
+                            self.idx += 1;
                         }
+
+                        let encoded =
+                            self.source[data_start..self.current().span.start].to_string();
                         let bar = self.need_unquoted_symbol_atom("|")?;
                         if bar != "|" {
                             return Err(self.expecting("|"));

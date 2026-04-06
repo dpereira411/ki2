@@ -12,6 +12,13 @@ pub struct SimLibraryContent {
     pub text: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSimModel {
+    pub library: ResolvedSimLibrary,
+    pub name: String,
+    pub pins: Vec<String>,
+}
+
 pub fn collect_symbol_sim_library_sources(
     schematic_path: &Path,
     screen: &Screen,
@@ -236,12 +243,108 @@ pub fn resolve_symbol_sim_library_from_embedded_files(
     })
 }
 
+pub fn resolve_symbol_sim_model(
+    schematic_path: &Path,
+    screen: &Screen,
+    symbol: &Symbol,
+) -> Option<ResolvedSimModel> {
+    resolve_symbol_sim_model_from_embedded_files(schematic_path, &screen.embedded_files, symbol)
+}
+
+pub fn resolve_symbol_sim_model_from_embedded_files(
+    schematic_path: &Path,
+    embedded_files: &[EmbeddedFile],
+    symbol: &Symbol,
+) -> Option<ResolvedSimModel> {
+    let library =
+        resolve_symbol_sim_library_from_embedded_files(schematic_path, embedded_files, symbol)?;
+    let name = symbol
+        .sim_model
+        .as_ref()
+        .and_then(|sim_model| sim_model.name.as_deref())?
+        .trim()
+        .to_string();
+
+    if name.is_empty() {
+        return None;
+    }
+
+    match library.kind {
+        SimLibraryKind::Ibis => Some(ResolvedSimModel {
+            library,
+            name,
+            pins: Vec::new(),
+        }),
+        SimLibraryKind::Spice => {
+            let content = load_symbol_sim_library_content_from_embedded_files(
+                schematic_path,
+                embedded_files,
+                symbol,
+            )?;
+            let model = resolve_spice_model(&content.text, &name)?;
+            Some(ResolvedSimModel {
+                library,
+                name: model.name,
+                pins: model.pins,
+            })
+        }
+    }
+}
+
 fn classify_sim_library_name(name: &str) -> SimLibraryKind {
     if name.to_ascii_lowercase().ends_with(".ibs") {
         SimLibraryKind::Ibis
     } else {
         SimLibraryKind::Spice
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedSpiceModel {
+    name: String,
+    pins: Vec<String>,
+}
+
+fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceModel> {
+    let tokens = text.split_whitespace().collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index + 1 < tokens.len() {
+        if tokens[index].eq_ignore_ascii_case(".model")
+            && tokens[index + 1].eq_ignore_ascii_case(wanted_name)
+        {
+            return Some(ResolvedSpiceModel {
+                name: tokens[index + 1].to_string(),
+                pins: Vec::new(),
+            });
+        }
+
+        if tokens[index].eq_ignore_ascii_case(".subckt")
+            && tokens[index + 1].eq_ignore_ascii_case(wanted_name)
+        {
+            let pins = tokens[index + 2..]
+                .iter()
+                .take_while(|token| !is_spice_subckt_param_token(token) && !token.starts_with('.'))
+                .map(|token| token.to_string())
+                .collect::<Vec<_>>();
+
+            return Some(ResolvedSpiceModel {
+                name: tokens[index + 1].to_string(),
+                pins,
+            });
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn is_spice_subckt_param_token(token: &str) -> bool {
+    token.eq_ignore_ascii_case("params:")
+        || token.contains('=')
+        || token.starts_with("PARAMS:")
+        || token.starts_with("params:")
 }
 
 fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {

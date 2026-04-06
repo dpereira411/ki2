@@ -17,6 +17,7 @@ use ki2::parser::parse_schematic_file;
 use ki2::sim::{
     SimLibraryContent, classify_symbol_sim_library_kind, collect_symbol_sim_library_sources,
     load_symbol_sim_library_content, resolve_symbol_sim_library, resolve_symbol_sim_library_source,
+    resolve_symbol_sim_model,
 };
 use uuid::Uuid;
 
@@ -6000,6 +6001,119 @@ fn load_tree_hydrates_resolved_sim_library_on_symbol() {
             },
             kind: SimLibraryKind::Spice,
         })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn resolves_symbol_sim_model_from_embedded_spice_subckt() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000317")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "top.kicad_sim")
+      (type model)
+      (data |* comment
+.subckt MODEL IN OUT VSS PARAMS: RVAL=1k
++ EXTRA=1
+.ends MODEL|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_embedded_spice_subckt", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "top.kicad_sim".to_string(),
+                },
+                kind: SimLibraryKind::Spice,
+            },
+            name: "MODEL".to_string(),
+            pins: vec!["IN".to_string(), "OUT".to_string(), "VSS".to_string()],
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_hydrates_resolved_spice_model_pins_on_symbol() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000318")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "top.kicad_sim")
+      (type model)
+      (data |.subckt MODEL A B C
+.ends MODEL|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_resolved_spice_model_pins", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_name.as_deref()),
+        Some("MODEL")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_pin_names.clone()),
+        Some(vec!["A".to_string(), "B".to_string(), "C".to_string()])
     );
 
     let _ = fs::remove_file(path);
