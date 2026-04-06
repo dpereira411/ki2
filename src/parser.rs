@@ -1816,8 +1816,7 @@ impl KiCadSchematicParser {
                 }
                 "hide" => {
                     let _ = self.need_unquoted_symbol_atom("hide")?;
-                    item.visible = !self.parse_bool_atom("hide")?;
-                    self.need_right()?;
+                    item.visible = !self.parse_maybe_absent_bool(true)?;
                 }
                 "name" => {
                     let _ = self.need_unquoted_symbol_atom("name")?;
