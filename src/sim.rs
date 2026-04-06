@@ -702,6 +702,16 @@ fn resolve_ibis_model(
     selected_pin: Option<&str>,
     selected_model: Option<&str>,
 ) -> Option<ResolvedIbisModel> {
+    fn matches_selected_ibis_model(
+        explicit_model: Option<&str>,
+        resolved_model: Option<&str>,
+        candidate: &str,
+    ) -> bool {
+        explicit_model
+            .or(resolved_model)
+            .is_some_and(|selected| selected.eq_ignore_ascii_case(candidate))
+    }
+
     let mut current_component: Option<String> = None;
     let mut pending_component_name = false;
     let mut pending_model_name = false;
@@ -732,7 +742,7 @@ fn resolve_ibis_model(
         if pending_model_name {
             pending_model_name = false;
             collecting_model =
-                selected_model.is_some_and(|selected| selected.eq_ignore_ascii_case(line));
+                matches_selected_ibis_model(selected_model, resolved_model_type.as_deref(), line);
             continue;
         }
 
@@ -754,7 +764,11 @@ fn resolve_ibis_model(
             let rest = rest.trim();
             pending_model_name = rest.is_empty();
             collecting_model = !pending_model_name
-                && selected_model.is_some_and(|selected| selected.eq_ignore_ascii_case(rest));
+                && matches_selected_ibis_model(
+                    selected_model,
+                    resolved_model_type.as_deref(),
+                    rest,
+                );
             collecting_pins = false;
             collecting_diff_pins = false;
             continue;

@@ -6645,6 +6645,69 @@ Model_type Output
 }
 
 #[test]
+fn load_tree_hydrates_ibis_model_type_from_selected_pin_without_explicit_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000031e")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+B2 SIGB MODEL_B
+[Model] MODEL_A
+Model_type Output
+|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (property "Sim.Ibis.Pin" "A1")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_ibis_model_type_from_pin", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
+        Some("MODEL_A")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_ibis_model_type.as_deref()),
+        Some("Output")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_hydrates_resolved_ibis_diff_pin_on_symbol() {
     let src = r#"(kicad_sch
   (version 20260306)
