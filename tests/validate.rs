@@ -6044,7 +6044,7 @@ fn lib_symbol_materializes_missing_body_style_slots_from_nested_units() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000001")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -6074,7 +6074,7 @@ fn lib_property_skips_user_field_after_nine_suffix_attempts() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000002")
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -6115,7 +6115,7 @@ fn schematic_text_box_outline_fill_uses_stroke_color() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000003")
   (paper "A4")
   (text_box "TB"
     (at 1 2 0)
@@ -6291,7 +6291,7 @@ fn raw_shape_and_textbox_uuids_do_not_increment_duplicates() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000004")
   (paper "A4")
   (arc (start 0 0) (mid 1 1) (end 2 0) (uuid "00000000-0000-0000-0000-000000000001"))
   (rectangle (start 0 0) (end 1 1) (uuid "00000000-0000-0000-0000-000000000001"))
@@ -6474,7 +6474,7 @@ fn global_label_without_user_fields_keeps_parser_default_autoplace_state() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000005")
   (paper "A4")
   (global_label "GL" (at 1 2 0) (shape input) (uuid "g-1"))
 )"#;
@@ -6976,7 +6976,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let text_property_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000006")
   (paper "A4")
   (text "hello" (property "X" "Y"))
 )"#;
@@ -6989,7 +6989,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let local_label_shape_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000007")
   (paper "A4")
   (label "L" (at 0 0 0) (shape input))
 )"#;
@@ -7003,7 +7003,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let bad_global_shape_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000008")
   (paper "A4")
   (global_label "G" (at 0 0 0) (shape (bogus)))
 )"#;
@@ -7021,7 +7021,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let quoted_global_shape_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-000000000009")
   (paper "A4")
   (global_label "G" (at 0 0 0) (shape "input"))
 )"#;
@@ -7039,7 +7039,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let hierarchical_length_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-00000000000a")
   (paper "A4")
   (hierarchical_label "H" (at 0 0 0) (shape input) (length 10))
 )"#;
@@ -7055,7 +7055,7 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     let local_iref_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "78000000-0000-0000-0000-00000000000b")
   (paper "A4")
   (label "L" (at 0 0 0) (iref 1 2))
 )"#;
@@ -7134,8 +7134,8 @@ fn non_local_labels_do_not_require_shape() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (global_label "VCC" (at 5 6 180) (uuid "g-1"))
-  (hierarchical_label "NET_A" (at 7 8 90) (uuid "h-1"))
+  (global_label "VCC" (at 5 6 180) (uuid "78000000-0000-0000-0000-00000000000c"))
+  (hierarchical_label "NET_A" (at 7 8 90) (uuid "78000000-0000-0000-0000-00000000000d"))
 )"#;
     let path = temp_schematic("non_local_labels_without_shape", src);
     let schematic =
