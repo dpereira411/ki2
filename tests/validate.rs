@@ -7072,7 +7072,7 @@ fn rejects_quoted_label_and_sheet_pin_shape_tokens() {
     let quoted_label_shape = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-label-shape")
+  (uuid "60000000-0000-0000-0000-000000000001")
   (global_label "VCC" (shape "input"))
 )"#;
     let quoted_label_shape_path = temp_schematic("quoted_label_shape_token", quoted_label_shape);
@@ -7087,7 +7087,7 @@ fn rejects_quoted_label_and_sheet_pin_shape_tokens() {
     let quoted_sheet_pin_shape = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-pin-shape")
+  (uuid "60000000-0000-0000-0000-000000000002")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
@@ -7111,7 +7111,7 @@ fn passive_label_shape_maps_to_upstream_unspecified_shape() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-passive-label-shape")
+  (uuid "60000000-0000-0000-0000-000000000003")
   (global_label "VCC" (shape passive))
 )"#;
     let path = temp_schematic("passive_label_shape_unspecified", src);
@@ -7135,7 +7135,7 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_mirror = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-mirror")
+  (uuid "60000000-0000-0000-0000-000000000004")
   (symbol
     (lib_id "Device:R")
     (mirror "x"))
@@ -7148,7 +7148,7 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_lib_pin_type = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-pin-type")
+  (uuid "60000000-0000-0000-0000-000000000005")
   (lib_symbols
     (symbol "MyLib:U"
       (pin "input" line
@@ -7167,7 +7167,7 @@ fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_lib_pin_shape = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-pin-shape")
+  (uuid "60000000-0000-0000-0000-000000000006")
   (lib_symbols
     (symbol "MyLib:U"
       (pin input "line"
@@ -7193,7 +7193,7 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
     let quoted_lib_pin_effects = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-pin-effects")
+  (uuid "60000000-0000-0000-0000-000000000007")
   (lib_symbols
     (symbol "MyLib:U"
       (pin input line
@@ -7211,7 +7211,7 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
     let quoted_lib_property_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-property-head")
+  (uuid "60000000-0000-0000-0000-000000000008")
   (lib_symbols
     (symbol "MyLib:U"
       (property "User" "v" ("at" 1 2 0))))
@@ -7228,7 +7228,7 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
     let quoted_stroke_width = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-stroke-width")
+  (uuid "60000000-0000-0000-0000-000000000009")
   (wire (pts (xy 0 0) (xy 1 1)) (stroke ("width" 0.2)))
 )"#;
     let quoted_stroke_width_path = temp_schematic("quoted_stroke_width", quoted_stroke_width);
@@ -7239,7 +7239,7 @@ fn rejects_quoted_lib_pin_property_and_style_keyword_heads() {
     let quoted_fill_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-fill-color")
+  (uuid "60000000-0000-0000-0000-00000000000a")
   (rectangle (start 0 0) (end 1 1) (fill ("color" 1 2 3 0.5)))
 )"#;
     let quoted_fill_color_path = temp_schematic("quoted_fill_color", quoted_fill_color);
@@ -7258,7 +7258,7 @@ fn rejects_quoted_lib_symbols_top_level_symbol_head() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-symbol-head")
+  (uuid "60000000-0000-0000-0000-00000000000b")
   (lib_symbols
     ("symbol" "MyLib:U"))
 )"#;
@@ -7274,7 +7274,7 @@ fn rejects_quoted_pts_and_embedded_file_keyword_heads() {
     let quoted_polyline_xy = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-pts-xy")
+  (uuid "60000000-0000-0000-0000-00000000000c")
   (polyline (pts ("xy" 0 0) (xy 1 1)))
 )"#;
     let quoted_polyline_xy_path = temp_schematic("quoted_pts_xy", quoted_polyline_xy);
@@ -7285,7 +7285,7 @@ fn rejects_quoted_pts_and_embedded_file_keyword_heads() {
     let quoted_embedded_file_name = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-embedded-file-name")
+  (uuid "60000000-0000-0000-0000-00000000000d")
   (embedded_files (file ("name" "A.bin") (data "abc")))
 )"#;
     let quoted_embedded_file_name_path =
@@ -7310,7 +7310,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_symbol_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-symbol-head")
+  (uuid "60000000-0000-0000-0000-00000000000e")
   (symbol
     (lib_id "Device:R")
     ("at" 1 2 0))
@@ -7325,7 +7325,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_symbol_project = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-symbol-project")
+  (uuid "60000000-0000-0000-0000-00000000000f")
   (symbol
     (lib_id "Device:R")
     (instances
@@ -7340,7 +7340,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_sheet_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-head")
+  (uuid "60000000-0000-0000-0000-000000000010")
   (sheet
     ("at" 0 0)
     (property "Sheetname" "Child")
@@ -7357,7 +7357,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_sheet_project = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-project")
+  (uuid "60000000-0000-0000-0000-000000000011")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
@@ -7373,7 +7373,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_symbol_fields_autoplaced = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-symbol-fields-autoplaced")
+  (uuid "60000000-0000-0000-0000-000000000012")
   (symbol
     (lib_id "Device:R")
     ("fields_autoplaced"))
@@ -7391,7 +7391,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_sheet_fields_autoplaced = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-fields-autoplaced")
+  (uuid "60000000-0000-0000-0000-000000000013")
   (sheet
     ("fields_autoplaced")
     (property "Sheetname" "Child")
@@ -7411,7 +7411,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_sheet_pin_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-pin-head")
+  (uuid "60000000-0000-0000-0000-000000000014")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch")
@@ -7426,7 +7426,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_top_sheet_instance = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-top-sheet-instance")
+  (uuid "60000000-0000-0000-0000-000000000015")
   (sheet_instances
     ("path" "/"))
 )"#;
@@ -7439,7 +7439,7 @@ fn rejects_quoted_symbol_and_sheet_keyword_heads() {
     let quoted_top_symbol_instance = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-top-symbol-instance")
+  (uuid "60000000-0000-0000-0000-000000000016")
   (symbol_instances
     (path "/sym"
       ("reference" "R1")))
@@ -7469,7 +7469,7 @@ fn rejects_quoted_top_level_section_head_with_dispatch_expect_list() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-top-level-head")
+  (uuid "60000000-0000-0000-0000-000000000017")
   ("group" "G" (uuid "g-1") (members))
 )"#;
     let path = temp_schematic("quoted_top_level_section_head", src);
@@ -7486,7 +7486,7 @@ fn rejects_quoted_effects_keyword_tokens() {
     let quoted_justify = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-justify")
+  (uuid "60000000-0000-0000-0000-000000000018")
   (text "note" (effects (justify "left")))
 )"#;
     let quoted_justify_path = temp_schematic("quoted_effects_justify", quoted_justify);
@@ -7500,7 +7500,7 @@ fn rejects_quoted_effects_keyword_tokens() {
     let quoted_font_bold = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-font-bold")
+  (uuid "60000000-0000-0000-0000-000000000019")
   (text "note" (effects (font "bold")))
 )"#;
     let quoted_font_bold_path = temp_schematic("quoted_effects_font_bold", quoted_font_bold);
@@ -7514,7 +7514,7 @@ fn rejects_quoted_effects_keyword_tokens() {
     let quoted_font_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-font-color")
+  (uuid "60000000-0000-0000-0000-00000000001a")
   (text "note" (effects (font ("color" 1 2 3 0.5))))
 )"#;
     let quoted_font_color_path = temp_schematic("quoted_effects_font_color", quoted_font_color);
@@ -7528,7 +7528,7 @@ fn rejects_quoted_effects_keyword_tokens() {
     let quoted_hide = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-hide")
+  (uuid "60000000-0000-0000-0000-00000000001b")
   (text "note" (effects "hide"))
 )"#;
     let quoted_hide_path = temp_schematic("quoted_effects_hide", quoted_hide);
@@ -7550,7 +7550,7 @@ fn accepts_bare_effects_heads_when_they_are_last_children() {
     let bare_font_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-font-color")
+  (uuid "60000000-0000-0000-0000-00000000001c")
   (text "note" (effects (font color 10 20 30 0.5)))
 )"#;
     let bare_font_color_path = temp_schematic("bare_effects_font_color", bare_font_color);
@@ -7573,7 +7573,7 @@ fn accepts_bare_effects_heads_when_they_are_last_children() {
     let bare_hide_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-hide-head")
+  (uuid "60000000-0000-0000-0000-00000000001d")
   (text "note" (effects hide))
 )"#;
     let bare_hide_head_path = temp_schematic("bare_effects_hide_head", bare_hide_head);
@@ -7595,7 +7595,7 @@ fn accepts_bare_effects_heads_when_they_are_last_children() {
     let bare_font_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-font-head")
+  (uuid "60000000-0000-0000-0000-00000000001e")
   (text "note" (effects font (size 1 1)))
 )"#;
     let bare_font_head_path = temp_schematic("bare_effects_font_head", bare_font_head);
@@ -7618,7 +7618,7 @@ fn accepts_bare_effects_heads_when_they_are_last_children() {
     let bare_justify_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-justify-head")
+  (uuid "60000000-0000-0000-0000-00000000001f")
   (text "note" (effects justify left top))
 )"#;
     let bare_justify_head_path = temp_schematic("bare_effects_justify_head", bare_justify_head);
@@ -7645,7 +7645,7 @@ fn accepts_bare_effects_heads_when_they_are_last_children() {
     let bare_href_head = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-href-head")
+  (uuid "60000000-0000-0000-0000-000000000020")
   (text "note" (effects href "https://example.com"))
 )"#;
     let bare_href_head_path = temp_schematic("bare_effects_href_head", bare_href_head);
@@ -7674,7 +7674,7 @@ fn bare_effects_font_payload_cannot_have_trailing_siblings() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-font-trailing")
+  (uuid "60000000-0000-0000-0000-000000000021")
   (text "note" (effects font size 1 1 bold))
 )"#;
     let path = temp_schematic("bare_effects_font_trailing", src);
@@ -7689,7 +7689,7 @@ fn bare_effects_href_head_cannot_have_trailing_siblings() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-href-trailing")
+  (uuid "60000000-0000-0000-0000-000000000022")
   (text "note" (effects href "https://example.com" hide))
 )"#;
     let path = temp_schematic("bare_effects_href_trailing", src);
@@ -7704,7 +7704,7 @@ fn bare_effects_hide_head_allows_siblings_but_not_bare_bool_payloads() {
     let trailing_src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-hide-trailing")
+  (uuid "60000000-0000-0000-0000-000000000023")
   (text "note" (at 1 2 0) (effects hide (font (size 1 1))))
 )"#;
     let trailing_path = temp_schematic("bare_effects_hide_trailing", trailing_src);
@@ -7731,7 +7731,7 @@ fn bare_effects_hide_head_allows_siblings_but_not_bare_bool_payloads() {
             r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-hide-yes")
+  (uuid "60000000-0000-0000-0000-000000000024")
   (text "note" (at 1 2 0) (effects hide yes))
 )"#,
         ),
@@ -7740,7 +7740,7 @@ fn bare_effects_hide_head_allows_siblings_but_not_bare_bool_payloads() {
             r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bare-hide-no")
+  (uuid "60000000-0000-0000-0000-000000000025")
   (text "note" (at 1 2 0) (effects hide no))
 )"#,
         ),
@@ -7761,7 +7761,7 @@ fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_face = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-numeric-font-face")
+  (uuid "60000000-0000-0000-0000-000000000026")
   (text "note" (effects (font (face 123))))
 )"#;
     let numeric_face_path = temp_schematic("numeric_effects_font_face", numeric_face);
@@ -7772,7 +7772,7 @@ fn rejects_non_symbol_effects_face_and_href_payloads() {
     let numeric_href = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-numeric-href")
+  (uuid "60000000-0000-0000-0000-000000000027")
   (text "note" (effects (href 123)))
 )"#;
     let numeric_href_path = temp_schematic("numeric_effects_href", numeric_href);
