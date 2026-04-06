@@ -5909,7 +5909,16 @@ impl KiCadSchematicParser {
                                 }
 
                                 if !replaced {
-                                    target.add_draw_item(item.clone());
+                                    let unit_name = format!(
+                                        "{}_{}_{}",
+                                        target.name, item.unit_number, item.body_style
+                                    );
+                                    let unit_index = target.ensure_unit_index(
+                                        unit_name,
+                                        item.unit_number,
+                                        item.body_style,
+                                    );
+                                    target.units[unit_index].push_draw_item(item.clone());
                                 }
                             }
                         }
