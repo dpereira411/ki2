@@ -5613,6 +5613,64 @@ fn load_tree_hydrates_structured_sim_enable_state() {
 }
 
 #[test]
+fn load_tree_preserves_serializer_style_sim_field_payloads() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000032a")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Params" "flag gain=2 model=\"BC\\\"547\" extra=\"x y\"")
+    (property "Sim.Pins" "1=\"PIN A\" 2=B")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_preserves_serializer_style_sim_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![
+            ("flag".to_string(), "1".to_string()),
+            ("gain".to_string(), "2".to_string()),
+            ("model".to_string(), "BC\"547".to_string()),
+            ("extra".to_string(), "x y".to_string()),
+        ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "PIN A".to_string()),
+            ("2".to_string(), "B".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn resolves_symbol_sim_library_sources_from_embedded_stack_before_filesystem() {
     let src = r#"(kicad_sch
   (version 20260306)
