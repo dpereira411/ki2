@@ -221,11 +221,43 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
         .expect_err("must reject quoted lib text angle");
     assert!(err.to_string().contains("missing text angle"));
 
+    let quoted_lib_pin_angle = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-pin-angle")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (pin input line (at 0 0 "90") (length 2.54) (name "P") (number "1"))))
+)"#;
+    let quoted_lib_pin_angle_path =
+        temp_schematic("quoted_lib_pin_angle_number", quoted_lib_pin_angle);
+    let err = parse_schematic_file(Path::new(&quoted_lib_pin_angle_path))
+        .expect_err("must reject quoted lib pin angle");
+    assert!(err.to_string().contains("missing pin orientation"));
+
+    let quoted_lib_property_angle = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-quoted-lib-property-angle")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (property "RefDes" "U" (at 0 0 "90"))))
+)"#;
+    let quoted_lib_property_angle_path = temp_schematic(
+        "quoted_lib_property_angle_number",
+        quoted_lib_property_angle,
+    );
+    let err = parse_schematic_file(Path::new(&quoted_lib_property_angle_path))
+        .expect_err("must reject quoted lib property angle");
+    assert!(err.to_string().contains("missing text angle"));
+
     let _ = fs::remove_file(quoted_comment_number_path);
     let _ = fs::remove_file(quoted_symbol_angle_path);
     let _ = fs::remove_file(quoted_text_angle_path);
     let _ = fs::remove_file(quoted_text_box_size_path);
     let _ = fs::remove_file(quoted_lib_text_angle_path);
+    let _ = fs::remove_file(quoted_lib_pin_angle_path);
+    let _ = fs::remove_file(quoted_lib_property_angle_path);
 }
 
 #[test]

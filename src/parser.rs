@@ -1799,13 +1799,14 @@ impl KiCadSchematicParser {
             match head.as_str() {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3_lib("pin at")?;
-                    match parsed[2] as i32 {
+                    let at = self.parse_xy2_lib("pin at")?;
+                    let angle = self.parse_i32_atom("pin orientation")?;
+                    match angle {
                         0 | 90 | 180 | 270 => {}
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     }
-                    item.at = Some([parsed[0], parsed[1]]);
-                    item.angle = Some(parsed[2]);
+                    item.at = Some(at);
+                    item.angle = Some(f64::from(angle));
                     self.need_right()?;
                 }
                 "length" => {
@@ -2039,9 +2040,8 @@ impl KiCadSchematicParser {
                 }
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
-                    let parsed = self.parse_xy3_lib("property at")?;
-                    property.at = Some([parsed[0], parsed[1]]);
-                    property.angle = Some(parsed[2]);
+                    property.at = Some(self.parse_xy2_lib("property at")?);
+                    property.angle = Some(self.parse_f64_atom("text angle")?);
                     self.need_right()?;
                 }
                 "hide" => {
@@ -5310,14 +5310,6 @@ impl KiCadSchematicParser {
         Ok([
             self.parse_internal_units_atom(format!("{context} x"))?,
             -self.parse_internal_units_atom(format!("{context} y"))?,
-        ])
-    }
-
-    fn parse_xy3_lib(&mut self, context: &str) -> Result<[f64; 3], Error> {
-        Ok([
-            self.parse_internal_units_atom(format!("{context} x"))?,
-            -self.parse_internal_units_atom(format!("{context} y"))?,
-            self.parse_f64_atom(format!("{context} angle"))?,
         ])
     }
 
