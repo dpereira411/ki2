@@ -2391,8 +2391,6 @@ pub struct SymbolLocalInstance {
     pub path: String,
     pub reference: Option<String>,
     pub unit: Option<i32>,
-    pub value: Option<String>,
-    pub footprint: Option<String>,
     pub variants: BTreeMap<String, ItemVariant>,
 }
 
@@ -2403,8 +2401,6 @@ impl SymbolLocalInstance {
             path,
             reference: None,
             unit: Some(1),
-            value: None,
-            footprint: None,
             variants: BTreeMap::new(),
         }
     }

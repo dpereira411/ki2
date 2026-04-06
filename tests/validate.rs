@@ -8419,8 +8419,6 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
 
     assert_eq!(symbol.instances[0].reference, None);
     assert_eq!(symbol.instances[0].unit, Some(1));
-    assert_eq!(symbol.instances[0].value, None);
-    assert_eq!(symbol.instances[0].footprint, None);
     assert_eq!(
         symbol
             .properties
