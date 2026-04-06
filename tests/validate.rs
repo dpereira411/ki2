@@ -2116,7 +2116,7 @@ fn rejects_invalid_generator_and_legacy_host_tokens() {
     let bad_generator = r#"(kicad_sch
   (version 20260306)
   (generator (bogus))
-  (uuid "u-1")
+  (uuid "74000000-0000-0000-0000-000000000001")
 )"#;
     let bad_generator_path = temp_schematic("bad_generator_token", bad_generator);
     let err = parse_schematic_file(Path::new(&bad_generator_path))
@@ -2126,7 +2126,7 @@ fn rejects_invalid_generator_and_legacy_host_tokens() {
     let bad_host = r#"(kicad_sch
   (version 20200826)
   (host "eeschema" (bogus))
-  (uuid "u-1")
+  (uuid "74000000-0000-0000-0000-000000000002")
 )"#;
     let bad_host_path = temp_schematic("bad_legacy_host_version_token", bad_host);
     let err = parse_schematic_file(Path::new(&bad_host_path))
@@ -2142,7 +2142,7 @@ fn rejects_invalid_title_block_comment_number() {
     let src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "74000000-0000-0000-0000-000000000003")
   (paper "A4")
   (title_block (comment 10 "bad"))
 )"#;
@@ -2164,7 +2164,7 @@ fn rejects_invalid_title_block_comment_number() {
     let valid_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-1")
+  (uuid "74000000-0000-0000-0000-000000000004")
   (paper "A4")
   (title_block (comment 9 "ok"))
 )"#;
@@ -2178,7 +2178,7 @@ fn rejects_invalid_title_block_comment_number() {
     let numeric_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
-  (uuid "u-2")
+  (uuid "74000000-0000-0000-0000-000000000005")
   (paper "A4")
   (title_block (title 2026) (rev 7) (comment 1 99))
 )"#;
@@ -2247,7 +2247,7 @@ fn parses_extended_top_level_sections() {
   (version 20250114)
   (generator "eeschema")
   (generator_version "9.0")
-  (uuid "u-1")
+  (uuid "74000000-0000-0000-0000-000000000006")
   (paper "A4")
   (title_block (title "Demo") (date "2026-02-25") (rev "A") (company "Acme") (comment 1 "c1"))
   (bus_alias "ADDR" (members "A0" "A1" "A2"))
@@ -2287,8 +2287,8 @@ fn parses_extended_top_level_sections() {
           (alternate "ALT" output clock)))
       (embedded_fonts yes)
       (embedded_files (file (name "sym.bin") (data |xyz|)))))
-  (text "hello" (at 10 20 0) (uuid "t-1"))
-  (text_box "box" (at 0 0 0) (size 5 5) (margins 1 2 3 4) (uuid "tb-1"))
+  (text "hello" (at 10 20 0) (uuid "74000000-0000-0000-0000-000000000007"))
+  (text_box "box" (at 0 0 0) (size 5 5) (margins 1 2 3 4) (uuid "74000000-0000-0000-0000-000000000008"))
   (table
     (column_count 2)
     (column_widths 10 20)
@@ -2298,23 +2298,23 @@ fn parses_extended_top_level_sections() {
       (table_cell "c2" (at 5 0 0) (size 5 5) (span 2 1)))
     (border (external yes) (header no) (stroke (width 0.3) (type solid)))
     (separators (rows yes) (cols no) (stroke (width 0.4) (type dash)))
-    (uuid "tbl-1"))
+    (uuid "74000000-0000-0000-0000-000000000009"))
   (image
     (at 1 2)
     (scale 2.5)
     (data
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptV"
       "AAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
-    (uuid "img-1"))
-  (polyline (pts (xy 0 0) (xy 1 1)) (uuid "pl-1"))
-  (arc (start 0 0) (mid 1 1) (end 2 0) (uuid "a-1"))
-  (circle (center 0 0) (radius 1) (uuid "c-1"))
-  (rectangle (start 0 0) (end 2 2) (uuid "r-1"))
-  (bezier (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (uuid "b-1"))
-  (rule_area (polyline (pts (xy 0 0) (xy 2 0) (xy 2 2)) (uuid "ra-1")) (exclude_from_sim yes) (in_bom no) (on_board yes) (dnp no))
-  (directive_label "D" (shape input) (at 10 10 0) (uuid "d-1"))
-  (netclass_flag "N" (shape input) (at 11 10 0) (uuid "n-1"))
-  (group "grp" (uuid "g-1") (lib_id "lib:block") (members "pl-1" "a-1"))
+    (uuid "74000000-0000-0000-0000-00000000000a"))
+  (polyline (pts (xy 0 0) (xy 1 1)) (uuid "74000000-0000-0000-0000-00000000000b"))
+  (arc (start 0 0) (mid 1 1) (end 2 0) (uuid "74000000-0000-0000-0000-00000000000c"))
+  (circle (center 0 0) (radius 1) (uuid "74000000-0000-0000-0000-00000000000d"))
+  (rectangle (start 0 0) (end 2 2) (uuid "74000000-0000-0000-0000-00000000000e"))
+  (bezier (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (uuid "74000000-0000-0000-0000-00000000000f"))
+  (rule_area (polyline (pts (xy 0 0) (xy 2 0) (xy 2 2)) (uuid "74000000-0000-0000-0000-000000000010")) (exclude_from_sim yes) (in_bom no) (on_board yes) (dnp no))
+  (directive_label "D" (shape input) (at 10 10 0) (uuid "74000000-0000-0000-0000-000000000011"))
+  (netclass_flag "N" (shape input) (at 11 10 0) (uuid "74000000-0000-0000-0000-000000000012"))
+  (group "grp" (uuid "74000000-0000-0000-0000-000000000013") (lib_id "lib:block") (members "74000000-0000-0000-0000-00000000000b" "74000000-0000-0000-0000-00000000000c"))
   (sheet_instances (path "/" (page "1")))
 )"#;
     let path = temp_schematic("extended_sections", src);
@@ -2566,7 +2566,7 @@ fn parses_extended_top_level_sections() {
         2
     );
     assert!(schematic.screen.items.iter().any(
-        |item| matches!(item, SchItem::Group(Group { name, uuid, .. }) if name.as_deref() == Some("grp") && uuid.as_deref() == Some("g-1"))
+        |item| matches!(item, SchItem::Group(Group { name, uuid, .. }) if name.as_deref() == Some("grp") && uuid.as_deref() == Some("74000000-0000-0000-0000-000000000013"))
     ));
 
     let _ = fs::remove_file(path);
