@@ -6329,7 +6329,7 @@ fn rejects_quoted_effects_keyword_tokens() {
 }
 
 #[test]
-fn rejects_bare_effects_font_and_justify_heads_but_accepts_hide_and_href() {
+fn rejects_bare_effects_font_justify_and_href_heads_but_accepts_hide() {
     let bare_font_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -6409,23 +6409,9 @@ fn rejects_bare_effects_font_and_justify_heads_but_accepts_hide_and_href() {
   (text "note" (effects href "https://example.com"))
 )"#;
     let bare_href_head_path = temp_schematic("bare_effects_href_head", bare_href_head);
-    let schematic = parse_schematic_file(Path::new(&bare_href_head_path))
-        .expect("must accept bare href head like native KiCad");
-    let text = schematic
-        .screen
-        .items
-        .iter()
-        .find_map(|item| match item {
-            SchItem::Text(text) => Some(text),
-            _ => None,
-        })
-        .expect("text");
-    assert_eq!(
-        text.effects
-            .as_ref()
-            .and_then(|effects| effects.hyperlink.as_deref()),
-        Some("https://example.com")
-    );
+    let err = parse_schematic_file(Path::new(&bare_href_head_path))
+        .expect_err("must reject bare href head like native KiCad");
+    assert!(err.to_string().contains("expecting )"));
     let _ = fs::remove_file(bare_href_head_path);
 }
 
