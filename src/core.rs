@@ -11,6 +11,7 @@ pub struct SchematicProject {
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
     by_path: HashMap<PathBuf, usize>,
+    sheet_paths_by_instance: HashMap<String, usize>,
 }
 
 impl SchematicProject {
@@ -21,6 +22,12 @@ impl SchematicProject {
             .enumerate()
             .map(|(index, schematic)| (schematic.path.clone(), index))
             .collect();
+        let sheet_paths_by_instance = load
+            .sheet_paths
+            .iter()
+            .enumerate()
+            .map(|(index, sheet_path)| (sheet_path.instance_path.clone(), index))
+            .collect();
 
         Self {
             root_path: load.root_path,
@@ -28,6 +35,7 @@ impl SchematicProject {
             links: load.links,
             sheet_paths: load.sheet_paths,
             by_path,
+            sheet_paths_by_instance,
         }
     }
 
@@ -70,5 +78,11 @@ impl SchematicProject {
         self.sheet_paths
             .iter()
             .filter(move |sheet_path| sheet_path.schematic_path == canonical)
+    }
+
+    pub fn sheet_path(&self, instance_path: &str) -> Option<&LoadedSheetPath> {
+        self.sheet_paths_by_instance
+            .get(instance_path)
+            .and_then(|index| self.sheet_paths.get(*index))
     }
 }

@@ -66,6 +66,12 @@ impl LoadResult {
             .iter()
             .filter(move |link| link.child_path == canonical)
     }
+
+    pub fn sheet_path(&self, instance_path: &str) -> Option<&LoadedSheetPath> {
+        self.sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == instance_path)
+    }
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {

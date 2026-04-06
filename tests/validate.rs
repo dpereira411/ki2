@@ -423,9 +423,33 @@ fn reuses_previously_loaded_child_schematic() {
     assert_eq!(child.screen.virtual_page_number, None);
     assert_eq!(loaded.sheet_paths_of(&child_path).count(), 2);
     assert_eq!(loaded.parents_of(&child_path).count(), 2);
+    assert_eq!(
+        loaded
+            .sheet_path("/root-u/sheet-a")
+            .expect("sheet path A")
+            .page
+            .as_deref(),
+        Some("1")
+    );
+    assert_eq!(
+        loaded
+            .sheet_path("/root-u/sheet-b")
+            .expect("sheet path B")
+            .page
+            .as_deref(),
+        Some("2")
+    );
 
     let project = SchematicProject::from_load_result(loaded);
     assert_eq!(project.sheet_paths_of(&child_path).count(), 2);
+    assert_eq!(
+        project
+            .sheet_path("/root-u/sheet-a")
+            .expect("project sheet path A")
+            .page
+            .as_deref(),
+        Some("1")
+    );
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
