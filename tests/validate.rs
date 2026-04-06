@@ -2780,6 +2780,53 @@ fn accepts_embedded_files_before_supported_version() {
 }
 
 #[test]
+fn accepts_table_before_supported_version() {
+    let src = r#"(kicad_sch
+  (version 20230101)
+  (generator "eeschema")
+  (table
+    (column_count 1)
+    (column_widths 10)
+    (row_heights 20)
+    (cells
+      (table_cell "c1" (at 0 0 0) (size 5 5))))
+)"#;
+    let path = temp_schematic("old_table_version", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept table on older versions");
+    assert!(
+        schematic
+            .screen
+            .items
+            .iter()
+            .any(|item| matches!(item, SchItem::Table(_)))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn accepts_rule_area_before_supported_version() {
+    let src = r#"(kicad_sch
+  (version 20230101)
+  (generator "eeschema")
+  (rule_area
+    (polyline (pts (xy 0 0) (xy 1 0)))
+    (exclude_from_sim yes))
+)"#;
+    let path = temp_schematic("old_rule_area_version", src);
+    let schematic =
+        parse_schematic_file(Path::new(&path)).expect("must accept rule_area on older versions");
+    assert!(
+        schematic
+            .screen
+            .items
+            .iter()
+            .any(|item| matches!(item, SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea))
+    );
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn accepts_modern_page_sniff_block() {
     let src = r#"(kicad_sch
   (version 20250114)

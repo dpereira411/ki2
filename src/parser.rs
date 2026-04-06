@@ -20,8 +20,6 @@ use crate::token::{AtomClass, TokKind, Token, lex};
 
 const SEXPR_SCHEMATIC_FILE_VERSION: i32 = 20260306;
 const VERSION_GENERATOR_VERSION: i32 = 20231120;
-const VERSION_TABLES: i32 = 20240101;
-const VERSION_RULE_AREAS: i32 = 20240417;
 const VERSION_PAGE_RENAMED_TO_PAPER: i32 = 20200506;
 const VERSION_EMPTY_TILDE_IS_EMPTY: i32 = 20250318;
 const VERSION_SHEET_INSTANCE_ROOT_PATH: i32 = 20221002;
@@ -2889,12 +2887,6 @@ impl KiCadSchematicParser {
 
     fn parse_sch_table(&mut self) -> Result<Table, Error> {
         let _ = self.need_unquoted_symbol_atom("table")?;
-        let version = self.require_known_version()?;
-        if version < VERSION_TABLES {
-            return Err(self.error_here(format!(
-                "table requires schematic version {VERSION_TABLES} or newer"
-            )));
-        }
         let mut table = Table::new(DEFAULT_LINE_WIDTH_MM);
         while !self.at_right() {
             self.need_left()?;
@@ -3386,12 +3378,6 @@ impl KiCadSchematicParser {
 
     fn parse_sch_rule_area(&mut self) -> Result<Shape, Error> {
         let _ = self.need_unquoted_symbol_atom("rule_area")?;
-        let version = self.require_known_version()?;
-        if version < VERSION_RULE_AREAS {
-            return Err(self.error_here(format!(
-                "rule_area requires schematic version {VERSION_RULE_AREAS} or newer"
-            )));
-        }
         let mut shape = Shape::new(ShapeKind::RuleArea);
         while !self.at_right() {
             self.need_left()?;
