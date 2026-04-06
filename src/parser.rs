@@ -4504,11 +4504,6 @@ impl KiCadSchematicParser {
             }
         }
 
-        for property in &mut properties {
-            if property.kind == PropertyKind::SheetFile {
-                property.value = property.value.replace('\\', "/");
-            }
-        }
         sheet.properties = properties;
 
         if sheet.name().is_none() {

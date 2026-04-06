@@ -4665,7 +4665,7 @@ fn canonicalizes_and_replaces_mandatory_properties() {
         })
         .expect("sheet");
     assert_eq!(sheet.name(), Some("Legacy Name"));
-    assert_eq!(sheet.filename(), Some("legacy.kicad_sch"));
+    assert_eq!(sheet.filename().as_deref(), Some("legacy.kicad_sch"));
     assert_eq!(
         sheet
             .properties
@@ -11944,7 +11944,7 @@ fn sheetfile_properties_normalize_to_forward_slashes() {
         })
         .expect("sheet");
 
-    assert_eq!(sheet.filename(), Some("dir/child.kicad_sch"));
+    assert_eq!(sheet.filename().as_deref(), Some("dir/child.kicad_sch"));
 
     let _ = fs::remove_file(path);
 }
@@ -11977,7 +11977,7 @@ fn sheet_preserves_duplicate_mandatory_properties_in_parse_order() {
         .expect("sheet");
 
     assert_eq!(sheet.name(), Some("First"));
-    assert_eq!(sheet.filename(), Some("first.kicad_sch"));
+    assert_eq!(sheet.filename().as_deref(), Some("first.kicad_sch"));
     assert_eq!(
         sheet
             .properties

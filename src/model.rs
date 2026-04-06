@@ -1168,11 +1168,11 @@ impl Sheet {
             .map(|property| property.value.as_str())
     }
 
-    pub fn filename(&self) -> Option<&str> {
+    pub fn filename(&self) -> Option<String> {
         self.properties
             .iter()
             .find(|property| property.kind == PropertyKind::SheetFile)
-            .map(|property| property.value.as_str())
+            .map(|property| property.value.replace('\\', "/"))
     }
 
     pub fn is_vertical_orientation(&self) -> bool {
