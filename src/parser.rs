@@ -2499,7 +2499,7 @@ impl KiCadSchematicParser {
                         "output" => LabelShape::Output,
                         "bidirectional" => LabelShape::Bidirectional,
                         "tri_state" => LabelShape::TriState,
-                        "passive" => LabelShape::Passive,
+                        "passive" => LabelShape::Unspecified,
                         "dot" => LabelShape::Dot,
                         "round" => LabelShape::Round,
                         "diamond" => LabelShape::Diamond,

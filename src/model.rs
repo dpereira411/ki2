@@ -714,7 +714,7 @@ pub enum LabelShape {
     Output,
     Bidirectional,
     TriState,
-    Passive,
+    Unspecified,
     Dot,
     Round,
     Diamond,

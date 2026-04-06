@@ -5579,6 +5579,30 @@ fn rejects_quoted_label_and_sheet_pin_shape_tokens() {
 }
 
 #[test]
+fn passive_label_shape_maps_to_upstream_unspecified_shape() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-passive-label-shape")
+  (global_label "VCC" (shape passive))
+)"#;
+    let path = temp_schematic("passive_label_shape_unspecified", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse passive label");
+    let label = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    assert_eq!(label.shape, LabelShape::Unspecified);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_symbol_mirror_and_lib_pin_type_shape_tokens() {
     let quoted_mirror = r#"(kicad_sch
   (version 20260306)
