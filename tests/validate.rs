@@ -5071,8 +5071,30 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
         temp_schematic("global_label_invalid_shape_token", bad_global_shape_src);
     let err = parse_schematic_file(Path::new(&bad_global_shape_path))
         .expect_err("must reject invalid shape token on global label");
-    assert!(err.to_string().contains("expecting shape"));
+    assert!(
+        err.to_string().contains(
+            "expecting input, output, bidirectional, tri_state, passive, dot, round, diamondor rectangle"
+        )
+    );
     let _ = fs::remove_file(bad_global_shape_path);
+
+    let quoted_global_shape_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (global_label "G" (at 0 0 0) (shape "input"))
+)"#;
+    let quoted_global_shape_path =
+        temp_schematic("quoted_global_label_shape_token", quoted_global_shape_src);
+    let err = parse_schematic_file(Path::new(&quoted_global_shape_path))
+        .expect_err("must reject quoted shape token on nonlocal label");
+    assert!(
+        err.to_string().contains(
+            "expecting input, output, bidirectional, tri_state, passive, dot, round, diamondor rectangle"
+        )
+    );
+    let _ = fs::remove_file(quoted_global_shape_path);
 
     let hierarchical_length_src = r#"(kicad_sch
   (version 20250114)
@@ -5191,7 +5213,11 @@ fn rejects_quoted_label_and_sheet_pin_shape_tokens() {
     let quoted_label_shape_path = temp_schematic("quoted_label_shape_token", quoted_label_shape);
     let err = parse_schematic_file(Path::new(&quoted_label_shape_path))
         .expect_err("must reject quoted label shape token");
-    assert!(err.to_string().contains("expecting shape"));
+    assert!(
+        err.to_string().contains(
+            "expecting input, output, bidirectional, tri_state, passive, dot, round, diamondor rectangle"
+        )
+    );
 
     let quoted_sheet_pin_shape = r#"(kicad_sch
   (version 20260306)

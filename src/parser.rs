@@ -2488,7 +2488,20 @@ impl KiCadSchematicParser {
                     if matches!(label.kind, LabelKind::Local) {
                         return Err(self.unexpected("shape"));
                     }
-                    label.shape = match self.need_unquoted_symbol_atom("shape")?.as_str() {
+                    let shape = match &self.current().kind {
+                        TokKind::Atom(value)
+                            if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                        {
+                            value.clone()
+                        }
+                        _ => {
+                            return Err(self.expecting(
+                                "input, output, bidirectional, tri_state, passive, dot, round, diamondor rectangle",
+                            ))
+                        }
+                    };
+                    self.idx += 1;
+                    label.shape = match shape.as_str() {
                         "input" => LabelShape::Input,
                         "output" => LabelShape::Output,
                         "bidirectional" => LabelShape::Bidirectional,
@@ -2500,7 +2513,7 @@ impl KiCadSchematicParser {
                         "rectangle" => LabelShape::Rectangle,
                         _ => {
                             return Err(self.expecting(
-                                "input, output, bidirectional, tri_state, passive, dot, round, diamond or rectangle",
+                                "input, output, bidirectional, tri_state, passive, dot, round, diamondor rectangle",
                             ))
                         }
                     };
