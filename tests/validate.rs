@@ -9165,6 +9165,21 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let err = parse_schematic_file(Path::new(&bad_group_name_path))
         .expect_err("must reject unquoted group name");
     assert!(err.to_string().contains("expecting group name or locked"));
+    let _ = fs::remove_file(&bad_group_name_path);
+
+    let bare_locked_group = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-locked")
+  (group locked
+    (uuid "group-uuid")
+    (members "a")))
+)"#;
+    let bare_locked_group_path = temp_schematic("bad_group_locked", bare_locked_group);
+    let err = parse_schematic_file(Path::new(&bare_locked_group_path))
+        .expect_err("must reject bare locked group name");
+    assert!(err.to_string().contains("expecting group name or locked"));
+    let _ = fs::remove_file(bare_locked_group_path);
 
     let bad_group_lib_id = r#"(kicad_sch
   (version 20260306)

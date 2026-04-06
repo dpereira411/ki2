@@ -4608,11 +4608,6 @@ impl KiCadSchematicParser {
         };
 
         while !matches!(self.current().kind, TokKind::Left) {
-            if self.at_unquoted_symbol_with("locked") {
-                let _ = self.need_unquoted_symbol_atom("locked")?;
-                continue;
-            }
-
             group.name = Some(self.need_quoted_atom("group name or locked")?);
         }
 
