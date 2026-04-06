@@ -8489,9 +8489,50 @@ fn duplicate_local_symbol_instance_paths_overwrite_like_kicad() {
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolReference)
             .map(|property| property.value.as_str()),
-        Some("")
+        Some("R2")
     );
-    assert_eq!(symbol.unit, Some(1));
+    assert_eq!(symbol.unit, Some(3));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn first_local_symbol_instance_seeds_live_reference_and_unit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-first-local-symbol-instance")
+  (symbol
+    (lib_id "Device:R")
+    (instances
+      (project "demo"
+        (path "/A" (reference "R7") (unit 2)))))
+)"#;
+    let path = temp_schematic("first_local_symbol_instance_updates_live_state", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(symbol.instances.len(), 1);
+    assert_eq!(symbol.instances[0].reference.as_deref(), Some("R7"));
+    assert_eq!(symbol.instances[0].unit, Some(2));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R7")
+    );
+    assert_eq!(symbol.unit, Some(2));
 
     let _ = fs::remove_file(path);
 }
