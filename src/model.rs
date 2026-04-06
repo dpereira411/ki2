@@ -1321,6 +1321,8 @@ mod tests {
             path: "/A".to_string(),
             reference: None,
             unit: Some(1),
+            value: None,
+            footprint: None,
             variants: BTreeMap::new(),
         };
         instance.reference = Some("R7".to_string());
@@ -1350,6 +1352,8 @@ mod tests {
             path: "/A".to_string(),
             reference: None,
             unit: Some(1),
+            value: None,
+            footprint: None,
             variants: BTreeMap::new(),
         };
         first.reference = Some("R1".to_string());
@@ -1358,6 +1362,8 @@ mod tests {
             path: "/A".to_string(),
             reference: None,
             unit: Some(1),
+            value: None,
+            footprint: None,
             variants: BTreeMap::new(),
         };
         second.reference = Some("R2".to_string());
@@ -2306,6 +2312,8 @@ pub struct SymbolLocalInstance {
     pub path: String,
     pub reference: Option<String>,
     pub unit: Option<i32>,
+    pub value: Option<String>,
+    pub footprint: Option<String>,
     pub variants: BTreeMap<String, ItemVariant>,
 }
 

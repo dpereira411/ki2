@@ -3793,6 +3793,8 @@ impl KiCadSchematicParser {
                                 path,
                                 reference: None,
                                 unit: Some(1),
+                                value: None,
+                                footprint: None,
                                 variants: BTreeMap::new(),
                             };
                             while !self.at_right() {
@@ -3838,6 +3840,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
+                                        instance.value = Some(parsed.clone());
                                         let existing = symbol
                                             .properties
                                             .iter_mut()
@@ -3868,6 +3871,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
+                                        instance.footprint = Some(parsed.clone());
                                         let existing = symbol
                                             .properties
                                             .iter_mut()
