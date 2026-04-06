@@ -496,31 +496,31 @@ struct ResolvedIbisModel {
 }
 
 fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceModel> {
-    let tokens = text.split_whitespace().collect::<Vec<_>>();
-    let mut index = 0;
+    for statement in collect_spice_statements(text) {
+        let tokens = statement.split_whitespace().collect::<Vec<_>>();
 
-    while index + 1 < tokens.len() {
-        if tokens[index].eq_ignore_ascii_case(".model")
-            && tokens[index + 1].eq_ignore_ascii_case(wanted_name)
-        {
+        if tokens.len() < 2 {
+            continue;
+        }
+
+        if tokens[0].eq_ignore_ascii_case(".model") && tokens[1].eq_ignore_ascii_case(wanted_name) {
             return Some(ResolvedSpiceModel {
-                name: tokens[index + 1].to_string(),
-                model_type: tokens.get(index + 2).map(|token| token.to_string()),
+                name: tokens[1].to_string(),
+                model_type: tokens.get(2).map(|token| token.to_string()),
                 pins: Vec::new(),
-                params: tokens[index + 3..]
+                params: tokens[3..]
                     .iter()
                     .filter_map(|token| parse_spice_model_param_token(token))
                     .collect(),
             });
         }
 
-        if tokens[index].eq_ignore_ascii_case(".subckt")
-            && tokens[index + 1].eq_ignore_ascii_case(wanted_name)
+        if tokens[0].eq_ignore_ascii_case(".subckt") && tokens[1].eq_ignore_ascii_case(wanted_name)
         {
             let mut pins = Vec::new();
             let mut params = Vec::new();
 
-            for token in &tokens[index + 2..] {
+            for token in &tokens[2..] {
                 if token.starts_with('.') {
                     break;
                 }
@@ -540,28 +540,61 @@ fn resolve_spice_model(text: &str, wanted_name: &str) -> Option<ResolvedSpiceMod
             }
 
             return Some(ResolvedSpiceModel {
-                name: tokens[index + 1].to_string(),
+                name: tokens[1].to_string(),
                 model_type: None,
                 pins,
                 params,
             });
         }
-
-        index += 1;
     }
 
     None
 }
 
-fn collect_spice_include_paths(text: &str) -> Vec<String> {
-    text.lines()
-        .filter_map(|line| {
-            let line = line.trim();
+fn collect_spice_statements(text: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
 
-            if line.is_empty() || line.starts_with('*') {
-                return None;
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+
+        if line.is_empty() || line.starts_with('*') {
+            continue;
+        }
+
+        if let Some(continuation) = line.strip_prefix('+') {
+            let continuation = continuation.trim();
+
+            if !continuation.is_empty() {
+                if !current.is_empty() {
+                    current.push(' ');
+                }
+
+                current.push_str(continuation);
             }
 
+            continue;
+        }
+
+        if !current.is_empty() {
+            statements.push(current);
+            current = String::new();
+        }
+
+        current.push_str(line);
+    }
+
+    if !current.is_empty() {
+        statements.push(current);
+    }
+
+    statements
+}
+
+fn collect_spice_include_paths(text: &str) -> Vec<String> {
+    collect_spice_statements(text)
+        .into_iter()
+        .filter_map(|line| {
             let rest = line
                 .strip_prefix(".include")
                 .or_else(|| line.strip_prefix(".INCLUDE"))?
