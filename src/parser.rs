@@ -5712,65 +5712,145 @@ impl KiCadSchematicParser {
         let symbol = symbols.get(lib_id)?.clone();
 
         if !stack.insert(lib_id.to_string()) {
+            let mut symbol = symbol;
+            symbol.extends = None;
             return Some(symbol);
         }
 
         let mut flattened = if let Some(parent_name) = symbol.extends.as_deref() {
-            let mut parent = Self::flatten_local_lib_symbol(parent_name, symbols, cache, stack)?;
+            let mut parent_chain: Vec<LibSymbol> = Vec::new();
+            let mut visited: std::collections::BTreeSet<String> =
+                std::collections::BTreeSet::from([symbol.lib_id.clone()]);
+            let mut parent_name = Some(parent_name.to_string());
 
-            parent.lib_id = symbol.lib_id.clone();
-            parent.name = symbol.name.clone();
-            parent.extends = None;
+            while let Some(current_parent_name) = parent_name {
+                let parent = symbols.get(&current_parent_name)?.clone();
 
-            for unit in &mut parent.units {
-                unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
-            }
-
-            for property in &symbol.properties {
-                if property.kind.is_mandatory() && !property.value.is_empty() {
-                    if let Some(existing) = parent
-                        .properties
-                        .iter_mut()
-                        .find(|existing| existing.kind == property.kind)
-                    {
-                        *existing = property.clone();
-                    }
+                if visited.contains(&parent.lib_id) {
+                    break;
                 }
+
+                visited.insert(parent.lib_id.clone());
+                parent_name = parent.extends.clone();
+                parent_chain.push(parent);
             }
 
-            if let Some(keywords) = symbol.keywords.as_ref()
-                && !keywords.is_empty()
-            {
-                parent.keywords = Some(keywords.clone());
-            }
+            if parent_chain.is_empty() {
+                let mut symbol = symbol.clone();
+                symbol.extends = None;
+                symbol
+            } else {
+                let mut flattened = parent_chain
+                    .last()
+                    .cloned()
+                    .expect("non-empty parent chain has a root symbol");
 
-            if symbol.fp_filters_specified {
-                if !symbol.fp_filters.is_empty() {
-                    parent.fp_filters_specified = true;
-                    parent.fp_filters = symbol.fp_filters.clone();
+                let apply_overrides =
+                    |target: &mut LibSymbol, derived: &LibSymbol, include_embedded_files: bool| {
+                        for property in &derived.properties {
+                            if property.kind.is_mandatory() {
+                                if !property.value.is_empty() {
+                                    if let Some(existing) = target
+                                        .properties
+                                        .iter_mut()
+                                        .find(|existing| existing.kind == property.kind)
+                                    {
+                                        *existing = property.clone();
+                                    }
+                                }
+                            } else if let Some(existing) = target
+                                .properties
+                                .iter_mut()
+                                .find(|existing| existing.key == property.key)
+                            {
+                                *existing = property.clone();
+                            } else {
+                                target.properties.push(property.clone());
+                            }
+                        }
+
+                        for unit in &derived.units {
+                            for item in &unit.draw_items {
+                                if item.kind != "field" {
+                                    continue;
+                                }
+
+                                let field_name = item.name.as_deref();
+                                let mut replaced = false;
+
+                                for target_unit in &mut target.units {
+                                    if let Some(existing) =
+                                        target_unit.draw_items.iter_mut().find(|existing| {
+                                            existing.kind == "field"
+                                                && existing.name.as_deref() == field_name
+                                        })
+                                    {
+                                        *existing = item.clone();
+                                        replaced = true;
+                                        break;
+                                    }
+                                }
+
+                                if !replaced {
+                                    target.add_draw_item(item.clone());
+                                }
+                            }
+                        }
+
+                        if let Some(keywords) = derived.keywords.as_ref()
+                            && !keywords.is_empty()
+                        {
+                            target.keywords = Some(keywords.clone());
+                        }
+
+                        if !derived.fp_filters.is_empty() {
+                            target.fp_filters_specified = true;
+                            target.fp_filters = derived.fp_filters.clone();
+                        }
+
+                        if include_embedded_files {
+                            for embedded_file in &derived.embedded_files {
+                                let already_present =
+                                    embedded_file.name.as_ref().is_some_and(|name| {
+                                        target
+                                            .embedded_files
+                                            .iter()
+                                            .any(|existing| existing.name.as_ref() == Some(name))
+                                    });
+
+                                if !already_present {
+                                    target.embedded_files.push(embedded_file.clone());
+                                }
+                            }
+                        }
+                    };
+
+                for derived in parent_chain.iter().rev().skip(1) {
+                    apply_overrides(&mut flattened, derived, false);
                 }
-            }
 
-            for embedded_file in &symbol.embedded_files {
-                let already_present = embedded_file.name.as_ref().is_some_and(|name| {
-                    parent
-                        .embedded_files
-                        .iter()
-                        .any(|existing| existing.name.as_ref() == Some(name))
-                });
+                flattened.lib_id = symbol.lib_id.clone();
+                flattened.name = symbol.name.clone();
+                flattened.extends = None;
 
-                if !already_present {
-                    parent.embedded_files.push(embedded_file.clone());
+                apply_overrides(&mut flattened, &symbol, true);
+
+                let immediate_parent = parent_chain
+                    .first()
+                    .expect("non-empty parent chain has an immediate parent");
+                flattened.excluded_from_sim = immediate_parent.excluded_from_sim;
+                flattened.in_bom = immediate_parent.in_bom;
+                flattened.on_board = immediate_parent.on_board;
+
+                for unit in &mut flattened.units {
+                    unit.name = format!(
+                        "{}_{}_{}",
+                        flattened.name, unit.unit_number, unit.body_style
+                    );
                 }
-            }
 
-            if let Some(immediate_parent) = symbols.get(parent_name) {
-                parent.excluded_from_sim = immediate_parent.excluded_from_sim;
-                parent.in_bom = immediate_parent.in_bom;
-                parent.on_board = immediate_parent.on_board;
+                flattened
             }
-
-            parent
         } else {
             symbol.clone()
         };

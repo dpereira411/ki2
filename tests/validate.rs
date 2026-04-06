@@ -1969,6 +1969,69 @@ fn parser_flatten_keeps_child_embedded_files_without_overwriting_parent() {
 }
 
 #[test]
+fn parser_flatten_skips_intermediate_parent_embedded_files() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "root-lib-embedded-chain")
+  (paper "A4")
+  (embedded_files
+    (file (name "root.bin") (checksum "sha256:root") (type font) (data |aaa|))
+    (file (name "mid.bin") (checksum "sha256:mid") (type font) (data |bbb|))
+    (file (name "child.bin") (checksum "sha256:child") (type font) (data |ccc|)))
+  (lib_symbols
+    (symbol "Root:R"
+      (embedded_files (file (name "root.bin"))))
+    (symbol "Mid:R"
+      (extends "Root:R")
+      (embedded_files (file (name "mid.bin"))))
+    (symbol "Child:R"
+      (extends "Mid:R")
+      (embedded_files (file (name "child.bin")))))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_flatten_intermediate_embedded_files", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    assert_eq!(linked.embedded_files.len(), 2);
+    assert!(
+        linked
+            .embedded_files
+            .iter()
+            .any(|file| file.name.as_deref() == Some("root.bin"))
+    );
+    assert!(
+        linked
+            .embedded_files
+            .iter()
+            .any(|file| file.name.as_deref() == Some("child.bin"))
+    );
+    assert!(
+        !linked
+            .embedded_files
+            .iter()
+            .any(|file| file.name.as_deref() == Some("mid.bin"))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -2213,6 +2276,69 @@ fn parser_does_not_link_derived_local_symbol_with_missing_parent() {
         .expect("placed symbol");
 
     assert!(symbol.lib_symbol.is_none());
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn parser_links_derived_lib_symbols_with_user_field_overrides() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-child-user-fields")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Root:R"
+      (property "UserA" "root-a")
+      (property "UserB" "root-b"))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (property "UserA" "child-a")
+      (property "UserC" "child-c")))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_child_user_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+
+    let root_unit = linked
+        .units
+        .iter()
+        .find(|unit| unit.unit_number == 1 && unit.body_style == 1)
+        .expect("flattened root unit");
+    let user_a = root_unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "field" && item.name.as_deref() == Some("UserA"))
+        .expect("overridden child user field");
+    let user_b = root_unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "field" && item.name.as_deref() == Some("UserB"))
+        .expect("inherited parent user field");
+    let user_c = root_unit
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "field" && item.name.as_deref() == Some("UserC"))
+        .expect("new child user field");
+
+    assert_eq!(user_a.text.as_deref(), Some("child-a"));
+    assert_eq!(user_b.text.as_deref(), Some("root-b"));
+    assert_eq!(user_c.text.as_deref(), Some("child-c"));
 
     let _ = fs::remove_file(path);
 }
