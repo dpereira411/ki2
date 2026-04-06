@@ -9337,6 +9337,38 @@ fn records_warning_for_invalid_lib_symbol_embedded_files() {
 }
 
 #[test]
+fn accumulates_repeated_lib_symbol_embedded_files_sections() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Local:R"
+      (embedded_files (file (name "A.bin") (data |aaa|)))
+      (embedded_files (file (name "B.bin") (data |bbb|))))))
+"#;
+    let path = temp_schematic("repeated_lib_symbol_embedded_files", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    assert_eq!(schematic.screen.lib_symbols[0].embedded_files.len(), 2);
+    assert_eq!(
+        schematic.screen.lib_symbols[0].embedded_files[0]
+            .name
+            .as_deref(),
+        Some("A.bin")
+    );
+    assert_eq!(
+        schematic.screen.lib_symbols[0].embedded_files[1]
+            .name
+            .as_deref(),
+        Some("B.bin")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn records_warning_and_skips_invalid_lib_symbol_block() {
     let src = r#"(kicad_sch
   (version 20250114)

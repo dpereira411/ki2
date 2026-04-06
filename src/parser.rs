@@ -1101,7 +1101,7 @@ impl KiCadSchematicParser {
                     let block_depth = self.current_nesting_depth();
                     match self.parse_embedded_files() {
                         Ok(files) => {
-                            symbol.embedded_files = files;
+                            symbol.embedded_files.extend(files);
                         }
                         Err(err) => {
                             self.screen.parse_warnings.push(err.to_string());
