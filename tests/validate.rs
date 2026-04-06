@@ -7869,6 +7869,43 @@ fn applies_upstream_default_text_box_margins_when_omitted() {
 }
 
 #[test]
+fn clamps_text_box_margins_to_kicad_internal_unit_limit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-clamped-textbox-margins")
+  (paper "A4")
+  (text_box "body" (at 0 0 0) (size 5 5) (margins 100000000000000000000 100000000000000000000 100000000000000000000 100000000000000000000))
+  (lib_symbols
+    (symbol "Device:R"
+      (text_box "lib" (at 0 0 0) (size 5 5) (margins 100000000000000000000 100000000000000000000 100000000000000000000 100000000000000000000))))
+)"#;
+    let path = temp_schematic("clamped_textbox_margins", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let limit = f64::from(i32::MAX) * 0.7071 / 1e4;
+
+    let text_box = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::TextBox(text_box) => Some(text_box),
+            _ => None,
+        })
+        .expect("text box");
+    assert_eq!(text_box.margins, Some([limit, limit, limit, limit]));
+
+    let lib_text_box = schematic.screen.lib_symbols[0].units[0]
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "text_box")
+        .expect("lib text box");
+    assert_eq!(lib_text_box.margins, Some([limit, limit, limit, limit]));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn text_boxes_and_table_cells_keep_constructor_graphic_defaults() {
     let src = r#"(kicad_sch
   (version 20260306)

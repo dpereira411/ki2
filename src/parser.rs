@@ -1697,10 +1697,10 @@ impl KiCadSchematicParser {
                 "margins" => {
                     let _ = self.need_unquoted_symbol_atom("margins")?;
                     item.margins = Some([
-                        self.parse_f64_atom("margin left")?,
-                        self.parse_f64_atom("margin top")?,
-                        self.parse_f64_atom("margin right")?,
-                        self.parse_f64_atom("margin bottom")?,
+                        self.parse_internal_units_atom("margin left")?,
+                        self.parse_internal_units_atom("margin top")?,
+                        self.parse_internal_units_atom("margin right")?,
+                        self.parse_internal_units_atom("margin bottom")?,
                     ]);
                     found_margins = true;
                     self.need_right()?;
@@ -2772,10 +2772,10 @@ impl KiCadSchematicParser {
                 "margins" => {
                     let _ = self.need_unquoted_symbol_atom("margins")?;
                     let margins = Some([
-                        self.parse_f64_atom("margin left")?,
-                        self.parse_f64_atom("margin top")?,
-                        self.parse_f64_atom("margin right")?,
-                        self.parse_f64_atom("margin bottom")?,
+                        self.parse_internal_units_atom("margin left")?,
+                        self.parse_internal_units_atom("margin top")?,
+                        self.parse_internal_units_atom("margin right")?,
+                        self.parse_internal_units_atom("margin bottom")?,
                     ]);
                     match &mut owner {
                         ParsedTextBoxOwner::TextBox(text_box) => text_box.margins = margins,
