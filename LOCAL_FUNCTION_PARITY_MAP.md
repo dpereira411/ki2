@@ -1,153 +1,258 @@
-## Function Parity Map
+# Parser-Only Function Parity Audit
 
-Target: finish everything needed before hierarchy loading, bottom-up, by function tree, not by ad hoc branch chasing.
-
-Legend:
-- `done`: routine exists and is close enough structurally that it should not be the current bottleneck
-- `partial`: routine exists but still has meaningful structural/code-flow gaps
-- `blocked`: upstream stage needs model expansion before a real port is possible
-- `next`: best current work queue
-
-### Upstream Parser Tree
+Target: exhaust pre-hierarchy parser parity by auditing every parser-boundary function and support
+function against upstream KiCad, then iterating the unresolved items one by one.
 
 Boundary:
-- In scope: lexer/token layer, parser/model support required for single-file parse parity, and all of `src/parser.rs`
-- Out of scope for this map: `src/loader.rs` and all hierarchy/post-load stages
+- In scope: `src/token.rs`, `src/model.rs`, `src/error.rs`, `src/diagnostic.rs`, `src/parser.rs`
+- Out of scope: `src/loader.rs` and all hierarchy/post-load stages
 
-#### Layer 0: Parser Support Files
+Status legend:
+- `same`: function boundary, token flow, mutation timing, accepted grammar, and failure behavior are
+  close enough to upstream that it is no longer an active bottleneck
+- `different`: meaningful parser-parity work still remains
+- `blocked`: parity depends on a model/support expansion before the owning routine can match
+- `not_applicable`: no distinct upstream counterpart is required; the function exists only as local
+  support for an already-audited upstream flow
 
-| File | Status | Notes |
-| --- | --- | --- |
-| `src/token.rs` | partial | token/lexer parity is still not globally signed off |
-| `src/model.rs` | partial | parser-owned structures have improved, but some reduced types still remain |
-| `src/error.rs` | partial | parser diagnostics still need exactness work |
-| `src/diagnostic.rs` | partial | parser diagnostics still need exactness work |
+## Active Queue
 
-#### Layer 1: Entry / Dispatch
-
-| Upstream | Local | Status | Notes |
-| --- | --- | --- | --- |
-| `ParseSchematic` | `parse_schematic` + `parse_schematic_body` | partial | broad dispatch exists, but not every owning flow is proven 1:1 yet |
-| `parseHeader` | inline in `parse_schematic` | partial | structurally close, but still part of top-level parity |
-| `parsePAGE_INFO` | `parse_page_info` | done | one of the closest branches |
-| `parseTITLE_BLOCK` | `parse_title_block` | done | raw value reads, explicit comment-slot switch, and branch ownership now line up closely enough that it is no longer the current bottleneck |
-
-#### Layer 2: Shared Leaves / Subparsers
-
-| Upstream | Local | Status | Notes |
-| --- | --- | --- | --- |
-| `parseStroke` | `parse_stroke` | done | token ownership mostly aligned |
-| `parseFill` | `parse_fill` | done | token ownership mostly aligned |
-| `parseEDA_TEXT` | `parse_eda_text` | partial | ownership flow is much closer; remaining text-family drift is now concentrated here in final token/error exactness rather than in the owning text routine |
-| `parseSchField` | `parse_sch_field` | partial | direct audit shows the main parent-sensitive classification flow is close; remaining work is exactness, not a large missing branch family |
-| `parseSchSheetPin` | `parse_sch_sheet_pin` | done | constructor defaults, shape token flow, at/uuid/effects handling, and close ownership are now close enough that it is no longer the current bottleneck |
-| `parseProperty` (lib) | `parse_lib_property` | partial | direct audit shows the constructor/order and insertion policy are close; remaining work is exactness around the surrounding lib-symbol routine |
-
-#### Layer 3: Library Cache
-
-| Upstream | Local | Status | Notes |
-| --- | --- | --- | --- |
-| `parseLibSymbol` | `parse_lib_symbol` | partial | helper boundaries, parser-owned lib unit/body-style state, derived-symbol flattening, and finalization are much closer; remaining work is narrower exactness rather than broad ownership |
-| `parseBodyStyles` | `parse_body_styles` | done | helper boundary restored |
-| `parsePinNames` | `parse_pin_names` | done | helper boundary restored |
-| `parsePinNumbers` | `parse_pin_numbers` | done | helper boundary restored |
-| `ParseSymbolDrawItem` | `parse_symbol_draw_item` | partial | parser-owned current unit/body-style flow now matches upstream much more closely; remaining work is routine exactness |
-| `parseSymbolArc` | `parse_symbol_arc` | partial | parser-owned lib unit/body-style flow is aligned; remaining work is exactness |
-| `parseSymbolBezier` | `parse_symbol_bezier` | partial | same |
-| `parseSymbolCircle` | `parse_symbol_circle` | partial | same |
-| `parseSymbolPin` | `parse_symbol_pin` | partial | same |
-| `parseSymbolPolyLine` | `parse_symbol_polyline` | partial | same |
-| `parseSymbolRectangle` | `parse_symbol_rectangle` | partial | same |
-| `parseSymbolText` | `parse_symbol_text` | partial | hidden-text-to-field flow plus parser-owned lib field ordinals are closer; remaining work is exactness |
-| `parseSymbolTextBox` | `parse_symbol_text_box` | partial | parser-owned lib unit/body-style flow is aligned; remaining work is exactness |
-
-#### Layer 4: Schematic Owners
-
-| Upstream | Local | Status | Notes |
-| --- | --- | --- | --- |
-| `parseSchematicSymbol` | `parse_schematic_symbol` | partial | direct comparison shows the owning flow is closer than earlier notes implied; remaining work is narrower exactness and parent-routine interaction |
-| `parseSheet` | `parse_sch_sheet` | partial | direct comparison shows the owning flow is closer than earlier notes implied; remaining work is narrower exactness and surrounding parser interaction |
-| `parseSchText` | `parse_sch_text` | partial | direct upstream audit shows the owning shared-family loop is structurally close; remaining text-family gaps are narrower exactness and `parse_eda_text` interaction, not a missing whole-routine shape |
-| `parseSchTextBox` | `parse_sch_text_box` | done | shared owner/body split, raw uuid path, and legacy start/end/size/margins flow now line up closely enough that it is no longer the current bottleneck |
-| `parseSchTableCell` | `parse_sch_table_cell` | done | distinct cell ownership and shared textbox-body routing now match upstream closely enough that it is no longer the current bottleneck |
-| `parseSchTextBoxContent` | `parse_sch_text_box_content` | done | shared textbox body is now structurally close: caller-owned mutation, span gating, raw uuid path, and legacy size/end/margins flow are aligned enough to stop treating it as the current bottleneck |
-| `parseSchTable` | `parse_sch_table` | done | table ownership, border/separator routing, cell grid materialization, and no-cell failure are close enough that it is no longer the current bottleneck |
-| `parseImage` | `parse_sch_image` | done | direct upstream audit shows `at`/`scale`/`uuid`/`data` ownership, non-normal scale fallback, invalid-data failure, and legacy image-PPI adjustment are now close enough that it is no longer the current bottleneck |
-| `parseSchPolyLine` | `parse_sch_polyline` | partial | closer, not final |
-| `parseLine` | `parse_sch_line` | partial | closer, not final |
-| `parseSchArc` | `parse_sch_arc` | partial | closer, not final |
-| `parseSchCircle` | `parse_sch_circle` | partial | closer, not final |
-| `parseSchRectangle` | `parse_sch_rectangle` | partial | closer, not final |
-| `parseSchRuleArea` | `parse_sch_rule_area` | partial | closer, not final |
-| `parseSchBezier` | `parse_sch_bezier` | partial | closer, not final |
-| `parseJunction` | `parse_junction` | partial | close but still in schematic owner family |
-| `parseNoConnect` | `parse_no_connect` | partial | same |
-| `parseBusEntry` | `parse_bus_entry` | partial | same |
-| `parseBusAlias` | `parse_bus_alias` | done | direct upstream audit shows alias-name parsing, members keyword flow, quoted-string member failure text, empty-members acceptance, and legacy overbar conversion now line up closely enough that it is no longer the current bottleneck |
-| `parseGroupMembers` + `parseGroup` | `parse_group` | done | dedicated member-uuid helper, deferred resolution, lib-id diagnostics, and cycle repair now line up closely enough that it is no longer the current bottleneck |
-| `parseSchSheetInstances` | `parse_sch_sheet_instances` | partial | parser exists, loader integration still evolving |
-| `parseSchSymbolInstances` | `parse_sch_symbol_instances` | partial | parser exists, loader integration still evolving |
-
-### Exact Scope Before Hierarchy Loading
-
-Finish these, in this order, before moving back to `src/loader.rs`:
-
-1. `src/token.rs`
-2. parser primitive helpers
-3. parser shared subparsers
-4. library-cache parser routines
-5. schematic item owner routines
-6. top-level `parse_schematic` / `parse_schematic_body`
-
-### Bottom-Up Port Order
-
-#### Layer 1: Shared Bottlenecks
+Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
 1. `parse_eda_text`
-2. `parse_sch_field` (no longer the primary bottleneck; revisit only if a parent routine exposes a concrete mismatch)
-3. `parse_lib_property` (no longer the primary bottleneck; revisit only if a parent routine exposes a concrete mismatch)
+2. `parse_sch_text`
+3. `parse_lib_symbol`
+4. `parse_schematic` / `parse_schematic_body`
+5. `parse_sch_sheet`
+6. `parse_schematic_symbol`
+7. parser-wide token/error exactness in `src/token.rs`, `src/error.rs`, and `src/diagnostic.rs`
 
-These are still parent/owner-sensitive leaves that many higher routines depend on.
+## Layer 0: Support Files
 
-#### Layer 2: Owner-Sensitive Mid-Level Routines
+### `src/token.rs`
 
-1. library draw-item family under `parse_symbol_draw_item`
-2. `parse_sch_sheet_pin` (done; revisit only if `parse_sch_sheet` comparison exposes a concrete remaining mismatch)
-3. `parse_sch_text_box_content` + `parse_sch_table_cell` + `parse_sch_table` (done; revisit only if a parent routine exposes a concrete remaining mismatch)
+| Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `skip_utf8_bom` | DSN lexer BOM skip | `same` | helper-only and behavior is already locked | token tests | none |
+| `prescan_version` | none; local lexer prescan | `different` | local prescan is still a repo-specific preprocessing step and exactness is not fully signed off | parser notes + token tests | keep auditing header/version edge cases |
+| `is_line_comment_start` | DSN lexer comment detection | `same` | comment start behavior is now covered and matches parser entry needs closely enough | token tests | none |
+| `skip_whitespace_and_line_comments` | DSN lexer whitespace/comment skip | `same` | line comments, BOM, and NUL whitespace are covered and stable | token tests | none |
+| `is_dsn_number` | DSN lexer number classification | `same` | current grammar matches KiCad-style number token behavior closely enough | token tests | none |
+| `is_schematic_keyword` | KiCad keyword token table | `different` | keyword tagging keeps improving and still needs full parser-wide signoff | recent keyword-tag commits | continue direct malformed-token audits |
+| `lex` | top-level lexer entry | `different` | overall token layer is still not globally signed off | parser notes | keep after routine audits |
+| `decode_quoted_escape` | DSN quoted-string escape decoding | `same` | KiCad-style escape decoding is now covered with focused tests | token tests | none |
+| `lex_with_bar` | DSN lexer body | `different` | whole-token exactness still depends on final keyword and malformed-atom parity | token tests + parser notes | continue parser-wide sweep last |
 
-#### Layer 3: Big Owner Routines
+### `src/diagnostic.rs`
 
-1. `parse_sch_text`
-2. `parse_lib_symbol`
-3. `parse_sch_sheet`
-4. `parse_schematic_symbol`
+| Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `Diagnostic::error` | parse error construction | `different` | local diagnostic shape is still simpler than KiCad’s parser diagnostics | parser notes | revisit only if parser error exactness needs model changes |
+| `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
+| `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
-#### Layer 5: Top-Level Parser
+### `src/error.rs`
 
-1. `parse_schematic` / `parse_schematic_body`
+No nontrivial function bodies live here, but the file remains in scope because final parser parity
+still depends on error/diagnostic exactness.
 
-### Immediate Next Candidates
+| Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `Error` enum formatting | parse/validation error reporting | `different` | exact wording/span/source parity is still incomplete | parser notes | revisit during final error sweep |
 
-Pick the first routine cluster whose direct dependencies above are no longer the bottleneck:
+### `src/model.rs` parser support methods
 
-1. Revisit `parse_eda_text` and the remaining shared text/effects exactness exposed by direct upstream comparison.
-2. Revisit `parse_sch_text` where shared text-family behavior still depends on those effects semantics.
-3. Revisit `parse_lib_symbol` only for concrete remaining exactness mismatches, not broad helper/finalization cleanup.
-4. Revisit `parse_sch_sheet` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
-5. Revisit `parse_schematic_symbol` only when a direct upstream comparison exposes a concrete remaining mismatch worth porting.
-6. Revisit `parse_schematic` / `parse_schematic_body` after the owning subroutines above are tighter.
+Only methods that materially affect parser parity are tracked here. Pure accessors or test helpers do
+not drive the queue unless a parent parser routine exposes them.
 
-### Explicitly Deferred Until After This Map Is Exhausted
+| Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `LibSymbol::new` | `LIB_SYMBOL` constructor defaults | `same` | mandatory fields and root-unit ownership are close enough | model tests | none |
+| `LibSymbol::has_legacy_alternate_body_style` | legacy body-style inference | `same` | now used in upstream-shaped finalization | parser/model tests | none |
+| `LibSymbol::next_field_ordinal` | field ordinal ownership | `same` | supports parser-owned hidden/user field flow correctly enough | model tests | none |
+| `LibDrawItem::new` | library draw-item defaults | `same` | defaults are constructor-owned and tested | model tests | none |
+| `Label::new` | `SCH_LABEL_BASE` constructors | `same` | mandatory-field/default-shape ownership now matches upstream closely enough | model tests | none |
+| `Label::next_field_ordinal` | label field ordinal ownership | `same` | parser-visible behavior is locked | model tests | none |
+| `Label::set_position` | `SCH_LABEL_BASE::SetPosition` | `same` | attached-field movement is model-owned and tested | model tests | none |
+| `Label::set_angle` | label angle setter | `same` | now separate from position flow like upstream | model tests | none |
+| `Label::set_spin` | label spin setter | `same` | separate owner mutation now matches `parseSchText()` needs | model tests | none |
+| `Text::new` | `SCH_TEXT` constructor defaults | `same` | defaults and geometry are covered | model tests | none |
+| `Text::set_position` | `SCH_TEXT::SetPosition` | `same` | owner movement is separated from angle mutation | model tests | none |
+| `Text::set_angle` | text angle setter | `same` | separate from position like upstream | model tests | none |
+| `TextBox::new` | `SCH_TEXTBOX` constructor defaults | `same` | defaults are stable and tested | model tests | none |
+| `TableCell::new` | `SCH_TABLECELL` constructor defaults | `same` | defaults/grid ownership are stable | model tests | none |
+| `Stroke::new` | stroke defaults | `same` | parser-owned defaults are covered | model tests | none |
+| `Fill::new` | fill defaults | `same` | parser-owned defaults are covered | model tests | none |
+| `Table::new` | `SCH_TABLE` constructor defaults | `same` | border/separator defaults are locked | model tests | none |
+| `Table::add_cell` | table cell ownership/materialization | `same` | table-grid ownership is now explicit and tested | model tests | none |
+| `Table::get_cell` | local support | `not_applicable` | no upstream parser counterpart | source inspection | none |
+| `Table::row_count` | local support | `not_applicable` | no upstream parser counterpart | source inspection | none |
+| `Table::next_available_cell_slot` | table-cell placement support | `same` | required for parser-owned table materialization | model tests | none |
+| `Image::new` | `SCH_BITMAP` constructor defaults | `same` | defaults are stable and no longer a bottleneck | parser/model tests | none |
+| `Shape::new` | schematic shape constructor defaults | `same` | defaults now live in constructors and are tested | model tests | none |
+| `Symbol::new` | `SCH_SYMBOL` constructor defaults | `same` | mandatory fields/default state are close enough | model tests | none |
+| `Symbol::set_field_text` | mandatory-field text mutation | `same` | live field updates now preserve metadata and owner identity | model tests | none |
+| `Symbol::set_position` | `SCH_SYMBOL::SetPosition` | `same` | attached-field movement now follows owner semantics | model tests | none |
+| `Symbol::set_angle` | transform/orientation mutation | `same` | separate from position flow like upstream parse branch | model tests | none |
+| `Symbol::update_prefix_from_reference` | reference-prefix refresh | `same` | parser-visible side effects are covered | model tests | none |
+| `Symbol::next_field_ordinal` | symbol field ordinal ownership | `same` | parser uses this correctly for user fields | model tests | none |
+| `Sheet::new` | `SCH_SHEET` constructor defaults | `same` | mandatory fields/default state are close enough | model tests | none |
+| `Sheet::set_position` | `SCH_SHEET::SetPosition` | `same` | owner movement now updates pins like upstream | model tests | none |
+| `Sheet::set_size` | `SCH_SHEET::SetSize` / `Resize` | `same` | owner resize now reconstrains pins like upstream | model tests | none |
+| `Sheet::name` | local derived helper | `not_applicable` | support accessor only | source inspection | none |
+| `Sheet::filename` | local derived helper | `not_applicable` | support accessor only | source inspection | none |
+| `Sheet::is_vertical_orientation` | local support | `not_applicable` | support helper only | source inspection | none |
+| `Sheet::next_field_ordinal` | sheet field ordinal ownership | `same` | used correctly by parser | model tests | none |
+| `SymbolPin::new` | placed symbol pin defaults | `same` | parser-owned optional state starts correctly | model tests | none |
+| `Property::new` | field constructor defaults | `same` | default geometry/IDs are now explicit and tested | model tests | none |
+| `Property::new_named` | classified field construction | `same` | parser builds property objects early like upstream | parser/model tests | none |
+| `Property::sort_ordinal` | local sort support | `not_applicable` | no direct upstream parser counterpart | source inspection | none |
+| `PropertyKind::is_user_field` | classification support | `not_applicable` | local enum helper only | source inspection | none |
+| `PropertyKind::is_mandatory` | classification support | `not_applicable` | local enum helper only | source inspection | none |
+| `PropertyKind::canonical_key` | field-name canonicalization | `same` | parser relies on it and behavior is stable enough | parser tests | none |
+| `PropertyKind::default_field_id` | `FIELD_T` mapping | `same` | mandatory/user IDs now follow upstream | parser/model tests | none |
+| `SheetPin::new` | `SCH_SHEET_PIN` constructor defaults | `same` | default geometry/side comes from owner sheet as required | model tests | none |
+| `SheetPin::set_side_with_sheet_geometry` | owner side application | `same` | parser-owned side forcing now matches upstream sheet geometry flow | model tests | none |
+| `SheetPin::constrain_on_sheet_edge` | owner edge constraint | `same` | parser-owned edge constraint is covered | model tests | none |
 
-- `src/loader.rs`
-- `load_schematic_tree`
-- `load_hierarchy`
-- `build_sheet_list_sorted_by_page_numbers`
-- `update_symbol_instance_data`
-- `update_sheet_instance_data`
-- `set_sheet_number_and_count`
-- `recompute_intersheet_refs`
-- `update_all_screen_references`
-- `annotate_power_symbols`
-- `fix_legacy_power_symbol_mismatches`
-- `MigrateSimModels`
+## Layer 1: Entry / Dispatch
+
+| Upstream routine | Local routine | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `ParseSchematic` | `parse_schematic` | `different` | broad flow is close, but top-level exactness is not fully signed off | current map + direct audit | revisit after remaining owner routines |
+| `parseHeader` | inline in `parse_schematic` | `different` | local inline header/prescan path still differs from literal upstream header routine | source comparison | audit late/version failure paths |
+| top-level dispatch loop | `parse_schematic_body` | `different` | dispatch coverage exists, but exact fallback/error flow is still being tightened | source comparison | finish after owner routines |
+| `parsePAGE_INFO` | `parse_page_info` | `same` | one of the closest routines | existing map/tests | none |
+| `parseTITLE_BLOCK` | `parse_title_block` | `same` | comment-slot and branch ownership are close enough | existing map/tests | none |
+| `parseLibSymbols` wrapper | `parse_sch_lib_symbols` | `different` | structurally close, but still depends on final `parse_lib_symbol` exactness | source comparison | resolve through `parse_lib_symbol` |
+
+## Layer 2: Shared Leaves / Subparsers
+
+| Upstream routine | Local routine | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `parseBodyStyles` | `parse_body_styles` | `same` | helper boundary restored and behavior is stable enough | direct audit | none |
+| `parsePinNames` | `parse_pin_names` | `same` | helper boundary restored and direct behavior is stable | direct audit | none |
+| `parsePinNumbers` | `parse_pin_numbers` | `same` | helper boundary restored and direct behavior is stable | direct audit | none |
+| `parseStroke` | `parse_stroke` | `same` | token ownership and internal-units flow are close enough | existing tests | none |
+| `parseFill` | `parse_fill` | `same` | token ownership and fill-type flow are close enough | existing tests | none |
+| `parseEDA_TEXT` | `parse_eda_text` | `different` | shared ownership is close, but final token/error exactness is still active | recent direct-href work + notes | continue function-by-function exactness |
+| `parseSchField` | `parse_sch_field` | `different` | parent-sensitive flow is close, but exactness still depends on parent routines and diagnostics | direct audit | revisit from active parent mismatch |
+| `parseProperty` | `parse_lib_property` | `different` | constructor/order is close, but final lib-symbol exactness still depends on it | direct audit | revisit from `parse_lib_symbol` |
+| `parseSchSheetPin` | `parse_sch_sheet_pin` | `same` | constructor defaults, side/geometry flow, and close ownership are now stable | direct audit + tests | none |
+| `parseSchTextBoxContent` | `parse_sch_text_box_content` | `same` | owner/body split is structurally close enough | direct audit + tests | none |
+| `parseSchTableCell` | `parse_sch_table_cell` | `same` | distinct cell ownership is in place | direct audit + tests | none |
+
+## Layer 3: Library Cache
+
+| Upstream routine | Local routine | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `ParseSymbolDrawItem` | `parse_symbol_draw_item` | `different` | current-unit/body-style ownership is close, but branch/error exactness remains | notes + source comparison | resolve through draw-item family audit |
+| `parseLibSymbol` | `parse_lib_symbol` | `different` | helper/finalization flow is much closer, but branch exactness is still active | current queue | continue direct comparison |
+| `parseSymbolArc` | `parse_symbol_arc` | `same` | remaining mismatches are no longer a primary bottleneck | existing arc tests | none |
+| `parseSymbolBezier` | `parse_symbol_bezier` | `same` | branch shape and malformed-point behavior are covered | existing tests | none |
+| `parseSymbolCircle` | `parse_symbol_circle` | `same` | defaults and token flow are stable enough | existing tests | none |
+| `parseSymbolPolyLine` | `parse_symbol_polyline` | `same` | token set and point grammar are stable enough | existing tests | none |
+| `parseSymbolRectangle` | `parse_symbol_rectangle` | `same` | corner-radius/internal-units flow is stable enough | existing tests | none |
+| `parseSymbolText` | `parse_symbol_text` | `same` | hidden-text-to-field flow and effects ownership are stable enough | existing tests | none |
+| `parseSymbolTextBox` | `parse_symbol_text_box` | `same` | text-box ownership and defaults are stable enough | existing tests | none |
+| `parseSymbolPin` | `parse_symbol_pin` | `different` | still part of the narrower lib-symbol exactness surface | source comparison | revisit only if direct diff shows a concrete mismatch |
+| `embedded_files` body | `parse_embedded_files` | `same` | section ownership and recovery behavior are now close enough | direct audit + tests | none |
+
+## Layer 4: Schematic Owners
+
+| Upstream routine | Local routine | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `parseBusAlias` | `parse_bus_alias` | `same` | direct upstream audit cleared it from the active bottleneck set | existing notes/tests | none |
+| `parseJunction` | `parse_junction` | `same` | constructor/default/token flow is stable enough | existing tests | none |
+| `parseNoConnect` | `parse_no_connect` | `same` | constructor/default/token flow is stable enough | existing tests | none |
+| `parseBusEntry` | `parse_bus_entry` | `same` | legacy/default stroke and size flow are stable enough | existing tests | none |
+| `parseLine` | `parse_sch_line` | `same` | line/token ownership is close enough | existing tests | none |
+| `parseSchText` | `parse_sch_text` | `different` | broad owner loop is close, but shared effects interaction still has active exactness work | notes + direct audit | revisit after `parse_eda_text` |
+| `parseSchTextBox` | `parse_sch_text_box` | `same` | no longer a primary bottleneck | direct audit | none |
+| `parseSchTable` | `parse_sch_table` | `same` | table ownership and no-cell behavior are stable enough | direct audit + tests | none |
+| `parseImage` | `parse_sch_image` | `same` | no longer a primary bottleneck | direct audit | none |
+| `parseSchPolyLine` | `parse_sch_polyline` | `same` | shape-specific remaining drift is no longer active enough to block endgame | existing tests | none |
+| `parseSchArc` | `parse_sch_arc` | `same` | shape finalization flow is stable enough | existing tests | none |
+| `parseSchCircle` | `parse_sch_circle` | `same` | shape finalization flow is stable enough | existing tests | none |
+| `parseSchRectangle` | `parse_sch_rectangle` | `same` | shape finalization flow is stable enough | existing tests | none |
+| `parseSchBezier` | `parse_sch_bezier` | `same` | shape finalization flow is stable enough | existing tests | none |
+| `parseSchRuleArea` | `parse_sch_rule_area` | `same` | rule-area/polyline ownership is stable enough | existing tests | none |
+| `parseSchematicSymbol` | `parse_schematic_symbol` | `different` | much closer than before, but exact branch behavior still needs direct signoff | direct audit | revisit after text/lib endgame |
+| `parseSheet` | `parse_sch_sheet` | `different` | much closer than before, but exact branch behavior still needs direct signoff | direct audit | revisit after text/lib endgame |
+| `parseSchSheetInstances` | `parse_sch_sheet_instances` | `same` | parser-only behavior is stable enough; loader integration is deferred | current notes | none in parser-only phase |
+| `parseSchSymbolInstances` | `parse_sch_symbol_instances` | `same` | parser-only behavior is stable enough; loader integration is deferred | current notes | none in parser-only phase |
+| `parseGroup` | `parse_group` | `same` | deferred-resolution and cycle repair are stable enough | direct audit + tests | none |
+| `parseGroupMembers` | `parse_group_members` | `same` | member parsing/normalization is stable enough | existing tests | none |
+
+## Layer 5: Parser Primitives / Utilities
+
+| Local routine | Upstream counterpart | Status | Reason | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| `fixup_sch_fill_mode` | schematic fill fixup helper | `same` | branch timing is now on owning fill path | existing tests | none |
+| `find_invalid_lib_id_char` | `LIB_ID::Parse` helper split | `same` | used to preserve upstream error text shape | current behavior | none |
+| `is_valid_lib_id_shape` | `LIB_ID::Parse` helper split | `different` | validation shape is still local rather than the real KiCad parser implementation | direct audit | revisit during lib endgame if behavior diverges |
+| `clamp_text_size` | text size enforcement | `same` | current branch behavior is tested and stable | tests | none |
+| `validate_hyperlink` | `EDA_TEXT::ValidateHyperlink` | `different` | local implementation is close, but final URI exactness is still active | source comparison | continue with `parse_eda_text` exactness |
+| `get_label_spin_style` | label spin mapping | `same` | now separated cleanly from position flow | tests | none |
+| `normalize_text_angle` | text angle normalization | `same` | current behavior is stable enough | tests | none |
+| `get_legacy_text_margin` | legacy margin fallback | `same` | covered by textbox/table tests | tests | none |
+| `read_png_ppi` | image helper | `same` | covered by tests | parser tests | none |
+| `read_jpeg_ppi` | image helper | `same` | covered by tests | parser tests | none |
+| `read_image_ppi` | image helper | `same` | covered by tests | parser tests | none |
+| `validate_image_data` | image decode validation | `same` | covered and no longer active | integration tests | none |
+| `parse_xy2` | `parseXY` | `same` | internal-units and token path are stable enough | tests | none |
+| `parse_xy2_lib` | library coordinate variant | `same` | inverted-Y library behavior is covered | tests | none |
+| `parse_i32_atom` | `parseInt` | `same` | parser-wide integer path is stable enough | tests | none |
+| `parse_f64_atom` | `parseDouble` | `same` | parser-wide float path is stable enough | tests | none |
+| `parse_internal_units_atom` | `parseInternalUnits` | `same` | clamp behavior is now explicit and tested | tests | none |
+| `parse_bool_atom` | `parseBool` | `same` | yes/no exactness is stable enough | tests | none |
+| `parse_kiid` | `parseKIID` wrapper | `different` | full malformed-ID semantics are still not fully ported | notes | revisit if test/model migration is feasible |
+| `parse_raw_kiid` | raw KIID path | `same` | raw-vs-normalized split is explicit and covered | recent UUID audits | none |
+| `parse_kiid_atom` | `parseKIID` low-level read | `different` | tied to full UUID exactness still not signed off | notes | revisit with UUID semantics |
+| `normalize_kiid` | KIID normalization/uniqueness | `different` | malformed non-UUID handling still differs from native KiCad | notes | blocked on broader fixture/test migration |
+| `parse_maybe_absent_bool` | `parseMaybeAbsentBool` | `same` | current behavior is close and well covered | tests | none |
+| `require_known_version` | local support | `not_applicable` | repo-local support for parser entry ordering | source inspection | none |
+| `need_left` | `NeedLEFT` | `same` | stable low-level exactness | tests | none |
+| `need_right` | `NeedRIGHT` | `same` | stable low-level exactness | tests | none |
+| `need_symbol_atom` | `NeedSYMBOL` | `same` | quoted/symbol acceptance now matches KiCad expectations closely enough | direct audit + tests | none |
+| `need_unquoted_symbol_atom` | keyword-token path | `different` | parser-wide reserved-keyword exactness is still in progress | recent keyword work | finish token sweep |
+| `need_quoted_atom` | quoted-string helper | `not_applicable` | local support only | source inspection | none |
+| `need_symbol_or_number_atom` | `NeedSYMBOLorNUMBER` | `same` | quoted/symbol/number acceptance is stable enough | direct audit + tests | none |
+| `need_dsn_string_atom` | DSN string branch helper | `different` | depends on final keyword-tag exactness | recent keyword work | finish token sweep |
+| `at_right` | local token helper | `not_applicable` | local parser support only | source inspection | none |
+| `at_unquoted_symbol_with` | local token helper | `not_applicable` | local parser support only | source inspection | none |
+| `current_nesting_depth` | local token helper | `not_applicable` | local parser support only | source inspection | none |
+| `skip_to_block_right` | local recovery helper | `same` | used for embedded-file warning recovery only; behavior is stable enough | tests | none |
+| `current` | local token helper | `not_applicable` | local parser support only | source inspection | none |
+| `current_span` | local token helper | `not_applicable` | local parser support only | source inspection | none |
+| `expecting` | parse diagnostic helper | `different` | final message/span parity still belongs to the endgame sweep | parser notes | revisit last |
+| `unexpected` | parse diagnostic helper | `different` | final message/span parity still belongs to the endgame sweep | parser notes | revisit last |
+| `error_here` | parse diagnostic helper | `different` | final message/span parity still belongs to the endgame sweep | parser notes | revisit last |
+| `find_standard_page_info` | paper lookup support | `same` | stable and no longer active | direct behavior | none |
+| `parse_page_info` | `parsePAGE_INFO` | `same` | tracked above at owner layer; helper remains stable | direct audit | none |
+| `convert_old_overbar_notation` | legacy overbar conversion | `same` | behavior is covered and stable enough | tests | none |
+| `unescape_string_markers` | KiCad string-marker unescape support | `same` | used narrowly and covered | tests | none |
+| `fixup_legacy_lib_symbol_alternate_body_styles` | parser post-fixup | `same` | remaining body-style ownership moved into parser/finalization already | direct audit | none |
+| `update_local_lib_symbol_links` | parser local-lib link refresh | `same` | parser-only local-lib link fixup is stable enough | tests | none |
+| `flatten_local_lib_symbol` | local-lib `Flatten()` analogue | `different` | much closer now, but still part of the remaining lib-symbol exactness surface | direct audit | revisit with `parse_lib_symbol` |
+| `has_legacy_alternate_body_style` | local helper | `same` | behavior is stable enough | tests | none |
+| `fixup_embedded_data` | parser embedded-data finalization | `same` | metadata hydration/recovery is stable enough | tests | none |
+| `resolve_groups` | deferred group resolution | `same` | parser-only group finalization is no longer active | tests | none |
+| `get_item_index_by_uuid` | local group support | `not_applicable` | local support only | source inspection | none |
+| `item_uuid` | local group support | `not_applicable` | local support only | source inspection | none |
+| `groups_sanity_check` | group cycle repair | `same` | covered and no longer active | tests | none |
+| `validation` | parse validation helper | `different` | final diagnostic exactness still pending | parser notes | revisit last |
+
+## Implementation Rule
+
+For any row marked `different` or `blocked`:
+
+1. compare the upstream body directly to the local body
+2. identify one concrete mismatch only
+3. patch that mismatch
+4. run `cargo fmt --all`
+5. run `cargo test -q`
+6. update the row if the function is no longer active
+
+Do not return to loader/post-load work until every parser-only row above is either `same`,
+`not_applicable`, or explicitly `blocked` for a real model reason.
