@@ -83,7 +83,7 @@ Boundary:
 | `parseJunction` | `parse_junction` | partial | close but still in schematic owner family |
 | `parseNoConnect` | `parse_no_connect` | partial | same |
 | `parseBusEntry` | `parse_bus_entry` | partial | same |
-| `parseBusAlias` | `parse_bus_alias` | partial | much tighter, but not globally signed off |
+| `parseBusAlias` | `parse_bus_alias` | done | direct upstream audit shows alias-name parsing, members keyword flow, quoted-string member failure text, empty-members acceptance, and legacy overbar conversion now line up closely enough that it is no longer the current bottleneck |
 | `parseGroupMembers` + `parseGroup` | `parse_group` | done | dedicated member-uuid helper, deferred resolution, lib-id diagnostics, and cycle repair now line up closely enough that it is no longer the current bottleneck |
 | `parseSchSheetInstances` | `parse_sch_sheet_instances` | partial | parser exists, loader integration still evolving |
 | `parseSchSymbolInstances` | `parse_sch_symbol_instances` | partial | parser exists, loader integration still evolving |

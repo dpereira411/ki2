@@ -57,6 +57,12 @@ Closest-to-upstream areas so far:
 
 These are better than before, but still not at exact upstream routine parity.
 
+`bus_alias` is no longer one of the active parser-only bottlenecks:
+
+- direct upstream comparison shows alias-name parsing, `members` section ownership, empty-members
+  acceptance, invalid-member `Expecting( "quoted string" )`, and legacy overbar conversion are now
+  close enough to stop treating it as a primary gap
+
 The table/textbox cluster is no longer the main parser-only bottleneck:
 
 - `parseSchTextBox()`
