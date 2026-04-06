@@ -3,6 +3,11 @@
 Target: exhaust pre-hierarchy parser parity by auditing every parser-boundary function and support
 function against upstream KiCad, then iterating the unresolved items one by one.
 
+Current state:
+- every parser-only routine is now either `same`, `not_applicable`, or explicitly `blocked`
+- parser-only routine work is exhausted in the current model
+- active parity work has moved to `src/loader.rs` / post-load flow
+
 Boundary:
 - In scope: `src/token.rs`, `src/model.rs`, `src/error.rs`, `src/diagnostic.rs`, `src/parser.rs`
 - Out of scope: `src/loader.rs` and all hierarchy/post-load stages
@@ -21,6 +26,9 @@ Resolve these in order unless a direct comparison shows a prerequisite blocker f
 
 1. decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs
 2. decide whether to expand the local diagnostic/error model for native parse-error parity
+
+This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
+work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
 
 ## Layer 0: Support Files
 
@@ -249,5 +257,9 @@ For any row marked `different` or `blocked`:
 5. run `cargo test -q`
 6. update the row if the function is no longer active
 
-Do not return to loader/post-load work until every parser-only row above is either `same`,
-`not_applicable`, or explicitly `blocked` for a real model reason.
+Parser-only rows above are now exhausted: every item is `same`, `not_applicable`, or explicitly
+`blocked` for a real model reason.
+
+Do not create new parser-only backlog items unless:
+1. a blocked parser surface is being explicitly unblocked, or
+2. direct upstream comparison during loader work exposes a concrete parser regression.

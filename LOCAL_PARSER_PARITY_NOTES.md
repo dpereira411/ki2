@@ -4,7 +4,16 @@ Target: true 1:1 structural and code-flow parity with upstream KiCad schematic p
 
 ### Current State
 
-The parser is much closer structurally in some key routines, but it is still not at full 1:1 parity.
+Parser-only work is effectively exhausted in the current model.
+
+The remaining parser-side gaps are now blocked surfaces, not broad routine work:
+
+- native malformed-UUID semantics, which still require fixture/model migration away from stable
+  symbolic IDs
+- native diagnostic / error-format parity, which still requires expanding the local
+  `Diagnostic` / `Error` model
+
+Active parity work is now in the loader / post-load pipeline.
 
 Closest-to-upstream areas so far:
 
@@ -126,16 +135,16 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - exact `Expecting(...)` / `Unexpected(...)` parity is now blocked on expanding that model rather
   than on more routine-level parser edits
 
-11. Cross-file post-load pipeline is still substantially missing
+11. Cross-file post-load pipeline is still the active parity backlog
 
 - `BuildSheetListSortedByPageNumbers`
   Status: first loader-side sheet-path list now exists and is fed from hierarchy links plus root `sheet_instances`; exact KiCad ordering/metadata is still incomplete.
 - `UpdateSymbolInstanceData`
-  Status: first loader-side legacy `< 20221002` pass now applies root `symbol_instances` across the loaded hierarchy; remaining gap is fuller hierarchical-reference/state modeling.
+  Status: loader-side legacy `< 20221002` pass now applies root `symbol_instances` across the loaded hierarchy, seeds live symbol state from local instances, and preserves local instance value/footprint state. Remaining gap is fuller hierarchical-reference/state modeling.
 - `UpdateSheetInstanceData`
-  Status: first loader-side page propagation now applies root `sheet_instances` onto the loaded sheet-path list; later per-screen page-number/count state now also derives from that sorted list. Remaining gap is fuller reused-screen/current-sheet semantics.
+  Status: loader-side page propagation now applies root `sheet_instances` onto the loaded sheet-path list; later per-screen page-number/count state now also derives from that sorted list. Current-sheet selection also refreshes reused-screen live page state. Remaining gap is fuller reused-screen/current-sheet semantics.
 - `SetSheetNumberAndCount`
-  Status: loader-side sheet-number/count assignment now exists both on the loaded sheet-path list and on loaded `Screen` objects (`page_number`, `page_count`, `virtual_page_number`). Remaining gap is exact reused-screen/current-sheet behavior.
+  Status: loader-side sheet-number/count assignment now exists both on the loaded sheet-path list and on loaded `Screen` objects (`page_number`, `page_count`, `virtual_page_number`), plus current-sheet helpers now expose the selected occurrence page state. Remaining gap is exact reused-screen/current-sheet behavior.
 - `RecomputeIntersheetRefs`
   Status: loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list while preserving explicit visible-property state. Remaining gap is tighter KiCad settings/current-sheet behavior and later `UpdateAllScreenReferences` integration.
 - `UpdateAllScreenReferences`
@@ -150,27 +159,29 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   4. the explicit legacy `V` / `I` DC-source branch where `Spice_Model` like `dc(1)` becomes `Sim.Device`, `Sim.Type=DC`, migrated `Sim.Pins`, and an updated `Value` field
   5. the explicit legacy `V` / `I` built-in source branches where `Spice_Model` like `sin(...)`, `pulse(...)`, `exp(...)`, `am(...)`, and `sffm(...)` becomes `Sim.Device`, `Sim.Type`, named `Sim.Params`, and migrated/defaulted `Sim.Pins`
   Remaining blocked gap: the heavier simulator-model / project / embedded-model branch that resolves library-backed models, broader internal source/model functions beyond the current `DC/SIN/PULSE/EXP/AM/SFFM` slice, value-field substitutions beyond the simple DC slice, and full `Spice_*` inference paths. Do not fake that remaining stage without first expanding the Rust model beyond plain parser fields.
-- `AnnotatePowerSymbols`
-- `SetSheetNumberAndCount`
-- `RecomputeIntersheetRefs`
-- `UpdateAllScreenReferences`
 
 ### More Exact Current Priority
 
 1. Tighten remaining loader/post-load exactness around reused-screen/current-sheet page semantics.
-2. Decide whether to unblock native malformed-UUID semantics by migrating parser/loader fixtures away from stable symbolic IDs.
-3. Decide whether to expand the local diagnostic/error model for native parse-error parity.
-3. Port the missing cross-file post-load pipeline.
+2. Tighten remaining loader-side `UpdateAllScreenReferences` exactness against the current-sheet path.
+3. Tighten remaining loader-side `RecomputeIntersheetRefs` / `SetSheetNumberAndCount` exactness.
+4. Leave parser-only blocked surfaces alone unless we explicitly choose fixture migration or error-model expansion.
 
 ### Recommended Next Order
 
-1. Decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs.
-2. Decide whether to expand the diagnostic/error model for native parse-error parity.
+1. `UpdateAllScreenReferences`
+2. `SetSheetNumberAndCount`
+3. `RecomputeIntersheetRefs`
+4. `UpdateSymbolInstanceData`
+5. `FixLegacyPowerSymbolMismatches`
+6. only then revisit parser blocked surfaces or the heavier blocked `MigrateSimModels` branch
 
 ### Bottom Line
 
-The parser is not yet at full 1:1 parity, but the remaining parser-only gaps are now blocked
-surfaces rather than broad routine work:
+The parser-only layer is effectively exhausted in the current model, but two blocked surfaces still
+prevent a literal claim of perfect parser parity:
 
 - UUID semantics blocked on fixture/model migration
 - diagnostic / error parity blocked on error-model expansion
+
+The active executable backlog is now loader/post-load parity.
