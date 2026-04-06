@@ -15,6 +15,31 @@ The remaining parser-side gaps are now blocked surfaces, not broad routine work:
 
 Active parity work is now in the loader / post-load pipeline.
 
+### UUID Unblock Plan
+
+The UUID block is now a fixture/model migration task, not a broad parser-routine task.
+
+To unblock native KiCad malformed-UUID semantics:
+
+1. migrate tests away from stable symbolic fake UUIDs like `root-u`, `sheet-a`, `sym-u`, `wire-u`
+2. prefer:
+   - valid UUID fixtures where identity only needs to stay stable
+   - short hex fixtures only in tests that explicitly lock legacy normalization
+3. rewrite expectations away from exact symbolic values and toward:
+   - normalized UUID shape
+   - referential consistency
+   - uniqueness on creation sites
+4. keep creation-site and reference-site expectations separate:
+   - creation sites consume uniqueness
+   - references normalize without drifting away from their targets
+
+Execution order:
+
+1. group/member and item-reference tests with symbolic UUIDs but no hierarchy-path dependency
+2. parser-only single-file fixtures with symbolic item UUIDs
+3. hierarchy/loader fixtures that currently encode symbolic UUIDs into instance paths
+4. only then enable full native malformed-ID replacement semantics in `parse_kiid`
+
 Closest-to-upstream areas so far:
 
 - `parsePAGE_INFO()` / top-level `paper` / modern `page`

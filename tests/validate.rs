@@ -9323,9 +9323,9 @@ fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (wire (pts (xy 0 0) (xy 1 1)) (uuid "wire-u"))
-  (text_box "body" (at 10 20 90) (size 3 4) (exclude_from_sim yes) (uuid "tb"))
-  (group "G" (uuid "group-u") (members "wire-u"))
+  (wire (pts (xy 0 0) (xy 1 1)) (uuid "11111111-1111-1111-1111-111111111111"))
+  (text_box "body" (at 10 20 90) (size 3 4) (exclude_from_sim yes) (uuid "22222222-2222-2222-2222-222222222222"))
+  (group "G" (uuid "33333333-3333-3333-3333-333333333333") (members "11111111-1111-1111-1111-111111111111"))
 )"#;
     let path = temp_schematic("textbox_group", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -9345,7 +9345,8 @@ fn computes_text_box_end_from_size_and_defers_groups_until_after_items() {
     assert!(matches!(
         schematic.screen.items.last(),
         Some(SchItem::Group(Group { uuid, members, .. }))
-            if uuid.as_deref() == Some("group-u") && members == &vec!["wire-u".to_string()]
+            if uuid.as_deref() == Some("33333333-3333-3333-3333-333333333333")
+                && members == &vec!["11111111-1111-1111-1111-111111111111".to_string()]
     ));
     let _ = fs::remove_file(path);
 }
@@ -12480,9 +12481,9 @@ fn resolves_groups_after_items_and_drops_unknown_members() {
   (generator "eeschema")
   (uuid "u-1")
   (paper "A4")
-  (wire (pts (xy 0 0) (xy 1 1)) (uuid "wire-u"))
-  (group "G1" (uuid "g1") (members "wire-u" "missing"))
-  (group "G2" (uuid "g2") (members "g1" "missing-2"))
+  (wire (pts (xy 0 0) (xy 1 1)) (uuid "11111111-1111-1111-1111-111111111111"))
+  (group "G1" (uuid "22222222-2222-2222-2222-222222222222") (members "11111111-1111-1111-1111-111111111111" "missing"))
+  (group "G2" (uuid "33333333-3333-3333-3333-333333333333") (members "22222222-2222-2222-2222-222222222222" "missing-2"))
 )"#;
     let path = temp_schematic("resolved_groups", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -12498,8 +12499,14 @@ fn resolves_groups_after_items_and_drops_unknown_members() {
         .collect();
 
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].members, vec!["wire-u"]);
-    assert_eq!(groups[1].members, vec!["g1"]);
+    assert_eq!(
+        groups[0].members,
+        vec!["11111111-1111-1111-1111-111111111111"]
+    );
+    assert_eq!(
+        groups[1].members,
+        vec!["22222222-2222-2222-2222-222222222222"]
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -12541,8 +12548,8 @@ fn group_members_accept_number_tokens_and_drop_unknown_entries_later() {
   (version 20260306)
   (generator "eeschema")
   (uuid "root-group-number-member")
-  (wire (pts (xy 0 0) (xy 1 0)) (uuid "wire-u"))
-  (group "G1" (uuid "g1") (members 123 "wire-u"))
+  (wire (pts (xy 0 0) (xy 1 0)) (uuid "11111111-1111-1111-1111-111111111111"))
+  (group "G1" (uuid "22222222-2222-2222-2222-222222222222") (members 123 "11111111-1111-1111-1111-111111111111"))
 )"#;
     let path = temp_schematic("group_number_member", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -12557,7 +12564,7 @@ fn group_members_accept_number_tokens_and_drop_unknown_entries_later() {
         })
         .expect("group");
 
-    assert_eq!(group.members, vec!["wire-u"]);
+    assert_eq!(group.members, vec!["11111111-1111-1111-1111-111111111111"]);
 
     let _ = fs::remove_file(path);
 }

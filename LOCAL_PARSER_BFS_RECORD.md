@@ -165,6 +165,11 @@ These are the only remaining parser-only gaps recorded by the current audit:
      - `parse_kiid`
      - `parse_kiid_atom`
      - UUID normalization/uniqueness flow
+   - staged migration order:
+     1. group/member and item-reference tests without hierarchy-path coupling
+     2. parser-only single-file symbolic UUID fixtures
+     3. hierarchy/loader fixtures whose paths currently depend on symbolic IDs
+     4. then native malformed-ID replacement semantics
 
 2. exact diagnostic / error-model parity
    - blocked on expanding the local diagnostic representation beyond the current reduced model

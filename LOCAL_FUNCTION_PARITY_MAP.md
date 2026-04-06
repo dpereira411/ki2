@@ -30,6 +30,12 @@ Resolve these in order unless a direct comparison shows a prerequisite blocker f
 This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
 work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
 
+If UUID unblocking is chosen, execute it in this order:
+1. migrate group/member and other item-reference tests that use symbolic fake UUIDs
+2. migrate parser-only single-file fixtures with symbolic item UUIDs
+3. migrate hierarchy/loader fixtures whose instance paths currently depend on symbolic UUIDs
+4. only then switch `parse_kiid` / `normalize_kiid` to native malformed-ID replacement semantics
+
 ## Layer 0: Support Files
 
 ### `src/token.rs`
