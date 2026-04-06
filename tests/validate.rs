@@ -5551,6 +5551,47 @@ fn load_tree_migrates_mid_v7_sim_field_names() {
 }
 
 #[test]
+fn load_tree_hydrates_structured_sim_enable_state() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000030f")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Params" "type=\"R\" model=\"10k\" lib=\"\"")
+    (property "Sim.Enable" "0")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_structured_sim_enable", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(symbol.excluded_from_sim);
+    assert_eq!(
+        symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
+        Some(false)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
     let src = r#"(kicad_sch
   (version 20260306)

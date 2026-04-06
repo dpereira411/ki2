@@ -1215,6 +1215,7 @@ impl Symbol {
             pin_pairs,
             pins,
             value_binding,
+            enabled: !self.excluded_from_sim,
         });
     }
 }
@@ -1239,6 +1240,7 @@ pub struct SimModel {
     pub pin_pairs: Vec<(String, String)>,
     pub pins: BTreeMap<String, String>,
     pub value_binding: Option<SimValueBinding>,
+    pub enabled: bool,
 }
 
 fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
@@ -1661,6 +1663,10 @@ mod tests {
                 .and_then(|sim_model| sim_model.value_binding),
             None
         );
+        assert_eq!(
+            symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
+            Some(true)
+        );
     }
 
     #[test]
@@ -1737,6 +1743,10 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.value_binding),
             None
+        );
+        assert_eq!(
+            symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
+            Some(true)
         );
     }
 
@@ -1843,6 +1853,25 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.value_binding),
             Some(SimValueBinding::Name)
+        );
+    }
+
+    #[test]
+    fn symbol_tracks_sim_enabled_state() {
+        let mut symbol = Symbol::new();
+        symbol.excluded_from_sim = true;
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Device",
+            "SPICE".to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
+            Some(false)
         );
     }
 
