@@ -3533,7 +3533,7 @@ impl KiCadSchematicParser {
                 }
                 "unit" => {
                     let _ = self.need_unquoted_symbol_atom("unit")?;
-                    symbol.unit = Some(self.parse_i32_atom("unit")?);
+                    symbol.unit = Some(self.parse_i32_atom("symbol unit")?);
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {

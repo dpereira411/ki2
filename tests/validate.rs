@@ -8934,6 +8934,20 @@ fn rejects_invalid_nested_instance_symbol_headers() {
         .expect_err("must reject bad symbol reference");
     assert!(err.to_string().contains("expecting symbol"));
 
+    let bad_placed_symbol_unit = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-placed-symbol-unit")
+  (symbol
+    (lib_id "Device:R")
+    (unit (bogus)))
+)"#;
+    let bad_placed_symbol_unit_path =
+        temp_schematic("bad_placed_symbol_unit", bad_placed_symbol_unit);
+    let err = parse_schematic_file(Path::new(&bad_placed_symbol_unit_path))
+        .expect_err("must reject bad placed symbol unit");
+    assert!(err.to_string().contains("missing symbol unit"));
+
     let bad_top_level_symbol_unit = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -8952,6 +8966,7 @@ fn rejects_invalid_nested_instance_symbol_headers() {
     let _ = fs::remove_file(bad_symbol_project_path);
     let _ = fs::remove_file(bad_sheet_path_path);
     let _ = fs::remove_file(bad_symbol_reference_path);
+    let _ = fs::remove_file(bad_placed_symbol_unit_path);
     let _ = fs::remove_file(bad_top_level_symbol_unit_path);
 }
 
