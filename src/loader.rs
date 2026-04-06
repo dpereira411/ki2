@@ -1394,7 +1394,7 @@ struct LegacySourceModel {
 
 fn parse_legacy_dc_model_value(model: &str) -> Option<String> {
     let tokens = model
-        .split(|ch: char| matches!(ch, '(' | ')' | ' '))
+        .split(|ch: char| matches!(ch, '(' | ')') || ch.is_whitespace())
         .filter(|token| !token.is_empty())
         .collect::<Vec<_>>();
 

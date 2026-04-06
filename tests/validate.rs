@@ -5431,6 +5431,60 @@ fn load_tree_migrates_legacy_dc_source_fields() {
 }
 
 #[test]
+fn load_tree_migrates_legacy_dc_source_fields_with_whitespace_model() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000207")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "V")
+    (property "Spice_Model" "dc(\t1)")
+    (property "Spice_Node_Sequence" "1 2")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_legacy_dc_source_fields_whitespace", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("1")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("DC")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_migrates_legacy_sin_source_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
