@@ -4849,6 +4849,49 @@ fn parses_text_and_label_semantics() {
 }
 
 #[test]
+fn clamps_shared_pin_lengths_to_kicad_internal_unit_limit() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-clamped-pin-lengths")
+  (paper "A4")
+  (directive_label "D" (shape dot) (length 9999999) (at 2 3 0))
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line (at 0 0 0) (length 9999999) (name "P") (number "1"))))
+)"#;
+    let path = temp_schematic("clamped_shared_pin_lengths", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let directive = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Directive => Some(label),
+            _ => None,
+        })
+        .expect("directive label");
+    let lib_pin = schematic.screen.lib_symbols[0].units[0]
+        .draw_items
+        .iter()
+        .find(|item| item.kind == "pin")
+        .expect("lib pin");
+
+    let expected_max = (f64::from(i32::MAX) * 0.7071) / 1e4;
+
+    let directive_length = directive.pin_length.expect("directive length");
+    let pin_length = lib_pin.length.expect("pin length");
+
+    assert!(directive_length < 9_999_999.0);
+    assert!(pin_length < 9_999_999.0);
+    assert!((directive_length - expected_max).abs() < 1e-9);
+    assert!((pin_length - expected_max).abs() < 1e-9);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn global_label_starts_with_hidden_intersheet_refs_field() {
     let src = r#"(kicad_sch
   (version 20260306)

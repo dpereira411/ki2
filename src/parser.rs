@@ -37,6 +37,7 @@ const VERSION_CUSTOM_BODY_STYLES: i32 = 20250827;
 const VERSION_WRONG_SHEET_FIELD_IDS: i32 = 20200310;
 const DEFAULT_LINE_WIDTH_MM: f64 = 0.1524;
 const DEFAULT_TEXT_SIZE_MM: f64 = 1.27;
+const SCH_IU_PER_MM: f64 = 1e4;
 const TEXT_MIN_SIZE_MM: f64 = 0.001;
 const TEXT_MAX_SIZE_MM: f64 = 250.0;
 const MIN_PAGE_SIZE_MM: f64 = 25.4;
@@ -1805,7 +1806,7 @@ impl KiCadSchematicParser {
                 }
                 "length" => {
                     let _ = self.need_unquoted_symbol_atom("length")?;
-                    item.length = Some(self.parse_f64_atom("pin length")?);
+                    item.length = Some(self.parse_internal_units_atom("pin length")?);
                     self.need_right()?;
                 }
                 "hide" => {
@@ -2520,7 +2521,7 @@ impl KiCadSchematicParser {
                     if !matches!(label.kind, LabelKind::Directive | LabelKind::NetclassFlag) {
                         return Err(self.unexpected("length"));
                     }
-                    label.pin_length = Some(self.parse_f64_atom("pin length")?);
+                    label.pin_length = Some(self.parse_internal_units_atom("pin length")?);
                     self.need_right()?;
                 }
                 "fields_autoplaced" => {
@@ -5303,6 +5304,12 @@ impl KiCadSchematicParser {
         value
             .parse::<f64>()
             .map_err(|_| self.error_here(format!("missing {field}")))
+    }
+
+    fn parse_internal_units_atom(&mut self, field: impl Into<String>) -> Result<f64, Error> {
+        let value = self.parse_f64_atom(field)?;
+        let int_limit = f64::from(i32::MAX) * 0.7071;
+        Ok((value * SCH_IU_PER_MM).clamp(-int_limit, int_limit) / SCH_IU_PER_MM)
     }
 
     fn parse_bool_atom(&mut self, field: &str) -> Result<bool, Error> {
