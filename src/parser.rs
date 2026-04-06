@@ -1240,10 +1240,6 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("arc", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
-        item.points = vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
-        item.arc_center = Some([0.0, 0.0]);
-        item.arc_start_angle = Some(0.0);
-        item.arc_end_angle = Some(90.0);
         let mut saw_start = false;
         let mut saw_mid = false;
         let mut saw_end = false;
@@ -1399,8 +1395,6 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("circle", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
-        item.points = vec![[0.0, 0.0]];
-        item.radius = Some(1.0);
 
         while !self.at_right() {
             self.need_left()?;
@@ -1613,7 +1607,6 @@ impl KiCadSchematicParser {
         }
         let mut item = LibDrawItem::new("text_box", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
-        item.angle = Some(0.0);
         item.text = Some(
             self.need_symbol_atom("text box text")
                 .map_err(|_| self.error_here("Invalid text string"))?,

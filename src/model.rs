@@ -408,6 +408,20 @@ impl LibDrawItem {
         let mut stroke = Stroke::new();
         stroke.width = Some(0.0);
 
+        let (points, radius, arc_center, arc_start_angle, arc_end_angle, angle) = match kind {
+            "arc" => (
+                vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+                None,
+                Some([0.0, 0.0]),
+                Some(0.0),
+                Some(90.0),
+                None,
+            ),
+            "circle" => (vec![[0.0, 0.0]], Some(1.0), None, None, None, None),
+            "text_box" => (Vec::new(), None, None, None, None, Some(0.0)),
+            _ => (Vec::new(), None, None, None, None, None),
+        };
+
         Self {
             kind: kind.to_string(),
             is_private: false,
@@ -419,13 +433,13 @@ impl LibDrawItem {
             show_name: false,
             can_autoplace: true,
             at: None,
-            angle: None,
-            points: Vec::new(),
+            angle,
+            points,
             end: None,
-            radius: None,
-            arc_center: None,
-            arc_start_angle: None,
-            arc_end_angle: None,
+            radius,
+            arc_center,
+            arc_start_angle,
+            arc_end_angle,
             length: None,
             text: None,
             name: None,
@@ -1984,16 +1998,25 @@ mod tests {
 
     #[test]
     fn library_draw_items_start_with_graphic_defaults() {
-        let item = LibDrawItem::new("circle", 1, 1);
+        let circle = LibDrawItem::new("circle", 1, 1);
+        let arc = LibDrawItem::new("arc", 1, 1);
+        let text_box = LibDrawItem::new("text_box", 1, 1);
 
         assert_eq!(
-            item.stroke.as_ref().expect("lib draw stroke").width,
+            circle.stroke.as_ref().expect("lib draw stroke").width,
             Some(0.0)
         );
         assert_eq!(
-            item.fill.as_ref().expect("lib draw fill").fill_type,
+            circle.fill.as_ref().expect("lib draw fill").fill_type,
             super::FillType::None
         );
+        assert_eq!(circle.points, vec![[0.0, 0.0]]);
+        assert_eq!(circle.radius, Some(1.0));
+        assert_eq!(arc.points, vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        assert_eq!(arc.arc_center, Some([0.0, 0.0]));
+        assert_eq!(arc.arc_start_angle, Some(0.0));
+        assert_eq!(arc.arc_end_angle, Some(90.0));
+        assert_eq!(text_box.angle, Some(0.0));
     }
 }
 
