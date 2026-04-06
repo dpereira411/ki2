@@ -475,6 +475,40 @@ fn reuses_previously_loaded_child_schematic() {
     assert_eq!(child.screen.page_number, None);
     assert_eq!(child.screen.page_count, None);
     assert_eq!(child.screen.virtual_page_number, None);
+    let child_symbol = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("child symbol before selection");
+    assert_eq!(
+        child_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(child_symbol.unit, Some(1));
+    assert_eq!(
+        child_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("10k")
+    );
+    assert_eq!(
+        child_symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("Resistor_SMD:R_0603")
+    );
     assert_eq!(loaded.sheet_paths_of(&child_path).count(), 2);
     assert_eq!(loaded.parents_of(&child_path).count(), 2);
     assert_eq!(

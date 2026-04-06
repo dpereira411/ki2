@@ -1096,6 +1096,15 @@ impl SchematicLoader {
     }
 
     fn update_all_screen_references(&mut self, sheet_paths: &[LoadedSheetPath]) {
+        let occurrence_counts: HashMap<PathBuf, usize> =
+            sheet_paths
+                .iter()
+                .fold(HashMap::new(), |mut counts, sheet_path| {
+                    *counts.entry(sheet_path.schematic_path.clone()).or_insert(0) += 1;
+                    counts
+                });
+        let mut seeded_reused_schematics = BTreeSet::new();
+
         for sheet_path in sheet_paths {
             let Some(schematic_index) = self
                 .loaded_by_canonical
@@ -1105,34 +1114,67 @@ impl SchematicLoader {
                 continue;
             };
 
-            for item in &mut self.schematics[schematic_index].screen.items {
-                let SchItem::Symbol(symbol) = item else {
-                    continue;
-                };
+            let occurrence_count = occurrence_counts
+                .get(&sheet_path.schematic_path)
+                .copied()
+                .unwrap_or(0);
 
-                let Some(instance) = symbol
-                    .instances
-                    .iter()
-                    .find(|instance| instance.path == sheet_path.instance_path)
-                    .cloned()
-                else {
-                    continue;
-                };
+            if occurrence_count == 1 {
+                for item in &mut self.schematics[schematic_index].screen.items {
+                    let SchItem::Symbol(symbol) = item else {
+                        continue;
+                    };
 
-                if let Some(reference) = instance.reference {
-                    symbol.set_field_text(PropertyKind::SymbolReference, reference);
+                    let Some(instance) = symbol
+                        .instances
+                        .iter()
+                        .find(|instance| instance.path == sheet_path.instance_path)
+                        .cloned()
+                    else {
+                        continue;
+                    };
+
+                    if let Some(reference) = instance.reference {
+                        symbol.set_field_text(PropertyKind::SymbolReference, reference);
+                    }
+
+                    if let Some(unit) = instance.unit {
+                        symbol.unit = Some(unit);
+                    }
+
+                    if let Some(value) = instance.value {
+                        symbol.set_field_text(PropertyKind::SymbolValue, value);
+                    }
+
+                    if let Some(footprint) = instance.footprint {
+                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+                    }
                 }
+            } else if seeded_reused_schematics.insert(sheet_path.schematic_path.clone()) {
+                for item in &mut self.schematics[schematic_index].screen.items {
+                    let SchItem::Symbol(symbol) = item else {
+                        continue;
+                    };
 
-                if let Some(unit) = instance.unit {
-                    symbol.unit = Some(unit);
-                }
+                    let Some(instance) = symbol.instances.first().cloned() else {
+                        continue;
+                    };
 
-                if let Some(value) = instance.value {
-                    symbol.set_field_text(PropertyKind::SymbolValue, value);
-                }
+                    if let Some(reference) = instance.reference {
+                        symbol.set_field_text(PropertyKind::SymbolReference, reference);
+                    }
 
-                if let Some(footprint) = instance.footprint {
-                    symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+                    if let Some(unit) = instance.unit {
+                        symbol.unit = Some(unit);
+                    }
+
+                    if let Some(value) = instance.value {
+                        symbol.set_field_text(PropertyKind::SymbolValue, value);
+                    }
+
+                    if let Some(footprint) = instance.footprint {
+                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+                    }
                 }
             }
 
