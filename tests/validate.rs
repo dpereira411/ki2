@@ -4851,6 +4851,182 @@ fn load_tree_migrates_legacy_pulse_source_fields() {
 }
 
 #[test]
+fn load_tree_migrates_legacy_exp_source_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "V")
+    (property "Spice_Model" "exp(0 5 1n 2n 3n 4n)")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_legacy_exp_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("EXP")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("y1=0 y2=5 td1=1n tau1=2n td2=3n tau2=4n")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_legacy_am_source_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "V")
+    (property "Spice_Model" "am(1 2 3 4k 5k 6n 7 8)")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_legacy_am_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("AM")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("vo=1 vmo=2 vma=3 fm=4k fc=5k td=6n phasem=7 phasec=8")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_legacy_sffm_source_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:I")
+    (property "Reference" "I?")
+    (property "Value" "seed")
+    (property "Spice_Primitive" "I")
+    (property "Spice_Model" "sffm(1 2 3k 4 5k 6 7)")
+    (property "Spice_Node_Sequence" "2 1")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_legacy_sffm_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("I")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("SFFM")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("vo=1 va=2 fm=3k mdi=4 fc=5k phasem=6 phasec=7")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("2=1 1=2")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parses_symbol_mirror_body_style_and_sheet_pins() {
     let src = r#"(kicad_sch
   (version 20231120)
