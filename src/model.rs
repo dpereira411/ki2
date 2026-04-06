@@ -1165,7 +1165,7 @@ impl Symbol {
                 .filter(|value| !value.is_empty())
                 .cloned()
         });
-        let pins = self
+        let pin_pairs = self
             .properties
             .iter()
             .find(|property| property.key == "Sim.Pins")
@@ -1175,9 +1175,10 @@ impl Symbol {
                     .split_whitespace()
                     .filter_map(|entry| entry.split_once('='))
                     .map(|(symbol_pin, model_pin)| (symbol_pin.to_string(), model_pin.to_string()))
-                    .collect::<BTreeMap<_, _>>()
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
 
         if device.is_none()
             && model_type.is_none()
@@ -1202,6 +1203,7 @@ impl Symbol {
             params,
             param_pairs,
             param_values,
+            pin_pairs,
             pins,
         });
     }
@@ -1218,6 +1220,7 @@ pub struct SimModel {
     pub params: Option<String>,
     pub param_pairs: Vec<(String, String)>,
     pub param_values: BTreeMap<String, String>,
+    pub pin_pairs: Vec<(String, String)>,
     pub pins: BTreeMap<String, String>,
 }
 
@@ -1618,6 +1621,16 @@ mod tests {
             symbol
                 .sim_model
                 .as_ref()
+                .map(|sim_model| sim_model.pin_pairs.clone()),
+            Some(vec![
+                ("1".to_string(), "1".to_string()),
+                ("2".to_string(), "2".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
                 .map(|sim_model| sim_model.pins.clone()),
             Some(BTreeMap::from([
                 ("1".to_string(), "1".to_string()),
@@ -1729,6 +1742,42 @@ mod tests {
                 ("extra".to_string(), "x y".to_string()),
                 ("gain".to_string(), "2".to_string()),
                 ("mode".to_string(), "fast".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn symbol_preserves_ordered_sim_pin_pairs() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Pins",
+            "2=1 1=2 10=3".to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.pin_pairs.clone()),
+            Some(vec![
+                ("2".to_string(), "1".to_string()),
+                ("1".to_string(), "2".to_string()),
+                ("10".to_string(), "3".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.pins.clone()),
+            Some(BTreeMap::from([
+                ("1".to_string(), "2".to_string()),
+                ("2".to_string(), "1".to_string()),
+                ("10".to_string(), "3".to_string()),
             ]))
         );
     }

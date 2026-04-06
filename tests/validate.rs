@@ -5655,6 +5655,16 @@ fn load_tree_hydrates_structured_sim_model_from_existing_sim_fields() {
         symbol
             .sim_model
             .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .map(|sim_model| sim_model.pins.clone()),
         Some(BTreeMap::from([
             ("1".to_string(), "1".to_string()),
