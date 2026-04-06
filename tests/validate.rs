@@ -110,7 +110,7 @@ fn rejects_true_false_boolean_tokens() {
     let embedded_fonts_true = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bool-embedded-fonts")
+  (uuid "61000000-0000-0000-0000-000000000001")
   (embedded_fonts true)
 )"#;
     let embedded_fonts_true_path =
@@ -122,7 +122,7 @@ fn rejects_true_false_boolean_tokens() {
     let symbol_in_bom_false = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bool-symbol")
+  (uuid "61000000-0000-0000-0000-000000000002")
   (symbol (lib_id "Device:R") (in_bom false))
 )"#;
     let symbol_in_bom_false_path =
@@ -134,7 +134,7 @@ fn rejects_true_false_boolean_tokens() {
     let bold_true = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-bool-bold")
+  (uuid "61000000-0000-0000-0000-000000000003")
   (text "note" (effects (font (bold true))))
 )"#;
     let bold_true_path = temp_schematic("effects_bold_true_keyword", bold_true);
@@ -165,7 +165,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_comment_number = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-comment")
+  (uuid "61000000-0000-0000-0000-000000000004")
   (title_block (comment "1" "note"))
 )"#;
     let quoted_comment_number_path = temp_schematic("quoted_comment_number", quoted_comment_number);
@@ -176,7 +176,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_symbol_angle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-angle")
+  (uuid "61000000-0000-0000-0000-000000000005")
   (symbol (lib_id "Device:R") (at 1 2 "90"))
 )"#;
     let quoted_symbol_angle_path = temp_schematic("quoted_symbol_angle", quoted_symbol_angle);
@@ -187,7 +187,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_text_angle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-text-angle")
+  (uuid "61000000-0000-0000-0000-000000000006")
   (text "note" (at 1 2 "90"))
 )"#;
     let quoted_text_angle_path = temp_schematic("quoted_text_angle", quoted_text_angle);
@@ -198,7 +198,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_text_box_size = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-textbox-size")
+  (uuid "61000000-0000-0000-0000-000000000007")
   (text_box "body" (size "3" 4))
 )"#;
     let quoted_text_box_size_path =
@@ -210,7 +210,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_lib_text_angle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-text-angle")
+  (uuid "61000000-0000-0000-0000-000000000008")
   (lib_symbols
     (symbol "MyLib:U"
       (text "TXT" (at 0 0 "90"))))
@@ -224,7 +224,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_lib_pin_angle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-pin-angle")
+  (uuid "61000000-0000-0000-0000-000000000009")
   (lib_symbols
     (symbol "MyLib:U"
       (pin input line (at 0 0 "90") (length 2.54) (name "P") (number "1"))))
@@ -238,7 +238,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_lib_property_angle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-lib-property-angle")
+  (uuid "61000000-0000-0000-0000-00000000000a")
   (lib_symbols
     (symbol "MyLib:U"
       (property "RefDes" "U" (at 0 0 "90"))))
@@ -254,7 +254,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_sheet_width = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-width")
+  (uuid "61000000-0000-0000-0000-00000000000b")
   (sheet
     (size "20" 10)
     (property "Sheetname" "Child")
@@ -268,7 +268,7 @@ fn rejects_quoted_number_tokens_in_numeric_fields() {
     let quoted_sheet_height = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-quoted-sheet-height")
+  (uuid "61000000-0000-0000-0000-00000000000c")
   (sheet
     (size 20 "10")
     (property "Sheetname" "Child")
@@ -296,7 +296,7 @@ fn rejects_non_integer_rgb_color_channels() {
     let decimal_junction_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-decimal-junction-color")
+  (uuid "61000000-0000-0000-0000-00000000000d")
   (junction (color 10.5 20 30 0.5))
 )"#;
     let decimal_junction_color_path =
@@ -308,7 +308,7 @@ fn rejects_non_integer_rgb_color_channels() {
     let decimal_effects_color = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-decimal-effects-color")
+  (uuid "61000000-0000-0000-0000-00000000000e")
   (text "note" (effects (font (color 10.5 20 30 0.5))))
 )"#;
     let decimal_effects_color_path = temp_schematic("decimal_effects_color", decimal_effects_color);
@@ -4002,7 +4002,7 @@ fn defaults_missing_header_version_and_rejects_late_version_section() {
 
 #[test]
 fn parser_accepts_leading_full_line_comments() {
-    let src = "# generated comment\n  # another comment\n(kicad_sch\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"root-comment\")\n  (text \"note\" (at 1 2 0)))\n";
+    let src = "# generated comment\n  # another comment\n(kicad_sch\n  (version 20260306)\n  (generator \"eeschema\")\n  (uuid \"61000000-0000-0000-0000-00000000000f\")\n  (text \"note\" (at 1 2 0)))\n";
     let path = temp_schematic("leading_comment_lines", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse commented schematic");
 
@@ -4022,7 +4022,7 @@ fn parser_accepts_leading_full_line_comments() {
 
 #[test]
 fn parser_accepts_nul_as_whitespace() {
-    let src = "(kicad_sch\0(version\020260306)\0(generator\0\"eeschema\")\0(uuid\0\"root-nul\")\0(text\0\"note\"\0(at\01\02\00)))";
+    let src = "(kicad_sch\0(version\020260306)\0(generator\0\"eeschema\")\0(uuid\0\"61000000-0000-0000-0000-000000000010\")\0(text\0\"note\"\0(at\01\02\00)))";
     let path = temp_schematic("nul_whitespace", src);
     let schematic =
         parse_schematic_file(Path::new(&path)).expect("must parse NUL-separated schematic");
@@ -4074,7 +4074,7 @@ fn accepts_legacy_host_and_generates_root_uuid_for_old_files() {
 fn missing_generator_section_is_accepted() {
     let src = r#"(kicad_sch
   (version 20260306)
-  (uuid "root-missing-generator")
+  (uuid "61000000-0000-0000-0000-000000000011")
 )"#;
     let path = temp_schematic("missing_generator_section", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
@@ -4083,11 +4083,11 @@ fn missing_generator_section_is_accepted() {
     assert_eq!(schematic.version, 20260306);
     assert_eq!(
         schematic.root_sheet.uuid.as_deref(),
-        Some("root-missing-generator")
+        Some("61000000-0000-0000-0000-000000000011")
     );
     assert_eq!(
         schematic.screen.uuid.as_deref(),
-        Some("root-missing-generator")
+        Some("61000000-0000-0000-0000-000000000011")
     );
 
     let _ = fs::remove_file(path);
