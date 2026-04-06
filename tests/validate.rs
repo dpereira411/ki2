@@ -3372,18 +3372,16 @@ fn rejects_missing_tokens_in_paper_and_page_branches() {
 }
 
 #[test]
-fn rejects_future_schematic_version() {
+fn accepts_future_schematic_version_without_generator_version() {
     let src = r#"(kicad_sch
   (version 20990101)
   (generator "eeschema")
   (uuid "u-1")
 )"#;
     let path = temp_schematic("future_version", src);
-    let err = parse_schematic_file(Path::new(&path)).expect_err("must reject future version");
-    assert!(
-        err.to_string()
-            .contains("future schematic version `20990101` is newer than supported `20260306`")
-    );
+    let schematic = parse_schematic_file(Path::new(&path))
+        .expect("must match upstream future-version leniency");
+    assert_eq!(schematic.version, 20990101);
     let _ = fs::remove_file(path);
 }
 

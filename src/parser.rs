@@ -372,14 +372,6 @@ impl KiCadSchematicParser {
         if !matches!(self.current().kind, TokKind::Eof) {
             return Err(self.expecting("end of file"));
         }
-        if version > SEXPR_SCHEMATIC_FILE_VERSION {
-            return Err(self.validation(
-                Some(self.current_span()),
-                format!(
-                    "future schematic version `{version}` is newer than supported `{SEXPR_SCHEMATIC_FILE_VERSION}`"
-                ),
-            ));
-        }
 
         // Upstream: if file has no uuid, auto-generate one regardless of version.
         // (The C++ code at the end of ParseSchematic always fills in root UUID from
