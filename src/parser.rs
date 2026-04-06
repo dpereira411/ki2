@@ -10,11 +10,11 @@ use crate::error::Error;
 use crate::model::{
     BusAlias, BusEntry, EmbeddedFile, EmbeddedFileType, FieldAutoplacement, Fill, FillType, Group,
     Image, ItemVariant, Junction, Label, LabelKind, LabelShape, LabelSpin, LibDrawItem,
-    LibPinAlternate, LibSymbol, Line, LineKind, MirrorAxis, NoConnect, Page, Paper, Property,
-    PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet, SheetInstance,
-    SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle, Symbol,
-    SymbolInstance, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextEffects,
-    TextHJustify, TextKind, TextVJustify, TitleBlock,
+    LibPinAlternate, LibSymbol, LibSymbolUnit, Line, LineKind, MirrorAxis, NoConnect, Page, Paper,
+    Property, PropertyKind, RootSheet, SchItem, Schematic, Screen, Shape, ShapeKind, Sheet,
+    SheetInstance, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, Stroke, StrokeStyle,
+    Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox,
+    TextEffects, TextHJustify, TextKind, TextVJustify, TitleBlock,
 };
 use crate::token::{AtomClass, TokKind, Token, lex};
 
@@ -893,6 +893,53 @@ impl KiCadSchematicParser {
 
         let mut symbol = LibSymbol::new(lib_id.clone());
         self.lib_next_field_ordinal = symbol.next_field_ordinal();
+        let ensure_unit_index = |symbol: &mut LibSymbol,
+                                 name: String,
+                                 unit_number: i32,
+                                 body_style: i32| {
+            let unit_count = unit_number.max(1);
+            let body_style_count = body_style.max(1);
+
+            for current_unit in 1..=unit_count {
+                for current_body_style in 1..=body_style_count {
+                    if symbol.units.iter().any(|existing| {
+                        existing.unit_number == current_unit
+                            && existing.body_style == current_body_style
+                    }) {
+                        continue;
+                    }
+
+                    let unit_name = symbol
+                        .units
+                        .iter()
+                        .find(|existing| existing.unit_number == current_unit)
+                        .and_then(|existing| existing.unit_name.clone());
+
+                    symbol.units.push(LibSymbolUnit {
+                        name: format!("{}_{}_{}", symbol.name, current_unit, current_body_style),
+                        unit_number: current_unit,
+                        body_style: current_body_style,
+                        unit_name,
+                        draw_item_kinds: Vec::new(),
+                        draw_items: Vec::new(),
+                    });
+                }
+            }
+
+            symbol
+                .units
+                .sort_by_key(|unit| (unit.unit_number, unit.body_style));
+
+            let index = symbol
+                .units
+                .iter()
+                .position(|existing| {
+                    existing.unit_number == unit_number && existing.body_style == body_style
+                })
+                .expect("materialized lib symbol unit must exist");
+            symbol.units[index].name = name;
+            index
+        };
 
         while !self.at_right() {
             self.need_left()?;
@@ -1042,7 +1089,7 @@ impl KiCadSchematicParser {
                         })?;
 
                     let unit_name = unit_full_name;
-                    symbol.ensure_unit_index(unit_name.clone(), unit_number, body_style);
+                    ensure_unit_index(&mut symbol, unit_name.clone(), unit_number, body_style);
                     self.lib_unit = unit_number;
                     self.lib_body_style = body_style;
 
@@ -1073,7 +1120,8 @@ impl KiCadSchematicParser {
                                 "{}_{}_{}",
                                 symbol.name, item.unit_number, item.body_style
                             );
-                            let unit_index = symbol.ensure_unit_index(
+                            let unit_index = ensure_unit_index(
+                                &mut symbol,
                                 unit_name,
                                 item.unit_number,
                                 item.body_style,
@@ -1094,7 +1142,7 @@ impl KiCadSchematicParser {
                     let unit_name =
                         format!("{}_{}_{}", symbol.name, item.unit_number, item.body_style);
                     let unit_index =
-                        symbol.ensure_unit_index(unit_name, item.unit_number, item.body_style);
+                        ensure_unit_index(&mut symbol, unit_name, item.unit_number, item.body_style);
                     symbol.units[unit_index]
                         .draw_item_kinds
                         .push(item.kind.clone());
@@ -6015,14 +6063,55 @@ impl KiCadSchematicParser {
                                 }
 
                                 if !replaced {
-                                    let unit_name = format!(
+                                    let unit_count = item.unit_number.max(1);
+                                    let body_style_count = item.body_style.max(1);
+
+                                    for current_unit in 1..=unit_count {
+                                        for current_body_style in 1..=body_style_count {
+                                            if target.units.iter().any(|existing| {
+                                                existing.unit_number == current_unit
+                                                    && existing.body_style == current_body_style
+                                            }) {
+                                                continue;
+                                            }
+
+                                            let unit_name = target
+                                                .units
+                                                .iter()
+                                                .find(|existing| {
+                                                    existing.unit_number == current_unit
+                                                })
+                                                .and_then(|existing| existing.unit_name.clone());
+
+                                            target.units.push(LibSymbolUnit {
+                                                name: format!(
+                                                    "{}_{}_{}",
+                                                    target.name, current_unit, current_body_style
+                                                ),
+                                                unit_number: current_unit,
+                                                body_style: current_body_style,
+                                                unit_name,
+                                                draw_item_kinds: Vec::new(),
+                                                draw_items: Vec::new(),
+                                            });
+                                        }
+                                    }
+
+                                    target
+                                        .units
+                                        .sort_by_key(|unit| (unit.unit_number, unit.body_style));
+
+                                    let unit_index = target
+                                        .units
+                                        .iter()
+                                        .position(|existing| {
+                                            existing.unit_number == item.unit_number
+                                                && existing.body_style == item.body_style
+                                        })
+                                        .expect("materialized lib symbol unit must exist");
+                                    target.units[unit_index].name = format!(
                                         "{}_{}_{}",
                                         target.name, item.unit_number, item.body_style
-                                    );
-                                    let unit_index = target.ensure_unit_index(
-                                        unit_name,
-                                        item.unit_number,
-                                        item.body_style,
                                     );
                                     target.units[unit_index]
                                         .draw_item_kinds
