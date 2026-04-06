@@ -434,7 +434,7 @@ impl KiCadSchematicParser {
                 }
                 "host" => {
                     let _ = self.need_unquoted_symbol_atom("host")?;
-                    self.generator = Some(self.need_symbol_atom("host")?);
+                    let _ = self.need_symbol_atom("host")?;
                     if self.require_known_version()? < 20200827 {
                         let _ = self.need_symbol_atom("host version")?;
                     }

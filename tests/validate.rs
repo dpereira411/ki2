@@ -3498,7 +3498,7 @@ fn accepts_legacy_host_and_generates_root_uuid_for_old_files() {
 )"#;
     let path = temp_schematic("legacy_host", src);
     let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
-    assert_eq!(schematic.generator, "eeschema");
+    assert_eq!(schematic.generator, "");
     assert!(schematic.root_sheet.uuid.is_some());
     assert_eq!(schematic.root_sheet.uuid, schematic.screen.uuid);
     let root_uuid = schematic.root_sheet.uuid.as_deref().expect("root uuid");
