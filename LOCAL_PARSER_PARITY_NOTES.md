@@ -137,7 +137,7 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - `SetSheetNumberAndCount`
   Status: loader-side sheet-number/count assignment now exists both on the loaded sheet-path list and on loaded `Screen` objects (`page_number`, `page_count`, `virtual_page_number`). Remaining gap is exact reused-screen/current-sheet behavior.
 - `RecomputeIntersheetRefs`
-  Status: first loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list; remaining gap is tighter KiCad settings/current-sheet behavior and later `UpdateAllScreenReferences` integration.
+  Status: loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list while preserving explicit visible-property state. Remaining gap is tighter KiCad settings/current-sheet behavior and later `UpdateAllScreenReferences` integration.
 - `UpdateAllScreenReferences`
   Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list, and global-label default `Intersheet References` placement is refreshed after load. Remaining gap is broader per-screen update behavior beyond the current model’s symbol/global-label subset.
 - `FixLegacyPowerSymbolMismatches`
