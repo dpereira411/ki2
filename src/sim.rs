@@ -25,6 +25,16 @@ pub struct ResolvedSimModel {
     pub params: Vec<(String, Option<String>)>,
 }
 
+fn ibis_kind_override(model_type: Option<&str>) -> Option<ResolvedSimModelKind> {
+    match model_type?.trim().to_ascii_uppercase().as_str() {
+        "DEVICE" => Some(ResolvedSimModelKind::IbisComponent),
+        "DCDRIVER" => Some(ResolvedSimModelKind::IbisDriverDc),
+        "RECTDRIVER" => Some(ResolvedSimModelKind::IbisDriverRect),
+        "PRBSDRIVER" => Some(ResolvedSimModelKind::IbisDriverPrbs),
+        _ => None,
+    }
+}
+
 fn sim_library_source_key(source: &SimLibrarySource) -> String {
     match source {
         SimLibrarySource::Filesystem(path) => format!("fs:{}", path.display()),
@@ -446,6 +456,10 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
                 .sim_model
                 .as_ref()
                 .and_then(|sim_model| sim_model.ibis_model.as_deref());
+            let type_override = symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| ibis_kind_override(sim_model.model_type.as_deref()));
             let content = load_symbol_sim_library_content_from_embedded_files(
                 schematic_path,
                 embedded_files,
@@ -455,7 +469,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
             Some(ResolvedSimModel {
                 library,
                 name: model.name,
-                kind: model.kind,
+                kind: type_override.unwrap_or(model.kind),
                 model_type: model.model_type,
                 ibis_model_type: model.ibis_model_type,
                 diff_pin: model.diff_pin,

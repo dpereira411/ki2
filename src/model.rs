@@ -1292,6 +1292,9 @@ pub enum ResolvedSimModelKind {
     SpiceModel,
     SpiceSubckt,
     IbisComponent,
+    IbisDriverDc,
+    IbisDriverRect,
+    IbisDriverPrbs,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

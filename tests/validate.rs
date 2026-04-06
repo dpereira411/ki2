@@ -6855,6 +6855,81 @@ Model_type Output
 }
 
 #[test]
+fn load_tree_overrides_resolved_ibis_kind_from_sim_type() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000031f")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+[Model] MODEL_A
+Model_type Output
+|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Type" "DCDRIVER")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (property "Sim.Ibis.Pin" "A1")
+    (property "Sim.Ibis.Model" "MODEL_A")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_overrides_resolved_ibis_kind", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
+        Some(ki2::sim::ResolvedSimModel {
+            library: ResolvedSimLibrary {
+                source: SimLibrarySource::SchematicEmbedded {
+                    name: "driver.ibs".to_string(),
+                },
+                kind: SimLibraryKind::Ibis,
+            },
+            name: "DRIVER".to_string(),
+            kind: ResolvedSimModelKind::IbisDriverDc,
+            model_type: Some("MODEL_A".to_string()),
+            ibis_model_type: Some("Output".to_string()),
+            diff_pin: None,
+            pins: vec!["A1".to_string()],
+            params: Vec::new(),
+        })
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::IbisDriverDc)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_hydrates_ibis_model_type_from_selected_pin_without_explicit_model() {
     let src = r#"(kicad_sch
   (version 20260306)
