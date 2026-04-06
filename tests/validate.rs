@@ -2083,6 +2083,57 @@ fn parser_links_derived_lib_symbols_with_child_non_field_draw_items() {
 }
 
 #[test]
+fn parser_links_derived_lib_symbols_with_child_unit_field_overrides() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-child-unit-fields")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Root:R"
+      (symbol "R_2_1"
+        (text "PARENT" (at 1 1 0) (effects (font (size 1 1)) (hide)))))
+    (symbol "Child:R"
+      (extends "Root:R")
+      (symbol "R_2_1"
+        (text "CHILD" (at 2 2 0) (effects (font (size 1 1)) (hide))))))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_child_unit_fields", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    let linked = symbol.lib_symbol.as_ref().expect("linked local lib symbol");
+    let unit = linked
+        .units
+        .iter()
+        .find(|unit| unit.unit_number == 2 && unit.body_style == 1)
+        .expect("flattened child unit");
+    let fields: Vec<_> = unit
+        .draw_items
+        .iter()
+        .filter(|item| item.kind == "field")
+        .filter_map(|item| item.text.as_deref())
+        .collect();
+
+    assert_eq!(fields, vec!["CHILD"]);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn parser_links_derived_lib_symbols_with_child_optional_metadata_overrides() {
     let src = r#"(kicad_sch
   (version 20260306)
