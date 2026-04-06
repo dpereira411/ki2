@@ -5742,65 +5742,61 @@ impl KiCadSchematicParser {
         }
 
         let mut flattened = if let Some(parent_name) = symbol.extends.as_deref() {
-            if let Some(mut parent) =
-                Self::flatten_local_lib_symbol(parent_name, symbols, cache, stack)
-            {
-                parent.lib_id = symbol.lib_id.clone();
-                parent.name = symbol.name.clone();
-                parent.extends = None;
+            let mut parent = Self::flatten_local_lib_symbol(parent_name, symbols, cache, stack)?;
 
-                for unit in &mut parent.units {
-                    unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
-                }
+            parent.lib_id = symbol.lib_id.clone();
+            parent.name = symbol.name.clone();
+            parent.extends = None;
 
-                for property in &symbol.properties {
-                    if property.kind.is_mandatory() && !property.value.is_empty() {
-                        if let Some(existing) = parent
-                            .properties
-                            .iter_mut()
-                            .find(|existing| existing.kind == property.kind)
-                        {
-                            *existing = property.clone();
-                        }
-                    }
-                }
-
-                if let Some(keywords) = symbol.keywords.as_ref()
-                    && !keywords.is_empty()
-                {
-                    parent.keywords = Some(keywords.clone());
-                }
-
-                if symbol.fp_filters_specified {
-                    if !symbol.fp_filters.is_empty() {
-                        parent.fp_filters_specified = true;
-                        parent.fp_filters = symbol.fp_filters.clone();
-                    }
-                }
-
-                for embedded_file in &symbol.embedded_files {
-                    let already_present = embedded_file.name.as_ref().is_some_and(|name| {
-                        parent
-                            .embedded_files
-                            .iter()
-                            .any(|existing| existing.name.as_ref() == Some(name))
-                    });
-
-                    if !already_present {
-                        parent.embedded_files.push(embedded_file.clone());
-                    }
-                }
-
-                if let Some(immediate_parent) = symbols.get(parent_name) {
-                    parent.excluded_from_sim = immediate_parent.excluded_from_sim;
-                    parent.in_bom = immediate_parent.in_bom;
-                    parent.on_board = immediate_parent.on_board;
-                }
-
-                parent
-            } else {
-                symbol.clone()
+            for unit in &mut parent.units {
+                unit.name = format!("{}_{}_{}", parent.name, unit.unit_number, unit.body_style);
             }
+
+            for property in &symbol.properties {
+                if property.kind.is_mandatory() && !property.value.is_empty() {
+                    if let Some(existing) = parent
+                        .properties
+                        .iter_mut()
+                        .find(|existing| existing.kind == property.kind)
+                    {
+                        *existing = property.clone();
+                    }
+                }
+            }
+
+            if let Some(keywords) = symbol.keywords.as_ref()
+                && !keywords.is_empty()
+            {
+                parent.keywords = Some(keywords.clone());
+            }
+
+            if symbol.fp_filters_specified {
+                if !symbol.fp_filters.is_empty() {
+                    parent.fp_filters_specified = true;
+                    parent.fp_filters = symbol.fp_filters.clone();
+                }
+            }
+
+            for embedded_file in &symbol.embedded_files {
+                let already_present = embedded_file.name.as_ref().is_some_and(|name| {
+                    parent
+                        .embedded_files
+                        .iter()
+                        .any(|existing| existing.name.as_ref() == Some(name))
+                });
+
+                if !already_present {
+                    parent.embedded_files.push(embedded_file.clone());
+                }
+            }
+
+            if let Some(immediate_parent) = symbols.get(parent_name) {
+                parent.excluded_from_sim = immediate_parent.excluded_from_sim;
+                parent.in_bom = immediate_parent.in_bom;
+                parent.on_board = immediate_parent.on_board;
+            }
+
+            parent
         } else {
             symbol.clone()
         };

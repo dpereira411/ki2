@@ -2182,6 +2182,42 @@ fn parser_links_derived_lib_symbols_with_child_fp_filter_overrides() {
 }
 
 #[test]
+fn parser_does_not_link_derived_local_symbol_with_missing_parent() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-linked-missing-parent")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Child:R"
+      (extends "Missing:R")
+      (property "Reference" "R")
+      (property "Value" "10k")))
+  (symbol
+    (lib_id "Child:R")
+    (at 1 2 0)
+    (property "Reference" "R1")
+    (property "Value" "10k")))
+"#;
+    let path = temp_schematic("parser_local_lib_symbol_missing_parent", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+
+    assert!(symbol.lib_symbol.is_none());
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn lib_fp_filters_unescape_kicad_string_markers() {
     let src = r#"(kicad_sch
   (version 20260306)
