@@ -1153,6 +1153,26 @@ fn sorts_loaded_sheet_paths_with_virtual_order_tiebreak() {
         "/root-u/sheet-a/sheet-b"
     );
 
+    let mut project = project;
+    assert!(project.set_current_sheet_path("/root-u/sheet-a/sheet-b"));
+    assert_eq!(
+        project
+            .current_sheet_path()
+            .expect("updated current sheet path")
+            .instance_path,
+        "/root-u/sheet-a/sheet-b"
+    );
+    assert_eq!(
+        project
+            .current_schematic()
+            .expect("updated current schematic")
+            .path,
+        grandchild_path
+            .canonicalize()
+            .unwrap_or(grandchild_path.clone())
+    );
+    assert!(!project.set_current_sheet_path("/missing"));
+
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
     let _ = fs::remove_file(grandchild_path);

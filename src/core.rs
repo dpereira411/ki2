@@ -58,6 +58,15 @@ impl SchematicProject {
         self.schematic(&current_sheet_path.schematic_path)
     }
 
+    pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
+        if self.sheet_paths_by_instance.contains_key(instance_path) {
+            self.current_sheet_instance_path = instance_path.to_string();
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn schematic(&self, path: &Path) -> Option<&Schematic> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         self.by_path
