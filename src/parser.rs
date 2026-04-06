@@ -3898,37 +3898,7 @@ impl KiCadSchematicParser {
                                 .instances
                                 .retain(|existing| existing.path != instance.path);
 
-                            let seed_live_state = symbol.instances.is_empty();
-                            let reference = instance.reference.clone().unwrap_or_default();
-                            let unit = instance.unit;
-
                             symbol.instances.push(instance);
-
-                            if seed_live_state {
-                                let existing = symbol
-                                    .properties
-                                    .iter_mut()
-                                    .find(|property| property.kind == PropertyKind::SymbolReference)
-                                    .expect("placed symbols start with mandatory fields");
-                                existing.id = PropertyKind::SymbolReference
-                                    .default_field_id()
-                                    .or(existing.id);
-                                existing.key =
-                                    PropertyKind::SymbolReference.canonical_key().to_string();
-                                existing.value = reference;
-                                let reference = existing.value.replace('~', " ");
-                                symbol.in_netlist = !reference.starts_with('#');
-                                let trimmed = reference
-                                    .trim()
-                                    .trim_end_matches(|ch: char| {
-                                        ch.is_ascii_digit() || matches!(ch, '?' | '*')
-                                    })
-                                    .trim();
-                                if !trimmed.is_empty() {
-                                    symbol.prefix = trimmed.to_string();
-                                }
-                                symbol.unit = unit;
-                            }
                         }
                         self.need_right()?;
                     }
