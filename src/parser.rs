@@ -1843,15 +1843,23 @@ impl KiCadSchematicParser {
                         return Err(self.expecting("effects"));
                     }
                     let mut visible = true;
+                    let mut name_effects = Some(TextEffects::default());
                     self.parse_eda_text(
                         ParsedEdaTextOwner::detached(
                             item.name.as_mut(),
-                            &mut item.name_effects,
+                            &mut name_effects,
                             &mut visible,
                         ),
                         true,
                         false,
                     )?;
+                    item.name_effects =
+                        name_effects
+                            .and_then(|effects| effects.font_size)
+                            .map(|size| TextEffects {
+                                font_size: Some([size[1], size[1]]),
+                                ..TextEffects::default()
+                            });
                     self.need_right()?;
                 }
                 "number" => {
@@ -1879,15 +1887,23 @@ impl KiCadSchematicParser {
                         return Err(self.expecting("effects"));
                     }
                     let mut visible = true;
+                    let mut number_effects = Some(TextEffects::default());
                     self.parse_eda_text(
                         ParsedEdaTextOwner::detached(
                             item.number.as_mut(),
-                            &mut item.number_effects,
+                            &mut number_effects,
                             &mut visible,
                         ),
                         false,
                         false,
                     )?;
+                    item.number_effects =
+                        number_effects
+                            .and_then(|effects| effects.font_size)
+                            .map(|size| TextEffects {
+                                font_size: Some([size[1], size[1]]),
+                                ..TextEffects::default()
+                            });
                     self.need_right()?;
                 }
                 "alternate" => {

@@ -1702,14 +1702,14 @@ fn parses_extended_top_level_sections() {
             .name_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([0.9, 0.8])
+        Some([0.8, 0.8])
     );
     assert_eq!(
         lib_symbol.units[0].draw_items[4]
             .number_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([1.2, 1.1])
+        Some([1.1, 1.1])
     );
     assert_eq!(lib_symbol.units[0].draw_items[4].alternates.len(), 1);
     assert!(
@@ -6959,14 +6959,14 @@ fn library_text_clamps_but_pin_name_and_number_effects_do_not() {
             .name_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([999.0, 0.0])
+        Some([0.0, 0.0])
     );
     assert_eq!(
         lib_pin
             .number_effects
             .as_ref()
             .and_then(|effects| effects.font_size),
-        Some([999.0, 0.0])
+        Some([0.0, 0.0])
     );
 
     let _ = fs::remove_file(path);
