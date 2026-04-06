@@ -1573,10 +1573,7 @@ impl KiCadSchematicParser {
 
         let mut item = LibDrawItem::new("text", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
-        item.text = Some(
-            self.need_symbol_atom("text string")
-                .map_err(|_| self.error_here("Invalid text string"))?,
-        );
+        item.text = Some(self.need_symbol_atom("symbol")?);
 
         while !self.at_right() {
             self.need_left()?;
@@ -1626,10 +1623,7 @@ impl KiCadSchematicParser {
         let mut item = LibDrawItem::new("text_box", self.lib_unit, self.lib_body_style);
         item.is_private = is_private;
         item.angle = Some(0.0);
-        item.text = Some(
-            self.need_symbol_atom("text box text")
-                .map_err(|_| self.error_here("Invalid text string"))?,
-        );
+        item.text = Some(self.need_symbol_atom("symbol")?);
         let mut pos = None;
         let mut end = None;
         let mut size = None;
@@ -2429,9 +2423,7 @@ impl KiCadSchematicParser {
             _ => return Err(self.error_here("invalid schematic text kind")),
         };
 
-        let text = self
-            .need_symbol_atom("text value")
-            .map_err(|_| self.error_here("Invalid text string"))?;
+        let text = self.need_symbol_atom("symbol")?;
         let mut item = match target {
             SchTextTarget::Text => ParsedSchText::Text(Text::new(TextKind::Text, text)),
             SchTextTarget::Label(kind) => ParsedSchText::Label(Label::new(kind, text)),
@@ -2636,14 +2628,10 @@ impl KiCadSchematicParser {
         let is_table_cell = owner.is_table_cell();
         match &mut owner {
             ParsedTextBoxOwner::TextBox(text_box) => {
-                text_box.text = self
-                    .need_symbol_atom("text box text")
-                    .map_err(|_| self.error_here("Invalid text string"))?;
+                text_box.text = self.need_symbol_atom("symbol")?;
             }
             ParsedTextBoxOwner::TableCell(text_box) => {
-                text_box.text = self
-                    .need_symbol_atom("text box text")
-                    .map_err(|_| self.error_here("Invalid text string"))?;
+                text_box.text = self.need_symbol_atom("symbol")?;
             }
         }
         let mut pos = None;

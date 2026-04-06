@@ -8907,7 +8907,7 @@ fn rejects_invalid_schematic_text_string_token() {
     let path = temp_schematic("bad_schematic_text_string", src);
     let err =
         parse_schematic_file(Path::new(&path)).expect_err("must reject bad schematic text string");
-    assert!(err.to_string().contains("Invalid text string"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -8937,7 +8937,7 @@ fn rejects_invalid_schematic_text_box_string_token() {
     let path = temp_schematic("bad_schematic_text_box_string", src);
     let err = parse_schematic_file(Path::new(&path))
         .expect_err("must reject bad schematic text box string");
-    assert!(err.to_string().contains("Invalid text string"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -9311,7 +9311,7 @@ fn rejects_invalid_lib_text_string_token() {
 )"#;
     let path = temp_schematic("bad_lib_text_string", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib text");
-    assert!(err.to_string().contains("Invalid text string"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
@@ -9327,7 +9327,7 @@ fn rejects_invalid_lib_text_box_string_token() {
 )"#;
     let path = temp_schematic("bad_lib_text_box_string", src);
     let err = parse_schematic_file(Path::new(&path)).expect_err("must reject bad lib text box");
-    assert!(err.to_string().contains("Invalid text string"));
+    assert!(err.to_string().contains("expecting symbol"));
     let _ = fs::remove_file(path);
 }
 
