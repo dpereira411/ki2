@@ -3043,7 +3043,7 @@ impl KiCadSchematicParser {
                         return Err(self.error_here("Failed to read image data."));
                     }
                     if self.require_known_version()? <= VERSION_IMAGE_PPI_SCALE_ADJUSTMENT {
-                        if let Some(ppi) = Self::read_png_ppi(&decoded) {
+                        if let Some(ppi) = Self::read_image_ppi(&decoded) {
                             image.scale *= ppi / 300.0;
                         }
                     }
@@ -5224,6 +5224,72 @@ impl KiCadSchematicParser {
         None
     }
 
+    fn read_jpeg_ppi(data: &[u8]) -> Option<f64> {
+        if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+            return None;
+        }
+
+        let mut offset = 2usize;
+
+        while offset + 4 <= data.len() {
+            if data[offset] != 0xFF {
+                return None;
+            }
+
+            while offset < data.len() && data[offset] == 0xFF {
+                offset += 1;
+            }
+
+            if offset >= data.len() {
+                return None;
+            }
+
+            let marker = data[offset];
+            offset += 1;
+
+            if marker == 0xD9 || marker == 0xDA {
+                break;
+            }
+
+            if matches!(marker, 0x01 | 0xD0..=0xD7) {
+                continue;
+            }
+
+            if offset + 2 > data.len() {
+                return None;
+            }
+
+            let segment_length = usize::from(u16::from_be_bytes([data[offset], data[offset + 1]]));
+
+            if segment_length < 2 || offset + segment_length > data.len() {
+                return None;
+            }
+
+            if marker == 0xE0 && segment_length >= 14 {
+                let segment = &data[offset + 2..offset + segment_length];
+
+                if &segment[..5] == b"JFIF\0" {
+                    let units = segment[7];
+                    let x_density = f64::from(u16::from_be_bytes([segment[8], segment[9]]));
+
+                    return match units {
+                        1 => Some(x_density),
+                        2 => Some(x_density * 2.54),
+                        _ => None,
+                    };
+                }
+            }
+
+            offset += segment_length;
+        }
+
+        None
+    }
+
+    fn read_image_ppi(data: &[u8]) -> Option<f64> {
+        Self::read_png_ppi(data).or_else(|| Self::read_jpeg_ppi(data))
+    }
+
     fn validate_image_data(data: &[u8]) -> bool {
         image::load_from_memory(data).is_ok()
     }
@@ -6222,5 +6288,32 @@ impl KiCadSchematicParser {
             path: self.path.clone(),
             diagnostic,
         }
+    }
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::KiCadSchematicParser;
+
+    #[test]
+    fn reads_jfif_jpeg_ppi_in_inches() {
+        let data = [
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x02, 0x01,
+            0x01, 0x2C, 0x01, 0x2C, 0x00, 0x00, 0xFF, 0xD9,
+        ];
+
+        assert_eq!(KiCadSchematicParser::read_jpeg_ppi(&data), Some(300.0));
+        assert_eq!(KiCadSchematicParser::read_image_ppi(&data), Some(300.0));
+    }
+
+    #[test]
+    fn reads_jfif_jpeg_density_in_centimeters() {
+        let data = [
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x02, 0x02,
+            0x00, 0x76, 0x00, 0x76, 0x00, 0x00, 0xFF, 0xD9,
+        ];
+
+        assert_eq!(KiCadSchematicParser::read_jpeg_ppi(&data), Some(299.72));
+        assert_eq!(KiCadSchematicParser::read_image_ppi(&data), Some(299.72));
     }
 }
