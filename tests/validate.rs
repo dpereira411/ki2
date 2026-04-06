@@ -7096,6 +7096,24 @@ fn accepts_unquoted_jumper_pin_group_names() {
 }
 
 #[test]
+fn rejects_unquoted_stroke_keywords_in_jumper_pin_groups() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-keyword-jumper-pin-group")
+  (lib_symbols
+    (symbol "MyLib:U"
+      (jumper_pin_groups
+        (default B))))
+)"#;
+    let path = temp_schematic("keyword_jumper_pin_groups", src);
+    let err = parse_schematic_file(Path::new(&path))
+        .expect_err("must reject reserved stroke keywords in jumper pin groups");
+    assert!(err.to_string().contains("expecting list of pin names"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_lib_draw_item_list_heads() {
     let quoted_lib_rectangle_start = r#"(kicad_sch
   (version 20260306)
