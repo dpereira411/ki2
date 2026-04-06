@@ -9536,6 +9536,20 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
             .contains("Group library link lib:block:bad contains invalid character ':'")
     );
 
+    let empty_group_lib_id = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "root-group-lib-id-empty")
+  (group "g"
+    (uuid "group-uuid")
+    (lib_id "lib:")
+    (members "a")))
+)"#;
+    let empty_group_lib_id_path = temp_schematic("bad_group_lib_id_empty_item", empty_group_lib_id);
+    let err = parse_schematic_file(Path::new(&empty_group_lib_id_path))
+        .expect_err("must reject group lib_id with empty item name");
+    assert!(err.to_string().contains("Invalid library ID"));
+
     let bad_rectangle = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -9554,6 +9568,7 @@ fn rejects_invalid_uuid_tokens_in_remaining_schematic_items() {
     let _ = fs::remove_file(bad_group_child_path);
     let _ = fs::remove_file(bad_group_name_path);
     let _ = fs::remove_file(bad_group_lib_id_path);
+    let _ = fs::remove_file(empty_group_lib_id_path);
     let _ = fs::remove_file(bad_rectangle_path);
 }
 
@@ -10577,6 +10592,19 @@ fn parses_symbol_in_pos_files_and_validates_library_ids() {
     let err = parse_schematic_file(Path::new(&bad_path)).expect_err("must reject malformed lib_id");
     assert!(err.to_string().contains("contains invalid character ':'"));
     let _ = fs::remove_file(bad_path);
+
+    let empty_item_lib_id = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (symbol (lib_id "Device:") (at 1 2 0))
+)"#;
+    let empty_item_path = temp_schematic("bad_symbol_lib_id_empty_item", empty_item_lib_id);
+    let err = parse_schematic_file(Path::new(&empty_item_path))
+        .expect_err("must reject lib_id with empty item name");
+    assert!(err.to_string().contains("Invalid symbol library ID"));
+    let _ = fs::remove_file(empty_item_path);
 
     let invalid_token_lib_id = r#"(kicad_sch
   (version 20250114)

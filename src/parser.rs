@@ -904,7 +904,7 @@ impl KiCadSchematicParser {
             );
         }
 
-        if lib_id.is_empty() {
+        if !Self::is_valid_lib_id_shape(&lib_id) {
             return Err(self.error_here("Invalid library identifier"));
         }
 
@@ -3497,7 +3497,7 @@ impl KiCadSchematicParser {
                         )));
                     }
 
-                    if normalized.is_empty() {
+                    if !Self::is_valid_lib_id_shape(&normalized) {
                         return Err(self.error_here("Invalid symbol library ID"));
                     }
 
@@ -4648,7 +4648,7 @@ impl KiCadSchematicParser {
                         )));
                     }
 
-                    if normalized.is_empty() {
+                    if !Self::is_valid_lib_id_shape(&normalized) {
                         return Err(self.error_here("Invalid library ID"));
                     }
 
@@ -4991,6 +4991,17 @@ impl KiCadSchematicParser {
         }
 
         None
+    }
+
+    fn is_valid_lib_id_shape(value: &str) -> bool {
+        if value.is_empty() {
+            return false;
+        }
+
+        match value.split_once(':') {
+            Some((nickname, item)) => !nickname.is_empty() && !item.is_empty(),
+            None => true,
+        }
     }
 
     fn clamp_text_size(size: [f64; 2]) -> [f64; 2] {
