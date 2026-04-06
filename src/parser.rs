@@ -5968,25 +5968,13 @@ impl KiCadSchematicParser {
                     );
                 }
 
-                flattened.sync_description_from_property();
-
                 flattened
             }
         } else {
-            let mut symbol = symbol.clone();
-            symbol.sync_description_from_property();
-            symbol
+            symbol.clone()
         };
 
-        for unit in &mut flattened.units {
-            unit.draw_items.sort();
-            unit.draw_item_kinds = unit
-                .draw_items
-                .iter()
-                .map(|item| item.kind.clone())
-                .collect();
-        }
-        flattened.sync_description_from_property();
+        flattened.refresh_library_tree_caches();
         stack.remove(lib_id);
         cache.insert(lib_id.to_string(), flattened.clone());
         Some(flattened)

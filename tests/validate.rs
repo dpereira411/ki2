@@ -1941,6 +1941,7 @@ fn parser_links_symbols_after_lib_cache_fixups() {
         .find(|item| item.kind == "text")
         .expect("flattened inherited text");
     assert_eq!(inherited_text.text.as_deref(), Some("ALT"));
+    assert_eq!(inherited_unit.draw_item_kinds, vec!["text"]);
 
     let _ = fs::remove_file(path);
 }
