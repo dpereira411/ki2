@@ -1195,7 +1195,7 @@ impl Symbol {
             })
             .unwrap_or_default();
         let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
-        let origin = if ibis_pin.is_some() || ibis_model.is_some() {
+        let origin = if ibis_diff || ibis_pin.is_some() || ibis_model.is_some() {
             Some(SimModelOrigin::Ibis)
         } else if device.as_deref() == Some("SPICE")
             && (has_explicit_library || has_explicit_name || library.is_some())
@@ -1208,6 +1208,7 @@ impl Symbol {
         } else if value_binding.is_some() {
             Some(SimModelOrigin::InferredValue)
         } else if device.is_some()
+            || ibis_diff
             || library.is_some()
             || name.is_some()
             || params.is_some()
@@ -1224,6 +1225,7 @@ impl Symbol {
             && name.is_none()
             && ibis_pin.is_none()
             && ibis_model.is_none()
+            && !ibis_diff
             && params.is_none()
             && pins.is_empty()
         {
@@ -1980,6 +1982,34 @@ mod tests {
                 .as_ref()
                 .and_then(|sim_model| sim_model.origin),
             Some(SimModelOrigin::RawSpice)
+        );
+    }
+
+    #[test]
+    fn symbol_treats_ibis_diff_field_as_ibis_state() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Ibis.Diff",
+            "1".to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.ibis_diff),
+            Some(true)
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.origin),
+            Some(SimModelOrigin::Ibis)
         );
     }
 
