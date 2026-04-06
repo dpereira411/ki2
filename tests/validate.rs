@@ -383,6 +383,10 @@ fn reuses_previously_loaded_child_schematic() {
   (sheet (at 20 0) (size 10 10) (uuid "sheet-b")
     (property "Sheetname" "B")
     (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "9"))
+    (path "/root-u/sheet-a" (page "1"))
+    (path "/root-u/sheet-b" (page "2")))
 )"#;
     let dir = env::temp_dir().join(format!(
         "ki2_reuse_{}",
@@ -408,6 +412,17 @@ fn reuses_previously_loaded_child_schematic() {
             .count(),
         1
     );
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    assert_eq!(child.screen.page_number, None);
+    assert_eq!(child.screen.page_count, None);
+    assert_eq!(child.screen.virtual_page_number, None);
+
+    let project = SchematicProject::from_load_result(loaded);
+    assert_eq!(project.sheet_paths_of(&child_path).count(), 2);
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);

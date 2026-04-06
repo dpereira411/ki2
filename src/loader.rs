@@ -519,6 +519,14 @@ impl SchematicLoader {
 
     fn set_sheet_number_and_count(&mut self, sheet_paths: &mut [LoadedSheetPath]) {
         let sheet_count = sheet_paths.len();
+        let occurrence_counts: HashMap<PathBuf, usize> =
+            sheet_paths
+                .iter()
+                .fold(HashMap::new(), |mut counts, sheet_path| {
+                    *counts.entry(sheet_path.schematic_path.clone()).or_insert(0) += 1;
+                    counts
+                });
+
         for (index, sheet_path) in sheet_paths.iter_mut().enumerate() {
             sheet_path.sheet_number = index + 1;
             sheet_path.sheet_count = sheet_count;
@@ -532,6 +540,18 @@ impl SchematicLoader {
             };
 
             let screen = &mut self.schematics[schematic_index].screen;
+
+            if occurrence_counts
+                .get(&sheet_path.schematic_path)
+                .copied()
+                .unwrap_or(0)
+                > 1
+            {
+                screen.page_number = None;
+                screen.page_count = None;
+                screen.virtual_page_number = None;
+                continue;
+            }
 
             if screen.virtual_page_number.is_some() {
                 continue;
