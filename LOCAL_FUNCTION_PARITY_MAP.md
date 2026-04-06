@@ -20,7 +20,7 @@ Status legend:
 Resolve these in order unless a direct comparison shows a prerequisite blocker first:
 
 1. decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs
-2. final diagnostic/error exactness in `src/error.rs` and `src/diagnostic.rs`
+2. decide whether to expand the local diagnostic/error model for native parse-error parity
 
 ## Layer 0: Support Files
 
@@ -42,7 +42,7 @@ Resolve these in order unless a direct comparison shows a prerequisite blocker f
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `different` | local diagnostic shape is still simpler than KiCad’s parser diagnostics | parser notes | revisit only if parser error exactness needs model changes |
+| `Diagnostic::error` | parse error construction | `blocked` | native parse-error parity now depends on expanding the local diagnostic model beyond `{ code, message, path, span }` so KiCad-style source/line/offset formatting can be represented explicitly | parser notes + source inspection | unblock only with diagnostic model expansion |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -53,7 +53,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `different` | exact wording/span/source parity is still incomplete | parser notes | revisit during final error sweep |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | exact wording/span/source parity now depends on the same diagnostic model expansion as `Diagnostic::error` | parser notes + source inspection | unblock only with diagnostic model expansion |
 
 ### `src/model.rs` parser support methods
 
@@ -220,9 +220,9 @@ not drive the queue unless a parent parser routine exposes them.
 | `skip_to_block_right` | local recovery helper | `same` | used for embedded-file warning recovery only; behavior is stable enough | tests | none |
 | `current` | local token helper | `not_applicable` | local parser support only | source inspection | none |
 | `current_span` | local token helper | `not_applicable` | local parser support only | source inspection | none |
-| `expecting` | parse diagnostic helper | `different` | final message/span parity still belongs to the endgame sweep | parser notes | revisit last |
-| `unexpected` | parse diagnostic helper | `different` | final message/span parity still belongs to the endgame sweep | parser notes | revisit last |
-| `error_here` | parse diagnostic helper | `different` | final message/span parity still belongs to the endgame sweep | parser notes | revisit last |
+| `expecting` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting than the current local error model can express | parser notes + source inspection | unblock only with diagnostic model expansion |
+| `unexpected` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting than the current local error model can express | parser notes + source inspection | unblock only with diagnostic model expansion |
+| `error_here` | parse diagnostic helper | `blocked` | exact KiCad parse-error parity now depends on richer diagnostic/source-location formatting than the current local error model can express | parser notes + source inspection | unblock only with diagnostic model expansion |
 | `find_standard_page_info` | paper lookup support | `same` | stable and no longer active | direct behavior | none |
 | `parse_page_info` | `parsePAGE_INFO` | `same` | tracked above at owner layer; helper remains stable | direct audit | none |
 | `convert_old_overbar_notation` | legacy overbar conversion | `same` | behavior is covered and stable enough | tests | none |
@@ -236,7 +236,7 @@ not drive the queue unless a parent parser routine exposes them.
 | `get_item_index_by_uuid` | local group support | `not_applicable` | local support only | source inspection | none |
 | `item_uuid` | local group support | `not_applicable` | local support only | source inspection | none |
 | `groups_sanity_check` | group cycle repair | `same` | covered and no longer active | tests | none |
-| `validation` | parse validation helper | `different` | final diagnostic exactness still pending | parser notes | revisit last |
+| `validation` | parse validation helper | `blocked` | final validation-diagnostic exactness now depends on the same diagnostic model expansion as the other parser error helpers | parser notes + source inspection | unblock only with diagnostic model expansion |
 
 ## Implementation Rule
 

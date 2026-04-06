@@ -117,10 +117,14 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 - the remaining parser-only exactness is now mostly UUID semantics and diagnostic formatting, not a
   broad lexer/token-flow mismatch
 
-10. Error behavior still is not 1:1
+10. Error behavior is no longer blocked on parser routine work; it is blocked on the local error model
 
-- many messages and spans are closer now
-- exact failure token, exact `Expecting(...)` vs `Unexpected(...)`, and exact control-flow failure timing are still not fully matched
+- many messages and spans are already much closer
+- the remaining gap is not “find one more parser branch”; it is that the current local
+  `Diagnostic` / `Error` representation is too reduced to express KiCad-style source/line/offset
+  parse diagnostics literally
+- exact `Expecting(...)` / `Unexpected(...)` parity is now blocked on expanding that model rather
+  than on more routine-level parser edits
 
 11. Cross-file post-load pipeline is still substantially missing
 
@@ -147,20 +151,19 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Revisit UUID semantics only if the repo is willing to migrate parser/loader fixtures away from stable symbolic IDs.
-2. Finish the final diagnostic/error exactness sweep.
+1. Decide whether to unblock native malformed-UUID semantics by migrating parser/loader fixtures away from stable symbolic IDs.
+2. Decide whether to expand the local diagnostic/error model for native parse-error parity.
 3. Port the missing cross-file post-load pipeline.
 
 ### Recommended Next Order
 
 1. Decide whether to unblock native malformed-UUID semantics by migrating symbolic fixture IDs.
-2. Finish the parser-wide diagnostic/error exactness sweep.
+2. Decide whether to expand the diagnostic/error model for native parse-error parity.
 
 ### Bottom Line
 
-The parser is not yet at full 1:1 parity.
-
-The biggest remaining parser-only gaps are now:
+The parser is not yet at full 1:1 parity, but the remaining parser-only gaps are now blocked
+surfaces rather than broad routine work:
 
 - UUID semantics blocked on fixture/model migration
-- final diagnostic / error parity
+- diagnostic / error parity blocked on error-model expansion
