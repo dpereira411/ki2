@@ -1261,16 +1261,6 @@ impl Sheet {
         }
     }
 
-    pub fn set_properties(&mut self, mut properties: Vec<Property>) {
-        for property in &mut properties {
-            if property.kind == PropertyKind::SheetFile {
-                property.value = property.value.replace('\\', "/");
-            }
-        }
-
-        self.properties = properties;
-    }
-
     pub fn set_position(&mut self, at: [f64; 2]) {
         let delta = [at[0] - self.at[0], at[1] - self.at[1]];
         self.at = at;
@@ -1305,10 +1295,6 @@ impl Sheet {
 
     pub fn add_pin(&mut self, pin: SheetPin) {
         self.pins.push(pin);
-    }
-
-    pub fn set_instances(&mut self, instances: Vec<SheetLocalInstance>) {
-        self.instances = instances;
     }
 
     pub fn is_vertical_orientation(&self) -> bool {
@@ -1497,14 +1483,14 @@ mod tests {
     }
 
     #[test]
-    fn sheet_set_instances_preserves_duplicates() {
+    fn sheet_instance_lists_preserve_duplicates() {
         let mut sheet = Sheet::new();
         let mut first = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
         first.page = Some("2".to_string());
         let mut second = SheetLocalInstance::new("demo".to_string(), "/A".to_string());
         second.page = Some("3".to_string());
 
-        sheet.set_instances(vec![first, second]);
+        sheet.instances = vec![first, second];
 
         assert_eq!(sheet.instances.len(), 2);
         assert_eq!(sheet.instances[0].page.as_deref(), Some("2"));

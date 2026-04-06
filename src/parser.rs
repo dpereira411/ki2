@@ -4332,7 +4332,12 @@ impl KiCadSchematicParser {
             }
         }
 
-        sheet.set_properties(properties);
+        for property in &mut properties {
+            if property.kind == PropertyKind::SheetFile {
+                property.value = property.value.replace('\\', "/");
+            }
+        }
+        sheet.properties = properties;
 
         if sheet.name().is_none() {
             return Err(self.error_here("Missing sheet name property"));
