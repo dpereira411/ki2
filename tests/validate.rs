@@ -6267,6 +6267,58 @@ B2 SIGB MODEL_B
 }
 
 #[test]
+fn load_tree_marks_resolved_ibis_libraries_as_ibis_origin() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000031d")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_marks_resolved_ibis_origin", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::Ibis)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn resolves_symbol_sim_model_from_embedded_spice_model() {
     let src = r#"(kicad_sch
   (version 20260306)

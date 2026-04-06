@@ -1509,6 +1509,14 @@ fn hydrate_resolved_sim_library(
             .map(|model| model.params.clone())
             .unwrap_or_default();
         sim_model.generated_pin_names = resolved_model.map(|model| model.pins).unwrap_or_default();
+
+        if sim_model
+            .resolved_library
+            .as_ref()
+            .is_some_and(|library| library.kind == crate::model::SimLibraryKind::Ibis)
+        {
+            sim_model.origin = Some(crate::model::SimModelOrigin::Ibis);
+        }
     }
 
     modified
