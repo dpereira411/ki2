@@ -829,7 +829,7 @@ fn placed_symbols_start_with_mandatory_fields() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-fields")
+  (uuid "62000000-0000-0000-0000-000000000001")
   (symbol
     (lib_id "Device:R"))
 )"#;
@@ -879,7 +879,7 @@ fn parser_resets_sheet_fields_autoplaced_before_branch_walk() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-sheet-autoplace")
+  (uuid "62000000-0000-0000-0000-000000000002")
   (sheet
     (property "Sheetname" "Child")
     (property "Sheetfile" "child.kicad_sch"))
@@ -906,7 +906,7 @@ fn symbol_reference_property_updates_prefix() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-prefix")
+  (uuid "62000000-0000-0000-0000-000000000003")
   (symbol
     (lib_id "Device:R")
     (property "Reference" "J12")))"#;
@@ -941,7 +941,7 @@ fn later_empty_symbol_reference_clears_prefix() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-empty-symbol-prefix")
+  (uuid "62000000-0000-0000-0000-000000000004")
   (symbol
     (lib_id "Device:R")
     (property "Reference" "J12")
@@ -977,7 +977,7 @@ fn symbol_at_moves_preparsed_properties_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-at-fields")
+  (uuid "62000000-0000-0000-0000-000000000005")
   (symbol
     (lib_id "Device:R")
     (property "Reference" "R1" (at 3 4 0))
@@ -1022,7 +1022,7 @@ fn power_style_reference_updates_symbol_netlist_state() {
     let src = r##"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-symbol-netlist")
+  (uuid "62000000-0000-0000-0000-000000000006")
   (symbol
     (lib_id "power:GND")
     (property "Reference" "#PWR01")))"##;
@@ -1049,7 +1049,7 @@ fn text_box_and_table_cell_preserve_hidden_effects_state() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-hidden-textboxes")
+  (uuid "62000000-0000-0000-0000-000000000007")
   (text_box "hidden box" (at 0 0 0) (size 5 5) (effects (hide)))
   (table
     (column_count 1)
@@ -1096,7 +1096,7 @@ fn table_without_border_or_separators_keeps_constructor_defaults() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
-  (uuid "root-table-defaults")
+  (uuid "62000000-0000-0000-0000-000000000008")
   (table
     (column_count 1)
     (column_widths 5)
