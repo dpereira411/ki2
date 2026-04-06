@@ -295,17 +295,13 @@ impl LibSymbol {
         self.units.iter().any(|unit| unit.body_style > 1)
     }
 
-    pub fn sync_description_from_property(&mut self) {
+    pub fn refresh_library_tree_caches(&mut self) {
         self.description = self
             .properties
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolDescription)
             .map(|property| property.value.clone())
             .filter(|value| !value.is_empty());
-    }
-
-    pub fn refresh_library_tree_caches(&mut self) {
-        self.sync_description_from_property();
         self.sort_draw_items();
     }
 

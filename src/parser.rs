@@ -2120,7 +2120,12 @@ impl KiCadSchematicParser {
                 .find(|existing| existing.kind == property.kind)
                 .expect("lib symbols start with mandatory fields");
             *existing = property;
-            symbol.sync_description_from_property();
+            symbol.description = symbol
+                .properties
+                .iter()
+                .find(|property| property.kind == PropertyKind::SymbolDescription)
+                .map(|property| property.value.clone())
+                .filter(|value| !value.is_empty());
         } else if name == "ki_keywords" {
             symbol.keywords = Some(property.value);
         } else if name == "ki_description" {
@@ -2134,7 +2139,12 @@ impl KiCadSchematicParser {
                 .or(existing.id);
             existing.key = PropertyKind::SymbolDescription.canonical_key().to_string();
             existing.value = property.value;
-            symbol.sync_description_from_property();
+            symbol.description = symbol
+                .properties
+                .iter()
+                .find(|property| property.kind == PropertyKind::SymbolDescription)
+                .map(|property| property.value.clone())
+                .filter(|value| !value.is_empty());
         } else if name == "ki_fp_filters" {
             symbol.fp_filters_specified = true;
             symbol.fp_filters = property
