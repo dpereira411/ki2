@@ -1309,9 +1309,9 @@ impl Sheet {
 mod tests {
     use super::{
         BusEntry, FieldAutoplacement, Label, LabelKind, LabelShape, LibDrawItem, LibSymbol, Line,
-        LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet,
-        SheetLocalInstance, SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol,
-        SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox, TextKind,
+        LineKind, NoConnect, Property, PropertyKind, Shape, ShapeKind, Sheet, SheetLocalInstance,
+        SheetPin, SheetPinShape, SheetSide, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin,
+        Table, TableCell, Text, TextBox, TextKind,
     };
 
     #[test]
@@ -1728,6 +1728,35 @@ mod tests {
     }
 
     #[test]
+    fn constraining_sheet_pin_to_explicit_side_uses_sheet_edges() {
+        let mut sheet = Sheet::new();
+        sheet.at = [10.0, 20.0];
+        sheet.size = [30.0, 40.0];
+
+        let mut pin = SheetPin::new("IN".to_string(), &sheet);
+        pin.at = [999.0, 25.0];
+        pin.constrain_on_sheet_edge(sheet.at, sheet.size, true);
+        pin.set_side_with_sheet_geometry(sheet.at, sheet.size, SheetSide::Right);
+
+        assert_eq!(pin.at, [40.0, 20.0]);
+        assert_eq!(pin.side, SheetSide::Right);
+    }
+
+    #[test]
+    fn resizing_sheet_reconstrains_existing_pins_on_same_side() {
+        let mut sheet = Sheet::new();
+        sheet.size = [10.0, 20.0];
+        let mut pin = SheetPin::new("IN".to_string(), &sheet);
+        pin.at = [0.0, 30.0];
+        pin.side = SheetSide::Left;
+
+        pin.constrain_on_sheet_edge(sheet.at, sheet.size, false);
+
+        assert_eq!(pin.at, [0.0, 20.0]);
+        assert_eq!(pin.side, SheetSide::Left);
+    }
+
+    #[test]
     fn lib_symbols_start_with_mandatory_fields() {
         let symbol = LibSymbol::new("Device:R".to_string());
 
@@ -2048,24 +2077,88 @@ pub struct SheetPin {
 
 impl SheetPin {
     pub fn new(name: String, sheet: &Sheet) -> Self {
-        let mut at = [0.0, 0.0];
-        let side = if sheet.is_vertical_orientation() {
-            at[1] = sheet.at[1];
-            SheetSide::Top
-        } else {
-            at[0] = sheet.at[0];
-            SheetSide::Left
-        };
-
-        Self {
+        let mut pin = Self {
             name,
             shape: SheetPinShape::Input,
-            at,
-            side,
+            at: [0.0, 0.0],
+            side: if sheet.is_vertical_orientation() {
+                SheetSide::Top
+            } else {
+                SheetSide::Left
+            },
             visible: true,
             has_effects: false,
             effects: None,
             uuid: None,
+        };
+        pin.set_side_with_sheet_geometry(sheet.at, sheet.size, pin.side);
+        pin
+    }
+
+    pub fn set_side_with_sheet_geometry(
+        &mut self,
+        sheet_at: [f64; 2],
+        sheet_size: [f64; 2],
+        side: SheetSide,
+    ) {
+        self.side = side;
+        match side {
+            SheetSide::Left => {
+                self.at[0] = sheet_at[0];
+            }
+            SheetSide::Right => {
+                self.at[0] = sheet_at[0] + sheet_size[0];
+            }
+            SheetSide::Top => {
+                self.at[1] = sheet_at[1];
+            }
+            SheetSide::Bottom => {
+                self.at[1] = sheet_at[1] + sheet_size[1];
+            }
+        }
+    }
+
+    pub fn constrain_on_sheet_edge(
+        &mut self,
+        sheet_at: [f64; 2],
+        sheet_size: [f64; 2],
+        allow_edge_switch: bool,
+    ) {
+        let left = sheet_at[0];
+        let right = sheet_at[0] + sheet_size[0];
+        let top = sheet_at[1];
+        let bottom = sheet_at[1] + sheet_size[1];
+
+        if allow_edge_switch {
+            let distances = [
+                (0usize, (self.at[1] - top).abs()),
+                (1usize, (self.at[0] - right).abs()),
+                (2usize, (self.at[1] - bottom).abs()),
+                (3usize, (self.at[0] - left).abs()),
+            ];
+            let nearest = distances
+                .into_iter()
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(segment, _)| segment)
+                .unwrap_or(3);
+            let side = match nearest {
+                0 => SheetSide::Top,
+                1 => SheetSide::Right,
+                2 => SheetSide::Bottom,
+                _ => SheetSide::Left,
+            };
+            self.set_side_with_sheet_geometry(sheet_at, sheet_size, side);
+        } else {
+            self.set_side_with_sheet_geometry(sheet_at, sheet_size, self.side);
+        }
+
+        match self.side {
+            SheetSide::Left | SheetSide::Right => {
+                self.at[1] = self.at[1].clamp(top, bottom);
+            }
+            SheetSide::Top | SheetSide::Bottom => {
+                self.at[0] = self.at[0].clamp(left, right);
+            }
         }
     }
 }

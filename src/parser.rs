@@ -4065,6 +4065,9 @@ impl KiCadSchematicParser {
                 "size" => {
                     let _ = self.need_unquoted_symbol_atom("size")?;
                     sheet.size = self.parse_xy2("sheet size")?;
+                    for pin in &mut sheet.pins {
+                        pin.constrain_on_sheet_edge(sheet.at, sheet.size, false);
+                    }
                     self.need_right()?;
                 }
                 "exclude_from_sim" => {
@@ -4437,7 +4440,8 @@ impl KiCadSchematicParser {
                         _ => return Err(self.expecting("0, 90, 180, or 270")),
                     };
                     sheet_pin.at = [parsed[0], parsed[1]];
-                    sheet_pin.side = parsed_side;
+                    sheet_pin.constrain_on_sheet_edge(sheet.at, sheet.size, true);
+                    sheet_pin.set_side_with_sheet_geometry(sheet.at, sheet.size, parsed_side);
                     self.need_right()?;
                 }
                 "uuid" => {

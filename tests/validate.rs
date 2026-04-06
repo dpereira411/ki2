@@ -3685,6 +3685,72 @@ fn sheet_pin_before_at_moves_with_sheet_position() {
 }
 
 #[test]
+fn sheet_pin_at_uses_explicit_side_on_sheet_edge() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (at 10 20)
+    (size 30 40)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input (at 999 25 0)))
+)"#;
+    let path = temp_schematic("sheet_pin_at_uses_explicit_side_edge", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.pins.len(), 1);
+    assert_eq!(sheet.pins[0].at, [40.0, 20.0]);
+    assert_eq!(sheet.pins[0].side, SheetSide::Right);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn sheet_size_reconstrains_existing_pin_position() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "root-uuid")
+  (paper "A4")
+  (sheet
+    (size 50 50)
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input (at 0 30 180))
+    (size 10 20))
+)"#;
+    let path = temp_schematic("sheet_size_reconstrains_existing_pin", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+
+    let sheet = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert_eq!(sheet.pins.len(), 1);
+    assert_eq!(sheet.pins[0].at, [0.0, 20.0]);
+    assert_eq!(sheet.pins[0].side, SheetSide::Left);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn sheet_pin_without_at_uses_sheet_owner_position_defaults() {
     let src = r#"(kicad_sch
   (version 20231120)
