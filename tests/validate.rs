@@ -9536,6 +9536,28 @@ fn rejects_invalid_lib_pin_type_and_shape_tokens() {
 }
 
 #[test]
+fn lib_pin_alternate_names_stay_raw_symbols() {
+    let src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "root-lib-pin-alt-raw")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (pin passive line
+        (alternate "~" passive line)))))
+"#;
+    let path = temp_schematic("lib_pin_alternate_name_raw_symbol", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let pin = &schematic.screen.lib_symbols[0].units[0].draw_items[0];
+
+    assert!(pin.alternates.contains_key("~"));
+    assert_eq!(pin.alternates["~"].name, "~");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn duplicate_lib_pin_alternates_overwrite_by_name() {
     let src = r#"(kicad_sch
   (version 20260306)

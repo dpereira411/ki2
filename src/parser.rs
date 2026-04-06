@@ -1892,19 +1892,9 @@ impl KiCadSchematicParser {
                 }
                 "alternate" => {
                     let _ = self.need_unquoted_symbol_atom("alternate")?;
-                    let mut alt_name = self
+                    let alt_name = self
                         .need_symbol_atom("alternate pin name")
                         .map_err(|_| self.error_here("Invalid alternate pin name"))?;
-                    if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
-                        < VERSION_EMPTY_TILDE_IS_EMPTY
-                        && alt_name == "~"
-                    {
-                        alt_name.clear();
-                    } else if self.version.unwrap_or(SEXPR_SCHEMATIC_FILE_VERSION)
-                        < VERSION_TEXT_OVERBAR_NOTATION
-                    {
-                        alt_name = self.convert_old_overbar_notation(alt_name);
-                    }
 
                     let alt_type_token = self.need_unquoted_symbol_atom("alternate pin type")?;
                     let alt_type = if matches!(
