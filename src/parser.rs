@@ -2131,10 +2131,11 @@ impl KiCadSchematicParser {
                 field.name = Some(property.key);
                 field.text = Some(property.value);
                 field.effects = property.effects;
-                let unit_name =
-                    format!("{}_{}_{}", symbol.name, field.unit_number, field.body_style);
-                let unit_index =
-                    symbol.ensure_unit_index(unit_name, field.unit_number, field.body_style);
+                let unit_index = symbol
+                    .units
+                    .iter()
+                    .position(|unit| unit.unit_number == 1 && unit.body_style == 1)
+                    .expect("lib symbols start with root 1_1 unit");
                 symbol.units[unit_index].push_draw_item(field);
                 self.lib_next_field_ordinal += 1;
             }
