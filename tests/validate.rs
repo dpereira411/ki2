@@ -5605,6 +5605,194 @@ fn load_tree_migrates_mid_v7_sim_field_names() {
 }
 
 #[test]
+fn load_tree_migrates_mid_v7_pot_pin_names() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000005")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim_Device" "R")
+    (property "Sim_Type" "POT")
+    (property "Sim_Pins" "1=+ 2=- 3=w")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_mid_v7_pot_pin_names", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Pins")
+            .map(|property| property.value.as_str()),
+        Some("1=r1 2=r0 3=w")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pins.clone()),
+        Some(BTreeMap::from([
+            ("1".to_string(), "r1".to_string()),
+            ("2".to_string(), "r0".to_string()),
+            ("3".to_string(), "w".to_string()),
+        ]))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_mid_v7_random_source_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000006")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:I")
+    (property "Reference" "I?")
+    (property "Sim_Device" "I")
+    (property "Sim_Type" "RANDNORMAL")
+    (property "Sim_Params" "MIN=0 MAX=0 DT=2N STDDEV=3 MEAN=4")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_mid_v7_random_source_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Type")
+            .map(|property| property.value.as_str()),
+        Some("RANDGAUSSIAN")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some("ts=2n stddev=3 mean=4")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        Some("RANDGAUSSIAN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("ts=2n stddev=3 mean=4")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_migrates_mid_v7_mutual_type_to_device() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000007")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:L")
+    (property "Reference" "L?")
+    (property "Sim_Device" "L")
+    (property "Sim_Type" "MUTUAL")
+    (property "Sim_Params" "k=0.8")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_migrates_mid_v7_mutual_type", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.content_modified);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Device")
+            .map(|property| property.value.as_str()),
+        Some("K")
+    );
+    assert!(
+        !symbol
+            .properties
+            .iter()
+            .any(|property| property.key == "Sim.Type")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.device.as_deref()),
+        Some("K")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.model_type.as_deref()),
+        None
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_hydrates_structured_sim_enable_state() {
     let src = r#"(kicad_sch
   (version 20260306)

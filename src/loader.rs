@@ -1132,6 +1132,86 @@ impl SchematicLoader {
                     }
                 }
 
+                let sim_type_index = symbol
+                    .properties
+                    .iter()
+                    .position(|property| property.key == "Sim.Type");
+                let existing_device_subtype = sim_type_index
+                    .and_then(|index| symbol.properties.get(index))
+                    .map(|property| property.value.to_uppercase());
+
+                if existing_device_subtype.as_deref() == Some("POT") {
+                    if let Some(pin_field) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.key == "Sim.Pins")
+                    {
+                        let updated = pin_field.value.replace("=+", "=r1").replace("=-", "=r0");
+
+                        if updated != pin_field.value {
+                            pin_field.value = updated;
+                            migrated = true;
+                        }
+                    }
+                }
+
+                if existing_device_subtype
+                    .as_deref()
+                    .is_some_and(|subtype| subtype.starts_with("RAND"))
+                {
+                    if let Some(index) = sim_type_index {
+                        let current = symbol.properties[index].value.to_uppercase();
+                        let updated = current.replace("NORMAL", "GAUSSIAN");
+
+                        if updated != symbol.properties[index].value {
+                            symbol.properties[index].value = updated;
+                            migrated = true;
+                        }
+                    }
+
+                    if let Some(params_field) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.key == "Sim.Params")
+                    {
+                        let params = params_field.value.to_lowercase();
+                        let count = params.replace("min=0 ", "").replace("max=0 ", "");
+                        let updated = count.replace("dt=", "ts=");
+
+                        if updated != params_field.value {
+                            params_field.value = updated;
+                            migrated = true;
+                        }
+                    }
+                }
+
+                if existing_device_subtype.as_deref() == Some("MUTUAL") {
+                    if let Some(index) = sim_type_index {
+                        symbol.properties.remove(index);
+                        migrated = true;
+                    }
+
+                    if let Some(device_field) = symbol
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.key == "Sim.Device")
+                    {
+                        if device_field.value != "K" {
+                            device_field.value = "K".to_string();
+                            migrated = true;
+                        }
+                    } else {
+                        let template = Property::new_named(
+                            PropertyKind::User,
+                            "Sim.Device",
+                            "K".to_string(),
+                            false,
+                        );
+                        symbol.properties.push(template);
+                        migrated = true;
+                    }
+                }
+
                 symbol.sync_sim_model_from_properties();
                 migrated |= hydrate_resolved_sim_library(&schematic_path, &embedded_files, symbol);
             }
