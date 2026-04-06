@@ -1389,16 +1389,23 @@ impl KiCadSchematicParser {
 
         if saw_mid {
             item.points = vec![start_point, mid_point, end_point];
+            item.arc_center = None;
+            item.radius = None;
+            item.arc_start_angle = None;
+            item.arc_end_angle = None;
         } else if saw_angles {
             item.points = vec![end_point, start_point];
+            item.arc_center = arc_center;
+            item.radius = radius;
+            item.arc_start_angle = arc_start_angle;
+            item.arc_end_angle = arc_end_angle;
         } else {
             item.points = vec![start_point, end_point];
+            item.arc_center = arc_center;
+            item.radius = radius;
+            item.arc_start_angle = arc_start_angle;
+            item.arc_end_angle = arc_end_angle;
         }
-
-        item.arc_center = arc_center;
-        item.radius = radius;
-        item.arc_start_angle = arc_start_angle;
-        item.arc_end_angle = arc_end_angle;
 
         if saw_mid && (!saw_start || item.points.len() < 3) {
             // keep defaults when an explicit midpoint path only partially specifies endpoints

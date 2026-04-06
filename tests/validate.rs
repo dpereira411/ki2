@@ -1793,6 +1793,10 @@ fn parses_extended_top_level_sections() {
     assert_eq!(lib_symbol.units[0].draw_items[0].kind, "arc");
     assert_eq!(lib_symbol.units[0].draw_items[1].kind, "circle");
     assert_eq!(lib_symbol.units[0].draw_items[0].points.len(), 3);
+    assert_eq!(lib_symbol.units[0].draw_items[0].arc_center, None);
+    assert_eq!(lib_symbol.units[0].draw_items[0].radius, None);
+    assert_eq!(lib_symbol.units[0].draw_items[0].arc_start_angle, None);
+    assert_eq!(lib_symbol.units[0].draw_items[0].arc_end_angle, None);
     assert_eq!(
         lib_symbol.units[0].draw_items[0]
             .stroke
