@@ -3001,7 +3001,6 @@ impl KiCadSchematicParser {
     fn parse_sch_image(&mut self) -> Result<Image, Error> {
         let _ = self.need_unquoted_symbol_atom("image")?;
         let mut image = Image::new();
-        let mut has_at = false;
         while !self.at_right() {
             self.need_left()?;
             let head = match &self.current().kind {
@@ -3016,7 +3015,6 @@ impl KiCadSchematicParser {
                 "at" => {
                     let _ = self.need_unquoted_symbol_atom("at")?;
                     image.at = self.parse_xy2("image at")?;
-                    has_at = true;
                     self.need_right()?;
                 }
                 "scale" => {
@@ -3060,9 +3058,6 @@ impl KiCadSchematicParser {
                 }
                 _ => return Err(self.expecting("at, scale, uuid or data")),
             }
-        }
-        if !has_at {
-            image.at = [0.0, 0.0];
         }
         self.need_right()?;
         Ok(image)
