@@ -2552,7 +2552,7 @@ impl KiCadSchematicParser {
                 "iref" => {
                     let _ = self.need_unquoted_symbol_atom("iref")?;
                     let ParsedSchText::Label(label) = &mut item else {
-                        return Err(self.unexpected("iref"));
+                        continue;
                     };
                     if !matches!(label.kind, LabelKind::Global) {
                         continue;

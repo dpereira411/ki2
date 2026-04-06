@@ -5465,6 +5465,19 @@ fn rejects_unexpected_tokens_in_shared_sch_text_parser() {
     assert!(err.to_string().contains("expecting end of file"));
     let _ = fs::remove_file(empty_local_iref_path);
 
+    let text_iref_src = r#"(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid "u-1")
+  (paper "A4")
+  (text "T" (at 0 0 0) (iref 1 2))
+)"#;
+    let text_iref_path = temp_schematic("plain_text_iref", text_iref_src);
+    let err = parse_schematic_file(Path::new(&text_iref_path))
+        .expect_err("plain text iref should follow shared late-failure flow");
+    assert!(err.to_string().contains("expecting ("));
+    let _ = fs::remove_file(text_iref_path);
+
     let quoted_text_head_src = r#"(kicad_sch
   (version 20250114)
   (generator "eeschema")
