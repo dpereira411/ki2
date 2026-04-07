@@ -655,6 +655,83 @@ fn erc_allows_matching_footprint_filters() {
 }
 
 #[test]
+fn erc_reports_invalid_stacked_pin_notation() {
+    let path = temp_schematic(
+        "erc_invalid_stacked_pin_notation",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:U"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "U" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "U_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "IN" (effects (font (size 1 1))))
+          (number "[1-A]" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:U")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "IC" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-stacked-pin-syntax"
+            && diagnostic.severity == ki2::diagnostic::Severity::Warning
+            && diagnostic
+                .message
+                .contains("Pin number resembles stacked pin notation but is invalid")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_valid_stacked_pin_notation() {
+    let path = temp_schematic(
+        "erc_valid_stacked_pin_notation",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:U"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "U" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "U_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "IN" (effects (font (size 1 1))))
+          (number "[1, 2, 3]" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:U")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "IC" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-stacked-pin-syntax"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",

@@ -87,6 +87,7 @@ Implemented reduced analogues:
 - `ERC_TESTER::TestSameLocalGlobalLabel()`
 - `ERC_TESTER::TestSimilarLabels()` reduced label/power name slice
 - `ERC_TESTER::TestFootprintFilters()`
+- `ERC_TESTER::TestStackedPinNotation()`
 - first local `erc` CLI command on top of the live loader/ERC engine
 - reduced ERC text-report output and default `<stem>-erc.rpt` behavior
 - reduced ERC JSON report output

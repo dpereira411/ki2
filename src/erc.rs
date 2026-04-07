@@ -29,6 +29,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
     diagnostics.extend(check_footprint_filters(project));
+    diagnostics.extend(check_stacked_pin_notation(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -65,6 +66,13 @@ struct ConnectionPointSnapshot {
 struct ConnectionComponent {
     anchor: [f64; 2],
     members: Vec<ConnectionMember>,
+}
+
+#[derive(Clone, Debug)]
+struct ProjectedSymbolPin {
+    at: [f64; 2],
+    number: Option<String>,
+    electrical_type: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,14 +176,29 @@ fn is_power_driver_pin_type(pin_type: ReducedPinType) -> bool {
 // placed symbols. It exists so the reduced ERC connection snapshot can include placed symbol pins
 // from linked lib-pin draw items instead of falling back to wire-only geometry.
 fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
+    projected_symbol_pin_info(symbol)
+        .into_iter()
+        .map(|pin| ConnectionMember {
+            kind: ConnectionMemberKind::SymbolPin,
+            at: pin.at,
+            symbol_uuid: symbol.uuid.clone(),
+            visible: true,
+            electrical_type: pin.electrical_type,
+        })
+        .collect()
+}
+
+// Upstream parity: reduced local analogue for the placed-symbol `SCH_PIN` projection KiCad uses
+// across ERC and export code. This is not a 1:1 live-pin object path because the Rust tree still
+// stores pins only on linked lib draw items, but it preserves the exercised unit/body-style pin
+// projection and pin text payload needed by ERC checks that reason about pin syntax.
+fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolPin> {
     let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
         return Vec::new();
     };
 
     let unit_number = symbol.unit.unwrap_or(1);
     let body_style = symbol.body_style.unwrap_or(1);
-    let symbol_uuid = symbol.uuid.clone();
-
     lib_symbol
         .units
         .iter()
@@ -194,15 +217,77 @@ fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
             let rotated = rotate_point(local_at, symbol.angle);
             let at = [symbol.at[0] + rotated[0], symbol.at[1] + rotated[1]];
 
-            ConnectionMember {
-                kind: ConnectionMemberKind::SymbolPin,
+            ProjectedSymbolPin {
                 at,
-                symbol_uuid: symbol_uuid.clone(),
-                visible: pin.visible,
+                number: pin.number.clone(),
                 electrical_type: pin.electrical_type.clone(),
             }
         })
         .collect()
+}
+
+fn parse_alphanumeric_pin_token(token: &str) -> (String, Option<i64>) {
+    let split_at = token
+        .char_indices()
+        .find(|(_, ch)| ch.is_ascii_digit())
+        .map(|(index, _)| index)
+        .unwrap_or(token.len());
+    let (prefix, digits) = token.split_at(split_at);
+
+    if digits.is_empty() {
+        return (prefix.to_string(), None);
+    }
+
+    (prefix.to_string(), digits.parse::<i64>().ok())
+}
+
+// Upstream parity: reduced local analogue for `ExpandStackedPinNotation()`. This is not a 1:1
+// KiCad utility port because it only returns validity for the exercised ERC path instead of the
+// fully expanded sorted list KiCad uses elsewhere, but it preserves the same bracket/comma/range
+// syntax rules needed by `TestStackedPinNotation()`.
+fn stacked_pin_notation_is_valid(pin_name: &str) -> bool {
+    let has_open = pin_name.contains('[');
+    let has_close = pin_name.contains(']');
+
+    if has_open || has_close {
+        if !pin_name.starts_with('[') || !pin_name.ends_with(']') {
+            return false;
+        }
+    }
+
+    if !pin_name.starts_with('[') || !pin_name.ends_with(']') {
+        return true;
+    }
+
+    let inner = &pin_name[1..pin_name.len() - 1];
+    let mut expanded_any = false;
+
+    for part in inner.split(',') {
+        let part = part.trim();
+
+        if part.is_empty() {
+            continue;
+        }
+
+        if let Some((start_text, end_text)) = part.split_once('-') {
+            let (start_prefix, start_value) = parse_alphanumeric_pin_token(start_text.trim());
+            let (end_prefix, end_value) = parse_alphanumeric_pin_token(end_text.trim());
+
+            let (Some(start_value), Some(end_value)) = (start_value, end_value) else {
+                return false;
+            };
+
+            if start_prefix != end_prefix || start_value > end_value {
+                return false;
+            }
+
+            expanded_any = true;
+        } else {
+            expanded_any = true;
+        }
+    }
+
+    expanded_any
 }
 
 fn push_connection_member(
@@ -1926,6 +2011,53 @@ pub fn check_footprint_filters(project: &SchematicProject) -> Vec<Diagnostic> {
                 line: None,
                 column: None,
             });
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestStackedPinNotation()`. This is not
+// a 1:1 KiCad marker pass because the Rust tree still validates projected lib-pin numbers instead
+// of live `SCH_PIN` objects, but it preserves the exercised bracketed stacked-pin syntax rule and
+// only warns on numbers that resemble stacked notation but do not parse like KiCad's helper.
+pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            for pin in projected_symbol_pin_info(symbol) {
+                let Some(number) = pin.number.as_deref() else {
+                    continue;
+                };
+
+                if stacked_pin_notation_is_valid(number) {
+                    continue;
+                }
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "erc-stacked-pin-syntax",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Pin number resembles stacked pin notation but is invalid: '{}'",
+                        number
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+                break;
+            }
         }
     }
 
