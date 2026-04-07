@@ -559,6 +559,51 @@ fn symbol_value_text(symbol: &Symbol) -> Option<String> {
         .map(|property| property.value.clone())
 }
 
+fn symbol_reference_text(symbol: &Symbol) -> Option<String> {
+    symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == crate::model::PropertyKind::SymbolReference)
+        .map(|property| property.value.clone())
+}
+
+fn reduced_symbol_pin_default_net_name(
+    symbol: &Symbol,
+    pin: &ProjectedSymbolPin,
+    unit_pins: &[ProjectedSymbolPin],
+) -> Option<String> {
+    let reference = symbol_reference_text(symbol)?;
+    let pin_number = pin.number.as_deref()?;
+
+    if reference.ends_with('?') {
+        let symbol_uuid = symbol.uuid.as_deref()?;
+        return Some(format!("Net-({symbol_uuid}-Pad{pin_number})"));
+    }
+
+    let pin_name = pin
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty() && *name != pin_number && *name != "~");
+    let name_is_duplicated = pin_name.is_some_and(|name| {
+        unit_pins.iter().any(|other| {
+            other.number.as_deref() != Some(pin_number) && other.name.as_deref() == Some(name)
+        })
+    });
+
+    if let Some(pin_name) = pin_name {
+        let mut name = format!("Net-({reference}-{pin_name}");
+
+        if name_is_duplicated {
+            name.push_str(&format!("-Pad{pin_number}"));
+        }
+
+        name.push(')');
+        return Some(name);
+    }
+
+    Some(format!("Net-({reference}-Pad{pin_number})"))
+}
+
 fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
     let text = label.text.to_ascii_uppercase();
 
@@ -579,6 +624,8 @@ fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
 // - local power pins outrank local labels
 // - local labels outrank hierarchical labels
 // - sheet pins participate below labels, with output pins preferred over non-output pins
+// - ordinary symbol pins participate last through reduced `SCH_PIN::GetDefaultNetName()`-style
+//   fallback names so unlabeled nets still get deterministic export/CLI names
 // - equal-priority drivers fall back to alphabetical shown text for deterministic parity instead
 //   of file order
 // - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
@@ -625,25 +672,34 @@ where
                     )
                 })
                 .max_by(|lhs, rhs| lhs.1.cmp(&rhs.1).then_with(|| rhs.2.cmp(&lhs.2))),
-            SchItem::Symbol(symbol) => projected_symbol_pin_info(symbol)
-                .into_iter()
-                .filter_map(|pin| {
-                    connected_component
-                        .members
-                        .iter()
-                        .any(|member| {
-                            member.kind == ConnectionMemberKind::SymbolPin
-                                && member.symbol_uuid == symbol.uuid
-                                && points_equal(member.at, pin.at)
-                        })
-                        .then_some(pin)
-                })
-                .find_map(|pin| {
-                    reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
-                        .and_then(|priority| {
-                            symbol_value_text(symbol).map(|text| (priority, 0, text))
-                        })
-                }),
+            SchItem::Symbol(symbol) => {
+                let unit_pins = projected_symbol_pin_info(symbol);
+
+                unit_pins
+                    .iter()
+                    .cloned()
+                    .filter_map(|pin| {
+                        connected_component
+                            .members
+                            .iter()
+                            .any(|member| {
+                                member.kind == ConnectionMemberKind::SymbolPin
+                                    && member.symbol_uuid == symbol.uuid
+                                    && points_equal(member.at, pin.at)
+                            })
+                            .then_some(pin)
+                    })
+                    .find_map(|pin| {
+                        reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
+                            .and_then(|priority| {
+                                symbol_value_text(symbol).map(|text| (priority, 0, text))
+                            })
+                            .or_else(|| {
+                                reduced_symbol_pin_default_net_name(symbol, &pin, &unit_pins)
+                                    .map(|text| (1, 0, text))
+                            })
+                    })
+            }
             _ => None,
         })
         .filter(|(_, _, text)| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))

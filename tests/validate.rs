@@ -576,6 +576,56 @@ fn cli_netlist_uses_power_symbol_value_as_net_name() {
 }
 
 #[test]
+fn cli_netlist_uses_default_symbol_pin_net_name() {
+    let path = temp_schematic(
+        "cli_netlist_default_pin_driver",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:R")
+    (at 20 0 180)
+    (unit 1)
+    (property "Reference" "R2" (at 20 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 20 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 10 0) (xy 20 0))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("name=\"Net-(R1-Pad2)\""), "{report}");
+    assert!(report.contains("<node ref=\"R1\" pin=\"2\""), "{report}");
+    assert!(report.contains("<node ref=\"R2\" pin=\"1\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",
