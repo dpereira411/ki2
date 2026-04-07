@@ -1471,6 +1471,145 @@ fn current_variant_refreshes_reused_symbol_occurrence_state() {
 }
 
 #[test]
+fn current_variant_refreshes_live_sheet_variant_state() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_current_variant_sheet_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000201")
+  (paper "A4")
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000211")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000212")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (property "POP" "seed-pop")
+    (instances
+      (project "demo"
+        (path "/72000000-0000-0000-0000-000000000211/72000000-0000-0000-0000-000000000212"
+          (page "1")
+          (variant
+            (name "ALT")
+            (dnp yes)
+            (exclude_from_sim yes)
+            (in_bom no)
+            (on_board no)
+            (field (name "POP") (value "ALT-POP")))))))
+  (sheet_instances
+    (path "" (page "2"))
+    (path "/72000000-0000-0000-0000-000000000212" (page "1")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let sheet = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert!(!sheet.dnp);
+    assert!(!sheet.excluded_from_sim);
+    assert!(sheet.in_bom);
+    assert!(sheet.on_board);
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("seed-pop")
+    );
+
+    loaded.set_current_variant(Some("ALT"));
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let sheet = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert!(sheet.dnp);
+    assert!(sheet.excluded_from_sim);
+    assert!(!sheet.in_bom);
+    assert!(!sheet.on_board);
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("ALT-POP")
+    );
+
+    loaded.set_current_variant(None);
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let sheet = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet");
+    assert!(!sheet.dnp);
+    assert!(!sheet.excluded_from_sim);
+    assert!(sheet.in_bom);
+    assert!(sheet.on_board);
+    assert_eq!(
+        sheet
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("seed-pop")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn legacy_symbol_instances_apply_explicit_empty_value_and_footprint() {
     let dir = env::temp_dir().join(format!(
         "ki2_legacy_empty_instances_{}",

@@ -1108,6 +1108,10 @@ impl Symbol {
         })
     }
 
+    // Upstream parity: local support for loader-side occurrence refresh. KiCad keeps this state on
+    // its owning schematic/screen objects rather than a Rust-side snapshot, so this helper is not
+    // 1:1 upstream. It exists to restore the symbol's non-occurrence baseline before reapplying
+    // selected instance and current-variant state during load/current-sheet switching.
     pub fn capture_occurrence_base(&mut self) {
         self.occurrence_base = Some(Box::new(SymbolOccurrenceBase {
             unit: self.unit,
@@ -1121,6 +1125,9 @@ impl Symbol {
         }));
     }
 
+    // Upstream parity: local support for loader-side occurrence refresh. This helper is not a 1:1
+    // upstream function; it restores the Rust-side snapshot captured by `capture_occurrence_base`
+    // so instance/variant refresh can start from a stable non-occurrence baseline.
     pub fn restore_occurrence_base(&mut self) {
         let Some(base) = self.occurrence_base.as_ref() else {
             return;
@@ -1368,6 +1375,15 @@ pub struct SymbolOccurrenceBase {
     pub dnp: bool,
     pub properties: Vec<Property>,
     pub sim_model: Option<SimModel>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SheetOccurrenceBase {
+    pub excluded_from_sim: bool,
+    pub in_bom: bool,
+    pub on_board: bool,
+    pub dnp: bool,
+    pub properties: Vec<Property>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1730,6 +1746,7 @@ pub struct Sheet {
     pub properties: Vec<Property>,
     pub pins: Vec<SheetPin>,
     pub instances: Vec<SheetLocalInstance>,
+    pub occurrence_base: Option<Box<SheetOccurrenceBase>>,
 }
 
 impl Sheet {
@@ -1752,6 +1769,7 @@ impl Sheet {
             ],
             pins: Vec::new(),
             instances: Vec::new(),
+            occurrence_base: None,
         }
     }
 
@@ -1795,6 +1813,35 @@ impl Sheet {
         self.properties.iter().fold(42, |ordinal, property| {
             ordinal.max(property.sort_ordinal() + 1)
         })
+    }
+
+    // Upstream parity: local support for loader-side sheet occurrence refresh. KiCad keeps this
+    // state on its owning project/sheet objects rather than a Rust snapshot, so this helper is not
+    // 1:1 upstream. It exists to restore the sheet's non-variant baseline before reapplying live
+    // current-variant state in the current model.
+    pub fn capture_occurrence_base(&mut self) {
+        self.occurrence_base = Some(Box::new(SheetOccurrenceBase {
+            excluded_from_sim: self.excluded_from_sim,
+            in_bom: self.in_bom,
+            on_board: self.on_board,
+            dnp: self.dnp,
+            properties: self.properties.clone(),
+        }));
+    }
+
+    // Upstream parity: local support for loader-side sheet occurrence refresh. This helper is not
+    // a 1:1 upstream function; it restores the Rust-side snapshot captured by
+    // `capture_occurrence_base` so variant refresh can start from a stable baseline.
+    pub fn restore_occurrence_base(&mut self) {
+        let Some(base) = self.occurrence_base.as_ref() else {
+            return;
+        };
+
+        self.excluded_from_sim = base.excluded_from_sim;
+        self.in_bom = base.in_bom;
+        self.on_board = base.on_board;
+        self.dnp = base.dnp;
+        self.properties = base.properties.clone();
     }
 }
 

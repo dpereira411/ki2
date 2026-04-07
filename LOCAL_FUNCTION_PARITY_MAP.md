@@ -59,8 +59,10 @@ Current ERC blocker:
   - the loaded project now carries `current_variant`
   - live symbol occurrence refresh is variant-aware and restores baseline state when the selected
     occurrence or selected variant changes
+  - live sheet objects now apply current-variant state through their first parsed local instance
+    and restore baseline state when the variant changes
 - remaining blocker is narrower:
-  - sheet occurrence variants still lack an honest live-state application path
+  - multiple local sheet occurrences still lack an honest active-occurrence selection path
   - broader ERC semantics that depend on variant-aware sheet state remain blocked on that model
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
   model is expanded

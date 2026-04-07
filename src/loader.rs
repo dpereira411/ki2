@@ -134,6 +134,7 @@ impl LoadResult {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
+        refresh_live_sheet_variant_state(&mut self.schematics, self.current_variant.as_deref());
         refresh_live_symbol_occurrence_state(
             &mut self.schematics,
             &self.sheet_paths,
@@ -238,6 +239,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
     loader.update_all_screen_references(&sheet_paths);
+    snapshot_sheet_occurrence_bases(&mut loader.schematics);
     snapshot_symbol_occurrence_bases(&mut loader.schematics);
     Ok(LoadResult {
         root_path,
@@ -1684,6 +1686,48 @@ fn apply_symbol_variant_state(symbol: &mut Symbol, variant: &ItemVariant) {
     }
 }
 
+// Upstream parity: local helper for the currently representable sheet subset of occurrence-variant
+// application. This is not a 1:1 upstream routine because the current tree still lacks KiCad's
+// fuller active-occurrence sheet model; for now it applies the selected variant only through the
+// live sheet object's first parsed local instance. Remaining divergence is limited to multi-
+// occurrence sheet selection and any broader sheet-occurrence semantics beyond this model.
+fn apply_sheet_variant_state(sheet: &mut crate::model::Sheet, variant: &ItemVariant) {
+    sheet.dnp = variant.dnp;
+    sheet.excluded_from_sim = variant.excluded_from_sim;
+    sheet.in_bom = variant.in_bom;
+    sheet.on_board = variant.on_board;
+
+    for (name, value) in &variant.fields {
+        if let Some(property) = sheet
+            .properties
+            .iter_mut()
+            .find(|property| property.key == *name)
+        {
+            property.value = value.clone();
+        } else {
+            let mut property =
+                Property::new_named(PropertyKind::SheetUser, name, value.clone(), false);
+            property.ordinal = sheet.next_field_ordinal();
+            sheet.properties.push(property);
+        }
+    }
+}
+
+// Upstream parity: local helper for capturing the non-variant baseline that current-variant
+// selection restores before reapplying sheet occurrence state. This helper exists because the Rust
+// loader mutates live sheet objects directly after parse. Remaining divergence is limited to live
+// selection across multiple local sheet occurrences.
+fn snapshot_sheet_occurrence_bases(schematics: &mut [Schematic]) {
+    for schematic in schematics {
+        for item in &mut schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
+                continue;
+            };
+            sheet.capture_occurrence_base();
+        }
+    }
+}
+
 // Upstream parity: local helper for capturing the non-variant baseline that current-sheet and
 // current-variant selection restore before reapplying occurrence data. This helper exists because
 // the Rust loader mutates live symbol objects directly during load and later selection changes.
@@ -1748,6 +1792,35 @@ fn refresh_live_symbol_occurrence_state(
         };
 
         apply_symbol_instance_state(schematic, active_instance_path, current_variant);
+    }
+}
+
+// Upstream parity: local helper for project-wide live sheet refresh under current-variant
+// selection. This is not a 1:1 upstream routine because the current tree still lacks KiCad's
+// fuller active-occurrence sheet model; for now it restores each live sheet object to its parsed
+// baseline and applies the selected variant from the first parsed local instance when one exists.
+// Remaining divergence is limited to multiple local sheet occurrences and occurrence-aware sheet
+// selection.
+fn refresh_live_sheet_variant_state(schematics: &mut [Schematic], current_variant: Option<&str>) {
+    for schematic in schematics {
+        for item in &mut schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
+                continue;
+            };
+
+            sheet.restore_occurrence_base();
+
+            let Some(variant_name) = current_variant else {
+                continue;
+            };
+            let Some(instance) = sheet.instances.first() else {
+                continue;
+            };
+            let Some(variant) = instance.variants.get(variant_name).cloned() else {
+                continue;
+            };
+            apply_sheet_variant_state(sheet, &variant);
+        }
     }
 }
 
