@@ -50,12 +50,14 @@ pub struct LoadedProjectSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedSchematicSettings {
     pub intersheet_refs: LoadedIntersheetRefsSettings,
+    pub variant_descriptions: BTreeMap<String, String>,
 }
 
 impl Default for LoadedSchematicSettings {
     fn default() -> Self {
         Self {
             intersheet_refs: LoadedIntersheetRefsSettings::default(),
+            variant_descriptions: BTreeMap::new(),
         }
     }
 }
@@ -94,7 +96,8 @@ impl LoadedProjectSettings {
     // Upstream parity: typed local analogue for the exercised companion-project settings slice.
     // This is not a 1:1 KiCad settings object because the current tree still preserves raw
     // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
-    // the exercised `SCHEMATIC_SETTINGS` intersheet subset plus `PROJECT::GetTextVars()`.
+    // the exercised `SCHEMATIC_SETTINGS` intersheet subset, project text vars, and schematic
+    // variant descriptions.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
         let mut text_variables = BTreeMap::new();
@@ -130,6 +133,26 @@ impl LoadedProjectSettings {
                 .and_then(Value::as_str)
             {
                 schematic.intersheet_refs.suffix = suffix.to_string();
+            }
+        }
+
+        if let Some(schematic_json) = json.get("schematic").and_then(Value::as_object) {
+            if let Some(variants) = schematic_json.get("variants").and_then(Value::as_array) {
+                for variant in variants {
+                    let Some(variant) = variant.as_object() else {
+                        continue;
+                    };
+                    let Some(name) = variant.get("name").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let description = variant
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    schematic
+                        .variant_descriptions
+                        .insert(name.to_string(), description.to_string());
+                }
             }
         }
 
@@ -173,6 +196,13 @@ impl LoadedProjectSettings {
 
     pub fn text_variable(&self, name: &str) -> Option<&str> {
         self.text_variables.get(name).map(String::as_str)
+    }
+
+    pub fn variant_description(&self, name: &str) -> Option<&str> {
+        self.schematic
+            .variant_descriptions
+            .get(name)
+            .map(String::as_str)
     }
 }
 
@@ -3780,6 +3810,31 @@ fn resolve_schematic_text_var(
 
     if matches!(token_upper.as_str(), "VARIANT" | "VARIANTNAME") {
         return Some(current_variant.unwrap_or_default().to_string());
+    }
+
+    if token_upper == "VARIANT_DESC" {
+        return Some(
+            current_variant
+                .and_then(|variant| {
+                    project.and_then(|project| project.variant_description(variant))
+                })
+                .unwrap_or_default()
+                .to_string(),
+        );
+    }
+
+    match token_upper.as_str() {
+        "FILENAME" => {
+            return loaded_path
+                .schematic_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string);
+        }
+        "FILEPATH" => {
+            return Some(loaded_path.schematic_path.to_string_lossy().into_owned());
+        }
+        _ => {}
     }
 
     if let Some(value) = resolve_project_text_var(project, token) {

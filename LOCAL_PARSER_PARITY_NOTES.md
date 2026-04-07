@@ -326,6 +326,10 @@ What remains after that correction:
         resolver
       - current coverage now also locks project-level `${VCSHASH}` / `${VCSSHORTHASH}` grouping
         through a reduced git-backed project resolver
+      - current coverage now also locks schematic-level `${FILENAME}` / `${FILEPATH}` grouping in
+        the reduced resolver
+      - current coverage now also locks project-backed `${VARIANT_DESC}` grouping through typed
+        `.kicad_pro` schematic variant descriptions
       - remaining divergence is the broader unported text-variable resolver surface
         (`ResolveTextVar`, net/cross-reference variables), not this exercised intersheet-ref path
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed

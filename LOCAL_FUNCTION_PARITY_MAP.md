@@ -77,7 +77,8 @@ Current ERC blocker:
         variant-triggered page-ref-map recompute
       - the reduced resolver also now covers schematic `VARIANT` / `VARIANTNAME`, stable
         title-block tokens, `${PROJECTNAME}`, `${CURRENT_DATE}`, `${VCSHASH}`,
-        `${VCSSHORTHASH}`, and companion `.kicad_pro` `text_variables`
+        `${VCSSHORTHASH}`, `${FILENAME}`, `${FILEPATH}`, `${VARIANT_DESC}`, and companion
+        `.kicad_pro` `text_variables`
       - remaining divergence is the broader unported text-variable resolver surface
         (net/cross-reference variables), not this exercised intersheet-ref
         branch
