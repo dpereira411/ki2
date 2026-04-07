@@ -97,6 +97,8 @@ Current ERC blocker:
         current bounds instead of the earlier truncated half-box path
       - reduced circle hatching now clips to real circle geometry instead of the earlier
         bounding-box fallback
+      - reduced rounded-rectangle hatching now respects parsed corner radius instead of the
+        earlier square-corner fallback
       - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
   - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked
     on that fuller model

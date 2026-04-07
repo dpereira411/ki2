@@ -350,6 +350,8 @@ What remains after that correction:
         bounding box instead of the earlier truncated half-box coverage
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
+      - the reduced cache now also respects parsed rectangle corner radius instead of running
+        hatch lines through rounded-corner cutouts
     - remaining shape drift is narrower:
       - the current Rust shape model still lacks KiCad's fuller polygon/knockout hatch cache
       - hatch geometry is still reduced to cached line segments plus partial analytic clipping, not

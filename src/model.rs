@@ -1150,7 +1150,19 @@ impl Shape {
             return None;
         }
 
-        Some([first, last])
+        let mut segment = [first, last];
+
+        if matches!(self.kind, ShapeKind::Rectangle) {
+            self.clip_rounded_rectangle_segment(bbox, &mut segment);
+        }
+
+        if (segment[0][0] - segment[1][0]).abs() < 1e-9
+            && (segment[0][1] - segment[1][1]).abs() < 1e-9
+        {
+            return None;
+        }
+
+        Some(segment)
     }
 
     // Upstream parity: reduced local helper for the circle subset of
@@ -1237,6 +1249,153 @@ impl Shape {
         }
 
         points.push([x, y]);
+    }
+
+    // Upstream parity: reduced local helper for the rounded-rectangle subset of
+    // `EDA_SHAPE::UpdateHatching()`. This is not a full `ROUNDRECT` polygon port, but it exists so
+    // hatch lines respect parsed rectangle corner radius instead of running through the corner
+    // cutouts inside the reduced line-cache model.
+    fn clip_rounded_rectangle_segment(&self, bbox: [[f64; 2]; 2], segment: &mut [[f64; 2]; 2]) {
+        let Some(mut radius) = self.corner_radius else {
+            return;
+        };
+
+        let min_x = bbox[0][0];
+        let min_y = bbox[0][1];
+        let max_x = bbox[1][0];
+        let max_y = bbox[1][1];
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+
+        radius = radius.min(width / 2.0).min(height / 2.0);
+        if radius <= 0.0 {
+            return;
+        }
+
+        for endpoint_index in 0..2 {
+            let point = segment[endpoint_index];
+            if Self::point_in_rounded_rect(point, bbox, radius) {
+                continue;
+            }
+
+            let center = [
+                if point[0] < min_x + radius {
+                    min_x + radius
+                } else {
+                    max_x - radius
+                },
+                if point[1] < min_y + radius {
+                    min_y + radius
+                } else {
+                    max_y - radius
+                },
+            ];
+
+            let intersections =
+                Self::line_circle_intersections(segment[0], segment[1], center, radius);
+            let replacement = if endpoint_index == 0 {
+                intersections.into_iter().min_by(|a, b| {
+                    let da = (a[0] - segment[0][0]).hypot(a[1] - segment[0][1]);
+                    let db = (b[0] - segment[0][0]).hypot(b[1] - segment[0][1]);
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+            } else {
+                intersections.into_iter().max_by(|a, b| {
+                    let da = (a[0] - segment[0][0]).hypot(a[1] - segment[0][1]);
+                    let db = (b[0] - segment[0][0]).hypot(b[1] - segment[0][1]);
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+            };
+
+            if let Some(point) = replacement.filter(|point| Self::point_in_rounded_rect(*point, bbox, radius)) {
+                segment[endpoint_index] = point;
+            }
+        }
+    }
+
+    fn point_in_rounded_rect(point: [f64; 2], bbox: [[f64; 2]; 2], radius: f64) -> bool {
+        let min_x = bbox[0][0];
+        let min_y = bbox[0][1];
+        let max_x = bbox[1][0];
+        let max_y = bbox[1][1];
+
+        if point[0] < min_x - 1e-9
+            || point[0] > max_x + 1e-9
+            || point[1] < min_y - 1e-9
+            || point[1] > max_y + 1e-9
+        {
+            return false;
+        }
+
+        if point[0] >= min_x + radius
+            && point[0] <= max_x - radius
+            || point[1] >= min_y + radius
+                && point[1] <= max_y - radius
+        {
+            return true;
+        }
+
+        let center = [
+            if point[0] < min_x + radius {
+                min_x + radius
+            } else {
+                max_x - radius
+            },
+            if point[1] < min_y + radius {
+                min_y + radius
+            } else {
+                max_y - radius
+            },
+        ];
+
+        let dx = point[0] - center[0];
+        let dy = point[1] - center[1];
+        (dx * dx) + (dy * dy) <= radius.powi(2) + 1e-9
+    }
+
+    fn line_circle_intersections(
+        start: [f64; 2],
+        end: [f64; 2],
+        center: [f64; 2],
+        radius: f64,
+    ) -> Vec<[f64; 2]> {
+        let dx = end[0] - start[0];
+        let dy = end[1] - start[1];
+        let fx = start[0] - center[0];
+        let fy = start[1] - center[1];
+
+        let a = (dx * dx) + (dy * dy);
+        if a <= 0.0 {
+            return Vec::new();
+        }
+
+        let b = 2.0 * ((fx * dx) + (fy * dy));
+        let c = (fx * fx) + (fy * fy) - radius.powi(2);
+        let discriminant = (b * b) - (4.0 * a * c);
+
+        if discriminant < 0.0 {
+            return Vec::new();
+        }
+
+        let root = discriminant.sqrt();
+        let mut points = Vec::with_capacity(2);
+
+        for t in [(-b - root) / (2.0 * a), (-b + root) / (2.0 * a)] {
+            if !(0.0 - 1e-9..=1.0 + 1e-9).contains(&t) {
+                continue;
+            }
+
+            let point = [start[0] + (t * dx), start[1] + (t * dy)];
+            if points.iter().any(|existing: &[f64; 2]| {
+                (existing[0] - point[0]).abs() < 1e-9 && (existing[1] - point[1]).abs() < 1e-9
+            }) {
+                continue;
+            }
+
+            points.push(point);
+        }
+
+        points
     }
 }
 
@@ -3470,6 +3629,25 @@ mod tests {
                 (segment[0][1] + segment[1][1]) / 2.0,
             ];
             (midpoint[0] - 5.0).abs() < 1e-6 && (midpoint[1] - 5.0).abs() < 1e-6
+        }));
+    }
+
+    #[test]
+    fn rounded_rectangle_hatching_respects_corner_radius() {
+        let mut shape = Shape::new(ShapeKind::Rectangle);
+        shape.points = vec![[0.0, 0.0], [10.0, 10.0]];
+        shape.corner_radius = Some(2.0);
+        shape.stroke.as_mut().expect("stroke").width = Some(1.0);
+        shape.fill.as_mut().expect("fill").fill_type = FillType::Hatch;
+
+        shape.update_hatching();
+
+        assert!(!shape.hatch_lines.is_empty());
+        assert!(!shape.hatch_lines.iter().any(|segment| {
+            segment[0] == [0.0, 10.0]
+                || segment[1] == [0.0, 10.0]
+                || segment[0] == [10.0, 0.0]
+                || segment[1] == [10.0, 0.0]
         }));
     }
 
