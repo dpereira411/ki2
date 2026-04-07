@@ -1733,7 +1733,7 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
         pins,
         value_binding: None,
         stored_value: None,
-        enabled: true,
+        enabled: !symbol.excluded_from_sim,
         origin: Some(crate::model::SimModelOrigin::InferredValue),
         resolved_library: None,
         resolved_name: None,

@@ -8810,6 +8810,10 @@ fn load_tree_infers_passive_structured_sim_model_from_value() {
         None
     );
     assert_eq!(
+        symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
+        Some(true)
+    );
+    assert_eq!(
         symbol
             .sim_model
             .as_ref()
@@ -8825,6 +8829,61 @@ fn load_tree_infers_passive_structured_sim_model_from_value() {
             ("1".to_string(), "+".to_string()),
             ("2".to_string(), "-".to_string()),
         ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_inferred_sim_model_preserves_exclude_from_sim_state() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000916")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P1" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "P2" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:R")
+    (exclude_from_sim yes)
+    (property "Reference" "R?")
+    (property "Value" "10k")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_inferred_sim_preserves_exclude_from_sim", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::InferredValue)
+    );
+    assert_eq!(
+        symbol.sim_model.as_ref().map(|sim_model| sim_model.enabled),
+        Some(false)
     );
 
     let _ = fs::remove_file(path);
