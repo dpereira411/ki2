@@ -335,20 +335,22 @@ What remains after that correction:
       - current coverage now also locks reduced `${ref:FIELD[:VARIANT]}` symbol/sheet lookup
         across loaded sheet paths, including parent-reference fallback like `R1 -> R1A` and
         symbol-side unknown/unresolved markers
+      - current coverage now also locks a reduced current-sheet connectivity slice for
+        wire-connected labels:
+        - `${NET_NAME}`
+        - `${SHORT_NET_NAME}`
+        - reused-sheet grouping via `${SHEETNAME}`-resolved local labels
       - remaining divergence is the broader unported text-variable resolver surface
-        (`ResolveTextVar` and connectivity-backed net variables), not this exercised
-        intersheet-ref path
+        (`ResolveTextVar` and the still-missing `NET_CLASS` / fuller connectivity graph
+        semantics), not this exercised intersheet-ref path
       - unblock path for the remaining text-variable surface:
-        1. add a reduced current-sheet connectivity snapshot keyed by loaded sheet path plus item
-           UUID so labels can expose resolved `NET_NAME`, `SHORT_NET_NAME`, and `NET_CLASS`
-        2. seed that snapshot from a minimal connection walk over the already-loaded screen items
-           instead of trying to port full `CONNECTION_GRAPH` immediately
-        3. thread the snapshot into the shared shown-text resolver as the local analogue for
-           `SCH_ITEM::Connection()` / `SCH_LABEL_BASE::ResolveTextVar()`
-        4. expand the reduced cross-reference resolver only if a future ERC-visible gap proves a
+        1. expand the reduced current-sheet connectivity snapshot from wire-net naming to
+           rule-area / directive-label netclass ownership so labels can expose `NET_CLASS`
+        2. keep threading that snapshot through the shared shown-text resolver as the local
+           analogue for `SCH_ITEM::Connection()` / `SCH_LABEL_BASE::ResolveTextVar()`
+        3. expand the reduced cross-reference resolver only if a future ERC-visible gap proves a
            still-missing KiCad branch
-        5. lock the reduced connectivity slice with reused-sheet regressions for
-           `${NET_NAME}`, `${SHORT_NET_NAME}`, and `${NET_CLASS}`
+        4. lock the remaining connectivity slice with a focused `${NET_CLASS}` regression
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond

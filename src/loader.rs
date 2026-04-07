@@ -3988,6 +3988,293 @@ fn resolve_cross_reference_text_var(
     Some(format!("<Unknown reference: {reference}>"))
 }
 
+fn points_equal(a: [f64; 2], b: [f64; 2]) -> bool {
+    (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9
+}
+
+fn point_on_wire_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
+    let dx = end[0] - start[0];
+    let dy = end[1] - start[1];
+    let px = point[0] - start[0];
+    let py = point[1] - start[1];
+    let cross = (px * dy) - (py * dx);
+
+    if cross.abs() > 1e-9 {
+        return false;
+    }
+
+    let dot = (px * dx) + (py * dy);
+    if dot < -1e-9 {
+        return false;
+    }
+
+    let length_sq = (dx * dx) + (dy * dy);
+    dot <= length_sq + 1e-9
+}
+
+fn short_net_name(net_name: &str) -> String {
+    net_name
+        .rsplit(['.', '/'])
+        .next()
+        .unwrap_or(net_name)
+        .to_string()
+}
+
+fn collect_wire_segments(schematic: &Schematic) -> Vec<[[f64; 2]; 2]> {
+    let mut segments = Vec::new();
+
+    for item in &schematic.screen.items {
+        let SchItem::Wire(line) = item else {
+            continue;
+        };
+
+        for pair in line.points.windows(2) {
+            if points_equal(pair[0], pair[1]) {
+                continue;
+            }
+
+            segments.push([pair[0], pair[1]]);
+        }
+    }
+
+    segments
+}
+
+fn connected_wire_segment_indices(
+    segments: &[[[f64; 2]; 2]],
+    junctions: &[[f64; 2]],
+    anchor: [f64; 2],
+) -> BTreeSet<usize> {
+    let mut connected = BTreeSet::new();
+    let mut frontier = Vec::new();
+
+    for (index, segment) in segments.iter().enumerate() {
+        if point_on_wire_segment(anchor, segment[0], segment[1]) {
+            connected.insert(index);
+            frontier.push(index);
+        }
+    }
+
+    while let Some(current) = frontier.pop() {
+        let segment = segments[current];
+
+        for (index, other) in segments.iter().enumerate() {
+            if connected.contains(&index) {
+                continue;
+            }
+
+            let shares_endpoint = points_equal(segment[0], other[0])
+                || points_equal(segment[0], other[1])
+                || points_equal(segment[1], other[0])
+                || points_equal(segment[1], other[1]);
+            let joined_by_junction = junctions.iter().copied().any(|junction| {
+                point_on_wire_segment(junction, segment[0], segment[1])
+                    && point_on_wire_segment(junction, other[0], other[1])
+            });
+
+            if !shares_endpoint && !joined_by_junction {
+                continue;
+            }
+
+            connected.insert(index);
+            frontier.push(index);
+        }
+    }
+
+    connected
+}
+
+// Upstream parity: reduced local helper for the non-connectivity subset of
+// `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1 port because the current tree still lacks
+// KiCad's fuller connectivity-backed resolver stack, but it is needed so the reduced net snapshot
+// can still see sheet/project/cross-reference text on connected labels instead of only raw tokens.
+// Remaining divergence is limited to the still-blocked connectivity-backed variables.
+fn shown_label_text_without_connectivity(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    label: &crate::model::Label,
+) -> String {
+    resolve_text_variables(
+        &label.text,
+        &|token| {
+            let token_upper = token.to_ascii_uppercase();
+
+            if matches!(
+                token_upper.as_str(),
+                "NET_NAME" | "SHORT_NET_NAME" | "NET_CLASS"
+            ) {
+                return None;
+            }
+
+            if token.contains(':') {
+                if let Some(value) = resolve_cross_reference_text_var(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    current_variant,
+                    token,
+                ) {
+                    return Some(value);
+                }
+            }
+
+            if token_upper == "CONNECTION_TYPE" {
+                return global_label_connection_type(label).map(str::to_string);
+            }
+
+            if let Some(property) = label
+                .properties
+                .iter()
+                .find(|property| canonical_text_var_name(property) == token_upper)
+            {
+                return Some(resolve_text_variables(
+                    &property.value,
+                    &|nested| {
+                        resolve_sheet_text_var(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            project,
+                            current_variant,
+                            nested,
+                            1,
+                        )
+                    },
+                    1,
+                ));
+            }
+
+            resolve_sheet_text_var(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                token,
+                1,
+            )
+        },
+        0,
+    )
+}
+
+// Upstream parity: reduced local analogue for the `SCH_LABEL_BASE::ResolveTextVar()` connectivity
+// branch. This is not a 1:1 `SCH_ITEM::Connection()` / `CONNECTION_GRAPH` port because the Rust
+// loader still lacks KiCad's full connectivity graph. It exists so current-sheet shown text can
+// resolve simple wire-connected `NET_NAME` / `SHORT_NET_NAME` (and a narrow field-based
+// `NET_CLASS`) instead of leaving those tokens raw. Remaining divergence is fuller connection-graph
+// semantics, especially bus/netclass propagation beyond this reduced wire-label snapshot.
+fn resolve_label_connectivity_text_var(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    label: &crate::model::Label,
+    token: &str,
+) -> Option<String> {
+    let token_upper = token.to_ascii_uppercase();
+    if !matches!(
+        token_upper.as_str(),
+        "NET_NAME" | "SHORT_NET_NAME" | "NET_CLASS"
+    ) {
+        return None;
+    }
+
+    let schematic = schematics
+        .iter()
+        .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let wire_segments = collect_wire_segments(schematic);
+    let junctions = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction.at),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, label.at);
+
+    let own_text = shown_label_text_without_connectivity(
+        schematics,
+        sheet_paths,
+        loaded_path,
+        project,
+        current_variant,
+        label,
+    );
+
+    let net_name = if connected_segments.is_empty() {
+        if own_text.contains("${") || own_text.starts_with('<') || own_text.is_empty() {
+            None
+        } else {
+            Some(own_text)
+        }
+    } else {
+        schematic
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
+                    connected_segments
+                        .iter()
+                        .any(|segment_index| {
+                            let segment = wire_segments[*segment_index];
+                            point_on_wire_segment(other.at, segment[0], segment[1])
+                        })
+                        .then_some(other)
+                }
+                _ => None,
+            })
+            .map(|other| {
+                shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    other,
+                )
+            })
+            .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+    }?;
+
+    match token_upper.as_str() {
+        "NET_NAME" => Some(net_name),
+        "SHORT_NET_NAME" => Some(short_net_name(&net_name)),
+        "NET_CLASS" => schematic
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Label(other) if other.kind == crate::model::LabelKind::Directive => {
+                    connected_segments
+                        .iter()
+                        .any(|segment_index| {
+                            let segment = wire_segments[*segment_index];
+                            point_on_wire_segment(other.at, segment[0], segment[1])
+                        })
+                        .then_some(other)
+                }
+                _ => None,
+            })
+            .find_map(|directive| {
+                directive.properties.iter().find_map(|property| {
+                    let key = property.key.to_ascii_uppercase();
+                    matches!(key.as_str(), "NETCLASS" | "NET CLASS" | "NET_CLASS")
+                        .then(|| property.value.clone())
+                        .filter(|value| !value.is_empty())
+                })
+            }),
+        _ => None,
+    }
+}
+
 fn current_iso_date() -> Option<String> {
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     now.date()
@@ -4377,6 +4664,18 @@ fn shown_global_label_text(
         &label.text,
         &|token| {
             let token_upper = token.to_ascii_uppercase();
+
+            if let Some(value) = resolve_label_connectivity_text_var(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                label,
+                token,
+            ) {
+                return Some(value);
+            }
 
             if token.contains(':') {
                 if let Some(value) = resolve_cross_reference_text_var(
