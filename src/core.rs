@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::loader::{HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath};
+use crate::loader::{
+    HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath,
+    refresh_current_sheet_intersheet_refs,
+};
 use crate::model::{PropertyKind, SchItem, Schematic};
 
 #[derive(Debug)]
@@ -13,6 +16,7 @@ pub struct SchematicProject {
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
     pub current_sheet_instance_path: String,
+    intersheet_ref_values: HashMap<String, String>,
     by_path: HashMap<PathBuf, usize>,
     sheet_paths_by_instance: HashMap<String, usize>,
 }
@@ -40,6 +44,7 @@ impl SchematicProject {
             links: load.links,
             sheet_paths: load.sheet_paths,
             current_sheet_instance_path: load.current_sheet_instance_path,
+            intersheet_ref_values: load.intersheet_ref_values,
             by_path,
             sheet_paths_by_instance,
         }
@@ -77,6 +82,11 @@ impl SchematicProject {
         self.schematic(&current_sheet_path.schematic_path)
     }
 
+    // Upstream parity: local current-sheet selection helper for project callers. This is not a
+    // 1:1 KiCad routine because the reduced Rust project view still exposes selection directly on
+    // `SchematicProject`, but it now keeps current-sheet intersheet-ref refresh scoped to the
+    // selected sheet instead of rewriting all screens. Remaining divergence is limited to the same
+    // missing settings gate and richer current-sheet display semantics as the loader path.
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_paths_by_instance.contains_key(instance_path) {
             let previous = self.current_sheet_path().cloned();
@@ -94,6 +104,12 @@ impl SchematicProject {
                 instance_path,
             );
             self.current_sheet_instance_path = instance_path.to_string();
+            refresh_current_sheet_intersheet_refs(
+                &mut self.schematics,
+                &self.sheet_paths,
+                &self.current_sheet_instance_path,
+                &self.intersheet_ref_values,
+            );
             if let Some(schematic) = self
                 .current_sheet_path()
                 .and_then(|sheet_path| self.by_path.get(&sheet_path.schematic_path).copied())

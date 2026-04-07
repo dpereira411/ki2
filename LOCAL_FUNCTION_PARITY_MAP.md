@@ -65,18 +65,13 @@ Current ERC blocker:
   - direct upstream re-audit showed `SCHEMATIC::GetCurrentVariant()` is schematic-owned session
     state, not project-file state
   - local `LoadResult.current_variant` is therefore the right current-architecture analogue
-  - direct upstream re-audit also showed current-sheet-scoped intersheet-ref refresh still differs:
-    local code eagerly materializes intersheet-ref text on all screens, while KiCad refreshes
-    visible field state only on the current sheet
-  - concrete unblock path for that gap:
-    1. keep hierarchy-wide page-ref map computation separate from live field mutation
-    2. store the computed intersheet-ref data in loader/project state instead of overwriting every
-       global-label property value
-    3. add a current-sheet refresh step that applies visibility/text/legacy autoplace fixup only
-       on labels on the selected sheet, like upstream `UpdateAllScreenReferences()`
-  - shape-hatching refresh is a separate blocked tail under the same routine:
-    current Rust shapes do not yet have the hatch/update state KiCad mutates with
-    `shape->UpdateHatching()`
+  - current-sheet-scoped intersheet-ref refresh is now structurally closer to upstream:
+    hierarchy-wide page-ref computation stays separate from current-sheet label refresh, and
+    non-current screens keep their parsed intersheet-ref field text
+  - remaining blocker under that same routine is narrower:
+    - the current tree still lacks KiCad's `m_IntersheetRefsShow` settings gate
+    - current Rust shapes do not yet have the hatch/update state KiCad mutates with
+      `shape->UpdateHatching()`
   - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked
     on that fuller model
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant

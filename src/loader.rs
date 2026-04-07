@@ -64,6 +64,7 @@ pub struct LoadResult {
     pub sheet_paths: Vec<LoadedSheetPath>,
     pub current_sheet_instance_path: String,
     pub current_variant: Option<String>,
+    pub intersheet_ref_values: HashMap<String, String>,
 }
 
 impl LoadResult {
@@ -138,6 +139,12 @@ impl LoadResult {
                 &self.sheet_paths,
                 &self.current_sheet_instance_path,
                 self.current_variant.as_deref(),
+            );
+            refresh_current_sheet_intersheet_refs(
+                &mut self.schematics,
+                &self.sheet_paths,
+                &self.current_sheet_instance_path,
+                &self.intersheet_ref_values,
             );
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -299,6 +306,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
         sheet_paths,
         current_sheet_instance_path: String::new(),
         current_variant: None,
+        intersheet_ref_values: loader.intersheet_ref_values,
     })
 }
 
@@ -362,6 +370,7 @@ struct SchematicLoader {
     loaded_by_canonical: HashMap<PathBuf, usize>,
     current_sheet_path: Vec<PathBuf>,
     current_path: Vec<PathBuf>,
+    intersheet_ref_values: HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -377,6 +386,7 @@ impl SchematicLoader {
             loaded_by_canonical: HashMap::new(),
             current_sheet_path: Vec::new(),
             current_path: Vec::new(),
+            intersheet_ref_values: HashMap::new(),
         }
     }
 
@@ -1480,13 +1490,11 @@ impl SchematicLoader {
         }
     }
 
-    // Upstream parity: local analogue of `SCHEMATIC::RecomputeIntersheetRefs()`. It currently
-    // matches KiCad's whole-hierarchy page-ref collection, but still diverges afterward by baking
-    // resolved intersheet-ref text onto every loaded global label property. Native KiCad rebuilds
-    // the page-ref map here, then only refreshes visible intersheet-ref field state on the current
-    // sheet during `SCH_SHEET_PATH::UpdateAllScreenReferences()`. Honest 1:1 parity is therefore
-    // blocked on adding current-sheet-scoped intersheet-ref refresh state instead of widening this
-    // eager materialization model further.
+    // Upstream parity: local analogue of `SCHEMATIC::RecomputeIntersheetRefs()`. It now matches
+    // KiCad's whole-hierarchy page-ref collection without eagerly rewriting every loaded global
+    // label. Current-sheet field refresh stays in `update_all_screen_references()`. Remaining
+    // divergence is limited to the still-missing settings gate and richer current-sheet-only field
+    // display semantics beyond the current model.
     fn recompute_intersheet_refs(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
         let mut virtual_page_to_sheet_page = HashMap::new();
@@ -1520,58 +1528,26 @@ impl SchematicLoader {
             }
         }
 
-        for sheet_path in sheet_paths {
-            let Some(schematic_index) = self
-                .loaded_by_canonical
-                .get(&sheet_path.schematic_path)
-                .copied()
-            else {
-                continue;
-            };
-
-            for item in &mut self.schematics[schematic_index].screen.items {
-                let SchItem::Label(label) = item else {
-                    continue;
-                };
-                if label.kind != crate::model::LabelKind::Global {
-                    continue;
-                }
-
-                let value = if let Some(page_numbers) = page_refs_map.get(&label.text) {
-                    let refs = page_numbers
-                        .iter()
-                        .filter_map(|page_number| virtual_page_to_sheet_page.get(page_number))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    format!("[{refs}]")
-                } else {
-                    "[?]".to_string()
-                };
-
-                let intersheet_refs = label
-                    .properties
-                    .iter_mut()
-                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-                    .expect("global labels start with intersheet refs property");
-                intersheet_refs.value = value;
-                intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
-                intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
-                    .canonical_key()
-                    .to_string();
-            }
-        }
+        self.intersheet_ref_values = page_refs_map
+            .into_iter()
+            .map(|(label, page_numbers)| {
+                let refs = page_numbers
+                    .iter()
+                    .filter_map(|page_number| virtual_page_to_sheet_page.get(page_number))
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",");
+                (label, format!("[{refs}]"))
+            })
+            .collect();
     }
 
     // Upstream parity: loader-side `SCH_SHEET_PATH::UpdateAllScreenReferences()` analogue. This
     // local routine keeps reused-screen refresh on the loaded-sheet-path list plus symbol-instance
-    // helpers instead of KiCad's exact screen/instance object boundaries. In the current model it
-    // is structurally close enough for ERC-visible symbol occurrence state: it refreshes
-    // reference/unit/value/footprint from local instances, restores reused screens to their
-    // first-instance baseline, and fixes default global-label intersheet-ref placement. Remaining
-    // divergence is real: KiCad also refreshes current-sheet-only intersheet-ref visibility/text
-    // and shape hatching here, which the current Rust model cannot represent without a
-    // current-sheet-scoped intersheet-ref state layer and richer schematic-shape hatch state.
+    // helpers instead of KiCad's exact screen/instance object boundaries. It now also keeps
+    // current-sheet-only intersheet-ref text refresh separate from the hierarchy-wide page-ref map,
+    // which is materially closer to native flow. Remaining divergence is limited to the still-
+    // missing `m_IntersheetRefsShow` setting gate and richer schematic-shape hatch state.
     fn update_all_screen_references(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
@@ -1626,30 +1602,97 @@ impl SchematicLoader {
                     apply_selected_symbol_instance(symbol, instance, None);
                 }
             }
+        }
 
-            for item in &mut self.schematics[schematic_index].screen.items {
-                let SchItem::Label(label) = item else {
-                    continue;
-                };
+        refresh_current_sheet_intersheet_refs(
+            &mut self.schematics,
+            sheet_paths,
+            "",
+            &self.intersheet_ref_values,
+        );
+    }
+}
 
-                if label.kind != crate::model::LabelKind::Global {
-                    continue;
-                }
-
-                let Some(intersheet_refs) = label
-                    .properties
-                    .iter_mut()
-                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-                else {
-                    continue;
-                };
-
-                if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
-                    && !intersheet_refs.visible
-                {
-                    intersheet_refs.at = Some(label.at);
-                }
+// Upstream parity: local helper for the global-label portion of
+// `SCHEMATIC::RecomputeIntersheetRefs()` plus `SCH_SHEET_PATH::UpdateAllScreenReferences()`. This
+// is not a 1:1 upstream routine because the Rust tree still lacks KiCad's current-sheet object and
+// settings-owned `m_IntersheetRefsShow` gate, so the page-ref map and current-sheet field refresh
+// are split across loader state plus this helper. It exists to keep non-current screens on their
+// parsed intersheet-ref field text while applying resolved text/legacy position fixup only on the
+// selected sheet. Remaining divergence is limited to the missing show/hide setting gate and shape
+// hatching side effects.
+pub(crate) fn refresh_current_sheet_intersheet_refs(
+    schematics: &mut [Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    current_sheet_instance_path: &str,
+    intersheet_ref_values: &HashMap<String, String>,
+) {
+    for schematic in schematics.iter_mut() {
+        for item in &mut schematic.screen.items {
+            let SchItem::Label(label) = item else {
+                continue;
+            };
+            if label.kind != crate::model::LabelKind::Global {
+                continue;
             }
+
+            let Some(intersheet_refs) = label
+                .properties
+                .iter_mut()
+                .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+            else {
+                continue;
+            };
+
+            if let Some(base_value) = intersheet_refs.base_value.clone() {
+                intersheet_refs.value = base_value;
+            }
+        }
+    }
+
+    let Some(current_sheet_path) = sheet_paths
+        .iter()
+        .find(|sheet_path| sheet_path.instance_path == current_sheet_instance_path)
+    else {
+        return;
+    };
+
+    let Some(schematic) = schematics
+        .iter_mut()
+        .find(|schematic| schematic.path == current_sheet_path.schematic_path)
+    else {
+        return;
+    };
+
+    for item in &mut schematic.screen.items {
+        let SchItem::Label(label) = item else {
+            continue;
+        };
+        if label.kind != crate::model::LabelKind::Global {
+            continue;
+        }
+
+        let Some(intersheet_refs) = label
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        else {
+            continue;
+        };
+
+        intersheet_refs.value = intersheet_ref_values
+            .get(&label.text)
+            .cloned()
+            .unwrap_or_else(|| "[?]".to_string());
+        intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
+        intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
+            .canonical_key()
+            .to_string();
+
+        if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
+            && !intersheet_refs.visible
+        {
+            intersheet_refs.at = Some(label.at);
         }
     }
 }

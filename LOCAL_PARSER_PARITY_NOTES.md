@@ -289,20 +289,14 @@ What remains after that correction:
     intersheet-ref field state on the current sheet
   - the current Rust model instead bakes resolved intersheet-ref text directly onto every global
     label property across all loaded schematics
-  - honest parity here needs a current-sheet-scoped intersheet-ref refresh model, not another local
-    branch tweak
-  - concrete unblock path:
-    1. split hierarchy-wide page-ref computation from live-label field refresh
-    2. store page-ref data in loader/project state instead of eagerly rewriting every
-       `GlobalLabelIntersheetRefs` property value
-    3. add current-sheet-scoped refresh logic that applies visible text/visibility/legacy
-       autoplace fixup only on labels on the selected sheet, like upstream
-    4. only after that, revisit `UpdateAllScreenReferences()` for the remaining current-sheet
-       intersheet-ref exactness
-  - separate narrower blocker under the same routine:
+  - done: page-ref computation now stays hierarchy-wide while resolved intersheet-ref text is only
+    applied on the selected sheet
+  - remaining narrower drift under the same routine:
+    - the current Rust model still lacks KiCad's `m_IntersheetRefsShow` settings gate, so current-
+      sheet refresh applies resolved text without a real show/hide setting source
     - KiCad also calls `shape->UpdateHatching()` during current-sheet refresh
     - the current Rust shape model does not carry hatch geometry/update state beyond fill type/color
-    - treat that as blocked on shape-model expansion, not as another branch tweak in `loader.rs`
+    - treat both as model/settings expansion work, not as another branch tweak in `loader.rs`
 - the remaining ERC drift is no longer a variant-source blocker
 - it is back to richer occurrence-aware model coverage beyond the current symbol/sheet state
 
@@ -438,8 +432,10 @@ Working strategy has changed with that goal:
 
 1. direct upstream re-audit of `UpdateAllScreenReferences` for remaining ERC-visible reused-screen /
    current-occurrence drift
-   - done for the currently representable symbol/sheet occurrence paths
-   - next real unblock is the current-sheet-scoped intersheet-ref refresh model described above
+   - done for the currently representable symbol/sheet occurrence and current-sheet intersheet-ref
+     paths
+   - remaining drift under this routine is the missing intersheet-ref show/hide settings gate and
+     shape-hatching refresh state
 2. direct upstream re-audit of `UpdateSymbolInstanceData` and `UpdateSheetInstanceData` for any
    remaining symbol/sheet occurrence mismatches that affect ERC-visible state
    - done for the currently representable empty-payload, selected-occurrence, and current-variant
@@ -447,8 +443,8 @@ Working strategy has changed with that goal:
    - remaining drift is model-shaped rather than another obvious branch mismatch
 3. revisit `SetSheetNumberAndCount` / `RecomputeIntersheetRefs` only when a concrete current-sheet,
    page-state, or intersheet-reference discrepancy appears
-   - active discrepancy found: current-sheet-only intersheet-ref refresh is blocked on the new
-     state layer above
+   - active discrepancy now narrowed to the missing intersheet-ref settings gate rather than the
+     hierarchy/current-sheet split itself
 4. revisit `FixLegacyPowerSymbolMismatches` only when a concrete lib-pin/screen mismatch appears
 5. keep the remaining `MigrateSimModels` branch at the end of the backlog as non-ERC simulation
    parity work

@@ -3246,6 +3246,7 @@ pub struct Property {
     pub ordinal: i32,
     pub key: String,
     pub value: String,
+    pub base_value: Option<String>,
     pub kind: PropertyKind,
     pub is_private: bool,
     pub at: Option<[f64; 2]>,
@@ -3259,11 +3260,14 @@ pub struct Property {
 
 impl Property {
     pub fn new(kind: PropertyKind, value: String) -> Self {
+        let base_value =
+            matches!(kind, PropertyKind::GlobalLabelIntersheetRefs).then(|| value.clone());
         Self {
             id: kind.default_field_id(),
             ordinal: kind.default_field_id().unwrap_or(0),
             key: kind.canonical_key().to_string(),
             value,
+            base_value,
             kind,
             is_private: false,
             at: Some([0.0, 0.0]),
@@ -3277,6 +3281,8 @@ impl Property {
     }
 
     pub fn new_named(kind: PropertyKind, name: &str, value: String, is_private: bool) -> Self {
+        let base_value =
+            matches!(kind, PropertyKind::GlobalLabelIntersheetRefs).then(|| value.clone());
         Self {
             id: kind.default_field_id(),
             ordinal: kind.default_field_id().unwrap_or(0),
@@ -3285,6 +3291,7 @@ impl Property {
                 _ => kind.canonical_key().to_string(),
             },
             value,
+            base_value,
             kind,
             is_private,
             at: Some([0.0, 0.0]),

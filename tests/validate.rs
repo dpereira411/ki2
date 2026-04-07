@@ -2905,33 +2905,51 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
 
     let loaded = load_schematic_tree(&root_path).expect("load tree");
 
-    for schematic in &loaded.schematics {
-        let global = schematic
-            .screen
-            .items
-            .iter()
-            .find_map(|item| match item {
-                SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
-                _ => None,
-            })
-            .expect("global label");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let root_global = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("root global label");
+    let root_property = root_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("root intersheet refs");
+    assert_eq!(root_property.value, "[1,2]");
+    assert_eq!(root_property.id, Some(6));
+    assert_eq!(root_property.key, "Intersheet References");
 
-        assert_eq!(
-            global
-                .properties
-                .iter()
-                .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-                .map(|property| property.value.as_str()),
-            Some("[1,2]")
-        );
-        let property = global
-            .properties
-            .iter()
-            .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-            .expect("intersheet refs");
-        assert_eq!(property.id, Some(6));
-        assert_eq!(property.key, "Intersheet References");
-    }
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "${INTERSHEET_REFS}");
+    assert_eq!(child_property.id, Some(6));
+    assert_eq!(child_property.key, "Intersheet References");
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
@@ -3057,7 +3075,40 @@ fn recomputes_intersheet_refs_across_reused_screens() {
     fs::write(&root_path, root_src).expect("write root");
     fs::write(&child_path, child_src).expect("write child");
 
-    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let property = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("intersheet refs");
+
+    assert_eq!(property.value, "${INTERSHEET_REFS}");
+
+    let child_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && !sheet_path.instance_path.is_empty()
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child instance path");
+    assert!(loaded.set_current_sheet_path(&child_instance_path));
+
     let child = loaded
         .schematics
         .iter()
@@ -3079,6 +3130,86 @@ fn recomputes_intersheet_refs_across_reused_screens() {
         .expect("intersheet refs");
 
     assert_eq!(property.value, "[1,2]");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn switching_current_sheet_resets_noncurrent_intersheet_refs() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_switch_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000203")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000201")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 1 2 0))
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000202")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "9"))
+    (path "/71000000-0000-0000-0000-000000000202" (page "1")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    let child_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && !sheet_path.instance_path.is_empty()
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child instance path");
+    assert!(loaded.set_current_sheet_path(&child_instance_path));
+    assert!(loaded.set_current_sheet_path(""));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let property = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("intersheet refs");
+
+    assert_eq!(property.value, "${INTERSHEET_REFS}");
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
