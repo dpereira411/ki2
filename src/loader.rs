@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
@@ -3707,11 +3708,38 @@ fn current_iso_date() -> Option<String> {
         .ok()
 }
 
+fn resolve_project_git_hash(project: &LoadedProjectSettings, short: bool) -> Option<String> {
+    let project_dir = project.path.parent()?;
+    let mut command = Command::new("git");
+    command.arg("-C").arg(project_dir).arg("rev-parse");
+
+    if short {
+        command.arg("--short");
+    }
+
+    let output = command.arg("HEAD").output().ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let hash = String::from_utf8(output.stdout).ok()?;
+    let hash = hash.trim();
+
+    (!hash.is_empty()).then(|| hash.to_string())
+}
+
 // Upstream parity: reduced local helper for the currently exercised `PROJECT::TextVarResolver()`
 // slice. This is not a 1:1 KiCad boundary because the Rust tree still lacks KiCad's fuller
-// project/VCS resolver stack, but it keeps project-owned token handling in one place for the
-// intersheet shown-text path. Remaining divergence is the blocked VCS token branch.
-fn resolve_project_text_var(project: Option<&LoadedProjectSettings>, token: &str) -> Option<String> {
+// project resolver stack, but it keeps project-owned token handling in one place for the
+// intersheet shown-text path. The VCS hash branch is not 1:1 KiCad because this tree uses system
+// `git` instead of KiCad's in-process git utility, but it is still needed to cover the exercised
+// `${VCSHASH}` / `${VCSSHORTHASH}` intersheet path. Remaining divergence is deeper repository
+// utility behavior beyond these tokens.
+fn resolve_project_text_var(
+    project: Option<&LoadedProjectSettings>,
+    token: &str,
+) -> Option<String> {
     let project = project?;
 
     if token.eq("PROJECTNAME") {
@@ -3720,6 +3748,14 @@ fn resolve_project_text_var(project: Option<&LoadedProjectSettings>, token: &str
 
     if token.eq("CURRENT_DATE") {
         return current_iso_date();
+    }
+
+    if token.eq("VCSHASH") {
+        return resolve_project_git_hash(project, false);
+    }
+
+    if token.eq("VCSSHORTHASH") {
+        return resolve_project_git_hash(project, true);
     }
 
     project.text_variable(token).map(str::to_string)

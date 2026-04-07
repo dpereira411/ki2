@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::process::Stdio;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
@@ -37,6 +39,60 @@ fn temp_schematic(name: &str, src: &str) -> PathBuf {
     let path = env::temp_dir().join(format!("{name}_{nanos}.kicad_sch"));
     fs::write(&path, src).expect("write temp schematic");
     path
+}
+
+fn init_git_repo_with_head(dir: &Path) -> (String, String) {
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {:?} must succeed", args);
+    };
+
+    run(&["init"]);
+    run(&["config", "user.name", "ki2"]);
+    run(&["config", "user.email", "ki2@example.com"]);
+    run(&["add", "."]);
+    run(&["commit", "-m", "fixture"]);
+
+    let full_hash = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "HEAD"])
+        .stderr(Stdio::null())
+        .output()
+        .expect("read full hash");
+    assert!(
+        full_hash.status.success(),
+        "git rev-parse HEAD must succeed"
+    );
+    let short_hash = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--short", "HEAD"])
+        .stderr(Stdio::null())
+        .output()
+        .expect("read short hash");
+    assert!(
+        short_hash.status.success(),
+        "git rev-parse --short HEAD must succeed"
+    );
+
+    (
+        String::from_utf8(full_hash.stdout)
+            .expect("utf8 full hash")
+            .trim()
+            .to_string(),
+        String::from_utf8(short_hash.stdout)
+            .expect("utf8 short hash")
+            .trim()
+            .to_string(),
+    )
 }
 
 fn env_lock() -> MutexGuard<'static, ()> {
@@ -4450,6 +4506,210 @@ fn intersheet_refs_group_global_labels_by_current_date() {
     let _ = fs::remove_file(child_path);
     let _ = fs::remove_file(project_path);
     let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn intersheet_refs_group_global_labels_by_vcs_hash() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_vcshash_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000411")
+  (paper "A4")
+  (global_label "${VCSHASH}" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000421")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000422")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000423")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71000000-0000-0000-0000-000000000422" (page "2"))
+    (path "/71000000-0000-0000-0000-000000000423" (page "3")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+    let (full_hash, _) = init_git_repo_with_head(&dir);
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get(&full_hash),
+        Some(&BTreeSet::from([2, 3]))
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${VCSHASH}")
+    );
+
+    let child_a_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && sheet_path.sheet_name.as_deref() == Some("A")
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child A instance path");
+    assert!(loaded.set_current_sheet_path(&child_a_instance_path));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "[1,2]");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn intersheet_refs_group_global_labels_by_vcs_short_hash() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_vcsshorthash_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000431")
+  (paper "A4")
+  (global_label "${VCSSHORTHASH}" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000441")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000442")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000443")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71000000-0000-0000-0000-000000000442" (page "2"))
+    (path "/71000000-0000-0000-0000-000000000443" (page "3")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+    let (_, short_hash) = init_git_repo_with_head(&dir);
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get(&short_hash),
+        Some(&BTreeSet::from([2, 3]))
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${VCSSHORTHASH}")
+    );
+
+    let child_b_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && sheet_path.sheet_name.as_deref() == Some("B")
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child B instance path");
+    assert!(loaded.set_current_sheet_path(&child_b_instance_path));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "[1,2]");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir_all(dir);
 }
 
 #[test]
