@@ -4084,6 +4084,79 @@ fn connected_wire_segment_indices(
     connected
 }
 
+// Upstream parity: reduced local helper for the non-connectivity token subset of
+// `SCH_LABEL_BASE::ResolveTextVar()` / `GetShownText()`. This is not a 1:1 port because the
+// current tree still lacks KiCad's fuller connectivity-backed resolver stack, but it is needed so
+// reduced net snapshots can still resolve sheet/project/cross-reference text instead of seeing
+// only raw `${...}` tokens. Remaining divergence is limited to the still-blocked
+// connectivity-backed variables.
+fn resolve_label_text_token_without_connectivity(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    label: &crate::model::Label,
+    token: &str,
+) -> Option<String> {
+    let token_upper = token.to_ascii_uppercase();
+
+    if matches!(
+        token_upper.as_str(),
+        "NET_NAME" | "SHORT_NET_NAME" | "NET_CLASS"
+    ) {
+        return None;
+    }
+
+    if token.contains(':') {
+        if let Some(value) = resolve_cross_reference_text_var(
+            schematics,
+            sheet_paths,
+            loaded_path,
+            current_variant,
+            token,
+        ) {
+            return Some(value);
+        }
+    }
+
+    if token_upper == "CONNECTION_TYPE" {
+        return global_label_connection_type(label).map(str::to_string);
+    }
+
+    if let Some(property) = label
+        .properties
+        .iter()
+        .find(|property| canonical_text_var_name(property) == token_upper)
+    {
+        return Some(resolve_text_variables(
+            &property.value,
+            &|nested| {
+                resolve_sheet_text_var(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    nested,
+                    1,
+                )
+            },
+            1,
+        ));
+    }
+
+    resolve_sheet_text_var(
+        schematics,
+        sheet_paths,
+        loaded_path,
+        project,
+        current_variant,
+        token,
+        1,
+    )
+}
+
 // Upstream parity: reduced local helper for the non-connectivity subset of
 // `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1 port because the current tree still lacks
 // KiCad's fuller connectivity-backed resolver stack, but it is needed so the reduced net snapshot
@@ -4100,61 +4173,14 @@ fn shown_label_text_without_connectivity(
     resolve_text_variables(
         &label.text,
         &|token| {
-            let token_upper = token.to_ascii_uppercase();
-
-            if matches!(
-                token_upper.as_str(),
-                "NET_NAME" | "SHORT_NET_NAME" | "NET_CLASS"
-            ) {
-                return None;
-            }
-
-            if token.contains(':') {
-                if let Some(value) = resolve_cross_reference_text_var(
-                    schematics,
-                    sheet_paths,
-                    loaded_path,
-                    current_variant,
-                    token,
-                ) {
-                    return Some(value);
-                }
-            }
-
-            if token_upper == "CONNECTION_TYPE" {
-                return global_label_connection_type(label).map(str::to_string);
-            }
-
-            if let Some(property) = label
-                .properties
-                .iter()
-                .find(|property| canonical_text_var_name(property) == token_upper)
-            {
-                return Some(resolve_text_variables(
-                    &property.value,
-                    &|nested| {
-                        resolve_sheet_text_var(
-                            schematics,
-                            sheet_paths,
-                            loaded_path,
-                            project,
-                            current_variant,
-                            nested,
-                            1,
-                        )
-                    },
-                    1,
-                ));
-            }
-
-            resolve_sheet_text_var(
+            resolve_label_text_token_without_connectivity(
                 schematics,
                 sheet_paths,
                 loaded_path,
                 project,
                 current_variant,
+                label,
                 token,
-                1,
             )
         },
         0,
@@ -4166,7 +4192,8 @@ fn shown_label_text_without_connectivity(
 // loader still lacks KiCad's full connectivity graph. It exists so current-sheet shown text can
 // resolve simple wire-connected `NET_NAME` / `SHORT_NET_NAME` (and a narrow field-based
 // `NET_CLASS`) instead of leaving those tokens raw. Remaining divergence is fuller connection-graph
-// semantics, especially bus/netclass propagation beyond this reduced wire-label snapshot.
+// semantics, especially rule-area netclass ownership and fuller bus/graph propagation beyond this
+// reduced wire-label snapshot.
 fn resolve_label_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4267,7 +4294,23 @@ fn resolve_label_connectivity_text_var(
                 directive.properties.iter().find_map(|property| {
                     let key = property.key.to_ascii_uppercase();
                     matches!(key.as_str(), "NETCLASS" | "NET CLASS" | "NET_CLASS")
-                        .then(|| property.value.clone())
+                        .then(|| {
+                            resolve_text_variables(
+                                &property.value,
+                                &|nested| {
+                                    resolve_label_text_token_without_connectivity(
+                                        schematics,
+                                        sheet_paths,
+                                        loaded_path,
+                                        project,
+                                        current_variant,
+                                        directive,
+                                        nested,
+                                    )
+                                },
+                                0,
+                            )
+                        })
                         .filter(|value| !value.is_empty())
                 })
             }),
