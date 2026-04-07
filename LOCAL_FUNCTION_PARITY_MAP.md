@@ -49,6 +49,15 @@ Reason:
 - `MigrateSimModels` is simulation-facing parity, not a prerequisite for hierarchy loading or core
   ERC behavior
 
+Current ERC blocker:
+- direct re-audit did not find another honest branch-level mismatch in
+  `UpdateAllScreenReferences`, `UpdateSymbolInstanceData`, or `UpdateSheetInstanceData`
+- the remaining executable gap is model-shaped: the loader has no notion of an active variant per
+  loaded occurrence, so parsed symbol/sheet `instance.variants` data cannot be applied onto live
+  selected-occurrence state
+- do not keep reopening those three routines for blind branch chasing until that occurrence/variant
+  model is expanded
+
 If diagnostic/error unblocking is chosen, execute it in this order:
 1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate the parser fields lost by the current
    reduced representation

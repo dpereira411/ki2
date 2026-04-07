@@ -75,6 +75,11 @@ impl LoadResult {
             .find(|schematic| schematic.path == current_sheet_path.schematic_path)
     }
 
+    // Upstream parity: current-sheet selection is the local entrypoint that exercises KiCad's
+    // reused-screen occurrence switching side effects after load. This helper is not a 1:1
+    // upstream routine because the Rust loader exposes selection directly on `LoadResult`, but it
+    // owns the live screen-state transition timing. Remaining divergence is blocked on richer
+    // occurrence state, especially selecting and applying per-instance variants.
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_path(instance_path).is_some() {
             let previous = self.current_sheet_path().cloned();
@@ -1530,6 +1535,10 @@ impl SchematicLoader {
     }
 }
 
+// Upstream parity: local helper for the symbol-refresh portion of `UpdateAllScreenReferences`.
+// This helper exists because the Rust loader reuses the same symbol-instance application logic for
+// both initial load-time refresh and later current-sheet selection. Remaining divergence is blocked
+// on richer occurrence state, especially active-variant selection and variant field application.
 fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
     for item in &mut schematic.screen.items {
         let SchItem::Symbol(symbol) = item else {
@@ -1563,6 +1572,9 @@ fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
     }
 }
 
+// Upstream parity: local helper for reused-screen first-occurrence baseline refresh. This helper
+// exists because the Rust loader keeps reused-screen reset/apply transitions outside the owning C++
+// screen classes. Remaining divergence is blocked on richer occurrence state, especially variants.
 fn seed_first_symbol_instance_state(schematic: &mut Schematic) {
     for item in &mut schematic.screen.items {
         let SchItem::Symbol(symbol) = item else {
@@ -1591,6 +1603,10 @@ fn seed_first_symbol_instance_state(schematic: &mut Schematic) {
     }
 }
 
+// Upstream parity: local helper for the reused-screen reset half of `UpdateAllScreenReferences`.
+// This helper exists because the Rust loader performs current-sheet switching directly on
+// `LoadResult`. Remaining divergence is blocked on richer per-occurrence state beyond the current
+// reference/unit/value/footprint baseline, especially active variant selection.
 fn reset_reused_screen_symbol_state(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -2747,6 +2763,10 @@ fn migrated_sim_pins_value(prefix: &str, source_pins: &[String], pin_indexes: &[
         .join(" ")
 }
 
+// Upstream parity: local helper for the current-sheet page-state half of reused-screen switching.
+// This helper exists because the Rust loader stores selected occurrence page metadata on `Screen`
+// and `LoadedSheetPath` instead of KiCad's owning screen/project objects. Remaining divergence is
+// blocked on richer reused-screen/current-sheet state beyond the current page fields and variants.
 fn refresh_current_screen_page_state(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],

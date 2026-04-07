@@ -39,6 +39,7 @@ Strict mode is the default for parser-parity work in this repository.
 14. Do not treat the end of a turn, a clean git status, or a green test run as an implicit stopping point. Those are normal checkpoints inside execution mode, not reasons to report.
 15. If backlog remains, the default action after every successful work unit is: pick the next largest mismatch, edit, test, commit, continue. Do not wait for another user prompt to resume.
 16. If a reply is unavoidable, it must explain the blocker or state that the backlog is exhausted. Do not send celebratory, summary-only, or “latest progress” replies while executable parity work still remains.
+17. When a real blocker is identified, do not stop at naming it. Find the concrete path to unblocking it and record that path in the backlog files (`LOCAL_PARSER_PARITY_NOTES.md`, `LOCAL_FUNCTION_PARITY_MAP.md`, or both) before treating the work as blocked.
 
 ## Parser-Only Parity Strategy
 

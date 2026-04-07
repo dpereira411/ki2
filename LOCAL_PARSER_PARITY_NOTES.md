@@ -206,6 +206,37 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
   Status: loader-side intersheet-ref recompute now derives `Intersheet References` field values from the loaded sheet list, counts reused-screen occurrences across distinct sheet paths, and preserves explicit visible-property state. Direct re-audit did not find another model-visible mismatch in the current representation; treat this branch as effectively exhausted unless a concrete current-sheet/settings discrepancy appears.
 - `UpdateAllScreenReferences`
   Status: loader-side symbol refresh now applies hierarchical local `instances` reference/unit/value/footprint state through the loaded sheet list for unique screens, while reused screens stay on a coherent first-instance baseline until the current-sheet selection explicitly switches them. Leaving a reused screen now restores that baseline instead of leaving the last selected occurrence stuck on the shared screen. Global-label default `Intersheet References` placement is still refreshed after load. Direct re-audit did not find another model-visible mismatch in the current symbol/global-label subset; treat the remaining drift here as blocked on richer per-screen model coverage.
+
+### ERC Loader Blocker Detail
+
+The remaining ERC-critical loader drift is now concentrated in one model boundary:
+
+- the parser preserves per-instance `variants` on both symbol and sheet local instances
+- the loader/current-sheet model has no notion of an active variant for a selected occurrence
+- because of that, post-load/current-sheet refresh only applies:
+  - `reference`
+  - `unit`
+  - `value`
+  - `footprint`
+  - page-number/count state
+- and cannot honestly apply variant-owned occurrence state such as:
+  - `dnp`
+  - `exclude_from_sim`
+  - `in_bom`
+  - `on_board`
+  - `in_pos_files`
+  - variant field overrides
+
+That means the next real ERC parity step is not another small branch fix in `loader.rs`.
+It is a model expansion that can represent:
+
+1. which variant, if any, is active for a given loaded occurrence
+2. how that active variant is selected during load/current-sheet switching
+3. how variant-owned attributes and field overrides are applied onto live symbol/sheet state
+
+Until that model exists, the remaining loader drift should be treated as blocked rather than as an
+unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or
+`UpdateAllScreenReferences`.
 - `FixLegacyPowerSymbolMismatches`
   Status: loader-side legacy power-value fix now follows the placed symbol's own linked lib pins more closely instead of a screen-level first-pin summary, so unit/body-style-specific global-power symbols now repair against the active lib pin like upstream. It still marks the screen modified only when the value actually changes, and explicitly leaves local-power or visible-pin symbols untouched. Direct re-audit did not find another model-visible mismatch in the current symbol/lib-pin representation; treat any remaining drift here as blocked on fuller lib-pin/screen semantics beyond the current model.
 - `MigrateSimModels`
