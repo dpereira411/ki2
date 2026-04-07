@@ -377,12 +377,12 @@ What remains after that correction:
         - sheet pins
         - top-level schematic text
         - top-level text boxes
-        - `${ERC_WARNING...}` / `${ERC_ERROR...}` assertion markers on those same item families
+        - `${ERC_WARNING...}` / `${ERC_ERROR...}` assertion markers on those same item families,
+          including linked library text / text boxes
       - unblock path there is narrower than before because the reduced shown-text path now covers
         the exercised sheet/project/cross-reference/current-sheet connectivity tokens
       - remaining likely blockers for fuller `TestTextVars()` parity are:
         - drawing-sheet text coverage
-        - lib-child assertion markers
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
       - the reduced cache now also respects parsed rectangle corner radius instead of running

@@ -499,6 +499,29 @@ pub fn check_text_assertions(project: &SchematicProject) -> Vec<Diagnostic> {
                             ));
                         }
                     }
+
+                    if let Some(lib_symbol) = symbol.lib_symbol.as_ref() {
+                        for draw_item in lib_symbol
+                            .units
+                            .iter()
+                            .flat_map(|unit| unit.draw_items.iter())
+                            .filter(|draw_item| {
+                                matches!(draw_item.kind.as_str(), "text" | "text_box")
+                            })
+                        {
+                            let Some(text) = draw_item.text.as_deref() else {
+                                continue;
+                            };
+
+                            if let Some((severity, message)) = parse_text_assertion(text) {
+                                diagnostics.push(text_assertion_diagnostic(
+                                    &schematic.path,
+                                    severity,
+                                    message,
+                                ));
+                            }
+                        }
+                    }
                 }
                 SchItem::Label(label) => {
                     for property in &label.properties {
