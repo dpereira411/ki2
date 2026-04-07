@@ -42,6 +42,7 @@ pub struct LoadedProjectSettings {
     pub path: PathBuf,
     pub json: Value,
     pub schematic: LoadedSchematicSettings,
+    pub text_variables: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,12 +89,13 @@ impl LoadedProjectSettings {
             .and_then(|value| i32::try_from(value).ok())
     }
 
-    // Upstream parity: typed local analogue for the intersheet-reference subset of
-    // `SCHEMATIC_SETTINGS`. This is not a 1:1 KiCad settings object because the current tree still
-    // preserves raw companion project JSON too, but loader/current-sheet refresh now reads one
-    // typed settings carrier instead of scattered ad-hoc JSON lookups.
+    // Upstream parity: typed local analogue for the exercised companion-project settings slice.
+    // This is not a 1:1 KiCad settings object because the current tree still preserves raw
+    // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
+    // the exercised `SCHEMATIC_SETTINGS` intersheet subset plus `PROJECT::GetTextVars()`.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
+        let mut text_variables = BTreeMap::new();
 
         if let Some(drawing) = json.get("drawing").and_then(Value::as_object) {
             if let Some(show) = drawing.get("intersheets_ref_show").and_then(Value::as_bool) {
@@ -129,10 +131,19 @@ impl LoadedProjectSettings {
             }
         }
 
+        if let Some(vars) = json.get("text_variables").and_then(Value::as_object) {
+            for (name, value) in vars {
+                if let Some(value) = value.as_str() {
+                    text_variables.insert(name.clone(), value.to_string());
+                }
+            }
+        }
+
         Self {
             path,
             json,
             schematic,
+            text_variables,
         }
     }
 
@@ -148,6 +159,18 @@ impl LoadedProjectSettings {
         }
 
         Some(current)
+    }
+
+    pub fn project_name(&self) -> String {
+        self.path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    pub fn text_variable(&self, name: &str) -> Option<&str> {
+        self.text_variables.get(name).map(String::as_str)
     }
 }
 
@@ -285,6 +308,7 @@ impl LoadResult {
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
                 &schematic_settings,
+                self.project.as_ref(),
                 self.current_variant.as_deref(),
             );
             if let Some(schematic) = self
@@ -335,6 +359,7 @@ impl LoadResult {
         let (values, pages_by_label, pages_by_virtual_page) = build_intersheet_ref_maps(
             &self.schematics,
             &self.sheet_paths,
+            self.project.as_ref(),
             self.current_variant.as_deref(),
         );
         self.intersheet_ref_values = values;
@@ -349,6 +374,7 @@ impl LoadResult {
             &self.intersheet_ref_pages_by_label,
             &self.sheet_pages_by_virtual_page,
             &schematic_settings,
+            self.project.as_ref(),
             self.current_variant.as_deref(),
         );
     }
@@ -447,7 +473,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     let project = load_companion_project_settings(root)?;
     let project_local_settings = load_companion_project_local_settings(root)?;
     let schematic_settings = ActiveSchematicSettings::from_project_settings(project.as_ref());
-    let mut loader = SchematicLoader::new();
+    let mut loader = SchematicLoader::new(project.clone());
     let root_path = loader.load_schematic_file(root)?;
     let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
     loader.update_symbol_instance_data(&root_path, &sheet_paths);
@@ -532,6 +558,7 @@ struct SchematicLoader {
     loaded_by_canonical: HashMap<PathBuf, usize>,
     current_sheet_path: Vec<PathBuf>,
     current_path: Vec<PathBuf>,
+    project: Option<LoadedProjectSettings>,
     intersheet_ref_values: HashMap<String, String>,
     intersheet_ref_pages_by_label: HashMap<String, BTreeSet<usize>>,
     sheet_pages_by_virtual_page: HashMap<usize, String>,
@@ -543,13 +570,14 @@ struct PowerLibSymbolInfo {
 }
 
 impl SchematicLoader {
-    fn new() -> Self {
+    fn new(project: Option<LoadedProjectSettings>) -> Self {
         Self {
             schematics: Vec::new(),
             links: Vec::new(),
             loaded_by_canonical: HashMap::new(),
             current_sheet_path: Vec::new(),
             current_path: Vec::new(),
+            project,
             intersheet_ref_values: HashMap::new(),
             intersheet_ref_pages_by_label: HashMap::new(),
             sheet_pages_by_virtual_page: HashMap::new(),
@@ -1669,7 +1697,7 @@ impl SchematicLoader {
     // routine's direct branch flow.
     fn recompute_intersheet_refs(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let (values, pages_by_label, pages_by_virtual_page) =
-            build_intersheet_ref_maps(&self.schematics, sheet_paths, None);
+            build_intersheet_ref_maps(&self.schematics, sheet_paths, self.project.as_ref(), None);
         self.intersheet_ref_values = values;
         self.intersheet_ref_pages_by_label = pages_by_label;
         self.sheet_pages_by_virtual_page = pages_by_virtual_page;
@@ -1750,6 +1778,7 @@ impl SchematicLoader {
             &self.intersheet_ref_pages_by_label,
             &self.sheet_pages_by_virtual_page,
             schematic_settings,
+            self.project.as_ref(),
             None,
         );
     }
@@ -1771,6 +1800,7 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     intersheet_ref_pages_by_label: &HashMap<String, BTreeSet<usize>>,
     sheet_pages_by_virtual_page: &HashMap<usize, String>,
     schematic_settings: &ActiveSchematicSettings,
+    project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
 ) {
     for schematic in schematics.iter_mut() {
@@ -1826,6 +1856,7 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
                     schematics,
                     sheet_paths,
                     current_sheet_path,
+                    project,
                     current_variant,
                     label,
                 ),
@@ -3668,9 +3699,15 @@ fn resolved_sheet_text_state(
     Some(state)
 }
 
+// Upstream parity: reduced local analogue for the schematic/project fallback half of
+// `SCHEMATIC::ResolveTextVar()`. This is not 1:1 because the current tree still lacks the full
+// project/controller resolver stack, but it now covers the exercised schematic/title-block/project
+// token slice used by intersheet shown text. Remaining divergence is broader project variables
+// like date/VCS and cross-reference/net resolvers.
 fn resolve_schematic_text_var(
     schematics: &[Schematic],
     loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
     token: &str,
 ) -> Option<String> {
@@ -3683,7 +3720,16 @@ fn resolve_schematic_text_var(
         "VARIANT" | "VARIANTNAME" => {
             return Some(current_variant.unwrap_or_default().to_string());
         }
+        "PROJECTNAME" => {
+            return project.map(LoadedProjectSettings::project_name);
+        }
         _ => {}
+    }
+
+    if let Some(project) = project {
+        if let Some(value) = project.text_variable(token) {
+            return Some(value.to_string());
+        }
     }
 
     let title_block = schematic.screen.title_block.as_ref()?;
@@ -3701,14 +3747,15 @@ fn resolve_schematic_text_var(
     }
 }
 
-// Upstream parity: local helper for the page-ref-map portion of `SCHEMATIC::RecomputeIntersheetRefs()`.
-// This is not a 1:1 KiCad routine because the Rust loader still builds from loaded-sheet-path
-// snapshots instead of schematic-owned hierarchy objects, but it now shares the same reduced
-// shown-text resolution path used by current-sheet refresh, including current-variant sheet-state
-// tokens.
+// Upstream parity: local helper for the page-ref-map portion of
+// `SCHEMATIC::RecomputeIntersheetRefs()`. This is not a 1:1 KiCad routine because the Rust loader
+// still builds from loaded-sheet-path snapshots instead of schematic-owned hierarchy objects, but
+// it now shares the same reduced shown-text resolution path used by current-sheet refresh,
+// including current-variant sheet-state tokens and exercised project text variables.
 pub(crate) fn build_intersheet_ref_maps(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
+    project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
 ) -> (
     HashMap<String, String>,
@@ -3741,6 +3788,7 @@ pub(crate) fn build_intersheet_ref_maps(
                         schematics,
                         sheet_paths,
                         sheet_path,
+                        project,
                         current_variant,
                         label,
                     );
@@ -3769,10 +3817,16 @@ pub(crate) fn build_intersheet_ref_maps(
     (values, page_refs_map, virtual_page_to_sheet_page)
 }
 
+// Upstream parity: reduced loader-side analogue for the sheet-path recursion inside
+// `SCHEMATIC::ResolveTextVar()`. This is not 1:1 because the current Rust tree still resolves
+// from loaded path snapshots instead of KiCad's live sheet objects, but it now carries the
+// exercised sheet/schematic/project variable chain used by intersheet shown text. Remaining
+// divergence is outside this recursive branch.
 fn resolve_sheet_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
     token: &str,
     depth: usize,
@@ -3796,6 +3850,7 @@ fn resolve_sheet_text_var(
                     schematics,
                     sheet_paths,
                     loaded_path,
+                    project,
                     current_variant,
                     nested,
                     depth + 1,
@@ -3870,12 +3925,15 @@ fn resolve_sheet_text_var(
                 schematics,
                 sheet_paths,
                 parent,
+                project,
                 current_variant,
                 token,
                 depth + 1,
             )
         })
-        .or_else(|| resolve_schematic_text_var(schematics, loaded_path, current_variant, token))
+        .or_else(|| {
+            resolve_schematic_text_var(schematics, loaded_path, project, current_variant, token)
+        })
 }
 
 fn resolve_text_variables(
@@ -3917,16 +3975,16 @@ fn resolve_text_variables(
 
 // Upstream parity: reduced local analogue for `SCH_LABEL_BASE::GetShownText( sheet )` on the
 // loader's intersheet-ref path. This is not 1:1 KiCad because the current tree still lacks the
-// broader text-variable resolver stack (`ResolveTextVar`, project text vars, net connection
-// variables, cross references). It exists to restore the ERC-visible sheet-path text resolution
-// slice needed for global-label page-ref grouping on reused sheets, including the current-variant
-// schematic `VARIANT` / `VARIANTNAME` tokens, title-block tokens, and sheet-field / `DNP` /
-// exclusion-token slice; remaining divergence is the unported broader resolver surface, not this
-// exercised loader path.
+// broader text-variable resolver stack (`ResolveTextVar`, net connection variables, cross
+// references). It exists to restore the ERC-visible sheet-path text resolution slice needed for
+// global-label page-ref grouping on reused sheets, including current-variant tokens, title-block
+// tokens, project text variables, and the sheet-field / `DNP` / exclusion-token slice; remaining
+// divergence is the unported broader resolver surface, not this exercised loader path.
 fn shown_global_label_text(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
     label: &crate::model::Label,
 ) -> String {
@@ -3947,6 +4005,7 @@ fn shown_global_label_text(
                             schematics,
                             sheet_paths,
                             loaded_path,
+                            project,
                             current_variant,
                             nested,
                             1,
@@ -3960,6 +4019,7 @@ fn shown_global_label_text(
                 schematics,
                 sheet_paths,
                 loaded_path,
+                project,
                 current_variant,
                 token,
                 1,

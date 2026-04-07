@@ -128,6 +128,7 @@ impl SchematicProject {
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
                 &schematic_settings,
+                self.project.as_ref(),
                 self.current_variant.as_deref(),
             );
             refresh_live_symbol_occurrence_state(
@@ -174,6 +175,7 @@ impl SchematicProject {
         let (values, pages_by_label, pages_by_virtual_page) = build_intersheet_ref_maps(
             &self.schematics,
             &self.sheet_paths,
+            self.project.as_ref(),
             self.current_variant.as_deref(),
         );
         self.intersheet_ref_values = values;
@@ -189,6 +191,7 @@ impl SchematicProject {
             &self.intersheet_ref_pages_by_label,
             &self.sheet_pages_by_virtual_page,
             &schematic_settings,
+            self.project.as_ref(),
             self.current_variant.as_deref(),
         );
     }

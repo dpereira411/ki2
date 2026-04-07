@@ -75,10 +75,11 @@ Current ERC blocker:
       reduced sheet-path shown-text resolver for global labels instead of raw `label.text`
       - that exercised slice now also includes current-variant sheet-field / `DNP` resolution and
         variant-triggered page-ref-map recompute
-      - the reduced resolver also now covers schematic `VARIANT` / `VARIANTNAME` plus stable
-        title-block tokens used by upstream before project vars
-      - remaining divergence is the broader unported text-variable resolver surface, not this
-        exercised intersheet-ref branch
+      - the reduced resolver also now covers schematic `VARIANT` / `VARIANTNAME`, stable
+        title-block tokens, `${PROJECTNAME}`, and companion `.kicad_pro` `text_variables`
+      - remaining divergence is the broader unported text-variable resolver surface
+        (`CURRENT_DATE`, VCS, net/cross-reference variables), not this exercised intersheet-ref
+        branch
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet
