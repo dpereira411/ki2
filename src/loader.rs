@@ -391,17 +391,23 @@ impl LoadResult {
             return Ok(Vec::new());
         };
         let current_virtual_page_number = self.current_virtual_page_number();
+        let current_paper = current.screen.paper.as_ref();
 
         match self.current_drawing_sheet_source() {
             DrawingSheetSource::Default => {
-                default_reduced_worksheet_text_items(current_virtual_page_number)
+                default_reduced_worksheet_text_items(current_virtual_page_number, current_paper)
             }
             DrawingSheetSource::Filesystem(path) => {
                 let raw = fs::read_to_string(&path).map_err(|source| Error::Io {
                     path: path.clone(),
                     source,
                 })?;
-                parse_reduced_worksheet_text_items(&path, &raw, current_virtual_page_number)
+                parse_reduced_worksheet_text_items(
+                    &path,
+                    &raw,
+                    current_virtual_page_number,
+                    current_paper,
+                )
             }
             DrawingSheetSource::SchematicEmbedded { name, text } => {
                 parse_reduced_worksheet_text_items(
@@ -412,6 +418,7 @@ impl LoadResult {
                         .join(name),
                     &text,
                     current_virtual_page_number,
+                    current_paper,
                 )
             }
         }

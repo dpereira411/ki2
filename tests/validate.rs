@@ -617,9 +617,9 @@ fn current_drawing_sheet_text_items_parse_filesystem_tbtext() {
         .expect("worksheet items");
     assert_eq!(items.len(), 2);
     assert_eq!(items[0].text, "${TITLE}");
-    assert_eq!(items[0].at, [10.0, 20.0]);
+    assert_eq!(items[0].at, [277.0, 180.0]);
     assert_eq!(items[1].text, "${REVISION}");
-    assert_eq!(items[1].at, [30.0, 40.0]);
+    assert_eq!(items[1].at, [257.0, 160.0]);
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(project_path);
@@ -667,15 +667,15 @@ fn current_drawing_sheet_text_items_expand_repeated_tbtext() {
         vec![
             ki2::worksheet::WorksheetTextItem {
                 text: "1".to_string(),
-                at: [10.0, 20.0]
+                at: [277.0, 180.0]
             },
             ki2::worksheet::WorksheetTextItem {
                 text: "2".to_string(),
-                at: [15.0, 22.0]
+                at: [272.0, 178.0]
             },
             ki2::worksheet::WorksheetTextItem {
                 text: "3".to_string(),
-                at: [20.0, 24.0]
+                at: [267.0, 176.0]
             },
         ]
     );
@@ -825,6 +825,127 @@ fn current_drawing_sheet_text_items_honor_page_options() {
 }
 
 #[test]
+fn current_drawing_sheet_text_items_resolve_corner_anchors_and_margins() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_drawing_sheet_corner_anchors_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2") (paper "A4"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (setup (left_margin 10) (right_margin 20) (top_margin 30) (bottom_margin 40))
+  (tbtext "LT" (pos 1 2 ltcorner))
+  (tbtext "LB" (pos 3 4 lbcorner))
+  (tbtext "RB" (pos 5 6 rbcorner))
+  (tbtext "RT" (pos 7 8 rtcorner)))"#,
+    )
+    .expect("write worksheet");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let items = loaded
+        .current_drawing_sheet_text_items()
+        .expect("worksheet items");
+    assert_eq!(
+        items,
+        vec![
+            ki2::worksheet::WorksheetTextItem {
+                text: "LT".to_string(),
+                at: [11.0, 32.0]
+            },
+            ki2::worksheet::WorksheetTextItem {
+                text: "LB".to_string(),
+                at: [13.0, 166.0]
+            },
+            ki2::worksheet::WorksheetTextItem {
+                text: "RB".to_string(),
+                at: [272.0, 164.0]
+            },
+            ki2::worksheet::WorksheetTextItem {
+                text: "RT".to_string(),
+                at: [270.0, 38.0]
+            },
+        ]
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn current_drawing_sheet_text_items_clip_repeated_items_to_page() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_drawing_sheet_repeat_clipping_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2") (paper "A4"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (setup (left_margin 10) (right_margin 10) (top_margin 10) (bottom_margin 10))
+  (tbtext "1" (pos 25 1 ltcorner) (repeat 100) (incrx 50)))"#,
+    )
+    .expect("write worksheet");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let items = loaded
+        .current_drawing_sheet_text_items()
+        .expect("worksheet items");
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["1", "2", "3", "4", "5", "6"]
+    );
+    assert_eq!(
+        items.iter().map(|item| item.at[0]).collect::<Vec<_>>(),
+        vec![35.0, 85.0, 135.0, 185.0, 235.0, 285.0]
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn current_drawing_sheet_text_items_parse_embedded_tbtext() {
     let dir = std::env::temp_dir().join(format!(
         "ki2_embedded_drawing_sheet_text_items_{}",
@@ -862,7 +983,7 @@ fn current_drawing_sheet_text_items_parse_embedded_tbtext() {
         .expect("worksheet items");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].text, "${COMMENT1}");
-    assert_eq!(items[0].at, [5.0, 6.0]);
+    assert_eq!(items[0].at, [282.0, 194.0]);
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(project_path);

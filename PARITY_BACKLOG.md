@@ -121,8 +121,9 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 2. Remaining drawing-sheet `TestTextVars()` coverage
    - typed project source path is now modeled
    - reduced default/custom/embedded worksheet `tbtext` parsing, repeat/increment expansion,
-     page-one filtering, and shown-text ERC coverage are live
-   - remaining work is fuller draw-item/painter parity beyond `tbtext`
+     page-one filtering, setup-margin/corner positioning, repeat clipping, and shown-text ERC
+     coverage are live
+   - remaining work is broader draw-item/painter parity beyond the reduced `tbtext` carrier
 3. Hierarchy/loading 1:1 sign-off gaps
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
@@ -551,6 +552,7 @@ Unblock path:
    - enough to represent the exercised text-bearing drawing-sheet items
    - done for default/custom/embedded `tbtext`, including repeat/increment expansion and first-page
      option filtering
+   - reduced setup-margin, corner-anchor, and repeated-item page clipping behavior is now live too
 2. source the active worksheet/page-layout from project/schematic inputs
    - done for typed project path + current schematic embedded-file fallback
 3. add a reduced shown-text resolver for those drawing-sheet text items

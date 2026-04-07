@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
+use crate::model::Paper;
 use crate::sexpr::{ParseError, Span};
 use crate::token::{TokKind, Token, lex};
 
@@ -18,6 +19,14 @@ enum WorksheetPageOption {
     SubsequentPages,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorksheetCornerAnchor {
+    LeftTop,
+    LeftBottom,
+    RightBottom,
+    RightTop,
+}
+
 #[derive(Debug, Clone)]
 struct ParsedWorksheetTextItem {
     text: String,
@@ -29,6 +38,7 @@ struct ParsedWorksheetTextItem {
 struct WorksheetTextTemplate {
     text: String,
     at: [f64; 2],
+    anchor: WorksheetCornerAnchor,
     repeat_count: i32,
     incrx: f64,
     incry: f64,
@@ -58,11 +68,13 @@ const REDUCED_DEFAULT_DRAWING_SHEET: &str = r#"(kicad_wks
 // but it now also applies KiCad's first-page/subsequent-page gating before returning text items.
 pub fn default_reduced_worksheet_text_items(
     current_virtual_page_number: Option<usize>,
+    paper: Option<&Paper>,
 ) -> Result<Vec<WorksheetTextItem>, Error> {
     parse_reduced_worksheet_text_items(
         Path::new("<default drawing sheet>"),
         REDUCED_DEFAULT_DRAWING_SHEET,
         current_virtual_page_number,
+        paper,
     )
 }
 
@@ -74,6 +86,7 @@ pub fn parse_reduced_worksheet_text_items(
     path: &Path,
     raw: &str,
     current_virtual_page_number: Option<usize>,
+    paper: Option<&Paper>,
 ) -> Result<Vec<WorksheetTextItem>, Error> {
     let tokens = lex(raw).map_err(|source| Error::SExpr {
         path: path.to_path_buf(),
@@ -81,15 +94,17 @@ pub fn parse_reduced_worksheet_text_items(
         source,
     })?;
 
-    Ok(ReducedWorksheetParser::new(path.to_path_buf(), raw, tokens)
-        .parse()?
-        .into_iter()
-        .filter(|item| include_on_page(item.page_option, current_virtual_page_number))
-        .map(|item| WorksheetTextItem {
-            text: item.text,
-            at: item.at,
-        })
-        .collect())
+    Ok(
+        ReducedWorksheetParser::new(path.to_path_buf(), raw, tokens, paper)
+            .parse()?
+            .into_iter()
+            .filter(|item| include_on_page(item.page_option, current_virtual_page_number))
+            .map(|item| WorksheetTextItem {
+                text: item.text,
+                at: item.at,
+            })
+            .collect(),
+    )
 }
 
 fn worksheet_sexpr_error_location(raw: &str, source: &ParseError) -> String {
@@ -120,23 +135,31 @@ struct ReducedWorksheetParser {
     source: String,
     tokens: Vec<Token>,
     idx: usize,
+    paper_size_mm: Option<[f64; 2]>,
+    margins_mm: [f64; 4],
 }
 
 impl ReducedWorksheetParser {
-    fn new(path: PathBuf, source: &str, tokens: Vec<Token>) -> Self {
+    fn new(path: PathBuf, source: &str, tokens: Vec<Token>, paper: Option<&Paper>) -> Self {
         Self {
             path,
             source: source.to_string(),
             tokens,
             idx: 0,
+            paper_size_mm: paper.and_then(|paper| match (paper.width, paper.height) {
+                (Some(width), Some(height)) => Some([width, height]),
+                _ => None,
+            }),
+            margins_mm: [10.0, 10.0, 10.0, 10.0],
         }
     }
 
     // Upstream parity: reduced local analogue for the `DRAWING_SHEET_PARSER::Parse()` text-item
     // slice that ERC `TestTextVars()` needs. This is not a 1:1 worksheet parser because the local
     // tree currently skips non-text drawing-sheet items and most text styling branches, but it now
-    // also preserves the exercised `tbtext` repeat/increment and page-option behavior instead of
-    // collapsing every text item to one copy. Fuller styling semantics are still unported.
+    // also preserves the exercised `tbtext` repeat/increment, page-option, and reduced
+    // page-environment behavior instead of collapsing every text item to one copy. Fuller styling
+    // semantics are still unported.
     fn parse(&mut self) -> Result<Vec<ParsedWorksheetTextItem>, Error> {
         self.need_left()?;
         let head = self.need_atom("kicad_wks or drawing_sheet")?;
@@ -154,6 +177,7 @@ impl ReducedWorksheetParser {
             let head = self.need_atom("worksheet item")?;
 
             match head.as_str() {
+                "setup" => self.parse_setup()?,
                 "tbtext" => items.extend(self.parse_tbtext()?),
                 _ => self.skip_current_list_body()?,
             }
@@ -173,6 +197,7 @@ impl ReducedWorksheetParser {
         let mut item = WorksheetTextTemplate {
             text: convert_legacy_drawing_sheet_text(&raw_text),
             at: [0.0, 0.0],
+            anchor: WorksheetCornerAnchor::RightBottom,
             repeat_count: 1,
             incrx: 0.0,
             incry: 0.0,
@@ -186,7 +211,7 @@ impl ReducedWorksheetParser {
 
             match head.as_str() {
                 "pos" => {
-                    item.at = self.parse_pos()?;
+                    (item.at, item.anchor) = self.parse_pos()?;
                 }
                 "repeat" => {
                     item.repeat_count = self.parse_int("repeat count")?;
@@ -212,19 +237,27 @@ impl ReducedWorksheetParser {
         }
 
         self.need_right()?;
-        Ok(expand_repeated_text_item(&item))
+        Ok(self.expand_repeated_text_item(&item))
     }
 
-    fn parse_pos(&mut self) -> Result<[f64; 2], Error> {
+    fn parse_pos(&mut self) -> Result<([f64; 2], WorksheetCornerAnchor), Error> {
         let x = self.parse_double("x coordinate")?;
         let y = self.parse_double("y coordinate")?;
+        let mut anchor = WorksheetCornerAnchor::RightBottom;
 
         if !self.at_right() {
-            let _ = self.need_atom("corner")?;
+            let span = self.current_span();
+            anchor = match self.need_atom("corner")?.as_str() {
+                "ltcorner" => WorksheetCornerAnchor::LeftTop,
+                "lbcorner" => WorksheetCornerAnchor::LeftBottom,
+                "rbcorner" => WorksheetCornerAnchor::RightBottom,
+                "rtcorner" => WorksheetCornerAnchor::RightTop,
+                _ => return Err(self.validation(span, "invalid worksheet corner")),
+            };
         }
 
         self.need_right()?;
-        Ok([x, y])
+        Ok(([x, y], anchor))
     }
 
     // Upstream parity: reduced local analogue for `DRAWING_SHEET_PARSER::readOption()`. This is
@@ -246,6 +279,99 @@ impl ReducedWorksheetParser {
 
         self.need_right()?;
         Ok(option)
+    }
+
+    // Upstream parity: reduced local analogue for the worksheet `setup` branch that feeds
+    // `DS_DATA_MODEL::SetupDrawEnvironment()`. This is not 1:1 because the local worksheet model
+    // only keeps the exercised page margins needed to position and clip reduced `tbtext` items.
+    fn parse_setup(&mut self) -> Result<(), Error> {
+        while !self.at_right() {
+            self.need_left()?;
+            let head = self.need_atom("worksheet setup child")?;
+
+            match head.as_str() {
+                "left_margin" => {
+                    self.margins_mm[0] = self.parse_double("left margin")?;
+                    self.need_right()?;
+                }
+                "right_margin" => {
+                    self.margins_mm[1] = self.parse_double("right margin")?;
+                    self.need_right()?;
+                }
+                "top_margin" => {
+                    self.margins_mm[2] = self.parse_double("top margin")?;
+                    self.need_right()?;
+                }
+                "bottom_margin" => {
+                    self.margins_mm[3] = self.parse_double("bottom margin")?;
+                    self.need_right()?;
+                }
+                _ => self.skip_current_list_body()?,
+            }
+        }
+
+        self.need_right()
+    }
+
+    // Upstream parity: reduced local analogue for the worksheet text materialization path in
+    // `DS_DATA_ITEM_TEXT::SyncDrawItems()`. This is not 1:1 because the local tree still skips the
+    // full draw-item/styling object model, but it now resolves corner-anchored positions and clips
+    // repeated `tbtext` items against the current page bounds before ERC sees them.
+    fn expand_repeated_text_item(
+        &self,
+        item: &WorksheetTextTemplate,
+    ) -> Vec<ParsedWorksheetTextItem> {
+        let repeat_count = item.repeat_count.clamp(1, 100);
+        let mut out = Vec::new();
+
+        for index in 0..repeat_count {
+            let at = self.resolve_position(item, index);
+
+            if index > 0 && !self.is_inside_page(at) {
+                continue;
+            }
+
+            out.push(ParsedWorksheetTextItem {
+                text: increment_label_text(&item.text, index * item.incrlabel, index == 0),
+                at,
+                page_option: item.page_option,
+            });
+        }
+
+        out
+    }
+
+    fn resolve_position(&self, item: &WorksheetTextTemplate, index: i32) -> [f64; 2] {
+        let base_x = item.at[0] + (item.incrx * f64::from(index));
+        let base_y = item.at[1] + (item.incry * f64::from(index));
+        let Some([paper_width, paper_height]) = self.paper_size_mm else {
+            return [base_x, base_y];
+        };
+        let [left, right, top, bottom] = self.margins_mm;
+        let lt_x = left;
+        let lt_y = top;
+        let rb_x = paper_width - right;
+        let rb_y = paper_height - bottom;
+
+        match item.anchor {
+            WorksheetCornerAnchor::LeftTop => [lt_x + base_x, lt_y + base_y],
+            WorksheetCornerAnchor::LeftBottom => [lt_x + base_x, rb_y - base_y],
+            WorksheetCornerAnchor::RightBottom => [rb_x - base_x, rb_y - base_y],
+            WorksheetCornerAnchor::RightTop => [rb_x - base_x, lt_y + base_y],
+        }
+    }
+
+    fn is_inside_page(&self, at: [f64; 2]) -> bool {
+        let Some([paper_width, paper_height]) = self.paper_size_mm else {
+            return true;
+        };
+        let [left, right, top, bottom] = self.margins_mm;
+        let lt_x = left;
+        let lt_y = top;
+        let rb_x = paper_width - right;
+        let rb_y = paper_height - bottom;
+
+        at[0] >= lt_x && at[0] <= rb_x && at[1] >= lt_y && at[1] <= rb_y
     }
 
     fn parse_double(&mut self, expected: &str) -> Result<f64, Error> {
@@ -454,24 +580,6 @@ fn convert_legacy_drawing_sheet_text(text: &str) -> String {
     }
 
     out
-}
-
-// Upstream parity: reduced analogue for KiCad's worksheet text repetition expansion. This is not
-// a full 1:1 drawing-sheet item materializer because the local worksheet model only emits the
-// repeated text payloads ERC/text-variable checks currently observe.
-fn expand_repeated_text_item(item: &WorksheetTextTemplate) -> Vec<ParsedWorksheetTextItem> {
-    let repeat_count = item.repeat_count.clamp(1, 100);
-
-    (0..repeat_count)
-        .map(|index| ParsedWorksheetTextItem {
-            text: increment_label_text(&item.text, index * item.incrlabel, index == 0),
-            at: [
-                item.at[0] + (item.incrx * f64::from(index)),
-                item.at[1] + (item.incry * f64::from(index)),
-            ],
-            page_option: item.page_option,
-        })
-        .collect()
 }
 
 // Upstream parity: reduced local analogue for `DS_DRAW_ITEM_LIST::BuildDrawItemsList()` page-one
