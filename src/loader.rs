@@ -4107,6 +4107,7 @@ fn is_parent_reference_match(reference: &str, resolved_reference: &str) -> bool 
 enum SymbolPinTextVarKind {
     NetName,
     ShortNetName,
+    NetClass,
     PinName,
 }
 
@@ -4118,6 +4119,7 @@ fn parse_symbol_pin_text_var(field_name: &str) -> Option<(SymbolPinTextVarKind, 
         match kind.to_ascii_uppercase().as_str() {
             "NET_NAME" => SymbolPinTextVarKind::NetName,
             "SHORT_NET_NAME" => SymbolPinTextVarKind::ShortNetName,
+            "NET_CLASS" => SymbolPinTextVarKind::NetClass,
             "PIN_NAME" => SymbolPinTextVarKind::PinName,
             _ => return None,
         },
@@ -4189,8 +4191,8 @@ fn resolved_symbol_pin_in_unit<'a>(
 // `GetEffectiveNetClass()` path because the Rust tree still lacks live `SCH_PIN` instances and the
 // full connection graph. It exists so the exercised pin net-name text vars can reuse the current
 // reduced wire/label snapshot instead of diverging into a second ad hoc resolver. Remaining
-// divergence is fuller connection-graph ownership and the still-pending `${REF:NET_CLASS(pin)}`
-// slice.
+// divergence is fuller connection-graph ownership beyond the current reduced point/directive/rule-
+// area model.
 fn resolve_point_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4215,61 +4217,81 @@ fn resolve_point_connectivity_text_var(
         .collect::<Vec<_>>();
     let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, at);
 
-    let net_name = if connected_segments.is_empty() {
-        schematic
-            .screen
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
-                    points_equal(other.at, at).then_some(other)
-                }
-                _ => None,
-            })
-            .map(|other| {
-                shown_label_text_without_connectivity(
-                    schematics,
-                    sheet_paths,
-                    loaded_path,
-                    project,
-                    current_variant,
-                    other,
-                )
-            })
-            .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
-    } else {
-        schematic
-            .screen
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
-                    connected_segments
-                        .iter()
-                        .any(|segment_index| {
-                            let segment = wire_segments[*segment_index];
-                            point_on_wire_segment(other.at, segment[0], segment[1])
-                        })
-                        .then_some(other)
-                }
-                _ => None,
-            })
-            .map(|other| {
-                shown_label_text_without_connectivity(
-                    schematics,
-                    sheet_paths,
-                    loaded_path,
-                    project,
-                    current_variant,
-                    other,
-                )
-            })
-            .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
-    }?;
-
     match token_kind {
-        SymbolPinTextVarKind::NetName => Some(net_name),
-        SymbolPinTextVarKind::ShortNetName => Some(short_net_name(&net_name)),
+        SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
+            let net_name = if connected_segments.is_empty() {
+                schematic
+                    .screen
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        SchItem::Label(other)
+                            if other.kind != crate::model::LabelKind::Directive =>
+                        {
+                            points_equal(other.at, at).then_some(other)
+                        }
+                        _ => None,
+                    })
+                    .map(|other| {
+                        shown_label_text_without_connectivity(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            project,
+                            current_variant,
+                            other,
+                        )
+                    })
+                    .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+            } else {
+                schematic
+                    .screen
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        SchItem::Label(other)
+                            if other.kind != crate::model::LabelKind::Directive =>
+                        {
+                            connected_segments
+                                .iter()
+                                .any(|segment_index| {
+                                    let segment = wire_segments[*segment_index];
+                                    point_on_wire_segment(other.at, segment[0], segment[1])
+                                })
+                                .then_some(other)
+                        }
+                        _ => None,
+                    })
+                    .map(|other| {
+                        shown_label_text_without_connectivity(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            project,
+                            current_variant,
+                            other,
+                        )
+                    })
+                    .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+            }?;
+
+            match token_kind {
+                SymbolPinTextVarKind::NetName => Some(net_name),
+                SymbolPinTextVarKind::ShortNetName => Some(short_net_name(&net_name)),
+                _ => None,
+            }
+        }
+        SymbolPinTextVarKind::NetClass => resolve_point_netclass_value(
+            schematics,
+            sheet_paths,
+            loaded_path,
+            project,
+            current_variant,
+            schematic,
+            &wire_segments,
+            &connected_segments,
+            at,
+        ),
         SymbolPinTextVarKind::PinName => None,
     }
 }
@@ -4278,10 +4300,10 @@ fn resolve_point_connectivity_text_var(
 // `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 KiCad pin/connection path because the Rust
 // tree still lacks live `SCH_PIN` objects and the full connection graph. It exists so shown-text
 // cross references can resolve the exercised `${REF:NET_NAME(pin)}` /
-// `${REF:SHORT_NET_NAME(pin)}` / `${REF:PIN_NAME(pin)}` slice against loaded symbol/lib-pin state
-// instead of leaving those tokens unresolved. Remaining divergence is the fuller pin-function
-// family, including `${REF:NET_CLASS(pin)}`, and fuller connection-graph exactness beyond the
-// current reduced model.
+// `${REF:SHORT_NET_NAME(pin)}` / `${REF:NET_CLASS(pin)}` / `${REF:PIN_NAME(pin)}` slice against
+// loaded symbol/lib-pin state instead of leaving those tokens unresolved. Remaining divergence is
+// the fuller pin-function family and fuller connection-graph exactness beyond the current reduced
+// model.
 fn resolve_symbol_pin_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4838,6 +4860,91 @@ fn resolve_directive_netclass_value(
     })
 }
 
+fn resolve_point_netclass_value(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    schematic: &Schematic,
+    wire_segments: &[[[f64; 2]; 2]],
+    connected_segments: &BTreeSet<usize>,
+    at: [f64; 2],
+) -> Option<String> {
+    let connected_directive = schematic.screen.items.iter().filter_map(|item| match item {
+        SchItem::Label(other) if other.kind == crate::model::LabelKind::Directive => {
+            if connected_segments.is_empty() {
+                points_equal(other.at, at).then_some(other)
+            } else {
+                connected_segments
+                    .iter()
+                    .any(|segment_index| {
+                        let segment = wire_segments[*segment_index];
+                        point_on_wire_segment(other.at, segment[0], segment[1])
+                    })
+                    .then_some(other)
+            }
+        }
+        _ => None,
+    });
+
+    connected_directive
+        .clone()
+        .find_map(|directive| {
+            resolve_directive_netclass_value(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                directive,
+            )
+        })
+        .or_else(|| {
+            schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => Some(shape),
+                    _ => None,
+                })
+                .filter(|rule_area| {
+                    rule_area_contains_connected_wire_component(
+                        rule_area,
+                        at,
+                        wire_segments,
+                        connected_segments,
+                    )
+                })
+                .find_map(|rule_area| {
+                    schematic
+                        .screen
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            SchItem::Label(other)
+                                if other.kind == crate::model::LabelKind::Directive
+                                    && point_in_polygon(other.at, &rule_area.points) =>
+                            {
+                                Some(other)
+                            }
+                            _ => None,
+                        })
+                        .find_map(|directive| {
+                            resolve_directive_netclass_value(
+                                schematics,
+                                sheet_paths,
+                                loaded_path,
+                                project,
+                                current_variant,
+                                directive,
+                            )
+                        })
+                })
+        })
+}
+
 // Upstream parity: reduced local helper for the non-connectivity subset of
 // `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1 port because the current tree still lacks
 // KiCad's fuller connectivity-backed resolver stack, but it is needed so the reduced net snapshot
@@ -4955,78 +5062,17 @@ pub(crate) fn resolve_label_connectivity_text_var(
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),
         "SHORT_NET_NAME" => Some(short_net_name(&net_name)),
-        "NET_CLASS" => {
-            let connected_directive = schematic.screen.items.iter().filter_map(|item| match item {
-                SchItem::Label(other) if other.kind == crate::model::LabelKind::Directive => {
-                    connected_segments
-                        .iter()
-                        .any(|segment_index| {
-                            let segment = wire_segments[*segment_index];
-                            point_on_wire_segment(other.at, segment[0], segment[1])
-                        })
-                        .then_some(other)
-                }
-                _ => None,
-            });
-
-            connected_directive
-                .clone()
-                .find_map(|directive| {
-                    resolve_directive_netclass_value(
-                        schematics,
-                        sheet_paths,
-                        loaded_path,
-                        project,
-                        current_variant,
-                        directive,
-                    )
-                })
-                .or_else(|| {
-                    schematic
-                        .screen
-                        .items
-                        .iter()
-                        .filter_map(|item| match item {
-                            SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => {
-                                Some(shape)
-                            }
-                            _ => None,
-                        })
-                        .filter(|rule_area| {
-                            rule_area_contains_connected_wire_component(
-                                rule_area,
-                                label.at,
-                                &wire_segments,
-                                &connected_segments,
-                            )
-                        })
-                        .find_map(|rule_area| {
-                            schematic
-                                .screen
-                                .items
-                                .iter()
-                                .filter_map(|item| match item {
-                                    SchItem::Label(other)
-                                        if other.kind == crate::model::LabelKind::Directive
-                                            && point_in_polygon(other.at, &rule_area.points) =>
-                                    {
-                                        Some(other)
-                                    }
-                                    _ => None,
-                                })
-                                .find_map(|directive| {
-                                    resolve_directive_netclass_value(
-                                        schematics,
-                                        sheet_paths,
-                                        loaded_path,
-                                        project,
-                                        current_variant,
-                                        directive,
-                                    )
-                                })
-                        })
-                })
-        }
+        "NET_CLASS" => resolve_point_netclass_value(
+            schematics,
+            sheet_paths,
+            loaded_path,
+            project,
+            current_variant,
+            schematic,
+            &wire_segments,
+            &connected_segments,
+            label.at,
+        ),
         _ => None,
     }
 }

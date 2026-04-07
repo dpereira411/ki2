@@ -118,7 +118,7 @@ naming, which it currently does not.
 Work this list from top to bottom unless direct upstream comparison reveals a real prerequisite.
 
 1. Remaining connection-backed shown-text exactness
-   - `${REF:NET_CLASS(pin)}`
+   - drawing-sheet/default worksheet exactness now outranks the remaining connection-backed tail
 2. Remaining drawing-sheet `TestTextVars()` coverage
    - typed project source path is now modeled
    - reduced custom/embedded worksheet `tbtext` parsing and shown-text ERC coverage are live
@@ -270,10 +270,11 @@ Current status:
   - `${REF:NET_NAME(pin)}`
   - `${REF:SHORT_NET_NAME(pin)}`
   - `${REF:PIN_NAME(pin)}`
+- reduced cross-reference shown-text now also covers:
+  - `${REF:NET_CLASS(pin)}`
 - the remaining gap is fuller KiCad settings/subgraph exactness, not absence of the rule
-- `${REF:NET_CLASS(pin)}` is still pending on the reduced connectivity side
-- the remaining drawing-sheet text-vars slice is separately blocked on the missing worksheet model,
-  not on the current reduced connectivity layer
+- the remaining drawing-sheet text-vars slice is now blocked on default/full worksheet parity, not
+  on the current reduced connectivity layer
 
 ## Net Naming / CLI Requirements
 
