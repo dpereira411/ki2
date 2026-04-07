@@ -42,6 +42,10 @@ fn temp_schematic(name: &str, src: &str) -> PathBuf {
     path
 }
 
+fn ki2_binary() -> &'static str {
+    env!("CARGO_BIN_EXE_ki2")
+}
+
 fn init_git_repo_with_head(dir: &Path) -> (String, String) {
     let run = |args: &[&str]| {
         let status = Command::new("git")
@@ -110,6 +114,58 @@ fn temp_dir_path(name: &str) -> PathBuf {
         .expect("clock")
         .as_nanos();
     env::temp_dir().join(format!("{name}_{nanos}"))
+}
+
+#[test]
+fn cli_erc_reports_clean_schematic() {
+    let path = temp_schematic(
+        "cli_erc_clean",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4"))"#,
+    );
+
+    let output = Command::new(ki2_binary())
+        .args(["erc", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 erc");
+
+    assert!(
+        output.status.success(),
+        "erc must succeed on clean schematic"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("found 0 violations"), "{stdout}");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn cli_erc_reports_violations() {
+    let path = temp_schematic(
+        "cli_erc_violation",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (text "${ERC_ERROR worksheet-like failure}" (at 1 2 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let output = Command::new(ki2_binary())
+        .args(["erc", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 erc");
+
+    assert!(
+        !output.status.success(),
+        "erc must exit nonzero when violations are present"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("worksheet-like failure"), "{stdout}");
+    assert!(stdout.contains("found 2 violations"), "{stdout}");
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
