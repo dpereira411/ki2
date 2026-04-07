@@ -1779,15 +1779,31 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         .map(|ch| ch.to_ascii_lowercase().to_string())
         .unwrap_or_default();
 
+    let upsert_primary_param =
+        |sim_model: &mut crate::model::SimModel, name: String, param_value: String| {
+            if let Some(existing) = sim_model
+                .param_pairs
+                .iter_mut()
+                .find(|(param_name, _)| param_name.eq_ignore_ascii_case(&name))
+            {
+                existing.1 = param_value.clone();
+            } else {
+                sim_model
+                    .param_pairs
+                    .insert(0, (name.clone(), param_value.clone()));
+            }
+
+            sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
+            sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
+            sim_model.stored_value = Some(value.to_string());
+        };
+
     match (
         sim_model.device.as_deref().map(str::trim),
         sim_model.model_type.as_deref().map(str::trim),
     ) {
         (Some("R") | Some("C") | Some("L"), None | Some("")) => {
-            if sim_model.params.is_some()
-                || !sim_model.param_pairs.is_empty()
-                || sim_model.value_binding.is_some()
-            {
+            if sim_model.value_binding.is_some() {
                 return defaulted_pins;
             }
 
@@ -1795,31 +1811,64 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
                 sim_model.model_type = Some("=".to_string());
             }
 
-            sim_model.param_pairs = vec![(
+            upsert_primary_param(
+                sim_model,
                 prefix_param,
                 normalize_inferred_si_value(value).unwrap_or_else(|| value.to_string()),
-            )];
+            );
         }
         (Some("V") | Some("I"), None | Some("") | Some("DC")) => {
-            if sim_model.params.is_some()
-                || !sim_model.param_pairs.is_empty()
-                || sim_model.value_binding.is_some()
-            {
+            if sim_model.value_binding.is_some() {
                 return defaulted_pins;
             }
 
             let (param_name, param_value) = split_inferred_source_value(value);
             sim_model.model_type.get_or_insert_with(|| "DC".to_string());
-            sim_model.param_pairs = vec![(param_name.to_string(), param_value)];
+            upsert_primary_param(sim_model, param_name.to_string(), param_value);
+        }
+        (
+            Some("V") | Some("I"),
+            Some(
+                "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "WHITENOISE" | "PINKNOISE" | "BURSTNOISE"
+                | "RANDUNIFORM" | "RANDGAUSSIAN" | "RANDEXP" | "RANDPOISSON" | "TRNOISE"
+                | "TRRANDOM",
+            ),
+        ) => {
+            if sim_model.value_binding.is_some() {
+                return defaulted_pins;
+            }
+
+            let Some(primary_name) = current_internal_source_primary_param_name(
+                sim_model.model_type.as_deref().unwrap_or_default(),
+            ) else {
+                return defaulted_pins;
+            };
+
+            let Some(primary_value) = normalize_inferred_si_value(value) else {
+                return defaulted_pins;
+            };
+
+            upsert_primary_param(sim_model, primary_name.to_string(), primary_value);
         }
         _ => return defaulted_pins,
     }
 
-    sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
     maybe_default_current_sim_pins(sim_model, &source_pins);
-    sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
-    sim_model.stored_value = Some(value.to_string());
     true
+}
+
+fn current_internal_source_primary_param_name(model_type: &str) -> Option<&'static str> {
+    match model_type.trim().to_ascii_uppercase().as_str() {
+        "SIN" => Some("dc"),
+        "PULSE" => Some("y1"),
+        "EXP" => Some("y1"),
+        "AM" => Some("vo"),
+        "SFFM" => Some("vo"),
+        "WHITENOISE" | "PINKNOISE" | "TRNOISE" => Some("rms"),
+        "BURSTNOISE" => Some("ampl"),
+        "RANDUNIFORM" | "RANDGAUSSIAN" | "RANDEXP" | "RANDPOISSON" | "TRRANDOM" => Some("ts"),
+        _ => None,
+    }
 }
 
 fn hydrate_current_raw_spice_value(symbol: &mut Symbol) -> bool {

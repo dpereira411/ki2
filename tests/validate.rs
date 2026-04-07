@@ -9355,6 +9355,90 @@ fn load_tree_defaults_current_pulse_source_sim_pins_from_fields() {
 }
 
 #[test]
+fn load_tree_hydrates_missing_current_primary_param_from_value() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000091d")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:V"
+      (symbol "V_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "+" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "-" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "1Meg")
+    (property "Sim.Device" "V")
+    (property "Sim.Type" "PULSE")
+    (property "Sim.Params" "y2=2 td=1n")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic(
+        "loader_hydrates_missing_current_primary_param_from_value",
+        src,
+    );
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.stored_value.as_deref()),
+        Some("1Meg")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![
+            ("y1".to_string(), "1M".to_string()),
+            ("y2".to_string(), "2".to_string()),
+            ("td".to_string(), "1n".to_string()),
+        ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_tracks_current_raw_spice_model_from_value() {
     let src = r#"(kicad_sch
   (version 20260306)
