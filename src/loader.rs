@@ -1639,6 +1639,12 @@ impl SchematicLoader {
     // label. Current-sheet field refresh stays in `update_all_screen_references()`. Remaining
     // divergence is limited to the still-missing settings gate and richer current-sheet-only field
     // display semantics beyond the current model.
+    // Upstream parity: local loader-side analogue for the page-ref-map half of
+    // `SCHEMATIC::RecomputeIntersheetRefs()`. This is not 1:1 yet because the current Rust label
+    // model still has no `SCH_LABEL_BASE::GetShownText( sheet )` equivalent, so the page-ref map
+    // is keyed by raw global-label text instead of sheet-path-resolved shown text. That remaining
+    // drift is blocked on adding occurrence-aware label text resolution, not on another branch
+    // tweak in this routine.
     fn recompute_intersheet_refs(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
         let mut virtual_page_to_sheet_page = HashMap::new();
@@ -1774,7 +1780,8 @@ impl SchematicLoader {
 // split across loader state plus this helper. It exists to keep non-current screens on their
 // parsed intersheet-ref field text while applying resolved text/legacy position fixup only on the
 // selected sheet. Remaining divergence is limited to richer typed settings coverage beyond the
-// current intersheet-ref subset and fuller shape-hatching geometry/cache exactness.
+// current intersheet-ref subset, missing shown-text-based label resolution for page-ref lookup,
+// and fuller shape-hatching geometry/cache exactness.
 pub(crate) fn refresh_current_sheet_intersheet_refs(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],

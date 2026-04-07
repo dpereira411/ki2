@@ -71,6 +71,10 @@ Current ERC blocker:
     hierarchy-wide page-ref computation stays separate from current-sheet label refresh, and
     non-current screens keep their parsed intersheet-ref field text
   - remaining blocker under that same routine is narrower:
+    - hierarchy-wide intersheet page-ref recompute is still keyed by raw `label.text`, while
+      upstream uses each global label's sheet-path-resolved shown text
+      - blocked on adding a reduced occurrence-aware label shown-text resolution path
+      - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet

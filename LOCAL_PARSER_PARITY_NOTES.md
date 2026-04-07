@@ -310,6 +310,17 @@ What remains after that correction:
     - `prefix = "["`
     - `suffix = "]"`
   - remaining narrower drift under the same routine:
+    - upstream still keys the hierarchy-wide page-ref map by each global label's sheet-path
+      resolved shown text (`GetShownText( &sheet, false )`), while the current Rust loader still
+      keys it by raw `label.text`
+      - blocker: the current label/text model has no occurrence-aware shown-text resolution path
+      - unblock path:
+        1. add a reduced `Label::shown_text(...)` / shared text-resolution analogue that can read
+           sheet-path and current-variant state
+        2. thread the selected occurrence/variant context into global-label page-ref-map
+           recomputation
+        3. lock page-ref grouping and current-sheet intersheet-ref display with a variable-backed
+           global-label regression
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond
