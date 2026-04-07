@@ -352,6 +352,12 @@ fn cli_netlist_writes_reduced_xml_by_default() {
         r#"(kicad_sch
   (version 20260306)
   (generator "ki2")
+  (title_block
+    (title "Main ${PROJECTNAME}")
+    (company "OpenAI")
+    (rev "A")
+    (date "2026-04-07")
+    (comment 1 "Build ${PROJECTNAME}"))
   (paper "A4")
   (lib_symbols
     (symbol "Device:R"
@@ -377,6 +383,15 @@ fn cli_netlist_writes_reduced_xml_by_default() {
   (global_label "NET_OUT" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
     );
     let report_path = path.with_extension("xml");
+    let project_path = path.with_extension("kicad_pro");
+    fs::write(
+        &project_path,
+        r#"{
+  "meta": { "version": 1 },
+  "text_variables": { "PROJECTNAME": "CliNetlist" }
+}"#,
+    )
+    .expect("write project");
 
     let output = Command::new(ki2_binary())
         .args(["netlist", path.to_str().expect("path string")])
@@ -388,7 +403,42 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     assert!(stdout.contains(report_path.to_str().expect("report path")));
 
     let report = fs::read_to_string(&report_path).expect("read netlist");
+    let expected_project_name = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .expect("project stem");
     assert!(report.contains("<export version=\"E\">"), "{report}");
+    assert!(report.contains("<design>"), "{report}");
+    let expected_source_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("source file name");
+    assert!(
+        report.contains(&format!("<source>/")) && report.contains(expected_source_name),
+        "{report}"
+    );
+    assert!(report.contains("<tool>Eeschema 0.1.0</tool>"), "{report}");
+    assert!(
+        report.contains("<textvar name=\"PROJECTNAME\">CliNetlist</textvar>"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<sheet number=\"1\" name=\"/\" tstamps=\"/\">"),
+        "{report}"
+    );
+    assert!(
+        report.contains(&format!("<title>Main {expected_project_name}</title>")),
+        "{report}"
+    );
+    assert!(report.contains("<company>OpenAI</company>"), "{report}");
+    assert!(report.contains("<rev>A</rev>"), "{report}");
+    assert!(report.contains("<date>2026-04-07</date>"), "{report}");
+    assert!(
+        report.contains(&format!(
+            "<comment number=\"1\" value=\"Build {expected_project_name}\" />"
+        )),
+        "{report}"
+    );
     assert!(report.contains("<components>"), "{report}");
     assert!(report.contains("<comp ref=\"R1\">"), "{report}");
     assert!(report.contains("<value>10k</value>"), "{report}");
@@ -414,6 +464,7 @@ fn cli_netlist_writes_reduced_xml_by_default() {
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
+    let _ = fs::remove_file(project_path);
 }
 
 #[test]

@@ -5195,7 +5195,13 @@ fn resolve_project_text_var(
 // token slice used by intersheet shown text and reduced drawing-sheet text. `KICAD_VERSION` is
 // still not 1:1 KiCad because the local tree falls back to schematic generator metadata instead of
 // the real application version string.
-fn resolve_schematic_text_var(
+// Upstream parity: reduced local analogue for the schematic/project fallback half of
+// `SCHEMATIC::ResolveTextVar()`. This is not 1:1 because the current tree still lacks the full
+// project/controller resolver stack, but it now covers the exercised schematic/title-block/project
+// token slice used by intersheet shown text, reduced drawing-sheet text, and reduced netlist
+// design-header export. `KICAD_VERSION` is still not 1:1 KiCad because the local tree falls back
+// to schematic generator metadata instead of KiCad build metadata.
+pub(crate) fn resolve_schematic_text_var(
     schematics: &[Schematic],
     loaded_path: &LoadedSheetPath,
     project: Option<&LoadedProjectSettings>,

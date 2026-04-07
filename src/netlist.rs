@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::core::SchematicProject;
 use crate::erc::projected_symbol_pin_info;
 use crate::loader::{
-    SymbolPinTextVarKind, resolve_point_connectivity_text_var, resolved_symbol_text_state,
+    SymbolPinTextVarKind, resolve_point_connectivity_text_var, resolve_schematic_text_var,
+    resolve_sheet_text_var, resolve_text_variables, resolved_symbol_text_state,
 };
 use crate::model::{Property, SchItem, Symbol};
+use time::{OffsetDateTime, macros::format_description};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetlistComponent {
@@ -45,6 +48,28 @@ pub struct NetlistNet {
     pub name: String,
     pub class: String,
     pub nodes: Vec<NetlistNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistSheetDesign {
+    pub number: usize,
+    pub name: String,
+    pub tstamps: String,
+    pub title: String,
+    pub company: String,
+    pub revision: String,
+    pub date: String,
+    pub source: String,
+    pub comments: Vec<(usize, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistDesign {
+    pub source: String,
+    pub date: String,
+    pub tool: String,
+    pub text_vars: Vec<(String, String)>,
+    pub sheets: Vec<NetlistSheetDesign>,
 }
 
 fn resolved_property_value(properties: &[Property], token: &str) -> Option<String> {
@@ -327,12 +352,185 @@ fn escape_xml(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeRoot()` /
-// `makeSymbols()`. This is not a 1:1 KiCad netlist exporter because the Rust tree still emits only
-// the first live XML component slice and omits libparts/libraries/nets, but it preserves the same
-// outer XML root and component element ownership instead of inventing a repo-local export schema.
+fn current_iso8601_datetime() -> String {
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    now.format(format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second]"
+    ))
+    .unwrap_or_else(|_| "1970-01-01T00:00:00".to_string())
+}
+
+fn path_filename(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn human_sheet_name(sheet_path: &crate::loader::LoadedSheetPath) -> String {
+    if sheet_path.instance_path.is_empty() {
+        "/".to_string()
+    } else {
+        sheet_path
+            .sheet_name
+            .clone()
+            .unwrap_or_else(|| sheet_path.instance_path.clone())
+    }
+}
+
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeDesignHeader()`. This is
+// not a 1:1 KiCad design header because the Rust tree still lacks the full hierarchy-path display
+// strings, project/build-version ownership, and broader worksheet/project metadata stack, but it
+// preserves the current root-source/date/tool ownership, project text vars, and per-sheet
+// title-block/source export needed by the live XML CLI slice.
+pub fn collect_xml_design(project: &SchematicProject) -> NetlistDesign {
+    let text_vars = project
+        .project
+        .as_ref()
+        .map(|project| {
+            project
+                .text_variables
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut sheets = Vec::new();
+
+    for (index, sheet_path) in project.sheet_paths.iter().enumerate() {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+        let title_block = schematic.screen.title_block.as_ref();
+        let field = |raw: Option<&str>| {
+            resolve_text_variables(
+                raw.unwrap_or_default(),
+                &|token| {
+                    resolve_sheet_text_var(
+                        &project.schematics,
+                        &project.sheet_paths,
+                        sheet_path,
+                        project.project.as_ref(),
+                        project.current_variant(),
+                        token,
+                        0,
+                    )
+                    .or_else(|| {
+                        resolve_schematic_text_var(
+                            &project.schematics,
+                            sheet_path,
+                            project.project.as_ref(),
+                            project.current_variant(),
+                            token,
+                        )
+                    })
+                },
+                0,
+            )
+        };
+        let comments = (1..=9)
+            .map(|number| {
+                (
+                    number,
+                    field(title_block.and_then(|title_block| title_block.comment(number))),
+                )
+            })
+            .collect();
+
+        sheets.push(NetlistSheetDesign {
+            number: index + 1,
+            name: human_sheet_name(sheet_path),
+            tstamps: if sheet_path.instance_path.is_empty() {
+                "/".to_string()
+            } else {
+                sheet_path.instance_path.clone()
+            },
+            title: field(title_block.and_then(|title_block| title_block.title.as_deref())),
+            company: field(title_block.and_then(|title_block| title_block.company.as_deref())),
+            revision: field(title_block.and_then(|title_block| title_block.revision.as_deref())),
+            date: field(title_block.and_then(|title_block| title_block.date.as_deref())),
+            source: path_filename(&schematic.path),
+            comments,
+        });
+    }
+
+    NetlistDesign {
+        source: project.root_path.to_string_lossy().into_owned(),
+        date: current_iso8601_datetime(),
+        tool: format!("Eeschema {}", env!("CARGO_PKG_VERSION")),
+        text_vars,
+        sheets,
+    }
+}
+
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeRoot()`. This is not a
+// 1:1 KiCad netlist exporter because the Rust tree still omits the full exporter base, libraries,
+// variants/groups, and non-XML formats, but it preserves the same outer XML root ownership and the
+// live reduced `design` / `components` / `libparts` / `nets` sections instead of inventing a
+// repo-local export schema.
 pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
-    let mut xml = String::from("<export version=\"E\">\n  <components>\n");
+    let design = collect_xml_design(project);
+    let mut xml = String::from("<export version=\"E\">\n");
+    xml.push_str("  <design>\n");
+    xml.push_str(&format!(
+        "    <source>{}</source>\n",
+        escape_xml(&design.source)
+    ));
+    xml.push_str(&format!("    <date>{}</date>\n", escape_xml(&design.date)));
+    xml.push_str(&format!("    <tool>{}</tool>\n", escape_xml(&design.tool)));
+
+    for (name, value) in design.text_vars {
+        xml.push_str(&format!(
+            "    <textvar name=\"{}\">{}</textvar>\n",
+            escape_xml(&name),
+            escape_xml(&value)
+        ));
+    }
+
+    for sheet in design.sheets {
+        xml.push_str(&format!(
+            "    <sheet number=\"{}\" name=\"{}\" tstamps=\"{}\">\n",
+            sheet.number,
+            escape_xml(&sheet.name),
+            escape_xml(&sheet.tstamps)
+        ));
+        xml.push_str("      <title_block>\n");
+        xml.push_str(&format!(
+            "        <title>{}</title>\n",
+            escape_xml(&sheet.title)
+        ));
+        xml.push_str(&format!(
+            "        <company>{}</company>\n",
+            escape_xml(&sheet.company)
+        ));
+        xml.push_str(&format!(
+            "        <rev>{}</rev>\n",
+            escape_xml(&sheet.revision)
+        ));
+        xml.push_str(&format!(
+            "        <date>{}</date>\n",
+            escape_xml(&sheet.date)
+        ));
+        xml.push_str(&format!(
+            "        <source>{}</source>\n",
+            escape_xml(&sheet.source)
+        ));
+
+        for (number, value) in sheet.comments {
+            xml.push_str(&format!(
+                "        <comment number=\"{}\" value=\"{}\" />\n",
+                number,
+                escape_xml(&value)
+            ));
+        }
+
+        xml.push_str("      </title_block>\n");
+        xml.push_str("    </sheet>\n");
+    }
+
+    xml.push_str("  </design>\n");
+    xml.push_str("  <components>\n");
 
     for component in collect_xml_components(project) {
         xml.push_str(&format!(

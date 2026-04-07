@@ -528,6 +528,10 @@ What is already covered indirectly:
 - duplicate sheet names check is implemented on the ERC side
 - much of the hierarchy/current-sheet/variant groundwork is already present
 - reduced XML component export is now live:
+  - reduced `design` header
+  - root source/date/tool
+  - project text vars
+  - reduced per-sheet title-block export
   - occurrence-aware component filtering
   - reference/value/footprint/datasheet/description export
   - reduced `libsource`
