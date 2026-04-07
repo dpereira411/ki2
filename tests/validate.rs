@@ -5973,6 +5973,135 @@ fn load_tree_normalizes_explicit_sim_param_field_values() {
 }
 
 #[test]
+fn load_tree_defaults_current_noise_sim_pins_from_explicit_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000032c")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:V"
+      (symbol "V_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "+" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "-" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Sim.Device" "V")
+    (property "Sim.Type" "WHITENOISE")
+    (property "Sim.Params" "rms=1 dt=2n")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic(
+        "loader_defaults_current_noise_sim_pins_from_explicit_fields",
+        src,
+    );
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.parse_warnings.is_empty());
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::BuiltIn)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_accepts_explicit_random_sim_type_fields() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000032d")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:I"
+      (symbol "I_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "+" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "-" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:I")
+    (property "Reference" "I?")
+    (property "Sim.Device" "I")
+    (property "Sim.Type" "RANDGAUSSIAN")
+    (property "Sim.Params" "ts=1n td=2n stddev=3 mean=4")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_accepts_explicit_random_sim_type_fields", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(schematic.screen.parse_warnings.is_empty());
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::BuiltIn)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "1".to_string()),
+            ("2".to_string(), "2".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn resolves_symbol_sim_library_sources_from_embedded_stack_before_filesystem() {
     let src = r#"(kicad_sch
   (version 20260306)

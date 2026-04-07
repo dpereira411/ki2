@@ -1892,6 +1892,13 @@ fn maybe_default_current_sim_pins(
                 | Some("AM")
                 | Some("SFFM")
                 | Some("PWL")
+                | Some("WHITENOISE")
+                | Some("PINKNOISE")
+                | Some("BURSTNOISE")
+                | Some("RANDUNIFORM")
+                | Some("RANDGAUSSIAN")
+                | Some("RANDEXP")
+                | Some("RANDPOISSON")
                 | Some("TRNOISE")
                 | Some("TRRANDOM")
         )
@@ -2454,7 +2461,9 @@ fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
         ) => true,
         (
             "V" | "I",
-            "DC" | "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "PWL" | "TRNOISE" | "TRRANDOM" | "=",
+            "DC" | "SIN" | "PULSE" | "EXP" | "AM" | "SFFM" | "PWL" | "WHITENOISE" | "PINKNOISE"
+            | "BURSTNOISE" | "RANDUNIFORM" | "RANDGAUSSIAN" | "RANDEXP" | "RANDPOISSON" | "TRNOISE"
+            | "TRRANDOM" | "=",
         ) => true,
         ("E" | "F" | "G" | "H" | "SUBCKT" | "XSPICE", "") => true,
         _ => false,
