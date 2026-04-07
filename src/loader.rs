@@ -528,6 +528,11 @@ impl SchematicLoader {
         }
     }
 
+    // Upstream parity: loader-side `UpdateSheetInstanceData` analogue. This local boundary keeps
+    // page propagation on the shared loaded-sheet-path list before later screen page-state refresh,
+    // rather than matching KiCad's owning C++ object graph 1:1. Direct re-audit did not find
+    // another model-visible mismatch in the current page-field representation; remaining drift is
+    // limited to richer reused-screen/current-sheet state beyond `page_number`/`page_count`.
     fn update_sheet_instance_data(&self, root_path: &Path, sheet_paths: &mut [LoadedSheetPath]) {
         let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
             return;
@@ -1409,6 +1414,12 @@ impl SchematicLoader {
         }
     }
 
+    // Upstream parity: loader-side `UpdateAllScreenReferences` analogue. This local routine keeps
+    // reused-screen refresh on the loaded-sheet-path list plus symbol-instance helpers instead of
+    // KiCad's exact screen/instance object boundaries. In the current model it is structurally
+    // close enough for ERC-visible state: it refreshes reference/unit/value/footprint from local
+    // instances, restores reused screens to their first-instance baseline, and refreshes default
+    // global-label intersheet-ref placement. Remaining drift is blocked on richer per-screen state.
     fn update_all_screen_references(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
