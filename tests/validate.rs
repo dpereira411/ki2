@@ -12279,7 +12279,7 @@ fn load_tree_migrates_legacy_whitenoise_source_fields() {
             .iter()
             .find(|property| property.key == "Sim.Type")
             .map(|property| property.value.as_str()),
-        Some("TRNOISE")
+        Some("WHITENOISE")
     );
     assert_eq!(
         symbol
@@ -12301,7 +12301,7 @@ fn load_tree_migrates_legacy_whitenoise_source_fields() {
             .sim_model
             .as_ref()
             .and_then(|sim_model| sim_model.model_type.as_deref()),
-        Some("TRNOISE")
+        Some("WHITENOISE")
     );
     assert_eq!(
         symbol
@@ -12371,7 +12371,7 @@ fn load_tree_migrates_legacy_random_source_fields() {
             .iter()
             .find(|property| property.key == "Sim.Type")
             .map(|property| property.value.as_str()),
-        Some("TRRANDOM")
+        Some("RANDGAUSSIAN")
     );
     assert_eq!(
         symbol
@@ -12393,7 +12393,7 @@ fn load_tree_migrates_legacy_random_source_fields() {
             .sim_model
             .as_ref()
             .and_then(|sim_model| sim_model.model_type.as_deref()),
-        Some("TRRANDOM")
+        Some("RANDGAUSSIAN")
     );
     assert_eq!(
         symbol
