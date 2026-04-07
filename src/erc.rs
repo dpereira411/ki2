@@ -30,6 +30,8 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_missing_units(project));
     diagnostics.extend(check_label_multiple_wires(project));
     diagnostics.extend(check_four_way_junction(project));
+    diagnostics.extend(check_floating_wires(project));
+    diagnostics.extend(check_dangling_wire_endpoints(project));
     diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_label_connectivity(project));
     diagnostics.extend(check_directive_labels(project));
@@ -1436,6 +1438,130 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
                     column: None,
                 });
             }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for the wire-only part of
+// `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`. This is not a 1:1 KiCad endpoint-owner path
+// because the Rust tree still uses the shared reduced point snapshot instead of live dangling flags
+// on `SCH_LINE` / bus-entry items. It exists so ERC now checks unconnected wire endpoints on the
+// same shared connectivity carrier as the other graph-owned wire rules. Remaining divergence is
+// bus-entry endpoint ownership.
+pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+        let points = collect_connection_points(schematic);
+
+        for item in &schematic.screen.items {
+            let SchItem::Wire(line) = item else {
+                continue;
+            };
+
+            for endpoint in [line.points.first().copied(), line.points.last().copied()]
+                .into_iter()
+                .flatten()
+            {
+                let is_dangling = points
+                    .values()
+                    .find(|point| points_equal(point.at, endpoint))
+                    .is_some_and(|point| {
+                        !point.members.iter().any(|member| {
+                            member.kind != ConnectionMemberKind::Wire
+                                || point
+                                    .members
+                                    .iter()
+                                    .filter(|member| {
+                                        member.kind == ConnectionMemberKind::Wire
+                                            && points_equal(member.at, endpoint)
+                                    })
+                                    .count()
+                                    > 1
+                        })
+                    });
+
+                if !is_dangling {
+                    continue;
+                }
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "erc-unconnected-wire-endpoint",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Unconnected wire endpoint at {}, {}",
+                        endpoint[0], endpoint[1]
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for the wire-only part of
+// `CONNECTION_GRAPH::ercCheckFloatingWires()`. This is not a 1:1 KiCad subgraph-driver pass
+// because the Rust tree still treats "floating" as a shared connected wire component with no
+// attached pins, labels, sheet pins, or no-connect markers rather than a full graph-owned driver
+// object. It exists so the current ERC runner now flags reduced floating wire components instead of
+// stopping at point-local endpoint warnings. Remaining divergence is fuller driver ownership and
+// bus-entry participation.
+pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for component in collect_connection_components(schematic) {
+            let has_wire = component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::Wire);
+
+            if !has_wire {
+                continue;
+            }
+
+            let has_connection_owner = component.members.iter().any(|member| {
+                matches!(
+                    member.kind,
+                    ConnectionMemberKind::SymbolPin
+                        | ConnectionMemberKind::SheetPin
+                        | ConnectionMemberKind::Label
+                        | ConnectionMemberKind::NoConnectMarker
+                )
+            });
+
+            if has_connection_owner {
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-wire-dangling",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Floating wire component at {}, {}",
+                    component.anchor[0], component.anchor[1]
+                ),
+                path: Some(sheet_path.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 

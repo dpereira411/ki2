@@ -371,6 +371,11 @@ Current status:
 - reduced `CONNECTION_GRAPH::ercCheckDirectiveLabels()` coverage is now live through the shared
   reduced label-component snapshot
 - the small graph-owned label/hierarchy cluster is now covered in the reduced graph
+- reduced wire-only coverage is now live for:
+  - `CONNECTION_GRAPH::ercCheckFloatingWires()`
+  - `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`
+- current remaining gap in that cluster is bus-entry participation plus fuller graph-owned
+  driver/subgraph semantics, not absence of the wire-only rules
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
@@ -386,6 +391,7 @@ Current status:
 - the next honest connection-graph ERC gaps are no longer label ownership itself; they are the
   remaining graph-owned passes without local analogues:
   - fuller bus/floating-wire/dangling-endpoint ownership once the stricter graph model grows
+    beyond the current wire-only slice
 
 ## Net Naming / CLI Requirements
 

@@ -1086,6 +1086,64 @@ fn erc_reports_dangling_directive_labels() {
 }
 
 #[test]
+fn erc_reports_floating_wires_and_dangling_endpoints() {
+    let path = temp_schematic(
+        "erc_floating_wire",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-wire-dangling"
+            && diagnostic.message == "Floating wire component at 0, 0"
+    }));
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-unconnected-wire-endpoint")
+            .count(),
+        2
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_connected_wire_endpoints() {
+    let path = temp_schematic(
+        "erc_connected_wire",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (global_label "NET" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "NET" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 0) (xy 10 0))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "erc-wire-dangling"
+                || diagnostic.code == "erc-unconnected-wire-endpoint"
+        }),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_connected_directive_labels() {
     let path = temp_schematic(
         "erc_connected_directive_label",
