@@ -8,9 +8,10 @@ use crate::core::SchematicProject;
 use crate::loader::{
     SymbolPinTextVarKind, points_equal, resolve_point_connectivity_text_var,
     resolve_schematic_text_var, resolve_sheet_text_var, resolve_text_variables,
+    resolved_label_text_property_value_without_connectivity, resolved_symbol_text_property_value,
     resolved_symbol_text_state,
 };
-use crate::model::{Property, SchItem, Symbol};
+use crate::model::{LabelKind, Property, SchItem, ShapeKind, Symbol};
 use time::{OffsetDateTime, macros::format_description};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,7 @@ pub struct NetlistComponent {
     pub fp_filters: Vec<String>,
     pub duplicate_pin_numbers_are_jumpers: bool,
     pub jumper_pin_groups: Vec<Vec<String>>,
+    pub component_classes: Vec<String>,
     pub variants: Vec<NetlistComponentVariant>,
     pub properties: Vec<(String, String)>,
 }
@@ -142,6 +144,152 @@ fn resolved_property_value(properties: &[Property], token: &str) -> Option<Strin
             property_key == canonical
         })
         .map(|property| property.value.clone())
+}
+
+fn point_in_polygon(point: [f64; 2], polygon: &[[f64; 2]]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    let mut inside = false;
+
+    for (index, start) in polygon.iter().enumerate() {
+        let end = polygon[(index + 1) % polygon.len()];
+
+        let intersects = ((start[1] > point[1]) != (end[1] > point[1]))
+            && (point[0]
+                < ((end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1])) + start[0]);
+
+        if intersects {
+            inside = !inside;
+        }
+    }
+
+    inside
+}
+
+fn collect_rule_area_component_classes(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+    symbol: &Symbol,
+) -> Vec<String> {
+    let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+        return Vec::new();
+    };
+
+    schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Shape(shape)
+                if shape.kind == ShapeKind::RuleArea
+                    && point_in_polygon(symbol.at, &shape.points) =>
+            {
+                Some(shape)
+            }
+            _ => None,
+        })
+        .flat_map(|rule_area| {
+            schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(move |item| match item {
+                    SchItem::Label(label)
+                        if label.kind == LabelKind::Directive
+                            && point_in_polygon(label.at, &rule_area.points) =>
+                    {
+                        Some(label)
+                    }
+                    _ => None,
+                })
+        })
+        .filter_map(|directive| {
+            resolved_label_text_property_value_without_connectivity(
+                &project.schematics,
+                &project.sheet_paths,
+                sheet_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                directive,
+                "Component Class",
+            )
+        })
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::getComponentClassNamesForAllSymbolUnits()`.
+// This is not a 1:1 KiCad component-class owner because the Rust tree still lacks KiCad's cached
+// rule-area child-item membership and sheet-level component-class map, but it preserves the
+// exported symbol-field and enclosing-rule-area directive-field collection, merges across
+// same-reference units, and sorts/deduplicates class names before `<component_classes>` export.
+// Remaining divergence is the still-missing child-pin/sheet-level rule-area coverage.
+fn collect_component_class_names_for_all_symbol_units(
+    project: &SchematicProject,
+    symbol: &Symbol,
+    symbol_sheet: &crate::loader::LoadedSheetPath,
+    reference: &str,
+) -> Vec<String> {
+    let mut class_names = Vec::new();
+
+    for candidate_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&candidate_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(candidate_symbol) = item else {
+                continue;
+            };
+
+            let Some(candidate_reference) = resolved_symbol_text_property_value(
+                &project.schematics,
+                candidate_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                candidate_symbol,
+                "Reference",
+            ) else {
+                continue;
+            };
+
+            if !candidate_reference.eq_ignore_ascii_case(reference) {
+                continue;
+            }
+
+            if candidate_path.instance_path == symbol_sheet.instance_path
+                && candidate_symbol.uuid == symbol.uuid
+            {
+                // Keep the same control-flow split as upstream: collect the primary symbol once,
+                // then merge any additional same-reference units/screens onto the same class set.
+            }
+
+            if let Some(value) = resolved_symbol_text_property_value(
+                &project.schematics,
+                candidate_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                candidate_symbol,
+                "Component Class",
+            ) {
+                if !value.is_empty() {
+                    class_names.push(value);
+                }
+            }
+
+            class_names.extend(collect_rule_area_component_classes(
+                project,
+                candidate_path,
+                candidate_symbol,
+            ));
+        }
+    }
+
+    class_names.sort();
+    class_names.dedup();
+    class_names
 }
 
 fn parse_alphanumeric_pin(pin: &str) -> (String, Option<i64>) {
@@ -352,6 +500,7 @@ pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponen
                 .reference
                 .eq_ignore_ascii_case(&component.reference)
         }) {
+            let candidate_classes = component.component_classes.clone();
             let current_uuid = existing.tstamps.last().cloned();
             let candidate_uuid = component.tstamps.last().cloned();
             let mut combined_tstamps = existing.tstamps.clone();
@@ -368,6 +517,12 @@ pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponen
                     existing.tstamps = combined_tstamps;
                 }
             }
+
+            let mut combined_classes = existing.component_classes.clone();
+            combined_classes.extend(candidate_classes);
+            combined_classes.sort();
+            combined_classes.dedup();
+            existing.component_classes = combined_classes;
 
             continue;
         }
@@ -649,6 +804,8 @@ fn symbol_to_xml_component(
         .split_once(':')
         .map(|(lib, part)| (lib.to_string(), part.to_string()))
         .unwrap_or_else(|| (String::new(), symbol.lib_id.clone()));
+    let component_classes =
+        collect_component_class_names_for_all_symbol_units(project, symbol, sheet_path, &reference);
     let variants = symbol
         .instances
         .iter()
@@ -801,6 +958,7 @@ fn symbol_to_xml_component(
                     .collect()
             })
             .unwrap_or_default(),
+        component_classes,
         variants,
         properties: fields.into_iter().collect(),
     })
@@ -1317,6 +1475,19 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             }
 
             xml.push_str("      </variants>\n");
+        }
+
+        if !component.component_classes.is_empty() {
+            xml.push_str("      <component_classes>\n");
+
+            for class_name in component.component_classes {
+                xml.push_str(&format!(
+                    "        <class>{}</class>\n",
+                    escape_xml(&class_name)
+                ));
+            }
+
+            xml.push_str("      </component_classes>\n");
         }
 
         if !component.properties.is_empty() {

@@ -4118,6 +4118,88 @@ pub(crate) fn resolved_symbol_text_state(
     state
 }
 
+// Upstream parity: reduced local analogue for the shown-text read taken from symbol fields by
+// `SCH_FIELD::GetShownText()` on the exporter/loader path. This is not a 1:1 symbol resolver
+// because the Rust tree still resolves from loaded occurrence snapshots instead of KiCad's live
+// hierarchy objects, but it is needed so exporter-owned symbol fields such as `Component Class`
+// follow the same occurrence/variant and sheet/project text-variable semantics as the loader.
+// Remaining divergence is the still-missing fuller symbol self-reference/net-backed text stack.
+pub(crate) fn resolved_symbol_text_property_value(
+    schematics: &[Schematic],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    symbol: &Symbol,
+    field_name: &str,
+) -> Option<String> {
+    let state = resolved_symbol_text_state(symbol, &loaded_path.instance_path, current_variant);
+    let value = resolved_text_property_value(&state.properties, field_name)?;
+
+    Some(resolve_text_variables(
+        &value,
+        &|nested| {
+            resolve_sheet_text_var(
+                schematics,
+                std::slice::from_ref(loaded_path),
+                loaded_path,
+                project,
+                current_variant,
+                nested,
+                0,
+            )
+            .or_else(|| {
+                resolve_schematic_text_var(
+                    schematics,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    nested,
+                )
+            })
+        },
+        0,
+    ))
+}
+
+// Upstream parity: reduced local analogue for the shown-text read taken from directive-label
+// fields by `SCH_FIELD::GetShownText()` in `SCH_SYMBOL::GetComponentClassNames()` and
+// `SCH_RULE_AREA::GetResolvedNetclasses()`. This is not a 1:1 label resolver because the current
+// tree still lacks KiCad's full connected-item caches, but it is needed so exporter/loader code
+// can resolve directive-owned fields through the same sheet/project text-variable path instead of
+// raw field text. Remaining divergence is the still-missing fuller label self/net connectivity
+// stack outside this direct field read.
+pub(crate) fn resolved_label_text_property_value_without_connectivity(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    label: &crate::model::Label,
+    field_name: &str,
+) -> Option<String> {
+    let token_upper = field_name.to_ascii_uppercase();
+    let property = label
+        .properties
+        .iter()
+        .find(|property| canonical_text_var_name(property) == token_upper)?;
+
+    Some(resolve_text_variables(
+        &property.value,
+        &|nested| {
+            resolve_label_text_token_without_connectivity(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                label,
+                nested,
+            )
+        },
+        0,
+    ))
+}
+
 fn resolved_text_property_value(properties: &[Property], field_name: &str) -> Option<String> {
     let canonical = field_name.to_ascii_uppercase();
     properties

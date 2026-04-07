@@ -1285,6 +1285,73 @@ fn cli_netlist_supports_reduced_kicad_format() {
 }
 
 #[test]
+fn cli_netlist_exports_component_classes() {
+    let path = temp_schematic(
+        "cli_netlist_component_classes",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:U"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "U" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "U_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:U")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 2 2 0)
+    (property "Reference" "U1" (at 2 2 0) (effects (font (size 1 1))))
+    (property "Value" "IC" (at 2 2 0) (effects (font (size 1 1))))
+    (property "Component Class" "SymbolClass" (at 2 2 0) (effects (font (size 1 1)))))
+  (rule_area
+    (polyline
+      (pts (xy 0 0) (xy 5 0) (xy 5 5) (xy 0 5))
+      (stroke (width 0.2))
+      (fill (type background))
+      (uuid "74000000-0000-0000-0000-000000000020")))
+  (directive_label "D" (shape dot) (at 1 1 0)
+    (property "Component Class" "RuleAreaClass" (at 1 1 0) (effects (font (size 1 1))))
+    (effects (font (size 1 1)))))"#,
+    );
+
+    let report_path = path.with_extension("xml");
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    let start = report
+        .find("<component_classes>")
+        .expect("component classes start");
+    let end = report
+        .find("</component_classes>")
+        .expect("component classes end");
+    let classes = &report[start..end];
+
+    assert!(classes.contains("<class>RuleAreaClass</class>"), "{report}");
+    assert!(classes.contains("<class>SymbolClass</class>"), "{report}");
+    assert!(
+        classes.find("RuleAreaClass") < classes.find("SymbolClass"),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",

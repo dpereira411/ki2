@@ -538,11 +538,12 @@ The XML / KiCad-style exporters need:
 - per-net node membership
 - stable effective net names
 
-4. component class parity
+4. reduced component class parity
 - upstream XML exporter includes:
   - reduced KiCad-format root `groups` export is live
   - reduced KiCad-format root `variants` export is live
-  - component class aggregation
+  - reduced `<component_classes>` export is live
+  - fuller rule-area child-item and sheet-level component-class aggregation still diverges
 
 ### SPICE Export Requirements
 
@@ -594,7 +595,7 @@ Do not treat exporter parity as complete until all of these have been audited ex
 - symbols
 - libraries/libparts
 - nets
-- component classes
+- fuller graph-owned netcode/name ownership
 
 3. net naming parity
 - exporter-visible net names are only as good as the connection model
@@ -631,6 +632,7 @@ What is already covered indirectly:
   - reduced component-local variant diffs on `<comp><variants>`
   - reduced KiCad-format root `<groups>` export
   - reduced KiCad-format root `<variants>` export
+  - reduced `<component_classes>` export from symbol fields and enclosing rule-area directives
   - reduced user-field export
   - reduced `sheetpath`
   - reduced `tstamps`
@@ -643,7 +645,8 @@ What is already covered indirectly:
 What is not yet explicitly tracked as complete:
 - KiCad/default `kicad` netlist CLI surface
 - exporter-base symbol/pin collection parity
-- XML/KiCad netlist structure parity
+- remaining XML/KiCad netlist structure parity is now narrower:
+  - fuller graph-owned netcode/name ownership
 - exporter-visible net naming parity
 - format-specific text normalization parity beyond the now-live XML `StrNumCmp` component/net
   ordering
