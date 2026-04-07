@@ -602,6 +602,7 @@ fn shown_symbol_property_text(
                     &project.schematics,
                     &project.sheet_paths,
                     sheet_path,
+                    project.project.as_ref(),
                     project.current_variant(),
                     token,
                 ) {
@@ -642,6 +643,7 @@ fn shown_lib_draw_text(
                     &project.schematics,
                     &project.sheet_paths,
                     sheet_path,
+                    project.project.as_ref(),
                     project.current_variant(),
                     token,
                 ) {
@@ -722,6 +724,7 @@ fn shown_label_property_text(
                         &project.schematics,
                         &project.sheet_paths,
                         sheet_path,
+                        project.project.as_ref(),
                         project.current_variant(),
                         token,
                     )

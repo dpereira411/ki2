@@ -6,8 +6,8 @@ use std::process::Command;
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    EmbeddedFile, ItemVariant, Property, PropertyKind, SchItem, Schematic, Shape, ShapeKind,
-    SheetReference, SimLibrarySource, Symbol,
+    EmbeddedFile, ItemVariant, MirrorAxis, Property, PropertyKind, SchItem, Schematic, Shape,
+    ShapeKind, SheetReference, SimLibrarySource, Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
@@ -3907,16 +3907,309 @@ fn is_parent_reference_match(reference: &str, resolved_reference: &str) -> bool 
             .is_some_and(|suffix| suffix.is_ascii_uppercase())
 }
 
-// Upstream parity: reduced local helper for the direct field-lookup subset of
-// `SCHEMATIC::ResolveCrossReference()` on the loader shown-text path. This is not a 1:1 KiCad
-// cross-reference resolver because the Rust tree still lacks connectivity-backed text vars and the
-// fuller hierarchy resolver stack, but it is needed so `${ref:FIELD[:VARIANT]}` can follow loaded
-// symbol/sheet occurrence state instead of staying stuck on the raw token. Remaining divergence is
-// the unported net-name and broader resolver surface, not this direct field lookup slice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SymbolPinTextVarKind {
+    NetName,
+    ShortNetName,
+    PinName,
+}
+
+fn parse_symbol_pin_text_var(field_name: &str) -> Option<(SymbolPinTextVarKind, &str)> {
+    let (kind, pin_number) = field_name.split_once('(')?;
+    let pin_number = pin_number.strip_suffix(')')?;
+
+    Some((
+        match kind.to_ascii_uppercase().as_str() {
+            "NET_NAME" => SymbolPinTextVarKind::NetName,
+            "SHORT_NET_NAME" => SymbolPinTextVarKind::ShortNetName,
+            "PIN_NAME" => SymbolPinTextVarKind::PinName,
+            _ => return None,
+        },
+        pin_number,
+    ))
+}
+
+fn rotate_symbol_pin_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
+    let radians = angle_degrees.to_radians();
+    let (sin, cos) = radians.sin_cos();
+    [
+        (point[0] * cos) - (point[1] * sin),
+        (point[0] * sin) + (point[1] * cos),
+    ]
+}
+
+fn project_symbol_pin_at(symbol: &Symbol, local_at: [f64; 2]) -> [f64; 2] {
+    let mut mirrored = local_at;
+
+    match symbol.mirror {
+        Some(MirrorAxis::X) => mirrored[1] = -mirrored[1],
+        Some(MirrorAxis::Y) => mirrored[0] = -mirrored[0],
+        None => {}
+    }
+
+    let rotated = rotate_symbol_pin_point(mirrored, symbol.angle);
+    [symbol.at[0] + rotated[0], symbol.at[1] + rotated[1]]
+}
+
+fn resolved_symbol_pin_name(
+    symbol: &Symbol,
+    pin_number: &str,
+    lib_pin: &crate::model::LibDrawItem,
+) -> String {
+    if let Some(alternate_name) = symbol
+        .pins
+        .iter()
+        .find(|pin| pin.number == pin_number)
+        .and_then(|pin| pin.alternate.as_deref())
+    {
+        return lib_pin
+            .alternates
+            .get(alternate_name)
+            .map(|alternate| alternate.name.clone())
+            .unwrap_or_else(|| alternate_name.to_string());
+    }
+
+    lib_pin.name.clone().unwrap_or_default()
+}
+
+fn resolved_symbol_pin_in_unit<'a>(
+    symbol: &'a Symbol,
+    unit_number: i32,
+    pin_number: &str,
+) -> Option<&'a crate::model::LibDrawItem> {
+    let lib_symbol = symbol.lib_symbol.as_ref()?;
+    let body_style = symbol.body_style.unwrap_or(1);
+
+    lib_symbol
+        .units
+        .iter()
+        .filter(|unit| unit.unit_number == unit_number && unit.body_style == body_style)
+        .flat_map(|unit| unit.draw_items.iter())
+        .find(|item| item.kind == "pin" && item.number.as_deref() == Some(pin_number))
+}
+
+// Upstream parity: reduced local helper for the pin-connection half of
+// `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 `SCH_PIN::Connection()` /
+// `GetEffectiveNetClass()` path because the Rust tree still lacks live `SCH_PIN` instances and the
+// full connection graph. It exists so the exercised pin net-name text vars can reuse the current
+// reduced wire/label snapshot instead of diverging into a second ad hoc resolver. Remaining
+// divergence is fuller connection-graph ownership and the still-pending `${REF:NET_CLASS(pin)}`
+// slice.
+fn resolve_point_connectivity_text_var(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    at: [f64; 2],
+    token_kind: SymbolPinTextVarKind,
+) -> Option<String> {
+    let schematic = schematics
+        .iter()
+        .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let wire_segments = collect_wire_segments(schematic);
+    let junctions = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction.at),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, at);
+
+    let net_name = if connected_segments.is_empty() {
+        schematic
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
+                    points_equal(other.at, at).then_some(other)
+                }
+                _ => None,
+            })
+            .map(|other| {
+                shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    other,
+                )
+            })
+            .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+    } else {
+        schematic
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
+                    connected_segments
+                        .iter()
+                        .any(|segment_index| {
+                            let segment = wire_segments[*segment_index];
+                            point_on_wire_segment(other.at, segment[0], segment[1])
+                        })
+                        .then_some(other)
+                }
+                _ => None,
+            })
+            .map(|other| {
+                shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    other,
+                )
+            })
+            .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+    }?;
+
+    match token_kind {
+        SymbolPinTextVarKind::NetName => Some(net_name),
+        SymbolPinTextVarKind::ShortNetName => Some(short_net_name(&net_name)),
+        SymbolPinTextVarKind::PinName => None,
+    }
+}
+
+// Upstream parity: reduced local helper for the symbol pin-function branch inside
+// `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 KiCad pin/connection path because the Rust
+// tree still lacks live `SCH_PIN` objects and the full connection graph. It exists so shown-text
+// cross references can resolve the exercised `${REF:NET_NAME(pin)}` /
+// `${REF:SHORT_NET_NAME(pin)}` / `${REF:PIN_NAME(pin)}` slice against loaded symbol/lib-pin state
+// instead of leaving those tokens unresolved. Remaining divergence is the fuller pin-function
+// family, including `${REF:NET_CLASS(pin)}`, and fuller connection-graph exactness beyond the
+// current reduced model.
+fn resolve_symbol_pin_text_var(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    resolved_reference: &str,
+    field_name: &str,
+    symbol: &Symbol,
+    candidate_path: &LoadedSheetPath,
+) -> Option<String> {
+    let (token_kind, pin_number) = parse_symbol_pin_text_var(field_name)?;
+    let current_unit = symbol.unit.unwrap_or(1);
+
+    if let Some(lib_pin) = resolved_symbol_pin_in_unit(symbol, current_unit, pin_number) {
+        if token_kind == SymbolPinTextVarKind::PinName {
+            return Some(resolved_symbol_pin_name(symbol, pin_number, lib_pin));
+        }
+
+        let pin_at = project_symbol_pin_at(symbol, lib_pin.at.unwrap_or([0.0, 0.0]));
+        return resolve_point_connectivity_text_var(
+            schematics,
+            sheet_paths,
+            candidate_path,
+            project,
+            current_variant,
+            pin_at,
+            token_kind,
+        )
+        .or_else(|| Some(String::new()));
+    }
+
+    let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+        return Some(format!("<Unresolved: pin {pin_number}>"));
+    };
+    let Some(pin_unit) = lib_symbol
+        .units
+        .iter()
+        .flat_map(|unit| {
+            unit.draw_items
+                .iter()
+                .map(move |pin| (unit.unit_number, pin))
+        })
+        .find(|(_, pin)| pin.kind == "pin" && pin.number.as_deref() == Some(pin_number))
+        .map(|(unit_number, _)| unit_number)
+    else {
+        return Some(format!("<Unresolved: pin {pin_number}>"));
+    };
+
+    for alternate_path in ordered_sheet_paths(sheet_paths, loaded_path) {
+        let Some(schematic) = schematics
+            .iter()
+            .find(|schematic| schematic.path == alternate_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(candidate_symbol) = item else {
+                continue;
+            };
+            let state = resolved_symbol_text_state(
+                candidate_symbol,
+                &alternate_path.instance_path,
+                current_variant,
+            );
+            let reference_text = resolved_text_property_value(
+                &state.properties,
+                PropertyKind::SymbolReference.canonical_key(),
+            );
+
+            if reference_text
+                .as_deref()
+                .is_none_or(|reference| !reference.eq_ignore_ascii_case(resolved_reference))
+            {
+                continue;
+            }
+
+            if candidate_symbol.unit.unwrap_or(1) != pin_unit {
+                continue;
+            }
+
+            if let Some(lib_pin) =
+                resolved_symbol_pin_in_unit(candidate_symbol, pin_unit, pin_number)
+            {
+                if token_kind == SymbolPinTextVarKind::PinName {
+                    return Some(resolved_symbol_pin_name(
+                        candidate_symbol,
+                        pin_number,
+                        lib_pin,
+                    ));
+                }
+
+                let pin_at =
+                    project_symbol_pin_at(candidate_symbol, lib_pin.at.unwrap_or([0.0, 0.0]));
+                return resolve_point_connectivity_text_var(
+                    schematics,
+                    sheet_paths,
+                    alternate_path,
+                    project,
+                    current_variant,
+                    pin_at,
+                    token_kind,
+                )
+                .or_else(|| Some(String::new()));
+            }
+        }
+    }
+
+    Some(format!("<Unit {pin_unit} not placed>"))
+}
+
+// Upstream parity: reduced local helper for the direct field-lookup and exercised symbol
+// pin-function subset of `SCHEMATIC::ResolveCrossReference()` on the loader shown-text path. This
+// is not a 1:1 KiCad cross-reference resolver because the Rust tree still lacks the fuller
+// hierarchy resolver stack and full connection graph. It is needed so `${ref:FIELD[:VARIANT]}` and
+// the exercised `${ref:NET_NAME(pin)}` / `${ref:SHORT_NET_NAME(pin)}` / `${ref:PIN_NAME(pin)}`
+// slice can follow loaded symbol/sheet occurrence state instead of staying stuck on raw tokens.
+// Remaining divergence is the broader resolver surface, including `${ref:NET_CLASS(pin)}`.
 pub(crate) fn resolve_cross_reference_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
     token: &str,
 ) -> Option<String> {
@@ -3941,10 +4234,9 @@ pub(crate) fn resolve_cross_reference_text_var(
         for item in &schematic.screen.items {
             match item {
                 SchItem::Symbol(symbol) => {
-                    let Some(symbol_uuid) = symbol.uuid.as_deref() else {
-                        continue;
-                    };
-                    let full_path = format!("{}/{}", candidate_path.symbol_path, symbol_uuid);
+                    let full_path = symbol.uuid.as_deref().map(|symbol_uuid| {
+                        format!("{}/{}", candidate_path.symbol_path, symbol_uuid)
+                    });
                     let state = resolved_symbol_text_state(
                         symbol,
                         &candidate_path.instance_path,
@@ -3958,8 +4250,13 @@ pub(crate) fn resolve_cross_reference_text_var(
                         .clone()
                         .unwrap_or_else(|| reference.to_string());
 
-                    let matches = reference == full_path
-                        || reference == symbol_uuid
+                    let matches = full_path
+                        .as_deref()
+                        .is_some_and(|full_path| reference == full_path)
+                        || symbol
+                            .uuid
+                            .as_deref()
+                            .is_some_and(|symbol_uuid| reference == symbol_uuid)
                         || reference_text
                             .as_deref()
                             .is_some_and(|text| text.eq_ignore_ascii_case(reference));
@@ -3974,6 +4271,20 @@ pub(crate) fn resolve_cross_reference_text_var(
                                 Some((resolved_reference, state.properties.clone()));
                         }
                         continue;
+                    }
+
+                    if let Some(value) = resolve_symbol_pin_text_var(
+                        schematics,
+                        sheet_paths,
+                        loaded_path,
+                        project,
+                        effective_variant,
+                        &resolved_reference,
+                        field_name,
+                        symbol,
+                        candidate_path,
+                    ) {
+                        return Some(value);
                     }
 
                     if let Some(value) = resolved_text_property_value(&state.properties, field_name)
@@ -4249,6 +4560,7 @@ pub(crate) fn resolve_label_text_token_without_connectivity(
             schematics,
             sheet_paths,
             loaded_path,
+            project,
             current_variant,
             token,
         ) {
@@ -4930,6 +5242,7 @@ pub(crate) fn shown_global_label_text(
                     schematics,
                     sheet_paths,
                     loaded_path,
+                    project,
                     current_variant,
                     token,
                 ) {

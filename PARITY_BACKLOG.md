@@ -92,6 +92,13 @@ Still pending for ERC:
   - graph-owned pin contexts and marker-selection heuristics
   - broader driver/no-connect/subgraph exactness
 
+Current drawing-sheet blocker:
+- the Rust tree has no drawing-sheet/page-layout model at all
+- there is no local equivalent of KiCad's `DS_PROXY_VIEW_ITEM` / `DS_DRAW_ITEM_LIST` path used by
+  `ERC_TESTER::TestTextVars( aDrawingSheet )`
+- parser support for embedded-file type `worksheet` exists, but there is no loader-side worksheet
+  parsing or shown-text model to run ERC against
+
 ### Simulation
 
 Simulation-model migration/resolution is no longer on the critical path.
@@ -103,12 +110,12 @@ naming, which it currently does not.
 
 Work this list from top to bottom unless direct upstream comparison reveals a real prerequisite.
 
-1. Reduced current-sheet connectivity snapshot
-2. `NET_NAME` / `SHORT_NET_NAME` / `NET_CLASS` connection-backed parity
-3. Remaining drawing-sheet `TestTextVars()` coverage
-4. Hierarchy/loading 1:1 sign-off gaps
-5. Final parser diagnostic wording polish
-6. Simulation-model parity last
+1. Remaining connection-backed shown-text exactness
+   - `${REF:NET_CLASS(pin)}`
+2. Remaining drawing-sheet `TestTextVars()` coverage
+3. Hierarchy/loading 1:1 sign-off gaps
+4. Final parser diagnostic wording polish
+5. Simulation-model parity last
 
 ## Connectivity Graph Requirements
 
@@ -249,7 +256,14 @@ Current status:
 - reduced no-connect pin coverage is done
 - reduced same-net / connected-component ownership is now live for the exercised ERC slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
+- reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
+  - `${REF:NET_NAME(pin)}`
+  - `${REF:SHORT_NET_NAME(pin)}`
+  - `${REF:PIN_NAME(pin)}`
 - the remaining gap is fuller KiCad settings/subgraph exactness, not absence of the rule
+- `${REF:NET_CLASS(pin)}` is still pending on the reduced connectivity side
+- the remaining drawing-sheet text-vars slice is separately blocked on the missing worksheet model,
+  not on the current reduced connectivity layer
 
 ## Net Naming / CLI Requirements
 
@@ -515,6 +529,18 @@ Unblock path:
 6. expose that reduced ownership to shown-text and ERC
 7. tighten fuller `TestPinToPin()` settings/subgraph exactness only if real KiCad divergence is
    found
+
+### Blocker: Drawing-sheet `TestTextVars()` has no local model surface
+
+The current tree can resolve title-block and project text variables on schematic items, but it has
+no drawing-sheet item model to run ERC against.
+
+Unblock path:
+1. add a reduced worksheet/page-layout model on the load side
+   - enough to represent the exercised text-bearing drawing-sheet items
+2. source the active worksheet/page-layout from project/schematic inputs
+3. add a reduced shown-text resolver for those drawing-sheet text items
+4. port the remaining drawing-sheet branch of `ERC_TESTER::TestTextVars()`
 
 ### Blocker: Hierarchy loading is not yet fully 1:1 signed off
 
