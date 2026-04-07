@@ -1301,6 +1301,40 @@ fn erc_reports_bus_to_bus_conflicts() {
 }
 
 #[test]
+fn erc_reports_bus_entry_member_conflicts() {
+    let path = temp_schematic(
+        "erc_bus_entry_conflict",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 5) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (bus_entry (at 0 0) (size -5 5))
+  (global_label "ADDR9" (shape input) (at -5 5 0) (effects (font (size 1 1))))
+  (global_label "DATA[0..7]" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-bus-entry-conflict"
+            && diagnostic.message
+                == "Net ADDR9 is graphically connected to bus DATA[0..7] but is not a member of that bus at -5, 5"
+    }));
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-bus-to-net-conflict"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_connected_directive_labels() {
     let path = temp_schematic(
         "erc_connected_directive_label",

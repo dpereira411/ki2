@@ -384,8 +384,10 @@ Current status:
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusConflicts()` coverage is now live through:
   - reduced bus-member expansion from aliases and bracketed vectors
   - shared reduced label/port connected components
-- current remaining bus graph gap is `ercCheckBusToBusEntryConflicts()`, not the label/port bus
-  conflict branch
+- reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
+  - shared reduced wire/bus-entry components
+  - reduced bus-member expansion plus reduced non-bus driver names
+- the named graph-owned bus conflict trio is now covered in the reduced graph
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
@@ -400,8 +402,11 @@ Current status:
   `ERC_TESTER::TestTextVars()` text behavior
 - the next honest connection-graph ERC gaps are no longer label ownership itself; they are the
   remaining graph-owned passes without local analogues:
-  - fuller bus conflict/subgraph ownership:
-    - `ercCheckBusToBusEntryConflicts()`
+  - fuller shared connection/subgraph ownership for strict 1:1 net naming and export:
+    - item-to-subgraph identity
+    - stable connection-owned net naming
+    - netcode-style ownership
+    - richer bus-member objects beyond reduced expansion
 
 ## Net Naming / CLI Requirements
 

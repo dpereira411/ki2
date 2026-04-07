@@ -38,6 +38,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_hierarchical_sheets(project));
     diagnostics.extend(check_bus_to_net_conflicts(project));
     diagnostics.extend(check_bus_to_bus_conflicts(project));
+    diagnostics.extend(check_bus_to_bus_entry_conflicts(project));
     diagnostics.extend(check_mult_unit_pin_conflicts(project));
     diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_driver_conflicts(project));
@@ -1836,6 +1837,14 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         };
 
         for component in collect_connection_components(schematic) {
+            if component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::BusEntry)
+            {
+                continue;
+            }
+
             let mut has_bus_item = false;
             let mut has_net_item = false;
             let mut net_at = None;
@@ -2013,6 +2022,116 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                 line: None,
                 column: None,
             });
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
+// This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
+// net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
+// ownership. It exists so graph-backed ERC now checks the exercised bus-entry case where a named
+// net enters a labeled bus but is not one of that bus's reduced members. Remaining divergence is
+// fuller driver priority and bus-object ownership.
+pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for component in collect_connection_components(schematic) {
+            if !component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::BusEntry)
+            {
+                continue;
+            }
+
+            let mut bus_name = None::<String>;
+            let mut bus_members = None::<Vec<String>>;
+            let mut net_names = Vec::<String>::new();
+            let mut entry_at = component
+                .members
+                .iter()
+                .find(|member| member.kind == ConnectionMemberKind::BusEntry)
+                .map(|member| member.at)
+                .unwrap_or(component.anchor);
+
+            for item in &schematic.screen.items {
+                match item {
+                    SchItem::Bus(line) if component_contains_line_kind(&component, line) => {}
+                    SchItem::Label(label)
+                        if component.members.iter().any(|member| {
+                            member.kind == ConnectionMemberKind::Label
+                                && points_equal(member.at, label.at)
+                        }) =>
+                    {
+                        if label.kind == LabelKind::Directive {
+                            continue;
+                        }
+
+                        let shown = shown_label_text(project, sheet_path, label);
+
+                        if reduced_text_is_bus(schematic, &shown) {
+                            bus_name.get_or_insert(shown.clone());
+                            bus_members
+                                .get_or_insert_with(|| reduced_bus_members(schematic, &shown));
+                        } else {
+                            net_names.push(shown);
+                            entry_at = label.at;
+                        }
+                    }
+                    SchItem::Sheet(sheet) => {
+                        for pin in &sheet.pins {
+                            if !component.members.iter().any(|member| {
+                                member.kind == ConnectionMemberKind::SheetPin
+                                    && points_equal(member.at, pin.at)
+                            }) {
+                                continue;
+                            }
+
+                            if reduced_text_is_bus(schematic, &pin.name) {
+                                bus_name.get_or_insert(pin.name.clone());
+                                bus_members.get_or_insert_with(|| {
+                                    reduced_bus_members(schematic, &pin.name)
+                                });
+                            } else {
+                                net_names.push(pin.name.clone());
+                                entry_at = pin.at;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let (Some(bus_name), Some(bus_members)) = (bus_name, bus_members) else {
+                continue;
+            };
+
+            for net_name in net_names {
+                if bus_members.iter().any(|member| member == &net_name) {
+                    continue;
+                }
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "erc-bus-entry-conflict",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
+                        entry_at[0], entry_at[1]
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
         }
     }
 
