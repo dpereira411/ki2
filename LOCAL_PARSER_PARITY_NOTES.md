@@ -314,24 +314,24 @@ What remains after that correction:
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond
       that typed intersheet-ref subset, so broader user-config-driven overrides are not modeled
-    - KiCad also calls `shape->UpdateHatching()` during current-sheet refresh
-    - the current Rust shape model does not carry hatch geometry/update state beyond fill type/color
-    - treat both as model/settings expansion work, not as another branch tweak in `loader.rs`
+    - done for the exercised refresh branch: current-sheet refresh now materializes a reduced hatch
+      cache on selected-screen schematic shapes instead of leaving `UpdateHatching()` as a no-op
+    - remaining shape drift is narrower:
+      - the current Rust shape model still lacks KiCad's fuller polygon/knockout hatch cache
+      - hatch geometry is reduced to cached line segments, not full `SHAPE_POLY_SET` parity
+    - treat the remaining hatch gap as geometry/cache expansion work, not as another branch tweak
+      in `loader.rs`
     - typed-settings unblock path completed for current-sheet intersheet refs:
       1. a typed settings carrier now exists
       2. load/project refresh now source intersheet-ref display settings from that typed layer
       3. `refresh_current_sheet_intersheet_refs()` no longer takes ad-hoc scalar setting args
       4. focused companion-project regressions now lock the typed intersheet settings
-    - concrete unblock path for shape hatching:
-      1. expand `Shape` with hatch cache state analogous to KiCad `EDA_SHAPE`:
-         dirty flag plus generated hatch-line/polygon cache
-      2. mark that state dirty on parser/load-time geometry and fill mutations
-      3. add a local `update_hatching()` analogue that no-ops on non-hatched fills and rebuilds
-         hatch cache for rectangle/circle/closed poly shapes
-      4. call that helper from the current-sheet refresh path where upstream
-         `SCH_SHEET_PATH::UpdateAllScreenReferences()` calls `shape->UpdateHatching()`
-      5. add shape-focused regressions that prove current-sheet refresh rebuilds hatch state on
-         selected screens without mutating non-hatched shapes
+    - shape-hatching unblock path partially completed:
+      1. `Shape` now carries dirty hatch state plus cached hatch lines
+      2. current-sheet refresh now calls a local `update_hatching()` analogue on selected-screen
+         schematic shapes
+      3. focused regression locks that selected-screen hatch refresh
+      4. what remains is fuller polygon/knockout cache parity beyond the current line-cache model
 - the remaining ERC drift is no longer a variant-source blocker
 - it is back to richer occurrence-aware model coverage beyond the current symbol/sheet state
 

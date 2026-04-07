@@ -3815,6 +3815,87 @@ fn project_settings_format_current_sheet_intersheet_refs() {
 }
 
 #[test]
+fn current_sheet_refresh_materializes_shape_hatching() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_shape_hatching_refresh_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000191")
+  (rectangle
+    (start 0 0)
+    (end 10 6)
+    (stroke (width 0.2) (type solid))
+    (fill (type hatch))
+    (uuid "71000000-0000-0000-0000-000000000192"))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000181")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000182")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71000000-0000-0000-0000-000000000182" (page "2")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let shape = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Rectangle => Some(shape),
+            _ => None,
+        })
+        .expect("child rectangle");
+    assert!(shape.hatch_lines.is_empty());
+    assert!(shape.hatch_dirty);
+
+    assert!(loaded.set_current_sheet_path(
+        "/71000000-0000-0000-0000-000000000181/71000000-0000-0000-0000-000000000182"
+    ));
+    let child = loaded.current_schematic().expect("current child schematic");
+    let shape = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::Rectangle => Some(shape),
+            _ => None,
+        })
+        .expect("child rectangle");
+    assert!(!shape.hatch_lines.is_empty());
+    assert!(!shape.hatch_dirty);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn updates_symbol_references_from_loaded_sheet_paths() {
     let dir = env::temp_dir().join(format!(
         "ki2_update_screen_refs_{}",

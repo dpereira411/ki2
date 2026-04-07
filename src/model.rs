@@ -940,6 +940,8 @@ pub struct Shape {
     pub on_board: bool,
     pub dnp: bool,
     pub uuid: Option<String>,
+    pub hatch_lines: Vec<[[f64; 2]; 2]>,
+    pub hatch_dirty: bool,
 }
 
 impl Shape {
@@ -969,6 +971,119 @@ impl Shape {
             on_board: true,
             dnp: false,
             uuid: None,
+            hatch_lines: Vec::new(),
+            hatch_dirty: true,
+        }
+    }
+
+    // Upstream parity: reduced local analogue for `EDA_SHAPE::UpdateHatching()`. This is not a
+    // 1:1 port of KiCad's polygon/hole cache because the current shape model still lacks
+    // `SHAPE_POLY_SET`-style geometry ownership, but it now keeps current-screen hatch refresh as
+    // real cached line state instead of a no-op. Remaining divergence is limited to the missing
+    // polygon/knockout cache and fuller geometry exactness.
+    pub fn update_hatching(&mut self) {
+        if !self.hatch_dirty {
+            return;
+        }
+
+        let Some(fill) = self.fill.as_ref() else {
+            return;
+        };
+
+        let slopes: &[f64] = match fill.fill_type {
+            FillType::Hatch => &[-1.0],
+            FillType::ReverseHatch => &[1.0],
+            FillType::CrossHatch => &[-1.0, 1.0],
+            _ => return,
+        };
+
+        let spacing = self
+            .stroke
+            .as_ref()
+            .and_then(|stroke| stroke.width)
+            .unwrap_or(0.0)
+            * 10.0;
+
+        if spacing <= 0.0 {
+            return;
+        }
+
+        let bbox = match self.hatch_bounds() {
+            Some(bounds) => bounds,
+            None => return,
+        };
+
+        self.hatch_lines.clear();
+
+        let width = bbox[1][0] - bbox[0][0];
+        let height = bbox[1][1] - bbox[0][1];
+        let major = width.max(height);
+        let step = if major > spacing * 100.0 {
+            major / 100.0
+        } else {
+            spacing
+        };
+
+        let mut offset = 0.0;
+        while offset <= major {
+            for slope in slopes {
+                if *slope < 0.0 {
+                    self.hatch_lines.push([
+                        [bbox[0][0], bbox[0][1] + offset.min(height)],
+                        [bbox[0][0] + offset.min(width), bbox[0][1]],
+                    ]);
+                } else {
+                    self.hatch_lines.push([
+                        [bbox[0][0], bbox[1][1] - offset.min(height)],
+                        [bbox[0][0] + offset.min(width), bbox[1][1]],
+                    ]);
+                }
+            }
+
+            offset += step;
+        }
+
+        self.hatch_dirty = false;
+    }
+
+    fn hatch_bounds(&self) -> Option<[[f64; 2]; 2]> {
+        match self.kind {
+            ShapeKind::Arc | ShapeKind::Bezier => None,
+            ShapeKind::Circle => {
+                let center = *self.points.first()?;
+                let radius = self.radius?;
+                Some([
+                    [center[0] - radius, center[1] - radius],
+                    [center[0] + radius, center[1] + radius],
+                ])
+            }
+            ShapeKind::Rectangle => {
+                let start = *self.points.first()?;
+                let end = *self.points.get(1)?;
+                Some([
+                    [start[0].min(end[0]), start[1].min(end[1])],
+                    [start[0].max(end[0]), start[1].max(end[1])],
+                ])
+            }
+            ShapeKind::Polyline | ShapeKind::RuleArea => {
+                if self.points.len() < 3 {
+                    return None;
+                }
+
+                let mut min_x = self.points[0][0];
+                let mut min_y = self.points[0][1];
+                let mut max_x = self.points[0][0];
+                let mut max_y = self.points[0][1];
+
+                for point in &self.points[1..] {
+                    min_x = min_x.min(point[0]);
+                    min_y = min_y.min(point[1]);
+                    max_x = max_x.max(point[0]);
+                    max_y = max_y.max(point[1]);
+                }
+
+                Some([[min_x, min_y], [max_x, max_y]])
+            }
         }
     }
 }

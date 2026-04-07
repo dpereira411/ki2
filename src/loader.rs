@@ -1774,7 +1774,7 @@ impl SchematicLoader {
 // split across loader state plus this helper. It exists to keep non-current screens on their
 // parsed intersheet-ref field text while applying resolved text/legacy position fixup only on the
 // selected sheet. Remaining divergence is limited to richer typed settings coverage beyond the
-// current companion-project JSON fields and shape-hatching side effects.
+// current intersheet-ref subset and fuller shape-hatching geometry/cache exactness.
 pub(crate) fn refresh_current_sheet_intersheet_refs(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -1826,87 +1826,100 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     };
 
     for item in &mut schematic.screen.items {
-        let SchItem::Label(label) = item else {
-            continue;
-        };
-        if label.kind != crate::model::LabelKind::Global {
-            continue;
-        }
-
-        let Some(intersheet_refs) = label
-            .properties
-            .iter_mut()
-            .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-        else {
-            continue;
-        };
-
-        if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
-            && !intersheet_refs.visible
-        {
-            intersheet_refs.at = Some(label.at);
-        }
-
-        intersheet_refs.visible = schematic_settings.intersheet_refs.show;
-
-        if !schematic_settings.intersheet_refs.show {
-            continue;
-        }
-
-        let prefix = schematic_settings.intersheet_refs.prefix.as_str();
-        let suffix = schematic_settings.intersheet_refs.suffix.as_str();
-        intersheet_refs.value = match intersheet_ref_pages_by_label.get(&label.text) {
-            Some(raw_pages) => {
-                let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();
-                if !schematic_settings.intersheet_refs.own_page {
-                    pages.retain(|page_number| *page_number != current_sheet_path.sheet_number);
+        match item {
+            SchItem::Label(label) => {
+                if label.kind != crate::model::LabelKind::Global {
+                    continue;
                 }
 
-                let refs = if schematic_settings.intersheet_refs.short && pages.len() > 2 {
-                    let first = pages
-                        .first()
-                        .and_then(|page_number| sheet_pages_by_virtual_page.get(page_number))
-                        .cloned()
-                        .unwrap_or_default();
-                    let last = pages
-                        .last()
-                        .and_then(|page_number| sheet_pages_by_virtual_page.get(page_number))
-                        .cloned()
-                        .unwrap_or_default();
-                    format!("{first}..{last}")
-                } else {
-                    pages
-                        .into_iter()
-                        .filter_map(|page_number| sheet_pages_by_virtual_page.get(&page_number))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(",")
+                let Some(intersheet_refs) = label
+                    .properties
+                    .iter_mut()
+                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                else {
+                    continue;
                 };
 
-                if refs.is_empty() {
-                    format!("{prefix}{suffix}")
-                } else if prefix.is_empty() && suffix.is_empty() {
-                    format!("[{refs}]")
-                } else {
-                    format!("{prefix}{refs}{suffix}")
+                if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
+                    && !intersheet_refs.visible
+                {
+                    intersheet_refs.at = Some(label.at);
                 }
-            }
-            None => {
-                let refs = intersheet_ref_values
-                    .get(&label.text)
-                    .cloned()
-                    .unwrap_or_else(|| "?".to_string());
-                if prefix.is_empty() && suffix.is_empty() {
-                    refs
-                } else {
-                    format!("{prefix}{refs}{suffix}")
+
+                intersheet_refs.visible = schematic_settings.intersheet_refs.show;
+
+                if !schematic_settings.intersheet_refs.show {
+                    continue;
                 }
+
+                let prefix = schematic_settings.intersheet_refs.prefix.as_str();
+                let suffix = schematic_settings.intersheet_refs.suffix.as_str();
+                intersheet_refs.value = match intersheet_ref_pages_by_label.get(&label.text) {
+                    Some(raw_pages) => {
+                        let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();
+                        if !schematic_settings.intersheet_refs.own_page {
+                            pages.retain(|page_number| {
+                                *page_number != current_sheet_path.sheet_number
+                            });
+                        }
+
+                        let refs = if schematic_settings.intersheet_refs.short && pages.len() > 2 {
+                            let first = pages
+                                .first()
+                                .and_then(|page_number| {
+                                    sheet_pages_by_virtual_page.get(page_number)
+                                })
+                                .cloned()
+                                .unwrap_or_default();
+                            let last = pages
+                                .last()
+                                .and_then(|page_number| {
+                                    sheet_pages_by_virtual_page.get(page_number)
+                                })
+                                .cloned()
+                                .unwrap_or_default();
+                            format!("{first}..{last}")
+                        } else {
+                            pages
+                                .into_iter()
+                                .filter_map(|page_number| {
+                                    sheet_pages_by_virtual_page.get(&page_number)
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        };
+
+                        if refs.is_empty() {
+                            format!("{prefix}{suffix}")
+                        } else if prefix.is_empty() && suffix.is_empty() {
+                            format!("[{refs}]")
+                        } else {
+                            format!("{prefix}{refs}{suffix}")
+                        }
+                    }
+                    None => {
+                        let refs = intersheet_ref_values
+                            .get(&label.text)
+                            .cloned()
+                            .unwrap_or_else(|| "?".to_string());
+                        if prefix.is_empty() && suffix.is_empty() {
+                            refs
+                        } else {
+                            format!("{prefix}{refs}{suffix}")
+                        }
+                    }
+                };
+                intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
+                intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
+                    .canonical_key()
+                    .to_string();
             }
-        };
-        intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
-        intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
-            .canonical_key()
-            .to_string();
+            SchItem::Shape(shape) => {
+                shape.update_hatching();
+            }
+            _ => {}
+        }
     }
 }
 
