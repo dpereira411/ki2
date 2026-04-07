@@ -80,14 +80,13 @@ Current ERC blocker:
         `${VCSSHORTHASH}`, `${FILENAME}`, `${FILEPATH}`, `${VARIANT_DESC}`,
         `${CONNECTION_TYPE}`, reduced `${ref:FIELD[:VARIANT]}` lookup with parent-reference
         fallback and symbol-side unknown/unresolved markers, reduced wire-connected
-        `${NET_NAME}` / `${SHORT_NET_NAME}`, connected-directive `${NET_CLASS}`, and companion
-        `.kicad_pro` `text_variables`
+        `${NET_NAME}` / `${SHORT_NET_NAME}`, connected-directive and exercised rule-area-backed
+        `${NET_CLASS}`, and companion `.kicad_pro` `text_variables`
       - remaining divergence is the broader unported text-variable resolver surface
-        (fuller connection/rule-area netclass semantics), not this exercised intersheet-ref branch
+        (fuller connection-graph semantics), not this exercised intersheet-ref branch
       - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`:
-        expand reduced connectivity from wire-net naming and connected-directive netclass fields to
-        rule-area/directive ownership -> shown-text resolver wiring -> focused rule-area-backed
-        `${NET_CLASS}` regression
+        expand reduced connectivity from wire/rule-area geometry to cached connection ownership ->
+        shown-text resolver wiring -> focused connection-precedence regressions if ERC exposes them
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet

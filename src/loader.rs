@@ -6,8 +6,8 @@ use std::process::Command;
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    EmbeddedFile, ItemVariant, Property, PropertyKind, SchItem, Schematic, SheetReference,
-    SimLibrarySource, Symbol,
+    EmbeddedFile, ItemVariant, Property, PropertyKind, SchItem, Schematic, Shape, ShapeKind,
+    SheetReference, SimLibrarySource, Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
@@ -4084,6 +4084,105 @@ fn connected_wire_segment_indices(
     connected
 }
 
+fn points_share_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    points_equal(a, c) || points_equal(a, d) || points_equal(b, c) || points_equal(b, d)
+}
+
+fn segment_orientation(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
+    ((b[0] - a[0]) * (c[1] - a[1])) - ((b[1] - a[1]) * (c[0] - a[0]))
+}
+
+fn segment_intersects_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let o1 = segment_orientation(a, b, c);
+    let o2 = segment_orientation(a, b, d);
+    let o3 = segment_orientation(c, d, a);
+    let o4 = segment_orientation(c, d, b);
+
+    if o1.abs() < 1e-9 && point_on_wire_segment(c, a, b) {
+        return true;
+    }
+    if o2.abs() < 1e-9 && point_on_wire_segment(d, a, b) {
+        return true;
+    }
+    if o3.abs() < 1e-9 && point_on_wire_segment(a, c, d) {
+        return true;
+    }
+    if o4.abs() < 1e-9 && point_on_wire_segment(b, c, d) {
+        return true;
+    }
+
+    ((o1 > 0.0 && o2 < 0.0) || (o1 < 0.0 && o2 > 0.0))
+        && ((o3 > 0.0 && o4 < 0.0) || (o3 < 0.0 && o4 > 0.0))
+}
+
+fn point_in_polygon(point: [f64; 2], polygon: &[[f64; 2]]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    let mut inside = false;
+
+    for index in 0..polygon.len() {
+        let start = polygon[index];
+        let end = polygon[(index + 1) % polygon.len()];
+
+        if point_on_wire_segment(point, start, end) {
+            return true;
+        }
+
+        let intersects = ((start[1] > point[1]) != (end[1] > point[1]))
+            && (point[0]
+                < ((end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1])) + start[0]);
+
+        if intersects {
+            inside = !inside;
+        }
+    }
+
+    inside
+}
+
+// Upstream parity: reduced local helper for the rule-area half of
+// `SCH_CONNECTION_GRAPH::getEffectiveNetclasses()`. This is not a 1:1 port because the current
+// tree still lacks KiCad's cached rule-area membership and full connection graph, but it is needed
+// so current-sheet `${NET_CLASS}` can honor the exercised rule-area geometry path instead of only
+// connected directive labels. Remaining divergence is fuller cached membership and knockout/shape
+// exactness.
+fn rule_area_contains_connected_wire_component(
+    rule_area: &Shape,
+    label_at: [f64; 2],
+    wire_segments: &[[[f64; 2]; 2]],
+    connected_segments: &BTreeSet<usize>,
+) -> bool {
+    if rule_area.kind != ShapeKind::RuleArea || rule_area.points.len() < 3 {
+        return false;
+    }
+
+    if point_in_polygon(label_at, &rule_area.points) {
+        return true;
+    }
+
+    connected_segments.iter().copied().any(|segment_index| {
+        let segment = wire_segments[segment_index];
+
+        if point_in_polygon(segment[0], &rule_area.points)
+            || point_in_polygon(segment[1], &rule_area.points)
+        {
+            return true;
+        }
+
+        rule_area.points.iter().enumerate().any(|(index, start)| {
+            let end = rule_area.points[(index + 1) % rule_area.points.len()];
+
+            if points_share_segment(segment[0], segment[1], *start, end) {
+                return false;
+            }
+
+            segment_intersects_segment(segment[0], segment[1], *start, end)
+        })
+    })
+}
+
 // Upstream parity: reduced local helper for the non-connectivity token subset of
 // `SCH_LABEL_BASE::ResolveTextVar()` / `GetShownText()`. This is not a 1:1 port because the
 // current tree still lacks KiCad's fuller connectivity-backed resolver stack, but it is needed so
@@ -4157,6 +4256,43 @@ fn resolve_label_text_token_without_connectivity(
     )
 }
 
+// Upstream parity: reduced local analogue for the directive-field read in
+// `SCH_RULE_AREA::GetResolvedNetclasses()`. This is not a 1:1 port because the current tree still
+// lacks KiCad's real directive child graph and rule-area caches, but it is needed so the loader's
+// reduced `${NET_CLASS}` path resolves directive `Netclass` fields through shown-text semantics
+// instead of raw field text. Remaining divergence is the still-missing cached rule-area ownership.
+fn resolve_directive_netclass_value(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    directive: &crate::model::Label,
+) -> Option<String> {
+    directive.properties.iter().find_map(|property| {
+        let key = property.key.to_ascii_uppercase();
+        matches!(key.as_str(), "NETCLASS" | "NET CLASS" | "NET_CLASS")
+            .then(|| {
+                resolve_text_variables(
+                    &property.value,
+                    &|nested| {
+                        resolve_label_text_token_without_connectivity(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            project,
+                            current_variant,
+                            directive,
+                            nested,
+                        )
+                    },
+                    0,
+                )
+            })
+            .filter(|value| !value.is_empty())
+    })
+}
+
 // Upstream parity: reduced local helper for the non-connectivity subset of
 // `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1 port because the current tree still lacks
 // KiCad's fuller connectivity-backed resolver stack, but it is needed so the reduced net snapshot
@@ -4192,8 +4328,8 @@ fn shown_label_text_without_connectivity(
 // loader still lacks KiCad's full connectivity graph. It exists so current-sheet shown text can
 // resolve simple wire-connected `NET_NAME` / `SHORT_NET_NAME` (and a narrow field-based
 // `NET_CLASS`) instead of leaving those tokens raw. Remaining divergence is fuller connection-graph
-// semantics, especially rule-area netclass ownership and fuller bus/graph propagation beyond this
-// reduced wire-label snapshot.
+// semantics, especially fuller cached connection-graph ownership beyond this reduced
+// wire/directive/rule-area snapshot.
 fn resolve_label_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4274,11 +4410,8 @@ fn resolve_label_connectivity_text_var(
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),
         "SHORT_NET_NAME" => Some(short_net_name(&net_name)),
-        "NET_CLASS" => schematic
-            .screen
-            .items
-            .iter()
-            .filter_map(|item| match item {
+        "NET_CLASS" => {
+            let connected_directive = schematic.screen.items.iter().filter_map(|item| match item {
                 SchItem::Label(other) if other.kind == crate::model::LabelKind::Directive => {
                     connected_segments
                         .iter()
@@ -4289,31 +4422,66 @@ fn resolve_label_connectivity_text_var(
                         .then_some(other)
                 }
                 _ => None,
-            })
-            .find_map(|directive| {
-                directive.properties.iter().find_map(|property| {
-                    let key = property.key.to_ascii_uppercase();
-                    matches!(key.as_str(), "NETCLASS" | "NET CLASS" | "NET_CLASS")
-                        .then(|| {
-                            resolve_text_variables(
-                                &property.value,
-                                &|nested| {
-                                    resolve_label_text_token_without_connectivity(
+            });
+
+            connected_directive
+                .clone()
+                .find_map(|directive| {
+                    resolve_directive_netclass_value(
+                        schematics,
+                        sheet_paths,
+                        loaded_path,
+                        project,
+                        current_variant,
+                        directive,
+                    )
+                })
+                .or_else(|| {
+                    schematic
+                        .screen
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => {
+                                Some(shape)
+                            }
+                            _ => None,
+                        })
+                        .filter(|rule_area| {
+                            rule_area_contains_connected_wire_component(
+                                rule_area,
+                                label.at,
+                                &wire_segments,
+                                &connected_segments,
+                            )
+                        })
+                        .find_map(|rule_area| {
+                            schematic
+                                .screen
+                                .items
+                                .iter()
+                                .filter_map(|item| match item {
+                                    SchItem::Label(other)
+                                        if other.kind == crate::model::LabelKind::Directive
+                                            && point_in_polygon(other.at, &rule_area.points) =>
+                                    {
+                                        Some(other)
+                                    }
+                                    _ => None,
+                                })
+                                .find_map(|directive| {
+                                    resolve_directive_netclass_value(
                                         schematics,
                                         sheet_paths,
                                         loaded_path,
                                         project,
                                         current_variant,
                                         directive,
-                                        nested,
                                     )
-                                },
-                                0,
-                            )
+                                })
                         })
-                        .filter(|value| !value.is_empty())
                 })
-            }),
+        }
         _ => None,
     }
 }

@@ -340,20 +340,21 @@ What remains after that correction:
         - `${NET_NAME}`
         - `${SHORT_NET_NAME}`
         - connected-directive `${NET_CLASS}` with shown-text-resolved `Netclass` fields
+        - rule-area-backed `${NET_CLASS}` from directive labels inside the exercised rule polygon
         - reused-sheet grouping via `${SHEETNAME}`-resolved local labels
       - remaining divergence is the broader unported text-variable resolver surface
-        (`ResolveTextVar` and fuller connection/rule-area netclass semantics), not this exercised
-        intersheet-ref path
+        (`ResolveTextVar` and fuller connection-graph semantics), not this exercised intersheet-ref
+        path
       - unblock path for the remaining text-variable surface:
-        1. expand the reduced current-sheet connectivity snapshot from connected-label net naming
-           and connected-directive `Netclass` fields to real rule-area / directive ownership so
-           labels can expose upstream-style `NET_CLASS`
+        1. expand the reduced current-sheet connectivity snapshot from wire/rule-area geometry to
+           cached connection ownership so labels can follow KiCad's real `SCH_ITEM::Connection()`
+           / `GetEffectiveNetClass()` precedence
         2. keep threading that snapshot through the shared shown-text resolver as the local
            analogue for `SCH_ITEM::Connection()` / `SCH_LABEL_BASE::ResolveTextVar()`
         3. expand the reduced cross-reference resolver only if a future ERC-visible gap proves a
            still-missing KiCad branch
-        4. lock the remaining connectivity slice with focused rule-area-backed `${NET_CLASS}` and
-           later `NET_NAME` / `SHORT_NET_NAME` regressions if those branches become ERC-visible
+        4. lock the remaining connectivity slice with focused precedence regressions if current
+           ERC-visible behavior ever depends on exact connection-graph ordering
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond
