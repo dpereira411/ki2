@@ -1269,7 +1269,7 @@ fn is_supported_builtin_sim_type(device: Option<&str>, model_type: Option<&str>)
             | ("TLINE", "" | "RLGC")
             | ("SW", "V" | "I")
             | ("D", "")
-            | ("NPN" | "PNP", "VBIC" | "GUMMELPOON" | "HICUM2")
+            | ("NPN" | "PNP", "VBIC" | "GUMMELPOON" | "HICUM2" | "HICUML2")
             | ("NJFET" | "PJFET", "SHICHMANHODGES" | "PARKERSKELLERN")
             | ("NMES" | "PMES", "STATZ" | "YTTERDAL" | "HFET1" | "HFET2")
             | (
