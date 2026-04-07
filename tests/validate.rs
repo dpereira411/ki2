@@ -707,6 +707,72 @@ fn cli_netlist_omits_pinfunction_for_single_unnamed_pins() {
 }
 
 #[test]
+fn cli_netlist_sorts_components_and_nets_with_strnumcmp_ordering() {
+    let path = temp_schematic(
+        "cli_netlist_strnumcmp_ordering",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (property "Reference" "R10" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:R")
+    (at 30 0 0)
+    (property "Reference" "R2" (at 30 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 30 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (global_label "NET10" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (wire (pts (xy 20 0) (xy 30 0)))
+  (wire (pts (xy 40 0) (xy 50 0)))
+  (global_label "NET2" (shape input) (at 50 0 180) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+
+    let r2_component = report
+        .find("<comp ref=\"R2\">")
+        .expect("R2 component in xml");
+    let r10_component = report
+        .find("<comp ref=\"R10\">")
+        .expect("R10 component in xml");
+    assert!(r2_component < r10_component, "{report}");
+
+    let net2 = report
+        .find("<net code=\"1\" name=\"NET2\"")
+        .expect("NET2 in xml");
+    let net10 = report
+        .find("<net code=\"2\" name=\"NET10\"")
+        .expect("NET10 in xml");
+    assert!(net2 < net10, "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

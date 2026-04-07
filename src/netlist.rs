@@ -90,11 +90,92 @@ fn resolved_property_value(properties: &[Property], token: &str) -> Option<Strin
         .map(|property| property.value.clone())
 }
 
+fn natural_compare_segment(a: &str, b: &str) -> std::cmp::Ordering {
+    let a_trimmed = a.trim_start_matches('0');
+    let b_trimmed = b.trim_start_matches('0');
+    let a_normalized = if a_trimmed.is_empty() { "0" } else { a_trimmed };
+    let b_normalized = if b_trimmed.is_empty() { "0" } else { b_trimmed };
+
+    a_normalized
+        .len()
+        .cmp(&b_normalized.len())
+        .then_with(|| a_normalized.cmp(b_normalized))
+        .then_with(|| a.len().cmp(&b.len()))
+}
+
+fn str_num_cmp(a: &str, b: &str, ignore_case: bool) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    if a == b {
+        return Ordering::Equal;
+    }
+
+    let mut a_chars = a.chars().peekable();
+    let mut b_chars = b.chars().peekable();
+
+    loop {
+        match (a_chars.peek().copied(), b_chars.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(a_ch), Some(b_ch)) if a_ch.is_ascii_digit() && b_ch.is_ascii_digit() => {
+                let mut a_digits = String::new();
+                let mut b_digits = String::new();
+
+                while let Some(ch) = a_chars.peek().copied() {
+                    if !ch.is_ascii_digit() {
+                        break;
+                    }
+
+                    a_digits.push(ch);
+                    a_chars.next();
+                }
+
+                while let Some(ch) = b_chars.peek().copied() {
+                    if !ch.is_ascii_digit() {
+                        break;
+                    }
+
+                    b_digits.push(ch);
+                    b_chars.next();
+                }
+
+                let ordering = natural_compare_segment(&a_digits, &b_digits);
+
+                if ordering != Ordering::Equal {
+                    return ordering;
+                }
+            }
+            (Some(a_ch), Some(b_ch)) => {
+                let a_cmp = if ignore_case {
+                    a_ch.to_ascii_lowercase()
+                } else {
+                    a_ch
+                };
+                let b_cmp = if ignore_case {
+                    b_ch.to_ascii_lowercase()
+                } else {
+                    b_ch
+                };
+                let ordering = a_cmp.cmp(&b_cmp);
+                a_chars.next();
+                b_chars.next();
+
+                if ordering != Ordering::Equal {
+                    return ordering;
+                }
+            }
+        }
+    }
+}
+
 // Upstream parity: reduced local analogue for the symbol iteration portion of
 // `NETLIST_EXPORTER_XML::makeSymbols()`. This is not a 1:1 exporter-base walk because the Rust
 // tree still omits libparts and resolved nets, but it preserves the current occurrence-aware
 // component filtering, reference/value/footprint exposure, and `LIB_ID` split needed by the first
-// live netlist CLI slice.
+// live netlist CLI slice. Remaining divergence is the fuller KiCad duplicate-unit / variant /
+// libpart walk, but reference ordering now follows the upstream `StrNumCmp` path instead of plain
+// lexical sorting.
 pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponent> {
     let mut components = Vec::new();
 
@@ -120,7 +201,7 @@ pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponen
         }
     }
 
-    components.sort_by(|lhs, rhs| lhs.reference.cmp(&rhs.reference));
+    components.sort_by(|lhs, rhs| str_num_cmp(&lhs.reference, &rhs.reference, true));
     components
 }
 
@@ -167,7 +248,8 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 // exercised current-sheet node grouping, per-net net/class lookup, duplicate ref/pin erasure, and
 // single-node `+no_connect` marking needed by the first live XML netlist slice. Remaining
 // divergence is the fuller KiCad subgraph object model, stacked-pin handling, and graph-owned
-// netcode/name caches.
+// netcode/name caches. Net ordering now follows the upstream `StrNumCmp` path instead of the old
+// lexical `BTreeMap` order.
 pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
     let mut nets =
         BTreeMap::<String, (String, bool, BTreeMap<(String, String), NetlistNode>)>::new();
@@ -265,6 +347,9 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
             }
         }
     }
+
+    let mut nets = nets.into_iter().collect::<Vec<_>>();
+    nets.sort_by(|(a_name, _), (b_name, _)| str_num_cmp(a_name, b_name, false));
 
     nets.into_iter()
         .enumerate()

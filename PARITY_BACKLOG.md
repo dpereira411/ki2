@@ -628,7 +628,8 @@ What is not yet explicitly tracked as complete:
 - exporter-base symbol/pin collection parity
 - XML/KiCad netlist structure parity
 - exporter-visible net naming parity
-- format-specific sorting/text normalization parity
+- format-specific text normalization parity beyond the now-live XML `StrNumCmp` component/net
+  ordering
 - SPICE exporter parity
 - remaining XML net-node drift is now narrower:
   - stacked-pin expansion and de-dup semantics
