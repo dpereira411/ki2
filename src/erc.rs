@@ -9,7 +9,71 @@ use crate::model::SchItem;
 // implemented field-name-whitespace pass.
 pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    diagnostics.extend(check_duplicate_sheet_names(project));
     diagnostics.extend(check_field_name_whitespace(project));
+    diagnostics
+}
+
+fn shown_sheet_name(sheet: &crate::model::Sheet) -> Option<&str> {
+    sheet.properties.iter().find_map(|property| {
+        (property.kind == crate::model::PropertyKind::SheetName)
+            .then_some(property.value.as_str())
+            .or_else(|| {
+                property
+                    .key
+                    .eq_ignore_ascii_case("Sheetname")
+                    .then_some(property.value.as_str())
+            })
+    })
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestDuplicateSheetNames()`. This is
+// not a 1:1 KiCad marker pass because the Rust tree still reports plain diagnostics and still
+// reads the already-loaded sheet-name field text instead of the full `GetShownName()` display
+// stack, but it preserves the exercised same-screen duplicate-name comparison and case-insensitive
+// matching. Remaining divergence is path-sensitive shown-name exactness.
+pub fn check_duplicate_sheet_names(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for schematic in &project.schematics {
+        let sheets = schematic
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Sheet(sheet) => Some(sheet),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for (index, sheet) in sheets.iter().enumerate() {
+            let Some(name) = shown_sheet_name(sheet) else {
+                continue;
+            };
+
+            for other in sheets.iter().skip(index + 1) {
+                let Some(other_name) = shown_sheet_name(other) else {
+                    continue;
+                };
+
+                if !name.eq_ignore_ascii_case(other_name) {
+                    continue;
+                }
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-duplicate-sheet-name",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!("Duplicate sheet name: '{name}'"),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
     diagnostics
 }
 

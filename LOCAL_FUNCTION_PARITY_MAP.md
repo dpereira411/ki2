@@ -51,6 +51,8 @@ Reason:
 
 Current ERC blocker:
 - first local ERC routine is now implemented:
+  - reduced `ERC_TESTER::TestDuplicateSheetNames()` analogue is live and tested for same-screen
+    case-insensitive sheet-name collisions
   - reduced `ERC_TESTER::TestFieldNameWhitespace()` analogue is live and tested for symbol/sheet
     fields
 - next active upstream ERC target is `ERC_TESTER::TestTextVars()`

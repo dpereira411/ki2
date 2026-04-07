@@ -178,6 +178,70 @@ fn erc_reports_symbol_and_sheet_field_name_whitespace() {
 }
 
 #[test]
+fn erc_reports_duplicate_sheet_names_case_insensitively() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_duplicate_sheet_names_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let path = dir.join("root.kicad_sch");
+    let child_a = dir.join("child-a.kicad_sch");
+    let child_b = dir.join("child-b.kicad_sch");
+
+    fs::write(
+        &path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73100000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "73100000-0000-0000-0000-000000000002")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child-a.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "73100000-0000-0000-0000-000000000003")
+    (property "Sheetname" "child")
+    (property "Sheetfile" "child-b.kicad_sch"))
+)"#,
+    )
+    .expect("write root");
+    fs::write(
+        &child_a,
+        r#"(kicad_sch (version 20260306) (generator "eeschema") (uuid "73100000-0000-0000-0000-000000000011"))"#,
+    )
+    .expect("write child a");
+    fs::write(
+        &child_b,
+        r#"(kicad_sch (version 20260306) (generator "eeschema") (uuid "73100000-0000-0000-0000-000000000012"))"#,
+    )
+    .expect("write child b");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-duplicate-sheet-name"
+            && diagnostic.kind == DiagnosticKind::Validation
+            && diagnostic.severity == ki2::diagnostic::Severity::Error
+            && diagnostic.message == "Duplicate sheet name: 'Child'"
+    }));
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(child_a);
+    let _ = fs::remove_file(child_b);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)

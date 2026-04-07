@@ -364,6 +364,8 @@ What remains after that correction:
       - the reduced line-cache path now also clips 45-degree hatch segments across the full current
         bounding box instead of the earlier truncated half-box coverage
     - ERC work is now started in-tree:
+      - reduced local `ERC_TESTER::TestDuplicateSheetNames()` analogue is implemented and tested
+        for same-screen case-insensitive sheet-name collisions
       - reduced local `ERC_TESTER::TestFieldNameWhitespace()` analogue is implemented and tested
         for symbol and sheet fields
       - next active ERC routine is `ERC_TESTER::TestTextVars()`
