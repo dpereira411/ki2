@@ -103,11 +103,14 @@ impl Diagnostic {
         self
     }
 
+    // Upstream parity: local render helper for validation error locations. This is not a 1:1
+    // KiCad routine because the current CLI still exposes local diagnostic objects, but the
+    // rendered error text is now intentionally biased toward KiCad-style line/column wording
+    // instead of repo-local byte-span noise when both are available. Raw spans are still preserved
+    // on the diagnostic object for programmatic use.
     pub fn display_span_suffix(&self) -> String {
         match (self.line, self.column, self.span) {
-            (Some(line), Some(column), Some(span)) => {
-                format!(":{line}:{column} (bytes {}..{})", span.start, span.end)
-            }
+            (Some(line), Some(column), Some(_span)) => format!(":{line}:{column}"),
             (Some(line), Some(column), None) => format!(":{line}:{column}"),
             (None, None, Some(span)) => format!(":{}..{}", span.start, span.end),
             _ => String::new(),

@@ -4288,11 +4288,9 @@ fn rejects_invalid_title_block_comment_number() {
             assert_eq!(diagnostic.line, Some(6));
             assert_eq!(diagnostic.column, Some(25));
             assert!(err.to_string().contains(&format!(
-                ":{}:{} (bytes {}..{})",
+                ":{}:{}",
                 diagnostic.line.expect("line"),
-                diagnostic.column.expect("column"),
-                span.start,
-                span.end
+                diagnostic.column.expect("column")
             )));
         }
         other => panic!("expected validation error, got {other:?}"),
@@ -6057,11 +6055,9 @@ fn rejects_invalid_page_type() {
             assert_eq!(diagnostic.line, Some(5));
             assert_eq!(diagnostic.column, Some(10));
             assert!(err.to_string().contains(&format!(
-                ":{}:{} (bytes {}..{})",
+                ":{}:{}",
                 diagnostic.line.expect("line"),
-                diagnostic.column.expect("column"),
-                span.start,
-                span.end
+                diagnostic.column.expect("column")
             )));
         }
         _ => panic!("expected validation error"),
