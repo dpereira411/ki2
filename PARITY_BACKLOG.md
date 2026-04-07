@@ -632,7 +632,6 @@ What is not yet explicitly tracked as complete:
   ordering
 - SPICE exporter parity
 - remaining XML net-node drift is now narrower:
-  - stacked-pin expansion and de-dup semantics
   - fuller graph-owned netcode/name ownership
 
 ### Exporter-Specific Blockers

@@ -626,6 +626,55 @@ fn cli_netlist_uses_default_symbol_pin_net_name() {
 }
 
 #[test]
+fn cli_netlist_expands_stacked_pin_notation() {
+    let path = temp_schematic(
+        "cli_netlist_stacked_pins",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:STACK"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "STACK" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "STACK_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "IO" (effects (font (size 1 1))))
+          (number "[1,2]" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:STACK")
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "STACK" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (global_label "STACKED" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+
+    assert!(report.contains("<pin num=\"1\" name=\"IO\" />"), "{report}");
+    assert!(report.contains("<pin num=\"2\" name=\"IO\" />"), "{report}");
+    assert!(
+        report.contains("<node ref=\"U1\" pin=\"1\" pinfunction=\"IO_1\""),
+        "{report}"
+    );
+    assert!(
+        report.contains("<node ref=\"U1\" pin=\"2\" pinfunction=\"IO_2\""),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_marks_single_no_connect_nodes() {
     let path = temp_schematic(
         "cli_netlist_no_connect",
@@ -658,6 +707,55 @@ fn cli_netlist_marks_single_no_connect_nodes() {
     assert!(output.status.success(), "netlist must succeed");
     let report = fs::read_to_string(&report_path).expect("read netlist");
     assert!(report.contains("pintype=\"input+no_connect\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_netlist_marks_stacked_no_connect_nodes() {
+    let path = temp_schematic(
+        "cli_netlist_stacked_no_connect",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:STACK"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "STACK" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "STACK_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "IN" (effects (font (size 1 1))))
+          (number "[1,2]" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:STACK")
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "STACK" (at 0 0 0) (effects (font (size 1 1)))))
+  (no_connect (at 0 0)))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(
+        report.contains(
+            "<node ref=\"U1\" pin=\"1\" pinfunction=\"IN_1\" pintype=\"input+no_connect\" />"
+        ),
+        "{report}"
+    );
+    assert!(
+        report.contains(
+            "<node ref=\"U1\" pin=\"2\" pinfunction=\"IN_2\" pintype=\"input+no_connect\" />"
+        ),
+        "{report}"
+    );
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);

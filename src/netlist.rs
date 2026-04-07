@@ -75,6 +75,13 @@ pub struct NetlistDesign {
     pub sheets: Vec<NetlistSheetDesign>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct NetNodeBasePinKey {
+    symbol_uuid: Option<String>,
+    at: (u64, u64),
+    name: Option<String>,
+}
+
 fn resolved_property_value(properties: &[Property], token: &str) -> Option<String> {
     let canonical = token.to_ascii_uppercase();
     properties
@@ -88,6 +95,88 @@ fn resolved_property_value(properties: &[Property], token: &str) -> Option<Strin
             property_key == canonical
         })
         .map(|property| property.value.clone())
+}
+
+fn parse_alphanumeric_pin(pin: &str) -> (String, Option<i64>) {
+    let Some(num_start) = pin
+        .rfind(|ch: char| !ch.is_ascii_digit())
+        .map(|index| index + 1)
+    else {
+        return (
+            String::new(),
+            (!pin.is_empty()).then(|| pin.parse::<i64>().ok()).flatten(),
+        );
+    };
+
+    if num_start >= pin.len() {
+        return (String::new(), None);
+    }
+
+    let prefix = pin[..num_start].to_string();
+    let numeric = pin[num_start..].parse::<i64>().ok();
+    (prefix, numeric)
+}
+
+fn expand_stacked_pin_notation(pin: &str) -> (Vec<String>, bool) {
+    let has_open_bracket = pin.contains('[');
+    let has_close_bracket = pin.contains(']');
+
+    if has_open_bracket || has_close_bracket {
+        if !pin.starts_with('[') || !pin.ends_with(']') {
+            return (vec![pin.to_string()], false);
+        }
+    }
+
+    if !pin.starts_with('[') || !pin.ends_with(']') {
+        return (vec![pin.to_string()], true);
+    }
+
+    let inner = &pin[1..pin.len() - 1];
+    let mut expanded = Vec::new();
+    let mut valid = true;
+
+    for part in inner.split(',') {
+        let part = part.trim();
+
+        if part.is_empty() {
+            continue;
+        }
+
+        if let Some(dash_pos) = part.find('-') {
+            let start_txt = part[..dash_pos].trim();
+            let end_txt = part[dash_pos + 1..].trim();
+            let (start_prefix, start_val) = parse_alphanumeric_pin(start_txt);
+            let (end_prefix, end_val) = parse_alphanumeric_pin(end_txt);
+
+            match (start_val, end_val) {
+                (Some(start_val), Some(end_val))
+                    if start_prefix == end_prefix && start_val <= end_val =>
+                {
+                    for value in start_val..=end_val {
+                        if start_prefix.is_empty() {
+                            expanded.push(value.to_string());
+                        } else {
+                            expanded.push(format!("{start_prefix}{value}"));
+                        }
+                    }
+                }
+                _ => {
+                    valid = false;
+                    expanded.clear();
+                    expanded.push(pin.to_string());
+                    return (expanded, valid);
+                }
+            }
+        } else {
+            expanded.push(part.to_string());
+        }
+    }
+
+    if expanded.is_empty() {
+        return (vec![pin.to_string()], false);
+    }
+
+    (expanded, valid)
 }
 
 fn natural_compare_segment(a: &str, b: &str) -> std::cmp::Ordering {
@@ -245,14 +334,21 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
 // not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
 // shared connectivity carrier instead of full `CONNECTION_GRAPH` subgraphs, but it preserves the
-// exercised current-sheet node grouping, per-net net/class lookup, duplicate ref/pin erasure, and
-// single-node `+no_connect` marking needed by the first live XML netlist slice. Remaining
-// divergence is the fuller KiCad subgraph object model, stacked-pin handling, and graph-owned
-// netcode/name caches. Net ordering now follows the upstream `StrNumCmp` path instead of the old
-// lexical `BTreeMap` order.
+// exercised current-sheet node grouping, per-net net/class lookup, duplicate ref/pin erasure,
+// stacked-pin expansion, and single-node/all-stacked `+no_connect` marking needed by the first
+// live XML netlist slice. Remaining divergence is the fuller KiCad subgraph object model and
+// graph-owned netcode/name caches. Net ordering now follows the upstream `StrNumCmp` path instead
+// of the old lexical `BTreeMap` order.
 pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
-    let mut nets =
-        BTreeMap::<String, (String, bool, BTreeMap<(String, String), NetlistNode>)>::new();
+    let mut nets = BTreeMap::<
+        String,
+        (
+            String,
+            bool,
+            BTreeMap<(String, String), NetlistNode>,
+            Vec<NetNodeBasePinKey>,
+        ),
+    >::new();
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -288,7 +384,7 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
 
             let net_nodes = nets
                 .entry(net_name)
-                .or_insert_with(|| (net_class, false, BTreeMap::new()));
+                .or_insert_with(|| (net_class, false, BTreeMap::new(), Vec::new()));
 
             if component
                 .members
@@ -318,7 +414,7 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                 };
 
                 for pin in projected_symbol_pin_info(symbol) {
-                    let Some(pin_number) = pin.number.clone() else {
+                    let Some(base_pin_number) = pin.number.clone() else {
                         continue;
                     };
 
@@ -334,15 +430,35 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                         let trimmed = name.trim();
                         (!trimmed.is_empty() && trimmed != "~").then_some(name)
                     });
-
-                    let node = NetlistNode {
-                        reference: reference.clone(),
-                        pin: pin_number.clone(),
-                        pinfunction,
-                        pintype: pin.electrical_type.clone().unwrap_or_default(),
+                    let (expanded_numbers, stacked_valid) =
+                        expand_stacked_pin_notation(&base_pin_number);
+                    let base_pin_key = NetNodeBasePinKey {
+                        symbol_uuid: symbol.uuid.clone(),
+                        at: (pin.at[0].to_bits(), pin.at[1].to_bits()),
+                        name: pin.name.clone(),
                     };
+                    net_nodes.3.push(base_pin_key);
 
-                    net_nodes.2.insert((reference.clone(), pin_number), node);
+                    for pin_number in expanded_numbers {
+                        let pinfunction = if stacked_valid {
+                            match pinfunction.as_ref() {
+                                Some(base_name) => Some(format!("{base_name}_{pin_number}")),
+                                None if base_pin_number != pin_number => Some(pin_number.clone()),
+                                None => None,
+                            }
+                        } else {
+                            pinfunction.clone()
+                        };
+
+                        let node = NetlistNode {
+                            reference: reference.clone(),
+                            pin: pin_number.clone(),
+                            pinfunction,
+                            pintype: pin.electrical_type.clone().unwrap_or_default(),
+                        };
+
+                        net_nodes.2.insert((reference.clone(), pin_number), node);
+                    }
                 }
             }
         }
@@ -353,20 +469,26 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
 
     nets.into_iter()
         .enumerate()
-        .map(|(index, (name, (class, has_no_connect, nodes)))| {
-            let mut nodes = nodes.into_values().collect::<Vec<_>>();
+        .map(
+            |(index, (name, (class, has_no_connect, nodes, base_pins)))| {
+                let mut nodes = nodes.into_values().collect::<Vec<_>>();
+                let all_net_pins_stacked = !base_pins.is_empty()
+                    && base_pins.iter().all(|base_pin| *base_pin == base_pins[0]);
 
-            if has_no_connect && nodes.len() == 1 {
-                nodes[0].pintype.push_str("+no_connect");
-            }
+                if has_no_connect && (nodes.len() == 1 || all_net_pins_stacked) {
+                    for node in &mut nodes {
+                        node.pintype.push_str("+no_connect");
+                    }
+                }
 
-            NetlistNet {
-                code: index + 1,
-                name,
-                class,
-                nodes,
-            }
-        })
+                NetlistNet {
+                    code: index + 1,
+                    name,
+                    class,
+                    nodes,
+                }
+            },
+        )
         .collect()
 }
 
@@ -416,6 +538,11 @@ fn symbol_to_xml_component(
     })
 }
 
+// Upstream parity: reduced local analogue for the pin portion of
+// `NETLIST_EXPORTER_XML::makeLibParts()`. This is not a 1:1 library-adapter walk because the Rust
+// tree still reads schematic-linked lib-symbol snapshots, but it preserves the exercised
+// duplicate-pin-number erasure and stacked-pin expansion so downstream netlist consumers see the
+// same logical pin list KiCad exports.
 fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol) -> NetlistLibPart {
     let (lib, part) = lib_id
         .split_once(':')
@@ -453,8 +580,15 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
                 continue;
             };
             let name = pin.name.clone().unwrap_or_else(|| number.clone());
+            let (expanded_numbers, stacked_valid) = expand_stacked_pin_notation(&number);
 
-            pins.entry(number).or_insert(name);
+            if stacked_valid {
+                for expanded_number in expanded_numbers {
+                    pins.entry(expanded_number).or_insert_with(|| name.clone());
+                }
+            } else {
+                pins.entry(number).or_insert(name);
+            }
         }
     }
 
