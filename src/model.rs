@@ -1188,7 +1188,13 @@ impl Symbol {
             .map(|property| parse_sim_pin_pairs(&property.value))
             .unwrap_or_default();
         let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
-        let origin = if ibis_diff || ibis_pin.is_some() || ibis_model.is_some() {
+        let origin = if device
+            .as_deref()
+            .is_some_and(|device| device.trim() == "IBIS")
+            || ibis_diff
+            || ibis_pin.is_some()
+            || ibis_model.is_some()
+        {
             Some(SimModelOrigin::Ibis)
         } else if library.is_some() || (has_explicit_library && has_explicit_name) {
             Some(SimModelOrigin::LibraryReference)
@@ -2046,6 +2052,39 @@ mod tests {
     fn current_value_backed_sim_binding_variant_exists_for_loader_hydration() {
         let _binding = SimValueBinding::Value;
         assert_eq!(_binding, SimValueBinding::Value);
+    }
+
+    #[test]
+    fn symbol_treats_explicit_ibis_device_field_as_ibis_state() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Device",
+            "IBIS".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Library",
+            "driver.ibs".to_string(),
+            false,
+        ));
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Name",
+            "DRIVER".to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .and_then(|sim_model| sim_model.origin),
+            Some(SimModelOrigin::Ibis)
+        );
     }
 
     #[test]
