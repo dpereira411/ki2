@@ -8445,6 +8445,15 @@ fn load_tree_records_warning_for_missing_library_backed_sim_name() {
         .iter()
         .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
         .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
 
     assert!(
         schematic
@@ -8452,6 +8461,13 @@ fn load_tree_records_warning_for_missing_library_backed_sim_name() {
             .parse_warnings
             .iter()
             .any(|warning| warning.contains("Error loading simulation model: no 'Sim.Name' field"))
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_name.as_deref()),
+        Some("unknown")
     );
 
     let _ = fs::remove_file(path);

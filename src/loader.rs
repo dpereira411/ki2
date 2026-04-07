@@ -2313,7 +2313,23 @@ fn hydrate_resolved_sim_library(
 
     if let Some(sim_model) = symbol.sim_model.as_mut() {
         sim_model.resolved_library = resolved_library.clone();
-        sim_model.resolved_name = resolved_model.as_ref().map(|model| model.name.clone());
+        sim_model.resolved_name = resolved_model
+            .as_ref()
+            .map(|model| model.name.clone())
+            .or_else(|| {
+                sim_model
+                    .library
+                    .as_ref()
+                    .filter(|_| {
+                        sim_model
+                            .name
+                            .as_deref()
+                            .map(str::trim)
+                            .unwrap_or_default()
+                            .is_empty()
+                    })
+                    .map(|_| "unknown".to_string())
+            });
         sim_model.resolved_kind = resolved_model.as_ref().map(|model| model.kind);
         sim_model.resolved_model_type = resolved_model
             .as_ref()
