@@ -1858,7 +1858,7 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
 }
 
 fn current_internal_source_primary_param_name(model_type: &str) -> Option<&'static str> {
-    match model_type.trim().to_ascii_uppercase().as_str() {
+    match model_type.trim() {
         "SIN" => Some("dc"),
         "PULSE" => Some("y1"),
         "EXP" => Some("y1"),
@@ -2489,10 +2489,10 @@ fn unresolved_builtin_sim_model_warning(symbol: &Symbol) -> Option<String> {
 }
 
 fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
-    let device = device.trim().to_ascii_uppercase();
-    let model_type = model_type.trim().to_ascii_uppercase();
+    let device = device.trim();
+    let model_type = model_type.trim();
 
-    match (device.as_str(), model_type.as_str()) {
+    match (device, model_type) {
         ("R", "" | "POT" | "=") => true,
         ("C" | "L", "" | "=") => true,
         ("K", "") => true,

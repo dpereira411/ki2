@@ -1258,11 +1258,11 @@ fn is_supported_builtin_sim_type(device: Option<&str>, model_type: Option<&str>)
         return false;
     };
 
-    let device = device.trim().to_ascii_uppercase();
-    let model_type = model_type.unwrap_or("").trim().to_ascii_uppercase();
+    let device = device.trim();
+    let model_type = model_type.unwrap_or("").trim();
 
     matches!(
-        (device.as_str(), model_type.as_str()),
+        (device, model_type),
         ("R", "" | "POT" | "=")
             | ("C" | "L", "" | "=")
             | ("K", "")

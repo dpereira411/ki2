@@ -26,7 +26,7 @@ pub struct ResolvedSimModel {
 }
 
 fn ibis_kind_override(model_type: Option<&str>) -> Option<ResolvedSimModelKind> {
-    match model_type?.trim().to_ascii_uppercase().as_str() {
+    match model_type?.trim() {
         "DEVICE" => Some(ResolvedSimModelKind::IbisComponent),
         "DCDRIVER" => Some(ResolvedSimModelKind::IbisDriverDc),
         "RECTDRIVER" => Some(ResolvedSimModelKind::IbisDriverRect),
