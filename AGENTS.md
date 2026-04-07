@@ -23,7 +23,7 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 
 Strict mode is the default for parser-parity work in this repository.
 
-1. Do not stop while meaningful parser/loader parity work remains in `LOCAL_PARSER_PARITY_NOTES.md`.
+1. Do not stop while meaningful parser/loader/ERC parity work remains in `PARITY_BACKLOG.md`.
 2. Stay in execution mode, not reporting mode. Do not treat summaries, green tests, or partial alignment as completion.
 3. Prefer whole functions or tightly related routine clusters over micro-patches.
 4. Do not spend a work unit on helper renames, isolated expect-string tweaks, or tiny local cleanups unless they are required to complete a larger upstream routine port already in progress.
@@ -39,7 +39,7 @@ Strict mode is the default for parser-parity work in this repository.
 14. Do not treat the end of a turn, a clean git status, or a green test run as an implicit stopping point. Those are normal checkpoints inside execution mode, not reasons to report.
 15. If backlog remains, the default action after every successful work unit is: pick the next largest mismatch, edit, test, commit, continue. Do not wait for another user prompt to resume.
 16. If a reply is unavoidable, it must explain the blocker or state that the backlog is exhausted. Do not send celebratory, summary-only, or “latest progress” replies while executable parity work still remains.
-17. When a real blocker is identified, do not stop at naming it. Find the concrete path to unblocking it and record that path in the backlog files (`LOCAL_PARSER_PARITY_NOTES.md`, `LOCAL_FUNCTION_PARITY_MAP.md`, or both) before treating the work as blocked.
+17. When a real blocker is identified, do not stop at naming it. Find the concrete path to unblocking it and record that path in `PARITY_BACKLOG.md` before treating the work as blocked.
 
 ## Parser-Only Parity Strategy
 
@@ -111,10 +111,9 @@ of opportunistic branch chasing.
 
 1. Upstream KiCad code is the authority on parser behavior and structure.
 2. `AGENTS.md` should stay short and operational. Do not keep routine-by-routine parity trivia here.
-3. Use these files for detailed parity work:
-   - `LOCAL_FUNCTION_PARITY_MAP.md`: current parser-only backlog and status
-   - `LOCAL_PARSER_PARITY_NOTES.md`: local findings, traps, and blockers
-4. When a detailed local rule is no longer broadly useful as an operating instruction, move it out of `AGENTS.md` into the notes/map instead of growing this file further.
+3. Use `PARITY_BACKLOG.md` as the authoritative backlog/status/blocked-surface document.
+4. `LOCAL_PARSER_BFS_RECORD.md` is only a reduced parser coverage artifact.
+5. When a detailed local rule is no longer broadly useful as an operating instruction, move it out of `AGENTS.md` into `PARITY_BACKLOG.md` instead of growing this file further.
 
 ## Global Parity Rules
 
