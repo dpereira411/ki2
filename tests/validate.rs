@@ -736,6 +736,95 @@ fn current_drawing_sheet_text_items_honor_incrlabel_for_letters() {
 }
 
 #[test]
+fn current_drawing_sheet_text_items_honor_page_options() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_drawing_sheet_page_options_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "71000000-0000-0000-0000-000000000001")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000002")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71000000-0000-0000-0000-000000000002" (page "2"))))"#,
+    )
+    .expect("write root schematic");
+    fs::write(
+        &child_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "71000000-0000-0000-0000-000000000003"))"#,
+    )
+    .expect("write child schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (tbtext "all" (pos 0 0))
+  (tbtext "first" (pos 1 0) (option page1only))
+  (tbtext "later" (pos 2 0) (option notonpage1)))"#,
+    )
+    .expect("write worksheet");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded
+            .current_drawing_sheet_text_items()
+            .expect("root worksheet items")
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["all", "first"]
+    );
+
+    let child_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| !sheet_path.instance_path.is_empty())
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child instance path");
+    assert!(loaded.set_current_sheet_path(&child_instance_path));
+    assert_eq!(
+        loaded
+            .current_drawing_sheet_text_items()
+            .expect("child worksheet items")
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["all", "later"]
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn current_drawing_sheet_text_items_parse_embedded_tbtext() {
     let dir = std::env::temp_dir().join(format!(
         "ki2_embedded_drawing_sheet_text_items_{}",

@@ -383,20 +383,25 @@ impl LoadResult {
     // Upstream parity: reduced local analogue for the drawing-sheet `DS_DRAW_ITEM_TEXT` list that
     // `ERC_TESTER::TestTextVars()` walks. This is not 1:1 yet because the local tree only parses
     // `tbtext` items and still lacks the full draw-item/styling model, but it now covers both the
-    // reduced built-in default worksheet text slice and custom/embedded worksheet text items.
+    // reduced built-in default worksheet text slice and custom/embedded worksheet text items,
+    // including the exercised first-page/subsequent-page filtering KiCad applies before draw items
+    // reach ERC.
     pub fn current_drawing_sheet_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
         let Some(current) = self.current_schematic() else {
             return Ok(Vec::new());
         };
+        let current_virtual_page_number = self.current_virtual_page_number();
 
         match self.current_drawing_sheet_source() {
-            DrawingSheetSource::Default => default_reduced_worksheet_text_items(),
+            DrawingSheetSource::Default => {
+                default_reduced_worksheet_text_items(current_virtual_page_number)
+            }
             DrawingSheetSource::Filesystem(path) => {
                 let raw = fs::read_to_string(&path).map_err(|source| Error::Io {
                     path: path.clone(),
                     source,
                 })?;
-                parse_reduced_worksheet_text_items(&path, &raw)
+                parse_reduced_worksheet_text_items(&path, &raw, current_virtual_page_number)
             }
             DrawingSheetSource::SchematicEmbedded { name, text } => {
                 parse_reduced_worksheet_text_items(
@@ -406,6 +411,7 @@ impl LoadResult {
                         .unwrap_or_else(|| Path::new("."))
                         .join(name),
                     &text,
+                    current_virtual_page_number,
                 )
             }
         }

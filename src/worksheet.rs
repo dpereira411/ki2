@@ -11,6 +11,20 @@ pub struct WorksheetTextItem {
     pub at: [f64; 2],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorksheetPageOption {
+    AllPages,
+    FirstPageOnly,
+    SubsequentPages,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedWorksheetTextItem {
+    text: String,
+    at: [f64; 2],
+    page_option: WorksheetPageOption,
+}
+
 #[derive(Debug, Clone)]
 struct WorksheetTextTemplate {
     text: String,
@@ -19,6 +33,7 @@ struct WorksheetTextTemplate {
     incrx: f64,
     incry: f64,
     incrlabel: i32,
+    page_option: WorksheetPageOption,
 }
 
 const REDUCED_DEFAULT_DRAWING_SHEET: &str = r#"(kicad_wks
@@ -38,16 +53,27 @@ const REDUCED_DEFAULT_DRAWING_SHEET: &str = r#"(kicad_wks
   (tbtext "${COMMENT3}" (pos 109 29))
   (tbtext "${COMMENT4}" (pos 109 32)))"#;
 
-pub fn default_reduced_worksheet_text_items() -> Result<Vec<WorksheetTextItem>, Error> {
+// Upstream parity: reduced local analogue for KiCad's built-in default worksheet load path. This
+// is not 1:1 because the local tree still parses only the exercised text-bearing worksheet slice,
+// but it now also applies KiCad's first-page/subsequent-page gating before returning text items.
+pub fn default_reduced_worksheet_text_items(
+    current_virtual_page_number: Option<usize>,
+) -> Result<Vec<WorksheetTextItem>, Error> {
     parse_reduced_worksheet_text_items(
         Path::new("<default drawing sheet>"),
         REDUCED_DEFAULT_DRAWING_SHEET,
+        current_virtual_page_number,
     )
 }
 
+// Upstream parity: reduced local analogue for the worksheet text-item load path feeding
+// `DS_DRAW_ITEM_TEXT` generation. This is not a full 1:1 worksheet parser because the local model
+// only returns filtered `tbtext` items, but it now keeps the exercised repeat/increment/page
+// option behavior before ERC/text-variable consumers see those items.
 pub fn parse_reduced_worksheet_text_items(
     path: &Path,
     raw: &str,
+    current_virtual_page_number: Option<usize>,
 ) -> Result<Vec<WorksheetTextItem>, Error> {
     let tokens = lex(raw).map_err(|source| Error::SExpr {
         path: path.to_path_buf(),
@@ -55,7 +81,15 @@ pub fn parse_reduced_worksheet_text_items(
         source,
     })?;
 
-    ReducedWorksheetParser::new(path.to_path_buf(), raw, tokens).parse()
+    Ok(ReducedWorksheetParser::new(path.to_path_buf(), raw, tokens)
+        .parse()?
+        .into_iter()
+        .filter(|item| include_on_page(item.page_option, current_virtual_page_number))
+        .map(|item| WorksheetTextItem {
+            text: item.text,
+            at: item.at,
+        })
+        .collect())
 }
 
 fn worksheet_sexpr_error_location(raw: &str, source: &ParseError) -> String {
@@ -101,9 +135,9 @@ impl ReducedWorksheetParser {
     // Upstream parity: reduced local analogue for the `DRAWING_SHEET_PARSER::Parse()` text-item
     // slice that ERC `TestTextVars()` needs. This is not a 1:1 worksheet parser because the local
     // tree currently skips non-text drawing-sheet items and most text styling branches, but it now
-    // also preserves the exercised `tbtext` repeat/increment behavior instead of collapsing every
-    // text item to one copy. Fuller page-option and styling semantics are still unported.
-    fn parse(&mut self) -> Result<Vec<WorksheetTextItem>, Error> {
+    // also preserves the exercised `tbtext` repeat/increment and page-option behavior instead of
+    // collapsing every text item to one copy. Fuller styling semantics are still unported.
+    fn parse(&mut self) -> Result<Vec<ParsedWorksheetTextItem>, Error> {
         self.need_left()?;
         let head = self.need_atom("kicad_wks or drawing_sheet")?;
 
@@ -134,7 +168,7 @@ impl ReducedWorksheetParser {
     // carrier only preserves text position plus the exercised repeat/increment controls, while
     // upstream also owns page-option, style, justification, and formatting state on worksheet
     // text items.
-    fn parse_tbtext(&mut self) -> Result<Vec<WorksheetTextItem>, Error> {
+    fn parse_tbtext(&mut self) -> Result<Vec<ParsedWorksheetTextItem>, Error> {
         let raw_text = self.need_symbol_number_or_quoted("text")?;
         let mut item = WorksheetTextTemplate {
             text: convert_legacy_drawing_sheet_text(&raw_text),
@@ -143,6 +177,7 @@ impl ReducedWorksheetParser {
             incrx: 0.0,
             incry: 0.0,
             incrlabel: 1,
+            page_option: WorksheetPageOption::AllPages,
         };
 
         while !self.at_right() {
@@ -169,6 +204,9 @@ impl ReducedWorksheetParser {
                     item.incrlabel = self.parse_int("label increment")?;
                     self.need_right()?;
                 }
+                "option" => {
+                    item.page_option = self.parse_page_option()?;
+                }
                 _ => self.skip_current_list_body()?,
             }
         }
@@ -187,6 +225,27 @@ impl ReducedWorksheetParser {
 
         self.need_right()?;
         Ok([x, y])
+    }
+
+    // Upstream parity: reduced local analogue for `DRAWING_SHEET_PARSER::readOption()`. This is
+    // not a full 1:1 worksheet-item option parser because the reduced worksheet model only keeps
+    // the exercised first-page/subsequent-page visibility gate for `tbtext` items.
+    fn parse_page_option(&mut self) -> Result<WorksheetPageOption, Error> {
+        let mut option = WorksheetPageOption::AllPages;
+
+        while !self.at_right() {
+            let span = self.current_span();
+            let head = self.need_atom("worksheet page option")?;
+
+            option = match head.as_str() {
+                "page1only" => WorksheetPageOption::FirstPageOnly,
+                "notonpage1" => WorksheetPageOption::SubsequentPages,
+                _ => return Err(self.validation(span, "invalid worksheet page option")),
+            };
+        }
+
+        self.need_right()?;
+        Ok(option)
     }
 
     fn parse_double(&mut self, expected: &str) -> Result<f64, Error> {
@@ -400,18 +459,35 @@ fn convert_legacy_drawing_sheet_text(text: &str) -> String {
 // Upstream parity: reduced analogue for KiCad's worksheet text repetition expansion. This is not
 // a full 1:1 drawing-sheet item materializer because the local worksheet model only emits the
 // repeated text payloads ERC/text-variable checks currently observe.
-fn expand_repeated_text_item(item: &WorksheetTextTemplate) -> Vec<WorksheetTextItem> {
+fn expand_repeated_text_item(item: &WorksheetTextTemplate) -> Vec<ParsedWorksheetTextItem> {
     let repeat_count = item.repeat_count.clamp(1, 100);
 
     (0..repeat_count)
-        .map(|index| WorksheetTextItem {
+        .map(|index| ParsedWorksheetTextItem {
             text: increment_label_text(&item.text, index * item.incrlabel, index == 0),
             at: [
                 item.at[0] + (item.incrx * f64::from(index)),
                 item.at[1] + (item.incry * f64::from(index)),
             ],
+            page_option: item.page_option,
         })
         .collect()
+}
+
+// Upstream parity: reduced local analogue for `DS_DRAW_ITEM_LIST::BuildDrawItemsList()` page-one
+// gating before worksheet text reaches ERC/text-variable consumers. It still only covers the
+// reduced worksheet text carrier, not the full drawing-sheet draw-item list.
+fn include_on_page(
+    option: WorksheetPageOption,
+    current_virtual_page_number: Option<usize>,
+) -> bool {
+    let is_first_page = current_virtual_page_number.unwrap_or(1) == 1;
+
+    match option {
+        WorksheetPageOption::AllPages => true,
+        WorksheetPageOption::FirstPageOnly => is_first_page,
+        WorksheetPageOption::SubsequentPages => !is_first_page,
+    }
 }
 
 // Upstream parity: reduced analogue for KiCad's repeated worksheet label increment behavior. It is
