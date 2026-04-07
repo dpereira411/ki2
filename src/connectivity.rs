@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::{collect_wire_segments, point_on_wire_segment, points_equal};
-use crate::model::{Label, LabelKind, MirrorAxis, SchItem, Schematic, Symbol};
+use crate::model::{Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, Symbol};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PointKey(pub(crate) u64, pub(crate) u64);
@@ -373,6 +373,150 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
     groups.into_values().collect()
 }
 
+fn connected_wire_segment_indices(
+    segments: &[[[f64; 2]; 2]],
+    junctions: &[[f64; 2]],
+    anchor: [f64; 2],
+) -> Vec<usize> {
+    let mut connected = Vec::new();
+    let mut frontier = Vec::new();
+
+    for (index, segment) in segments.iter().enumerate() {
+        if point_on_wire_segment(anchor, segment[0], segment[1]) {
+            connected.push(index);
+            frontier.push(index);
+        }
+    }
+
+    while let Some(current) = frontier.pop() {
+        let segment = segments[current];
+
+        for (index, other) in segments.iter().enumerate() {
+            if connected.contains(&index) {
+                continue;
+            }
+
+            let shares_endpoint = points_equal(segment[0], other[0])
+                || points_equal(segment[0], other[1])
+                || points_equal(segment[1], other[0])
+                || points_equal(segment[1], other[1]);
+            let joined_by_junction = junctions.iter().copied().any(|junction| {
+                point_on_wire_segment(junction, segment[0], segment[1])
+                    && point_on_wire_segment(junction, other[0], other[1])
+            });
+
+            if !shares_endpoint && !joined_by_junction {
+                continue;
+            }
+
+            connected.push(index);
+            frontier.push(index);
+        }
+    }
+
+    connected.sort_unstable();
+    connected.dedup();
+    connected
+}
+
+fn points_share_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    points_equal(a, c) || points_equal(a, d) || points_equal(b, c) || points_equal(b, d)
+}
+
+fn segment_orientation(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
+    ((b[0] - a[0]) * (c[1] - a[1])) - ((b[1] - a[1]) * (c[0] - a[0]))
+}
+
+fn segment_intersects_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let o1 = segment_orientation(a, b, c);
+    let o2 = segment_orientation(a, b, d);
+    let o3 = segment_orientation(c, d, a);
+    let o4 = segment_orientation(c, d, b);
+
+    if o1.abs() < 1e-9 && point_on_wire_segment(c, a, b) {
+        return true;
+    }
+    if o2.abs() < 1e-9 && point_on_wire_segment(d, a, b) {
+        return true;
+    }
+    if o3.abs() < 1e-9 && point_on_wire_segment(a, c, d) {
+        return true;
+    }
+    if o4.abs() < 1e-9 && point_on_wire_segment(b, c, d) {
+        return true;
+    }
+
+    ((o1 > 0.0 && o2 < 0.0) || (o1 < 0.0 && o2 > 0.0))
+        && ((o3 > 0.0 && o4 < 0.0) || (o3 < 0.0 && o4 > 0.0))
+}
+
+fn point_in_polygon(point: [f64; 2], polygon: &[[f64; 2]]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    let mut inside = false;
+
+    for index in 0..polygon.len() {
+        let start = polygon[index];
+        let end = polygon[(index + 1) % polygon.len()];
+
+        if point_on_wire_segment(point, start, end) {
+            return true;
+        }
+
+        let intersects = ((start[1] > point[1]) != (end[1] > point[1]))
+            && (point[0]
+                < ((end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1])) + start[0]);
+
+        if intersects {
+            inside = !inside;
+        }
+    }
+
+    inside
+}
+
+// Upstream parity: reduced local analogue for the rule-area/netclass geometry half of
+// `SCH_CONNECTION_GRAPH::GetNetclassesForDriver()`. This is not a 1:1 KiCad rule-area owner
+// because the Rust tree still lacks cached rule-area membership and full subgraph objects. It is
+// needed so the shared reduced connectivity owner can decide which directive/rule-area netclass
+// providers apply to a point instead of leaving that ownership split across loader callers.
+fn rule_area_contains_connected_component(
+    rule_area: &Shape,
+    at: [f64; 2],
+    wire_segments: &[[[f64; 2]; 2]],
+    connected_segments: &[usize],
+) -> bool {
+    if rule_area.kind != ShapeKind::RuleArea || rule_area.points.len() < 3 {
+        return false;
+    }
+
+    if point_in_polygon(at, &rule_area.points) {
+        return true;
+    }
+
+    connected_segments.iter().copied().any(|segment_index| {
+        let segment = wire_segments[segment_index];
+
+        if point_in_polygon(segment[0], &rule_area.points)
+            || point_in_polygon(segment[1], &rule_area.points)
+        {
+            return true;
+        }
+
+        rule_area.points.iter().enumerate().any(|(index, start)| {
+            let end = rule_area.points[(index + 1) % rule_area.points.len()];
+
+            if points_share_segment(segment[0], segment[1], *start, end) {
+                return false;
+            }
+
+            segment_intersects_segment(segment[0], segment[1], *start, end)
+        })
+    })
+}
+
 fn reduced_label_driver_priority(label: &Label) -> i32 {
     match label.kind {
         LabelKind::Global => 3,
@@ -444,4 +588,87 @@ where
     });
 
     candidates.into_iter().map(|(_, text)| text).next()
+}
+
+// Upstream parity: reduced local analogue for the driver-netclass lookup side of
+// `CONNECTION_SUBGRAPH::GetNetclassesForDriver()`. This is not a 1:1 KiCad graph query because the
+// Rust tree still lacks cached rule-area ownership, child-item traversal, and full subgraph
+// drivers. It exists so loader shown-text and export paths query one shared reduced connectivity
+// owner for current-sheet `NET_CLASS` instead of rebuilding directive/rule-area scans locally.
+pub(crate) fn resolve_reduced_netclass_at<F>(
+    schematic: &Schematic,
+    at: [f64; 2],
+    mut directive_netclass: F,
+) -> Option<String>
+where
+    F: FnMut(&Label) -> Option<String>,
+{
+    let wire_segments = collect_wire_segments(schematic);
+    let junctions = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction.at),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, at);
+
+    schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Directive => {
+                if connected_segments.is_empty() {
+                    points_equal(label.at, at).then_some(label)
+                } else {
+                    connected_segments
+                        .iter()
+                        .copied()
+                        .any(|segment_index| {
+                            let segment = wire_segments[segment_index];
+                            point_on_wire_segment(label.at, segment[0], segment[1])
+                        })
+                        .then_some(label)
+                }
+            }
+            _ => None,
+        })
+        .find_map(&mut directive_netclass)
+        .or_else(|| {
+            schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => Some(shape),
+                    _ => None,
+                })
+                .filter(|rule_area| {
+                    rule_area_contains_connected_component(
+                        rule_area,
+                        at,
+                        &wire_segments,
+                        &connected_segments,
+                    )
+                })
+                .find_map(|rule_area| {
+                    schematic
+                        .screen
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            SchItem::Label(label)
+                                if label.kind == LabelKind::Directive
+                                    && point_in_polygon(label.at, &rule_area.points) =>
+                            {
+                                Some(label)
+                            }
+                            _ => None,
+                        })
+                        .find_map(&mut directive_netclass)
+                })
+        })
 }

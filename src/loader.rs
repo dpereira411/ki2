@@ -4,12 +4,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::connectivity::resolve_reduced_net_name_at;
+use crate::connectivity::{resolve_reduced_net_name_at, resolve_reduced_netclass_at};
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
     EmbeddedFile, EmbeddedFileType, ItemVariant, MirrorAxis, Property, PropertyKind, SchItem,
-    Schematic, Shape, ShapeKind, SheetReference, SimLibrarySource, Symbol,
+    Schematic, SheetReference, SimLibrarySource, Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
@@ -4239,17 +4239,6 @@ pub(crate) fn resolve_point_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
-    let wire_segments = collect_wire_segments(schematic);
-    let junctions = schematic
-        .screen
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            SchItem::Junction(junction) => Some(junction.at),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, at);
 
     match token_kind {
         SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
@@ -4277,8 +4266,6 @@ pub(crate) fn resolve_point_connectivity_text_var(
             project,
             current_variant,
             schematic,
-            &wire_segments,
-            &connected_segments,
             at,
         ),
         SymbolPinTextVarKind::PinName => None,
@@ -4595,149 +4582,6 @@ pub(crate) fn collect_wire_segments(schematic: &Schematic) -> Vec<[[f64; 2]; 2]>
     segments
 }
 
-fn connected_wire_segment_indices(
-    segments: &[[[f64; 2]; 2]],
-    junctions: &[[f64; 2]],
-    anchor: [f64; 2],
-) -> BTreeSet<usize> {
-    let mut connected = BTreeSet::new();
-    let mut frontier = Vec::new();
-
-    for (index, segment) in segments.iter().enumerate() {
-        if point_on_wire_segment(anchor, segment[0], segment[1]) {
-            connected.insert(index);
-            frontier.push(index);
-        }
-    }
-
-    while let Some(current) = frontier.pop() {
-        let segment = segments[current];
-
-        for (index, other) in segments.iter().enumerate() {
-            if connected.contains(&index) {
-                continue;
-            }
-
-            let shares_endpoint = points_equal(segment[0], other[0])
-                || points_equal(segment[0], other[1])
-                || points_equal(segment[1], other[0])
-                || points_equal(segment[1], other[1]);
-            let joined_by_junction = junctions.iter().copied().any(|junction| {
-                point_on_wire_segment(junction, segment[0], segment[1])
-                    && point_on_wire_segment(junction, other[0], other[1])
-            });
-
-            if !shares_endpoint && !joined_by_junction {
-                continue;
-            }
-
-            connected.insert(index);
-            frontier.push(index);
-        }
-    }
-
-    connected
-}
-
-fn points_share_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
-    points_equal(a, c) || points_equal(a, d) || points_equal(b, c) || points_equal(b, d)
-}
-
-fn segment_orientation(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
-    ((b[0] - a[0]) * (c[1] - a[1])) - ((b[1] - a[1]) * (c[0] - a[0]))
-}
-
-fn segment_intersects_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
-    let o1 = segment_orientation(a, b, c);
-    let o2 = segment_orientation(a, b, d);
-    let o3 = segment_orientation(c, d, a);
-    let o4 = segment_orientation(c, d, b);
-
-    if o1.abs() < 1e-9 && point_on_wire_segment(c, a, b) {
-        return true;
-    }
-    if o2.abs() < 1e-9 && point_on_wire_segment(d, a, b) {
-        return true;
-    }
-    if o3.abs() < 1e-9 && point_on_wire_segment(a, c, d) {
-        return true;
-    }
-    if o4.abs() < 1e-9 && point_on_wire_segment(b, c, d) {
-        return true;
-    }
-
-    ((o1 > 0.0 && o2 < 0.0) || (o1 < 0.0 && o2 > 0.0))
-        && ((o3 > 0.0 && o4 < 0.0) || (o3 < 0.0 && o4 > 0.0))
-}
-
-fn point_in_polygon(point: [f64; 2], polygon: &[[f64; 2]]) -> bool {
-    if polygon.len() < 3 {
-        return false;
-    }
-
-    let mut inside = false;
-
-    for index in 0..polygon.len() {
-        let start = polygon[index];
-        let end = polygon[(index + 1) % polygon.len()];
-
-        if point_on_wire_segment(point, start, end) {
-            return true;
-        }
-
-        let intersects = ((start[1] > point[1]) != (end[1] > point[1]))
-            && (point[0]
-                < ((end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1])) + start[0]);
-
-        if intersects {
-            inside = !inside;
-        }
-    }
-
-    inside
-}
-
-// Upstream parity: reduced local helper for the rule-area half of
-// `SCH_CONNECTION_GRAPH::getEffectiveNetclasses()`. This is not a 1:1 port because the current
-// tree still lacks KiCad's cached rule-area membership and full connection graph, but it is needed
-// so current-sheet `${NET_CLASS}` can honor the exercised rule-area geometry path instead of only
-// connected directive labels. Remaining divergence is fuller cached membership and knockout/shape
-// exactness.
-fn rule_area_contains_connected_wire_component(
-    rule_area: &Shape,
-    label_at: [f64; 2],
-    wire_segments: &[[[f64; 2]; 2]],
-    connected_segments: &BTreeSet<usize>,
-) -> bool {
-    if rule_area.kind != ShapeKind::RuleArea || rule_area.points.len() < 3 {
-        return false;
-    }
-
-    if point_in_polygon(label_at, &rule_area.points) {
-        return true;
-    }
-
-    connected_segments.iter().copied().any(|segment_index| {
-        let segment = wire_segments[segment_index];
-
-        if point_in_polygon(segment[0], &rule_area.points)
-            || point_in_polygon(segment[1], &rule_area.points)
-        {
-            return true;
-        }
-
-        rule_area.points.iter().enumerate().any(|(index, start)| {
-            let end = rule_area.points[(index + 1) % rule_area.points.len()];
-
-            if points_share_segment(segment[0], segment[1], *start, end) {
-                return false;
-            }
-
-            segment_intersects_segment(segment[0], segment[1], *start, end)
-        })
-    })
-}
-
 // Upstream parity: reduced local helper for the non-connectivity token subset of
 // `SCH_LABEL_BASE::ResolveTextVar()` / `GetShownText()`. This is not a 1:1 port because the
 // current tree still lacks KiCad's fuller connectivity-backed resolver stack, but it is needed so
@@ -4849,6 +4693,12 @@ fn resolve_directive_netclass_value(
     })
 }
 
+// Upstream parity: reduced local wrapper over the shared connectivity-side netclass owner used by
+// `CONNECTION_SUBGRAPH::GetNetclassesForDriver()`. This is not a 1:1 KiCad graph query because the
+// Rust tree still lacks cached rule-area membership and full child-item traversal, but the loader
+// no longer owns directive/rule-area connectivity scans itself. The only local responsibility left
+// here is rendering directive `Netclass` fields through shown-text semantics before handing them to
+// the shared reduced connectivity owner.
 fn resolve_point_netclass_value(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4856,82 +4706,22 @@ fn resolve_point_netclass_value(
     project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
     schematic: &Schematic,
-    wire_segments: &[[[f64; 2]; 2]],
-    connected_segments: &BTreeSet<usize>,
     at: [f64; 2],
 ) -> Option<String> {
-    let connected_directive = schematic.screen.items.iter().filter_map(|item| match item {
-        SchItem::Label(other) if other.kind == crate::model::LabelKind::Directive => {
-            if connected_segments.is_empty() {
-                points_equal(other.at, at).then_some(other)
-            } else {
-                connected_segments
-                    .iter()
-                    .any(|segment_index| {
-                        let segment = wire_segments[*segment_index];
-                        point_on_wire_segment(other.at, segment[0], segment[1])
-                    })
-                    .then_some(other)
-            }
+    resolve_reduced_netclass_at(schematic, at, |directive| {
+        if directive.kind != crate::model::LabelKind::Directive {
+            return None;
         }
-        _ => None,
-    });
 
-    connected_directive
-        .clone()
-        .find_map(|directive| {
-            resolve_directive_netclass_value(
-                schematics,
-                sheet_paths,
-                loaded_path,
-                project,
-                current_variant,
-                directive,
-            )
-        })
-        .or_else(|| {
-            schematic
-                .screen
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => Some(shape),
-                    _ => None,
-                })
-                .filter(|rule_area| {
-                    rule_area_contains_connected_wire_component(
-                        rule_area,
-                        at,
-                        wire_segments,
-                        connected_segments,
-                    )
-                })
-                .find_map(|rule_area| {
-                    schematic
-                        .screen
-                        .items
-                        .iter()
-                        .filter_map(|item| match item {
-                            SchItem::Label(other)
-                                if other.kind == crate::model::LabelKind::Directive
-                                    && point_in_polygon(other.at, &rule_area.points) =>
-                            {
-                                Some(other)
-                            }
-                            _ => None,
-                        })
-                        .find_map(|directive| {
-                            resolve_directive_netclass_value(
-                                schematics,
-                                sheet_paths,
-                                loaded_path,
-                                project,
-                                current_variant,
-                                directive,
-                            )
-                        })
-                })
-        })
+        resolve_directive_netclass_value(
+            schematics,
+            sheet_paths,
+            loaded_path,
+            project,
+            current_variant,
+            directive,
+        )
+    })
 }
 
 // Upstream parity: reduced local helper for the non-connectivity subset of
@@ -4991,17 +4781,6 @@ pub(crate) fn resolve_label_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
-    let wire_segments = collect_wire_segments(schematic);
-    let junctions = schematic
-        .screen
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            SchItem::Junction(junction) => Some(junction.at),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, label.at);
 
     let own_text = shown_label_text_without_connectivity(
         schematics,
@@ -5037,8 +4816,6 @@ pub(crate) fn resolve_label_connectivity_text_var(
             project,
             current_variant,
             schematic,
-            &wire_segments,
-            &connected_segments,
             label.at,
         ),
         _ => None,
