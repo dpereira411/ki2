@@ -320,7 +320,10 @@ fn resolve_relative_sim_library_source_from_embedded_files(
             if resolved.exists() {
                 Some(SimLibrarySource::Filesystem(resolved))
             } else {
-                None
+                let fallback_path = resolve_sim_library_path(schematic_path, &relative_lib);
+                fallback_path
+                    .exists()
+                    .then_some(SimLibrarySource::Filesystem(fallback_path))
             }
         }
         SimLibrarySource::SchematicEmbedded { name } => {
