@@ -990,6 +990,66 @@ fn cli_netlist_exports_component_metadata_properties() {
 }
 
 #[test]
+fn cli_netlist_collapses_multi_unit_components() {
+    let path = temp_schematic(
+        "cli_netlist_multi_unit_component",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:DUAL"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "DUAL" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "DUAL_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))
+      (symbol "DUAL_2_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:DUAL")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (unit 1)
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUAL" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:DUAL")
+    (uuid "73000000-0000-0000-0000-000000000001")
+    (unit 2)
+    (at 10 0 0)
+    (property "Reference" "U1" (at 10 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUAL" (at 10 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert_eq!(report.matches("<comp ref=\"U1\">").count(), 1, "{report}");
+    assert!(
+        report.contains(
+            "<tstamps>73000000-0000-0000-0000-000000000001 73000000-0000-0000-0000-000000000010</tstamps>"
+        ),
+        "{report}"
+    );
+    assert!(report.contains("<unit name=\"DUAL_1_1\">"), "{report}");
+    assert!(report.contains("<unit name=\"DUAL_2_1\">"), "{report}");
+    assert!(report.contains("<pin num=\"1\" />"), "{report}");
+    assert!(report.contains("<pin num=\"2\" />"), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

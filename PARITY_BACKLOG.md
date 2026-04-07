@@ -616,6 +616,7 @@ What is already covered indirectly:
   - project text vars
   - reduced per-sheet title-block export
   - occurrence-aware component filtering
+  - reduced multi-unit component collapse by reference
   - reference/value/footprint/datasheet/description export
   - reduced `libsource`
   - reduced component metadata properties:
@@ -629,6 +630,8 @@ What is already covered indirectly:
     - `jumper_pin_groups`
   - reduced user-field export
   - reduced `sheetpath`
+  - reduced `tstamps`
+  - reduced per-lib-unit pin export on `<units>`
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
   - reduced `nets`

@@ -23,6 +23,8 @@ pub struct NetlistComponent {
     pub lib: String,
     pub part: String,
     pub path: String,
+    pub tstamps: Vec<String>,
+    pub units: Vec<NetlistComponentUnit>,
     pub excluded_from_bom: bool,
     pub excluded_from_board: bool,
     pub excluded_from_pos_files: bool,
@@ -32,6 +34,12 @@ pub struct NetlistComponent {
     pub duplicate_pin_numbers_are_jumpers: bool,
     pub jumper_pin_groups: Vec<Vec<String>>,
     pub properties: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistComponentUnit {
+    pub name: String,
+    pub pins: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -313,7 +321,39 @@ pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponen
     }
 
     components.sort_by(|lhs, rhs| str_num_cmp(&lhs.reference, &rhs.reference, true));
-    components
+
+    let mut deduped = Vec::<NetlistComponent>::new();
+
+    for component in components {
+        if let Some(existing) = deduped.iter_mut().find(|existing| {
+            existing
+                .reference
+                .eq_ignore_ascii_case(&component.reference)
+        }) {
+            let current_uuid = existing.tstamps.last().cloned();
+            let candidate_uuid = component.tstamps.last().cloned();
+            let mut combined_tstamps = existing.tstamps.clone();
+            combined_tstamps.extend(component.tstamps.clone());
+            combined_tstamps.sort();
+            combined_tstamps.dedup();
+
+            match (&current_uuid, &candidate_uuid) {
+                (Some(current_uuid), Some(candidate_uuid)) if candidate_uuid < current_uuid => {
+                    *existing = component;
+                    existing.tstamps = combined_tstamps;
+                }
+                _ => {
+                    existing.tstamps = combined_tstamps;
+                }
+            }
+
+            continue;
+        }
+
+        deduped.push(component);
+    }
+
+    deduped
 }
 
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeLibParts()`. This is not
@@ -545,7 +585,9 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
 // Upstream parity: reduced local helper for `NETLIST_EXPORTER_XML::addSymbolFields()` /
 // `makeSymbols()`. This is not a 1:1 KiCad field resolver because the Rust tree still lacks the
 // full libpart/groups/variants export stack, but it keeps the first XML export slice on the same
-// occurrence-aware symbol text state instead of serializing raw parser-owned fields directly.
+// occurrence-aware symbol text state instead of serializing raw parser-owned fields directly. It
+// now also carries the representable `makeSymbols()` unit/tstamp data so multi-unit refs can be
+// collapsed onto one component owner.
 fn symbol_to_xml_component(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
@@ -584,6 +626,34 @@ fn symbol_to_xml_component(
         lib,
         part,
         path: sheet_path.instance_path.clone(),
+        tstamps: symbol.uuid.clone().into_iter().collect(),
+        units: symbol
+            .lib_symbol
+            .as_ref()
+            .map(|lib_symbol| {
+                let mut units = lib_symbol
+                    .units
+                    .iter()
+                    .map(|unit| {
+                        let mut pins = unit
+                            .draw_items
+                            .iter()
+                            .filter(|item| item.kind == "pin")
+                            .filter_map(|pin| pin.number.clone())
+                            .collect::<Vec<_>>();
+                        pins.sort_by(|lhs, rhs| str_num_cmp(lhs, rhs, true));
+                        pins.dedup();
+
+                        NetlistComponentUnit {
+                            name: unit.unit_name.clone().unwrap_or_else(|| unit.name.clone()),
+                            pins,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                units.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
+                units
+            })
+            .unwrap_or_default(),
         excluded_from_bom: !symbol.in_bom,
         excluded_from_board: !symbol.on_board,
         excluded_from_pos_files: !symbol.in_pos_files,
@@ -920,6 +990,44 @@ pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
                 &component.path
             })
         ));
+
+        if !component.tstamps.is_empty() {
+            xml.push_str("      <tstamps>");
+
+            for (index, tstamp) in component.tstamps.iter().enumerate() {
+                if index > 0 {
+                    xml.push(' ');
+                }
+
+                xml.push_str(&escape_xml(tstamp));
+            }
+
+            xml.push_str("</tstamps>\n");
+        }
+
+        if !component.units.is_empty() {
+            xml.push_str("      <units>\n");
+
+            for unit in component.units {
+                xml.push_str(&format!(
+                    "        <unit name=\"{}\">\n",
+                    escape_xml(&unit.name)
+                ));
+                xml.push_str("          <pins>\n");
+
+                for pin in unit.pins {
+                    xml.push_str(&format!(
+                        "            <pin num=\"{}\" />\n",
+                        escape_xml(&pin)
+                    ));
+                }
+
+                xml.push_str("          </pins>\n");
+                xml.push_str("        </unit>\n");
+            }
+
+            xml.push_str("      </units>\n");
+        }
 
         if component.excluded_from_bom {
             xml.push_str("      <property name=\"exclude_from_bom\" />\n");
