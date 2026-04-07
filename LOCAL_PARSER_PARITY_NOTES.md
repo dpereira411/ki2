@@ -191,7 +191,11 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 11. Cross-file post-load pipeline is still the active parity backlog
 
 - `BuildSheetListSortedByPageNumbers`
-  Status: first loader-side sheet-path list now exists and is fed from hierarchy links plus root `sheet_instances`; exact KiCad ordering/metadata is still incomplete.
+  Status: direct re-audit plus the existing sheet-path/page-order regressions now cover the current
+  `LoadedSheetPath` model closely enough: root-path seeding, root-page capture, child sheet
+  metadata, numeric/string/natural page ordering, and virtual-order tiebreak behavior are no
+  longer active ERC bottlenecks. Treat this branch as effectively exhausted unless a new concrete
+  sheet-path metadata discrepancy appears.
 - `UpdateSymbolInstanceData`
   Status: loader-side legacy `< 20221002` pass now applies root `symbol_instances` across the loaded hierarchy, preserves local instance value/footprint state, and keeps reused screens on the same first-instance-baseline / selected-occurrence model as the modern loader flow. Remaining gap is narrower hierarchical-reference/state modeling beyond the current symbol fields.
 - `UpdateSheetInstanceData`

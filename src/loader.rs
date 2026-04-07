@@ -353,6 +353,11 @@ impl SchematicLoader {
         Ok(())
     }
 
+    // Upstream parity: loader-side `BuildSheetListSortedByPageNumbers` analogue. This is not a
+    // 1:1 KiCad function boundary because the Rust loader keeps child expansion and sort helpers
+    // split out locally, but this routine owns root sheet-path seeding, root-page capture, and the
+    // final sorted loaded-sheet list. Direct re-audit plus current tests leave no active mismatch
+    // here in the present `LoadedSheetPath` model.
     fn build_sheet_list_sorted_by_page_numbers(&self, root_path: &Path) -> Vec<LoadedSheetPath> {
         let Some(root_index) = self.loaded_by_canonical.get(root_path) else {
             return Vec::new();
@@ -392,6 +397,10 @@ impl SchematicLoader {
         sheet_paths
     }
 
+    // Local helper for the upstream sheet-list builder. This helper exists because the Rust loader
+    // represents hierarchy expansion recursively before sorting the final list; upstream keeps the
+    // traversal inside a different set of owning C++ routines. Remaining behavior is intentionally
+    // narrow: expand child sheet-path metadata only, leaving page ordering to the owning builder.
     fn build_child_sheet_paths(
         &self,
         parent_path: &Path,
