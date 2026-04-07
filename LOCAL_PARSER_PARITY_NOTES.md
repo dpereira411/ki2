@@ -268,31 +268,30 @@ Concrete unblock path:
      - project-side sourcing for the current variant
      - any broader ERC semantics that need variant-aware sheet state beyond the current model
 
-There is also a second unblock requirement now:
+Upstream re-audit against `/Users/Daniel/Desktop/kicad/eeschema/schematic.cpp` corrected one
+earlier assumption:
 
-- the current tree now has a minimal companion `.kicad_pro` loader and preserves raw project JSON
-- but `current_variant` still cannot be sourced automatically because the actual project-side field
-  shape is still unknown in the local evidence set
-- so `current_variant` can only be set programmatically on `LoadResult`, not sourced the way KiCad
-  project state would source `SCHEMATIC::GetCurrentVariant()`
+- `SCHEMATIC::GetCurrentVariant()` / `SetCurrentVariant()` are schematic-owned session state on
+  `m_currentVariant`
+- they are not sourced from `.kicad_pro` / `.kicad_prl`
+- the local `LoadResult.current_variant` setter is therefore already the right kind of analogue for
+  current-variant selection in the current architecture
 
-Concrete unblock path for that source gap:
+What remains after that correction:
 
-1. done: add a minimal project/settings representation and companion `.kicad_pro` discovery path
-   that preserves raw project JSON on the loaded result
-2. identify the real project-side field shape for current-variant selection from upstream or a
-   concrete fixture
-3. route that source into `LoadResult.current_variant`
-4. once that field shape is identified, lock it
-   with a focused fixture and only then tighten ERC behavior that depends on project-selected
-   variants instead of a manual API
+- current-sheet switching also needed to refresh live sheet variant state on reused child screens
+  when the selected occurrence changes
+  - done: `set_current_sheet_path()` now refreshes live sheet variants as well as symbol variants
+    and page state
+- the remaining ERC drift is no longer a variant-source blocker
+- it is back to richer occurrence-aware model coverage beyond the current symbol/sheet state
 
-Current blocker evidence:
+Separate non-blocking infrastructure note:
 
-- nearby ERC parity `.kicad_pro` / `.kicad_prl` fixtures currently exposed no obvious
-  `variant` / `current_variant` key to wire up blindly
-- local code search in the nearby parity workspace still did not expose a concrete current-variant
-  project key or helper path to port directly
+- the current tree now has minimal companion `.kicad_pro` / `.kicad_prl` loaders that preserve raw
+  JSON on the loaded result
+- this is useful for future ERC/project-settings work, but it is not the source of
+  `SCHEMATIC::GetCurrentVariant()` parity
 
 Until that model exists, the remaining loader drift should be treated as blocked rather than as an
 unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or

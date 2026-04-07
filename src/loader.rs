@@ -58,6 +58,7 @@ impl LoadedProjectSettings {
 pub struct LoadResult {
     pub root_path: PathBuf,
     pub project: Option<LoadedProjectSettings>,
+    pub project_local_settings: Option<LoadedProjectSettings>,
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
@@ -104,11 +105,16 @@ impl LoadResult {
         self.project.as_ref()
     }
 
+    pub fn project_local_settings(&self) -> Option<&LoadedProjectSettings> {
+        self.project_local_settings.as_ref()
+    }
+
     // Upstream parity: current-sheet selection is the local entrypoint that exercises KiCad's
     // reused-screen occurrence switching side effects after load. This helper is not a 1:1
     // upstream routine because the Rust loader exposes selection directly on `LoadResult`, but it
-    // owns the live screen-state transition timing. Remaining divergence is blocked on richer
-    // occurrence state, especially selecting and applying per-instance variants.
+    // owns the live screen-state transition timing. Current symbol and sheet occurrence refresh now
+    // follow current-sheet switching through the selected path; remaining divergence is blocked on
+    // richer occurrence state beyond the current model.
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_path(instance_path).is_some() {
             let previous = self.current_sheet_path().cloned();
@@ -127,6 +133,12 @@ impl LoadResult {
                 instance_path,
             );
             self.current_sheet_instance_path = instance_path.to_string();
+            refresh_live_sheet_variant_state(
+                &mut self.schematics,
+                &self.sheet_paths,
+                &self.current_sheet_instance_path,
+                self.current_variant.as_deref(),
+            );
             if let Some(schematic) = self
                 .current_sheet_path()
                 .map(|sheet_path| sheet_path.schematic_path.clone())
@@ -148,11 +160,11 @@ impl LoadResult {
         }
     }
 
-    // Upstream parity: local project-selection analogue for KiCad's current schematic variant.
-    // This is not a 1:1 upstream routine because the current tree does not yet have KiCad's full
-    // project/settings layer, so the variant is selected directly on `LoadResult`. The current
-    // implementation intentionally limits itself to live symbol occurrence state; remaining sheet
-    // occurrence and broader ERC variant semantics still need richer model coverage.
+    // Upstream parity: local selection analogue for KiCad's `SCHEMATIC::SetCurrentVariant()`.
+    // This is not a 1:1 upstream routine because the current tree does not yet have a real
+    // schematic-owned controller object; the selected variant lives on `LoadResult` instead. The
+    // current implementation now refreshes both symbol and sheet occurrence state; remaining
+    // divergence is limited to richer occurrence semantics beyond the current model.
     pub fn set_current_variant(&mut self, variant: Option<&str>) {
         self.current_variant = variant
             .map(str::trim)
@@ -259,11 +271,12 @@ impl LoadResult {
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     // Upstream parity: local loader entrypoint for KiCad's cross-file schematic/project load
     // boundary. This is not a 1:1 upstream routine because the Rust tree still lacks KiCad's full
-    // project/settings classes; for now it discovers and preserves the companion `.kicad_pro`
-    // document so project-derived loader state has a real source. Remaining divergence is limited
-    // to the still-unconfirmed current-variant field shape and other project settings not yet
+    // schematic/project controller classes; for now it also preserves companion `.kicad_pro` and
+    // `.kicad_prl` JSON documents so later ERC/project work can consult real settings sources.
+    // Remaining divergence is limited to controller-level behavior and project settings not yet
     // modeled.
     let project = load_companion_project_settings(root)?;
+    let project_local_settings = load_companion_project_local_settings(root)?;
     let mut loader = SchematicLoader::new();
     let root_path = loader.load_schematic_file(root)?;
     let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
@@ -280,6 +293,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     Ok(LoadResult {
         root_path,
         project,
+        project_local_settings,
         schematics: loader.schematics,
         links: loader.links,
         sheet_paths,
@@ -288,17 +302,20 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     })
 }
 
-// Upstream parity: local helper for the project/settings half of the KiCad load pipeline. This is
-// not a 1:1 upstream routine because the current tree still does not model KiCad's project object;
-// it discovers the companion `.kicad_pro` file and preserves its raw JSON so later loader work can
-// source project-backed state without inventing a second parser. Remaining divergence is limited to
-// the unknown current-variant key shape and other project semantics not yet mapped.
-fn load_companion_project_settings(root: &Path) -> Result<Option<LoadedProjectSettings>, Error> {
+// Upstream parity: local helper for the shared companion-project JSON load path. This is not a 1:1
+// upstream routine because the current tree still does not model KiCad's project/local-settings
+// classes; it exists to keep `.kicad_pro` and `.kicad_prl` discovery on one JSON/diagnostic path
+// instead of duplicating parser behavior. Remaining divergence is limited to the still-unconfirmed
+// setting keys we need to read from the loaded documents.
+fn load_companion_project_json(
+    root: &Path,
+    extension: &str,
+) -> Result<Option<LoadedProjectSettings>, Error> {
     let dir = root.parent().unwrap_or(Path::new("."));
     let Some(stem) = root.file_stem().and_then(|stem| stem.to_str()) else {
         return Ok(None);
     };
-    let project_path = dir.join(format!("{stem}.kicad_pro"));
+    let project_path = dir.join(format!("{stem}.{extension}"));
     if !project_path.exists() {
         return Ok(None);
     }
@@ -319,6 +336,24 @@ fn load_companion_project_settings(root: &Path) -> Result<Option<LoadedProjectSe
         path: project_path,
         json,
     }))
+}
+
+// Upstream parity: local helper for the project-file side of KiCad's load boundary. This is not a
+// 1:1 upstream routine because the current tree still stores only raw JSON, not a real PROJECT_FILE
+// object; it exists so loader work can consult companion `.kicad_pro` state without inventing a
+// second parser.
+fn load_companion_project_settings(root: &Path) -> Result<Option<LoadedProjectSettings>, Error> {
+    load_companion_project_json(root, "kicad_pro")
+}
+
+// Upstream parity: local helper for project-local settings discovery. This is not a 1:1 upstream
+// routine because the current tree still lacks KiCad's PROJECT_LOCAL_SETTINGS object; it exists so
+// current-project UI state such as a possible active-variant source can be audited from the real
+// companion `.kicad_prl` file instead of guessed from parser state.
+fn load_companion_project_local_settings(
+    root: &Path,
+) -> Result<Option<LoadedProjectSettings>, Error> {
+    load_companion_project_json(root, "kicad_prl")
 }
 
 struct SchematicLoader {
@@ -1892,15 +1927,17 @@ fn refresh_live_sheet_variant_state(
             let Some(variant_name) = current_variant else {
                 continue;
             };
-            let active_instance = if let Some(selected) = selected_sheet_path {
+            let active_instance = if let Some(selected) =
+                selected_sheet_path.filter(|selected| !selected.instance_path.is_empty())
+            {
                 sheet
                     .instances
                     .iter()
                     .filter(|instance| {
                         selected.instance_path == instance.path
-                            || selected
-                                .instance_path
-                                .starts_with(&(instance.path.clone() + "/"))
+                            || instance
+                                .path
+                                .starts_with(&(selected.instance_path.clone() + "/"))
                     })
                     .max_by_key(|instance| instance.path.len())
                     .or_else(|| sheet.instances.first())

@@ -1745,6 +1745,184 @@ fn load_tree_rejects_invalid_companion_project_settings() {
 }
 
 #[test]
+fn load_tree_discovers_companion_project_local_settings() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_companion_project_local_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_local_path = dir.join("demo.kicad_prl");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_local_path,
+        "{\n  \"schematic\": {\n    \"last_open_sheet\": \"/root/child\"\n  }\n}\n",
+    )
+    .expect("write project local settings");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project_local = loaded
+        .project_local_settings()
+        .expect("project local settings");
+    assert_eq!(project_local.path, project_local_path);
+    assert_eq!(
+        project_local
+            .json
+            .get("schematic")
+            .and_then(|value| value.get("last_open_sheet"))
+            .and_then(|value| value.as_str()),
+        Some("/root/child")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_local_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn current_sheet_switch_refreshes_reused_child_sheet_variants() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_current_variant_reused_child_sheet_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let grand_path = dir.join("grand.kicad_sch");
+
+    let root_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000211")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "73000000-0000-0000-0000-000000000212")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "73000000-0000-0000-0000-000000000213")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/73000000-0000-0000-0000-000000000212" (page "2"))
+    (path "/73000000-0000-0000-0000-000000000213" (page "3")))
+)"#;
+
+    let child_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000220")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "73000000-0000-0000-0000-000000000221")
+    (property "Sheetname" "Grand")
+    (property "Sheetfile" "grand.kicad_sch")
+    (property "POP" "seed-pop-grand")
+    (instances
+      (project "demo"
+        (path "/73000000-0000-0000-0000-000000000211/73000000-0000-0000-0000-000000000212/73000000-0000-0000-0000-000000000221"
+          (page "10")
+          (variant
+            (name "ALT")
+            (field (name "POP") (value "ALT-POP-A"))))
+        (path "/73000000-0000-0000-0000-000000000211/73000000-0000-0000-0000-000000000213/73000000-0000-0000-0000-000000000221"
+          (page "11")
+          (variant
+            (name "ALT")
+            (field (name "POP") (value "ALT-POP-B")))))))
+  (sheet_instances
+    (path "/73000000-0000-0000-0000-000000000212" (page "2"))
+    (path "/73000000-0000-0000-0000-000000000213" (page "3")))
+)"#;
+
+    let grand_src = r#"(kicad_sch
+  (version 20231120)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000230")
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&grand_path, grand_src).expect("write grand");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    loaded.set_current_variant(Some("ALT"));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let grand_sheet = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) if sheet.name() == Some("Grand") => Some(sheet),
+            _ => None,
+        })
+        .expect("grand sheet");
+    assert_eq!(
+        grand_sheet
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("ALT-POP-A")
+    );
+
+    let second_child_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && sheet_path.page.as_deref() == Some("3")
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("second child path");
+    assert!(loaded.set_current_sheet_path(&second_child_path));
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let grand_sheet = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) if sheet.name() == Some("Grand") => Some(sheet),
+            _ => None,
+        })
+        .expect("grand sheet");
+    assert_eq!(
+        grand_sheet
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("ALT-POP-B")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(grand_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn legacy_symbol_instances_apply_explicit_empty_value_and_footprint() {
     let dir = env::temp_dir().join(format!(
         "ki2_legacy_empty_instances_{}",

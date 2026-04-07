@@ -62,14 +62,11 @@ Current ERC blocker:
   - live sheet objects now apply current-variant state through the selected local sheet occurrence
     when one matches the current sheet path, with first-instance fallback in the current model
 - remaining blocker is narrower:
-  - the current tree still lacks a project/settings source for `current_variant`
-  - broader ERC semantics that depend on richer occurrence-aware sheet/project state remain blocked
+  - direct upstream re-audit showed `SCHEMATIC::GetCurrentVariant()` is schematic-owned session
+    state, not project-file state
+  - local `LoadResult.current_variant` is therefore the right current-architecture analogue
+  - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked
     on that fuller model
-- separate source blocker:
-  - the current tree now preserves companion `.kicad_pro` JSON on the loaded result, but
-    `current_variant` still has no confirmed project-side key shape to read from that source
-  - nearby `.kicad_pro` fixtures still do not expose an obvious variant key to wire up blindly
-  - do not pretend `SCHEMATIC::GetCurrentVariant` parity is complete until that source layer exists
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
   model is expanded
 

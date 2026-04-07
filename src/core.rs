@@ -8,6 +8,7 @@ use crate::model::{PropertyKind, SchItem, Schematic};
 pub struct SchematicProject {
     pub root_path: PathBuf,
     pub project: Option<LoadedProjectSettings>,
+    pub project_local_settings: Option<LoadedProjectSettings>,
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
@@ -34,6 +35,7 @@ impl SchematicProject {
         Self {
             root_path: load.root_path,
             project: load.project,
+            project_local_settings: load.project_local_settings,
             schematics: load.schematics,
             links: load.links,
             sheet_paths: load.sheet_paths,
