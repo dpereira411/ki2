@@ -618,6 +618,15 @@ What is already covered indirectly:
   - occurrence-aware component filtering
   - reference/value/footprint/datasheet/description export
   - reduced `libsource`
+  - reduced component metadata properties:
+    - `exclude_from_bom`
+    - `exclude_from_board`
+    - `exclude_from_pos_files`
+    - `dnp`
+    - `ki_keywords`
+    - `ki_fp_filters`
+    - `duplicate_pin_numbers_are_jumpers`
+    - `jumper_pin_groups`
   - reduced user-field export
   - reduced `sheetpath`
   - reduced `libparts`

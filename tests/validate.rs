@@ -922,6 +922,74 @@ fn cli_netlist_sorts_components_and_nets_with_strnumcmp_ordering() {
 }
 
 #[test]
+fn cli_netlist_exports_component_metadata_properties() {
+    let path = temp_schematic(
+        "cli_netlist_component_metadata",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:JUMPER"
+      (duplicate_pin_numbers_are_jumpers yes)
+      (jumper_pin_groups ("1" "2") ("3" "4"))
+      (property "Reference" "JP" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "JUMPER" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (property "ki_keywords" "analog precision")
+      (property "ki_fp_filters" "R_* 0603")
+      (symbol "JUMPER_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:JUMPER")
+    (at 0 0 0)
+    (in_bom no)
+    (on_board no)
+    (dnp yes)
+    (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "JUMPER" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(
+        report.contains("<property name=\"exclude_from_bom\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<property name=\"exclude_from_board\" />"),
+        "{report}"
+    );
+    assert!(report.contains("<property name=\"dnp\" />"), "{report}");
+    assert!(
+        report.contains("<property name=\"ki_keywords\" value=\"analog precision\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<property name=\"ki_fp_filters\" value=\"R_* 0603\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<duplicate_pin_numbers_are_jumpers>1</duplicate_pin_numbers_are_jumpers>"),
+        "{report}"
+    );
+    assert!(report.contains("<jumper_pin_groups>"), "{report}");
+    assert!(report.contains("<group>"), "{report}");
+    assert!(report.contains("<pin>1</pin>"), "{report}");
+    assert!(report.contains("<pin>4</pin>"), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

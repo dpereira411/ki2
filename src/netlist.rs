@@ -23,6 +23,14 @@ pub struct NetlistComponent {
     pub lib: String,
     pub part: String,
     pub path: String,
+    pub excluded_from_bom: bool,
+    pub excluded_from_board: bool,
+    pub excluded_from_pos_files: bool,
+    pub dnp: bool,
+    pub keywords: Option<String>,
+    pub fp_filters: Vec<String>,
+    pub duplicate_pin_numbers_are_jumpers: bool,
+    pub jumper_pin_groups: Vec<Vec<String>>,
     pub properties: Vec<(String, String)>,
 }
 
@@ -277,7 +285,8 @@ fn is_auto_generated_net_name(net_name: &str) -> bool {
 // component filtering, reference/value/footprint exposure, and `LIB_ID` split needed by the first
 // live netlist CLI slice. Remaining divergence is the fuller KiCad duplicate-unit / variant /
 // libpart walk, but reference ordering now follows the upstream `StrNumCmp` path instead of plain
-// lexical sorting.
+// lexical sorting and the current component metadata carrier now includes the exercised lib/jumper
+// and placement flags KiCad emits on `<comp>`.
 pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponent> {
     let mut components = Vec::new();
 
@@ -575,6 +584,35 @@ fn symbol_to_xml_component(
         lib,
         part,
         path: sheet_path.instance_path.clone(),
+        excluded_from_bom: !symbol.in_bom,
+        excluded_from_board: !symbol.on_board,
+        excluded_from_pos_files: !symbol.in_pos_files,
+        dnp: symbol.dnp,
+        keywords: symbol
+            .lib_symbol
+            .as_ref()
+            .and_then(|lib_symbol| lib_symbol.keywords.clone()),
+        fp_filters: symbol
+            .lib_symbol
+            .as_ref()
+            .map(|lib_symbol| lib_symbol.fp_filters.clone())
+            .unwrap_or_default(),
+        duplicate_pin_numbers_are_jumpers: symbol
+            .lib_symbol
+            .as_ref()
+            .map(|lib_symbol| lib_symbol.duplicate_pin_numbers_are_jumpers)
+            .unwrap_or(false),
+        jumper_pin_groups: symbol
+            .lib_symbol
+            .as_ref()
+            .map(|lib_symbol| {
+                lib_symbol
+                    .jumper_pin_groups
+                    .iter()
+                    .map(|group| group.iter().cloned().collect())
+                    .collect()
+            })
+            .unwrap_or_default(),
         properties: fields.into_iter().collect(),
     })
 }
@@ -882,6 +920,58 @@ pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
                 &component.path
             })
         ));
+
+        if component.excluded_from_bom {
+            xml.push_str("      <property name=\"exclude_from_bom\" />\n");
+        }
+
+        if component.excluded_from_board {
+            xml.push_str("      <property name=\"exclude_from_board\" />\n");
+        }
+
+        if component.excluded_from_pos_files {
+            xml.push_str("      <property name=\"exclude_from_pos_files\" />\n");
+        }
+
+        if component.dnp {
+            xml.push_str("      <property name=\"dnp\" />\n");
+        }
+
+        if let Some(keywords) = component.keywords {
+            xml.push_str(&format!(
+                "      <property name=\"ki_keywords\" value=\"{}\" />\n",
+                escape_xml(&keywords)
+            ));
+        }
+
+        if !component.fp_filters.is_empty() {
+            xml.push_str(&format!(
+                "      <property name=\"ki_fp_filters\" value=\"{}\" />\n",
+                escape_xml(&component.fp_filters.join(" "))
+            ));
+        }
+
+        if component.duplicate_pin_numbers_are_jumpers {
+            xml.push_str(
+                "      <duplicate_pin_numbers_are_jumpers>1</duplicate_pin_numbers_are_jumpers>\n",
+            );
+        }
+
+        if !component.jumper_pin_groups.is_empty() {
+            xml.push_str("      <jumper_pin_groups>\n");
+
+            for group in component.jumper_pin_groups {
+                xml.push_str("        <group>\n");
+
+                for pin_name in group {
+                    xml.push_str(&format!("          <pin>{}</pin>\n", escape_xml(&pin_name)));
+                }
+
+                xml.push_str("        </group>\n");
+            }
+
+            xml.push_str("      </jumper_pin_groups>\n");
+        }
 
         if !component.properties.is_empty() {
             xml.push_str("      <fields>\n");
