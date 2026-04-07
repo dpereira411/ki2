@@ -2248,7 +2248,7 @@ fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
         ("TLINE", "" | "RLGC") => true,
         ("SW", "V" | "I") => true,
         ("D", "") => true,
-        ("NPN" | "PNP", "VBIC" | "GUMMELPOON" | "HICUML2") => true,
+        ("NPN" | "PNP", "VBIC" | "GUMMELPOON" | "HICUM2") => true,
         ("NJFET" | "PJFET", "SHICHMANHODGES" | "PARKERSKELLERN") => true,
         ("NMES" | "PMES", "STATZ" | "YTTERDAL" | "HFET1" | "HFET2") => true,
         (

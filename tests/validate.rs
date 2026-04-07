@@ -8092,6 +8092,39 @@ fn load_tree_does_not_warn_for_valid_transistor_current_sim_pairs() {
 }
 
 #[test]
+fn load_tree_does_not_warn_for_hicum2_current_sim_pairs() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000930")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:Q_NPN")
+    (property "Reference" "Q?")
+    (property "Sim.Device" "NPN")
+    (property "Sim.Type" "HICUM2")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_accepts_hicum2_current_sim_pairs", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .all(|warning| !warning.contains("No simulation model definition found"))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_infers_passive_structured_sim_model_from_value() {
     let src = r#"(kicad_sch
   (version 20260306)
