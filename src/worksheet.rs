@@ -11,6 +11,16 @@ pub struct WorksheetTextItem {
     pub at: [f64; 2],
 }
 
+#[derive(Debug, Clone)]
+struct WorksheetTextTemplate {
+    text: String,
+    at: [f64; 2],
+    repeat_count: i32,
+    incrx: f64,
+    incry: f64,
+    incrlabel: i32,
+}
+
 const REDUCED_DEFAULT_DRAWING_SHEET: &str = r#"(kicad_wks
   (version 20210606)
   (generator pl_editor)
@@ -90,9 +100,9 @@ impl ReducedWorksheetParser {
 
     // Upstream parity: reduced local analogue for the `DRAWING_SHEET_PARSER::Parse()` text-item
     // slice that ERC `TestTextVars()` needs. This is not a 1:1 worksheet parser because the local
-    // tree currently skips non-text drawing-sheet items and most text styling branches; it exists
-    // to unlock the exercised `tbtext` shown-text/assertion path before the fuller drawing-sheet
-    // engine is ported.
+    // tree currently skips non-text drawing-sheet items and most text styling branches, but it now
+    // also preserves the exercised `tbtext` repeat/increment behavior instead of collapsing every
+    // text item to one copy. Fuller page-option and styling semantics are still unported.
     fn parse(&mut self) -> Result<Vec<WorksheetTextItem>, Error> {
         self.need_left()?;
         let head = self.need_atom("kicad_wks or drawing_sheet")?;
@@ -110,7 +120,7 @@ impl ReducedWorksheetParser {
             let head = self.need_atom("worksheet item")?;
 
             match head.as_str() {
-                "tbtext" => items.push(self.parse_tbtext()?),
+                "tbtext" => items.extend(self.parse_tbtext()?),
                 _ => self.skip_current_list_body()?,
             }
         }
@@ -119,11 +129,20 @@ impl ReducedWorksheetParser {
         Ok(items)
     }
 
-    fn parse_tbtext(&mut self) -> Result<WorksheetTextItem, Error> {
+    // Upstream parity: reduced local analogue for the `tbtext` branch in
+    // `DRAWING_SHEET_PARSER::parseGraphic()`. This is not a 1:1 branch yet because the local
+    // carrier only preserves text position plus the exercised repeat/increment controls, while
+    // upstream also owns page-option, style, justification, and formatting state on worksheet
+    // text items.
+    fn parse_tbtext(&mut self) -> Result<Vec<WorksheetTextItem>, Error> {
         let raw_text = self.need_symbol_number_or_quoted("text")?;
-        let mut item = WorksheetTextItem {
+        let mut item = WorksheetTextTemplate {
             text: convert_legacy_drawing_sheet_text(&raw_text),
             at: [0.0, 0.0],
+            repeat_count: 1,
+            incrx: 0.0,
+            incry: 0.0,
+            incrlabel: 1,
         };
 
         while !self.at_right() {
@@ -134,12 +153,28 @@ impl ReducedWorksheetParser {
                 "pos" => {
                     item.at = self.parse_pos()?;
                 }
+                "repeat" => {
+                    item.repeat_count = self.parse_int("repeat count")?;
+                    self.need_right()?;
+                }
+                "incrx" => {
+                    item.incrx = self.parse_double("x increment")?;
+                    self.need_right()?;
+                }
+                "incry" => {
+                    item.incry = self.parse_double("y increment")?;
+                    self.need_right()?;
+                }
+                "incrlabel" => {
+                    item.incrlabel = self.parse_int("label increment")?;
+                    self.need_right()?;
+                }
                 _ => self.skip_current_list_body()?,
             }
         }
 
         self.need_right()?;
-        Ok(item)
+        Ok(expand_repeated_text_item(&item))
     }
 
     fn parse_pos(&mut self) -> Result<[f64; 2], Error> {
@@ -168,6 +203,27 @@ impl ReducedWorksheetParser {
                 .with_path(self.path.clone())
                 .with_span(token.span)
                 .with_position(self.line(token.span.start), self.column(token.span.start)),
+            });
+        }
+
+        Err(self.validation(token.span, format!("expecting {expected}")))
+    }
+
+    // Upstream parity: local worksheet-only integer reader used to keep `tbtext` repeat and
+    // increment branches on numeric-token validation instead of collapsing them into generic text
+    // parsing. It still exists because the reduced worksheet parser is separate from the main
+    // schematic parser/token helpers.
+    fn parse_int(&mut self, expected: &str) -> Result<i32, Error> {
+        let token = self.current_token().clone();
+
+        if let TokKind::Atom(value) = &token.kind {
+            self.idx += 1;
+            return value.parse::<i32>().map_err(|_| Error::Validation {
+                path: self.path.clone(),
+                diagnostic: Diagnostic::validation("worksheet-int", format!("invalid {expected}"))
+                    .with_path(self.path.clone())
+                    .with_span(token.span)
+                    .with_position(self.line(token.span.start), self.column(token.span.start)),
             });
         }
 
@@ -338,5 +394,55 @@ fn convert_legacy_drawing_sheet_text(text: &str) -> String {
         index += 1;
     }
 
+    out
+}
+
+// Upstream parity: reduced analogue for KiCad's worksheet text repetition expansion. This is not
+// a full 1:1 drawing-sheet item materializer because the local worksheet model only emits the
+// repeated text payloads ERC/text-variable checks currently observe.
+fn expand_repeated_text_item(item: &WorksheetTextTemplate) -> Vec<WorksheetTextItem> {
+    let repeat_count = item.repeat_count.clamp(1, 100);
+
+    (0..repeat_count)
+        .map(|index| WorksheetTextItem {
+            text: increment_label_text(&item.text, index * item.incrlabel, index == 0),
+            at: [
+                item.at[0] + (item.incrx * f64::from(index)),
+                item.at[1] + (item.incry * f64::from(index)),
+            ],
+        })
+        .collect()
+}
+
+// Upstream parity: reduced analogue for KiCad's repeated worksheet label increment behavior. It is
+// intentionally narrower than the full worksheet text formatter and only covers the exercised
+// single-line numeric/alphabetic suffix cases needed by repeated `tbtext` items.
+fn increment_label_text(text: &str, increment: i32, first: bool) -> String {
+    if first || text.contains('\n') || text.is_empty() {
+        return text.to_string();
+    }
+
+    let mut chars = text.chars().collect::<Vec<_>>();
+    let Some(last) = chars.pop() else {
+        return text.to_string();
+    };
+    let mut out = chars.into_iter().collect::<String>();
+
+    if last.is_ascii_digit() {
+        let base = i32::from((last as u8) - b'0');
+        out.push_str(&(base + increment).to_string());
+        return out;
+    }
+
+    if last.is_ascii() {
+        let base = last as i32;
+        let next = base + increment;
+        if let Some(next) = u32::try_from(next).ok().and_then(char::from_u32) {
+            out.push(next);
+            return out;
+        }
+    }
+
+    out.push(last);
     out
 }
