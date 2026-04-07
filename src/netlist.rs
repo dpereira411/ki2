@@ -33,6 +33,7 @@ pub struct NetlistComponent {
     pub fp_filters: Vec<String>,
     pub duplicate_pin_numbers_are_jumpers: bool,
     pub jumper_pin_groups: Vec<Vec<String>>,
+    pub variants: Vec<NetlistComponentVariant>,
     pub properties: Vec<(String, String)>,
 }
 
@@ -40,6 +41,13 @@ pub struct NetlistComponent {
 pub struct NetlistComponentUnit {
     pub name: String,
     pub pins: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistComponentVariant {
+    pub name: String,
+    pub properties: Vec<(String, String)>,
+    pub fields: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -595,6 +603,27 @@ fn symbol_to_xml_component(
 ) -> Option<NetlistComponent> {
     let state =
         resolved_symbol_text_state(symbol, &sheet_path.instance_path, project.current_variant());
+    let base_state = resolved_symbol_text_state(symbol, &sheet_path.instance_path, None);
+    let base_dnp = symbol
+        .occurrence_base
+        .as_ref()
+        .map(|base| base.dnp)
+        .unwrap_or(symbol.dnp);
+    let base_in_bom = symbol
+        .occurrence_base
+        .as_ref()
+        .map(|base| base.in_bom)
+        .unwrap_or(symbol.in_bom);
+    let base_excluded_from_sim = symbol
+        .occurrence_base
+        .as_ref()
+        .map(|base| base.excluded_from_sim)
+        .unwrap_or(symbol.excluded_from_sim);
+    let base_in_pos_files = symbol
+        .occurrence_base
+        .as_ref()
+        .map(|base| base.in_pos_files)
+        .unwrap_or(symbol.in_pos_files);
     let reference = resolved_property_value(&state.properties, "Reference")?;
     let value =
         resolved_property_value(&state.properties, "Value").unwrap_or_else(|| "~".to_string());
@@ -606,6 +635,81 @@ fn symbol_to_xml_component(
         .split_once(':')
         .map(|(lib, part)| (lib.to_string(), part.to_string()))
         .unwrap_or_else(|| (String::new(), symbol.lib_id.clone()));
+    let variants = symbol
+        .instances
+        .iter()
+        .find(|instance| instance.path == sheet_path.instance_path)
+        .map(|instance| {
+            instance
+                .variants
+                .iter()
+                .filter_map(|(name, variant)| {
+                    let mut properties = Vec::new();
+
+                    if variant.dnp != base_dnp {
+                        properties.push((
+                            "dnp".to_string(),
+                            if variant.dnp { "1" } else { "0" }.to_string(),
+                        ));
+                    }
+
+                    if variant.in_bom != base_in_bom {
+                        properties.push((
+                            "exclude_from_bom".to_string(),
+                            if variant.in_bom { "0" } else { "1" }.to_string(),
+                        ));
+                    }
+
+                    if variant.excluded_from_sim != base_excluded_from_sim {
+                        properties.push((
+                            "exclude_from_sim".to_string(),
+                            if variant.excluded_from_sim { "1" } else { "0" }.to_string(),
+                        ));
+                    }
+
+                    if variant.in_pos_files != base_in_pos_files {
+                        properties.push((
+                            "exclude_from_pos_files".to_string(),
+                            if variant.in_pos_files { "0" } else { "1" }.to_string(),
+                        ));
+                    }
+
+                    let mut fields = variant
+                        .fields
+                        .iter()
+                        .filter_map(|(field_name, field_value)| {
+                            let base_value = base_state
+                                .properties
+                                .iter()
+                                .find(|property| {
+                                    let property_key = if property.kind.is_mandatory() {
+                                        property.kind.canonical_key()
+                                    } else {
+                                        property.key.as_str()
+                                    };
+
+                                    property_key.eq_ignore_ascii_case(field_name)
+                                })
+                                .map(|property| property.value.as_str())
+                                .unwrap_or_default();
+
+                            (field_value != base_value)
+                                .then(|| (field_name.clone(), field_value.clone()))
+                        })
+                        .collect::<Vec<_>>();
+                    fields.sort_by(|(lhs, _), (rhs, _)| lhs.cmp(rhs));
+
+                    (!properties.is_empty() || !fields.is_empty()).then(|| {
+                        NetlistComponentVariant {
+                            name: name.clone(),
+                            properties,
+                            fields,
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     let mut fields = BTreeMap::new();
 
@@ -683,6 +787,7 @@ fn symbol_to_xml_component(
                     .collect()
             })
             .unwrap_or_default(),
+        variants,
         properties: fields.into_iter().collect(),
     })
 }
@@ -1079,6 +1184,43 @@ pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
             }
 
             xml.push_str("      </jumper_pin_groups>\n");
+        }
+
+        if !component.variants.is_empty() {
+            xml.push_str("      <variants>\n");
+
+            for variant in component.variants {
+                xml.push_str(&format!(
+                    "        <variant name=\"{}\">\n",
+                    escape_xml(&variant.name)
+                ));
+
+                for (name, value) in variant.properties {
+                    xml.push_str(&format!(
+                        "          <property name=\"{}\" value=\"{}\" />\n",
+                        escape_xml(&name),
+                        escape_xml(&value)
+                    ));
+                }
+
+                if !variant.fields.is_empty() {
+                    xml.push_str("          <fields>\n");
+
+                    for (name, value) in variant.fields {
+                        xml.push_str(&format!(
+                            "            <field name=\"{}\">{}</field>\n",
+                            escape_xml(&name),
+                            escape_xml(&value)
+                        ));
+                    }
+
+                    xml.push_str("          </fields>\n");
+                }
+
+                xml.push_str("        </variant>\n");
+            }
+
+            xml.push_str("      </variants>\n");
         }
 
         if !component.properties.is_empty() {

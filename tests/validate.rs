@@ -1050,6 +1050,113 @@ fn cli_netlist_collapses_multi_unit_components() {
 }
 
 #[test]
+fn cli_netlist_exports_component_variant_diffs() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_netlist_component_variants_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let schematic_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+    let report_path = schematic_path.with_extension("xml");
+
+    fs::write(
+        &project_path,
+        r#"{
+  "meta": { "filename": "root.kicad_pro", "version": 1 },
+  "schematic": {
+    "variants": [
+      { "name": "ALT", "description": "Alt build" }
+    ]
+  }
+}"#,
+    )
+    .expect("write project");
+
+    fs::write(
+        &schematic_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))
+    (instances
+      (project "root"
+        (path ""
+          (reference "R1")
+          (variant
+            (name "ALT")
+            (dnp yes)
+            (exclude_from_sim yes)
+            (in_bom no)
+            (in_pos_files no)
+            (field (name "Value") (value "22k"))
+            (field (name "Tolerance") (value "1%"))))))))"#,
+    )
+    .expect("write schematic");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", schematic_path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("<variants>"), "{report}");
+    assert!(report.contains("<variant name=\"ALT\">"), "{report}");
+    assert!(
+        report.contains("<property name=\"dnp\" value=\"1\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<property name=\"exclude_from_bom\" value=\"1\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<property name=\"exclude_from_sim\" value=\"1\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<property name=\"exclude_from_pos_files\" value=\"1\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<field name=\"Tolerance\">1%</field>"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<field name=\"Value\">22k</field>"),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(schematic_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(report_path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

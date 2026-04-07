@@ -628,6 +628,7 @@ What is already covered indirectly:
     - `ki_fp_filters`
     - `duplicate_pin_numbers_are_jumpers`
     - `jumper_pin_groups`
+  - reduced component-local variant diffs on `<comp><variants>`
   - reduced user-field export
   - reduced `sheetpath`
   - reduced `tstamps`
