@@ -529,7 +529,7 @@ pub fn resolve_symbol_sim_model_from_embedded_files(
 }
 
 fn classify_sim_library_name(name: &str) -> SimLibraryKind {
-    if name.to_ascii_lowercase().ends_with(".ibs") {
+    if name.ends_with(".ibs") {
         SimLibraryKind::Ibis
     } else {
         SimLibraryKind::Spice

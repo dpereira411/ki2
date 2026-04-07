@@ -6672,6 +6672,57 @@ fn classifies_symbol_sim_library_kind_from_embedded_sources() {
 }
 
 #[test]
+fn classifies_uppercase_ibs_extension_as_spice_library_kind() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000315")
+  (paper "A4")
+  (embedded_files
+    (file (name "driver.IBS") (type model) (data |ibis-model|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "driver.IBS")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("resolver_uppercase_ibs_library_kind", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        classify_symbol_sim_library_kind(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryKind::Spice)
+    );
+    assert_eq!(
+        resolve_symbol_sim_library(&schematic.path, &schematic.screen, symbol),
+        Some(ResolvedSimLibrary {
+            source: SimLibrarySource::SchematicEmbedded {
+                name: "driver.IBS".to_string(),
+            },
+            kind: SimLibraryKind::Spice,
+        })
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_hydrates_resolved_sim_library_on_symbol() {
     let src = r#"(kicad_sch
   (version 20260306)
