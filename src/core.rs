@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::loader::{
-    HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath,
+    ActiveSchematicSettings, HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath,
     refresh_current_screen_page_state, refresh_current_sheet_intersheet_refs,
     refresh_live_sheet_variant_state, refresh_live_symbol_occurrence_state,
     reset_reused_screen_symbol_state,
@@ -118,27 +118,8 @@ impl SchematicProject {
                 instance_path,
             );
             self.current_sheet_instance_path = instance_path.to_string();
-            let intersheet_refs_show = self
-                .project
-                .as_ref()
-                .and_then(LoadedProjectSettings::intersheet_refs_show)
-                .unwrap_or(false);
-            let intersheet_refs_own_page = self
-                .project
-                .as_ref()
-                .and_then(LoadedProjectSettings::intersheet_refs_own_page);
-            let intersheet_refs_short = self
-                .project
-                .as_ref()
-                .and_then(LoadedProjectSettings::intersheet_refs_short);
-            let intersheet_refs_prefix = self
-                .project
-                .as_ref()
-                .and_then(LoadedProjectSettings::intersheet_refs_prefix);
-            let intersheet_refs_suffix = self
-                .project
-                .as_ref()
-                .and_then(LoadedProjectSettings::intersheet_refs_suffix);
+            let schematic_settings =
+                ActiveSchematicSettings::from_project_settings(self.project.as_ref());
             refresh_current_sheet_intersheet_refs(
                 &mut self.schematics,
                 &self.sheet_paths,
@@ -146,11 +127,7 @@ impl SchematicProject {
                 &self.intersheet_ref_values,
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
-                intersheet_refs_show,
-                intersheet_refs_own_page,
-                intersheet_refs_short,
-                intersheet_refs_prefix.as_deref(),
-                intersheet_refs_suffix.as_deref(),
+                &schematic_settings,
             );
             refresh_live_symbol_occurrence_state(
                 &mut self.schematics,

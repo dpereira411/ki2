@@ -41,6 +41,41 @@ pub struct LoadedSheetPath {
 pub struct LoadedProjectSettings {
     pub path: PathBuf,
     pub json: Value,
+    pub schematic: LoadedSchematicSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedSchematicSettings {
+    pub intersheet_refs: LoadedIntersheetRefsSettings,
+}
+
+impl Default for LoadedSchematicSettings {
+    fn default() -> Self {
+        Self {
+            intersheet_refs: LoadedIntersheetRefsSettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedIntersheetRefsSettings {
+    pub show: bool,
+    pub own_page: bool,
+    pub short: bool,
+    pub prefix: String,
+    pub suffix: String,
+}
+
+impl Default for LoadedIntersheetRefsSettings {
+    fn default() -> Self {
+        Self {
+            show: false,
+            own_page: true,
+            short: false,
+            prefix: "[".to_string(),
+            suffix: "]".to_string(),
+        }
+    }
 }
 
 impl LoadedProjectSettings {
@@ -53,60 +88,104 @@ impl LoadedProjectSettings {
             .and_then(|value| i32::try_from(value).ok())
     }
 
-    // Upstream parity: local settings lookup for KiCad's `SCHEMATIC_SETTINGS::m_IntersheetRefsShow`.
-    // This is not a 1:1 upstream routine because the current tree still preserves raw project JSON
-    // instead of a typed schematic-settings object; it exists so loader-side current-sheet refresh
-    // can honor real project formatting settings when they are available.
-    pub fn intersheet_refs_show(&self) -> Option<bool> {
-        self.json
-            .get("drawing")
-            .and_then(Value::as_object)
-            .and_then(|drawing| drawing.get("intersheets_ref_show"))
-            .and_then(Value::as_bool)
+    // Upstream parity: typed local analogue for the intersheet-reference subset of
+    // `SCHEMATIC_SETTINGS`. This is not a 1:1 KiCad settings object because the current tree still
+    // preserves raw companion project JSON too, but loader/current-sheet refresh now reads one
+    // typed settings carrier instead of scattered ad-hoc JSON lookups.
+    pub fn from_json(path: PathBuf, json: Value) -> Self {
+        let mut schematic = LoadedSchematicSettings::default();
+
+        if let Some(drawing) = json.get("drawing").and_then(Value::as_object) {
+            if let Some(show) = drawing.get("intersheets_ref_show").and_then(Value::as_bool) {
+                schematic.intersheet_refs.show = show;
+            }
+
+            if let Some(own_page) = drawing
+                .get("intersheets_ref_own_page")
+                .and_then(Value::as_bool)
+            {
+                schematic.intersheet_refs.own_page = own_page;
+            }
+
+            if let Some(short) = drawing
+                .get("intersheets_ref_short")
+                .and_then(Value::as_bool)
+            {
+                schematic.intersheet_refs.short = short;
+            }
+
+            if let Some(prefix) = drawing
+                .get("intersheets_ref_prefix")
+                .and_then(Value::as_str)
+            {
+                schematic.intersheet_refs.prefix = prefix.to_string();
+            }
+
+            if let Some(suffix) = drawing
+                .get("intersheets_ref_suffix")
+                .and_then(Value::as_str)
+            {
+                schematic.intersheet_refs.suffix = suffix.to_string();
+            }
+        }
+
+        Self {
+            path,
+            json,
+            schematic,
+        }
     }
 
-    // Upstream parity: local settings lookup for KiCad's
-    // `SCHEMATIC_SETTINGS::m_IntersheetRefsListOwnPage`. This exists for the same reason as the
-    // show/hide lookup above: the current tree still carries raw project JSON rather than a typed
-    // schematic-settings object.
-    pub fn intersheet_refs_own_page(&self) -> Option<bool> {
-        self.json
-            .get("drawing")
-            .and_then(Value::as_object)
-            .and_then(|drawing| drawing.get("intersheets_ref_own_page"))
-            .and_then(Value::as_bool)
+    pub fn intersheet_refs(&self) -> &LoadedIntersheetRefsSettings {
+        &self.schematic.intersheet_refs
     }
 
-    // Upstream parity: local settings lookup for KiCad's
-    // `SCHEMATIC_SETTINGS::m_IntersheetRefsFormatShort`.
-    pub fn intersheet_refs_short(&self) -> Option<bool> {
-        self.json
-            .get("drawing")
-            .and_then(Value::as_object)
-            .and_then(|drawing| drawing.get("intersheets_ref_short"))
-            .and_then(Value::as_bool)
-    }
+    pub fn raw_local_value(&self, path: &[&str]) -> Option<&Value> {
+        let mut current = &self.json;
 
-    // Upstream parity: local settings lookup for KiCad's
-    // `SCHEMATIC_SETTINGS::m_IntersheetRefsPrefix`.
-    pub fn intersheet_refs_prefix(&self) -> Option<String> {
-        self.json
-            .get("drawing")
-            .and_then(Value::as_object)
-            .and_then(|drawing| drawing.get("intersheets_ref_prefix"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    }
+        for segment in path {
+            current = current.get(*segment)?;
+        }
 
-    // Upstream parity: local settings lookup for KiCad's
-    // `SCHEMATIC_SETTINGS::m_IntersheetRefsSuffix`.
-    pub fn intersheet_refs_suffix(&self) -> Option<String> {
-        self.json
-            .get("drawing")
-            .and_then(Value::as_object)
-            .and_then(|drawing| drawing.get("intersheets_ref_suffix"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
+        Some(current)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveSchematicSettings {
+    pub intersheet_refs: LoadedIntersheetRefsSettings,
+}
+
+impl Default for ActiveSchematicSettings {
+    fn default() -> Self {
+        Self {
+            intersheet_refs: LoadedIntersheetRefsSettings::default(),
+        }
+    }
+}
+
+impl ActiveSchematicSettings {
+    // Upstream parity: reduced typed settings carrier for loader/current-sheet refresh. This is
+    // not KiCad's full `SCHEMATIC_SETTINGS`, but it carries the currently exercised ERC-visible
+    // intersheet-reference settings in one typed object instead of scattered scalar lookups.
+    pub(crate) fn from_project_settings(project: Option<&LoadedProjectSettings>) -> Self {
+        project
+            .map(|project| Self {
+                intersheet_refs: project.intersheet_refs().clone(),
+            })
+            .unwrap_or_default()
+    }
+}
+
+impl LoadResult {
+    fn schematic_settings(&self) -> ActiveSchematicSettings {
+        ActiveSchematicSettings::from_project_settings(self.project.as_ref())
+    }
+}
+
+impl LoadedProjectSettings {
+    pub fn legacy_json(&self) -> &Value {
+        &self.json
     }
 }
 
@@ -124,39 +203,7 @@ pub struct LoadResult {
     pub intersheet_ref_pages_by_label: HashMap<String, BTreeSet<usize>>,
     pub sheet_pages_by_virtual_page: HashMap<usize, String>,
 }
-
 impl LoadResult {
-    fn intersheet_refs_show(&self) -> bool {
-        self.project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_show)
-            .unwrap_or(false)
-    }
-
-    fn intersheet_refs_own_page(&self) -> Option<bool> {
-        self.project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_own_page)
-    }
-
-    fn intersheet_refs_short(&self) -> Option<bool> {
-        self.project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_short)
-    }
-
-    fn intersheet_refs_prefix(&self) -> Option<String> {
-        self.project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_prefix)
-    }
-
-    fn intersheet_refs_suffix(&self) -> Option<String> {
-        self.project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_suffix)
-    }
-
     pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
         self.sheet_path("")
     }
@@ -229,11 +276,7 @@ impl LoadResult {
                 &self.current_sheet_instance_path,
                 self.current_variant.as_deref(),
             );
-            let intersheet_refs_show = self.intersheet_refs_show();
-            let intersheet_refs_own_page = self.intersheet_refs_own_page();
-            let intersheet_refs_short = self.intersheet_refs_short();
-            let intersheet_refs_prefix = self.intersheet_refs_prefix();
-            let intersheet_refs_suffix = self.intersheet_refs_suffix();
+            let schematic_settings = self.schematic_settings();
             refresh_current_sheet_intersheet_refs(
                 &mut self.schematics,
                 &self.sheet_paths,
@@ -241,11 +284,7 @@ impl LoadResult {
                 &self.intersheet_ref_values,
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
-                intersheet_refs_show,
-                intersheet_refs_own_page,
-                intersheet_refs_short,
-                intersheet_refs_prefix.as_deref(),
-                intersheet_refs_suffix.as_deref(),
+                &schematic_settings,
             );
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -385,6 +424,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     // modeled.
     let project = load_companion_project_settings(root)?;
     let project_local_settings = load_companion_project_local_settings(root)?;
+    let schematic_settings = ActiveSchematicSettings::from_project_settings(project.as_ref());
     let mut loader = SchematicLoader::new();
     let root_path = loader.load_schematic_file(root)?;
     let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
@@ -395,25 +435,7 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.migrate_sim_models();
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
-    loader.update_all_screen_references(
-        &sheet_paths,
-        project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_show)
-            .unwrap_or(false),
-        project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_own_page),
-        project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_short),
-        project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_prefix),
-        project
-            .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_suffix),
-    );
+    loader.update_all_screen_references(&sheet_paths, &schematic_settings);
     snapshot_sheet_occurrence_bases(&mut loader.schematics);
     snapshot_symbol_occurrence_bases(&mut loader.schematics);
     Ok(LoadResult {
@@ -461,10 +483,7 @@ fn load_companion_project_json(
         ),
     })?;
 
-    Ok(Some(LoadedProjectSettings {
-        path: project_path,
-        json,
-    }))
+    Ok(Some(LoadedProjectSettings::from_json(project_path, json)))
 }
 
 // Upstream parity: local helper for the project-file side of KiCad's load boundary. This is not a
@@ -1679,11 +1698,7 @@ impl SchematicLoader {
     fn update_all_screen_references(
         &mut self,
         sheet_paths: &[LoadedSheetPath],
-        intersheet_refs_show: bool,
-        intersheet_refs_own_page: Option<bool>,
-        intersheet_refs_short: Option<bool>,
-        intersheet_refs_prefix: Option<String>,
-        intersheet_refs_suffix: Option<String>,
+        schematic_settings: &ActiveSchematicSettings,
     ) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
@@ -1747,11 +1762,7 @@ impl SchematicLoader {
             &self.intersheet_ref_values,
             &self.intersheet_ref_pages_by_label,
             &self.sheet_pages_by_virtual_page,
-            intersheet_refs_show,
-            intersheet_refs_own_page,
-            intersheet_refs_short,
-            intersheet_refs_prefix.as_deref(),
-            intersheet_refs_suffix.as_deref(),
+            schematic_settings,
         );
     }
 }
@@ -1771,11 +1782,7 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     intersheet_ref_values: &HashMap<String, String>,
     intersheet_ref_pages_by_label: &HashMap<String, BTreeSet<usize>>,
     sheet_pages_by_virtual_page: &HashMap<usize, String>,
-    intersheet_refs_show: bool,
-    intersheet_refs_own_page: Option<bool>,
-    intersheet_refs_short: Option<bool>,
-    intersheet_refs_prefix: Option<&str>,
-    intersheet_refs_suffix: Option<&str>,
+    schematic_settings: &ActiveSchematicSettings,
 ) {
     for schematic in schematics.iter_mut() {
         for item in &mut schematic.screen.items {
@@ -1840,22 +1847,22 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
             intersheet_refs.at = Some(label.at);
         }
 
-        intersheet_refs.visible = intersheet_refs_show;
+        intersheet_refs.visible = schematic_settings.intersheet_refs.show;
 
-        if !intersheet_refs_show {
+        if !schematic_settings.intersheet_refs.show {
             continue;
         }
 
-        let prefix = intersheet_refs_prefix.unwrap_or_default();
-        let suffix = intersheet_refs_suffix.unwrap_or_default();
+        let prefix = schematic_settings.intersheet_refs.prefix.as_str();
+        let suffix = schematic_settings.intersheet_refs.suffix.as_str();
         intersheet_refs.value = match intersheet_ref_pages_by_label.get(&label.text) {
             Some(raw_pages) => {
                 let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();
-                if intersheet_refs_own_page == Some(false) {
+                if !schematic_settings.intersheet_refs.own_page {
                     pages.retain(|page_number| *page_number != current_sheet_path.sheet_number);
                 }
 
-                let refs = if intersheet_refs_short == Some(true) && pages.len() > 2 {
+                let refs = if schematic_settings.intersheet_refs.short && pages.len() > 2 {
                     let first = pages
                         .first()
                         .and_then(|page_number| sheet_pages_by_virtual_page.get(page_number))

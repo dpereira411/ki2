@@ -75,8 +75,9 @@ Current ERC blocker:
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet
       refs; the no-project path now uses KiCad's current default schematic-settings values, and
-      what remains is fuller typed user-config/settings override support beyond companion project
-      JSON
+      load/project refresh now share one typed intersheet-settings carrier instead of scattered raw
+      JSON scalar lookups. What remains is the broader KiCad schematic-settings surface beyond that
+      typed intersheet subset
       - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
     - current Rust shapes do not yet have the hatch/update state KiCad mutates with
       `shape->UpdateHatching()`

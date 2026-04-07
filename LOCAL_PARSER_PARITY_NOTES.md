@@ -310,18 +310,18 @@ What remains after that correction:
     - `prefix = "["`
     - `suffix = "]"`
   - remaining narrower drift under the same routine:
-    - the current Rust tree still lacks KiCad's fuller typed schematic-settings/config layer, so
-      user-config-driven overrides beyond companion project JSON still are not modeled
+    - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
+      `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
+    - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond
+      that typed intersheet-ref subset, so broader user-config-driven overrides are not modeled
     - KiCad also calls `shape->UpdateHatching()` during current-sheet refresh
     - the current Rust shape model does not carry hatch geometry/update state beyond fill type/color
     - treat both as model/settings expansion work, not as another branch tweak in `loader.rs`
-    - concrete unblock path for typed schematic settings:
-      1. add a typed schematic-settings carrier instead of only raw companion JSON
-      2. source current-sheet display settings from that typed layer first, then fall back to raw
-         companion project JSON only where the local tree still lacks a typed field
-      3. thread that typed settings object through load/project selection APIs so
-         `refresh_current_sheet_intersheet_refs()` stops taking ad-hoc scalar setting args
-      4. add focused regressions for typed settings overriding companion project JSON defaults
+    - typed-settings unblock path completed for current-sheet intersheet refs:
+      1. a typed settings carrier now exists
+      2. load/project refresh now source intersheet-ref display settings from that typed layer
+      3. `refresh_current_sheet_intersheet_refs()` no longer takes ad-hoc scalar setting args
+      4. focused companion-project regressions now lock the typed intersheet settings
     - concrete unblock path for shape hatching:
       1. expand `Shape` with hatch cache state analogous to KiCad `EDA_SHAPE`:
          dirty flag plus generated hatch-line/polygon cache

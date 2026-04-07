@@ -2018,7 +2018,7 @@ fn load_tree_discovers_companion_project_settings() {
     .expect("write schematic");
     fs::write(
         &project_path,
-        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
+        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"drawing\": {\n    \"intersheets_ref_show\": true,\n    \"intersheets_ref_own_page\": false,\n    \"intersheets_ref_short\": true,\n    \"intersheets_ref_prefix\": \"@\",\n    \"intersheets_ref_suffix\": \"!\"\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
     )
     .expect("write project");
 
@@ -2035,6 +2035,11 @@ fn load_tree_discovers_companion_project_settings() {
             .map(|rules| rules.len()),
         Some(0)
     );
+    assert!(project.intersheet_refs().show);
+    assert!(!project.intersheet_refs().own_page);
+    assert!(project.intersheet_refs().short);
+    assert_eq!(project.intersheet_refs().prefix, "@");
+    assert_eq!(project.intersheet_refs().suffix, "!");
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(project_path);
