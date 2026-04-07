@@ -346,9 +346,12 @@ What remains after that correction:
       that typed intersheet-ref subset, so broader user-config-driven overrides are not modeled
     - done for the exercised refresh branch: current-sheet refresh now materializes a reduced hatch
       cache on selected-screen schematic shapes instead of leaving `UpdateHatching()` as a no-op
+      - the reduced line-cache path now also clips 45-degree hatch segments across the full current
+        bounding box instead of the earlier truncated half-box coverage
     - remaining shape drift is narrower:
       - the current Rust shape model still lacks KiCad's fuller polygon/knockout hatch cache
-      - hatch geometry is reduced to cached line segments, not full `SHAPE_POLY_SET` parity
+      - hatch geometry is still reduced to cached line segments plus bbox clipping, not full
+        `SHAPE_POLY_SET` parity
     - treat the remaining hatch gap as geometry/cache expansion work, not as another branch tweak
       in `loader.rs`
     - typed-settings unblock path completed for current-sheet intersheet refs:

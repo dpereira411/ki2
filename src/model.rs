@@ -1041,26 +1041,19 @@ impl Shape {
 
         let width = bbox[1][0] - bbox[0][0];
         let height = bbox[1][1] - bbox[0][1];
-        let major = width.max(height);
-        let step = if major > spacing * 100.0 {
-            major / 100.0
+        let major_axis = width.max(height);
+        let line_span = width + height;
+        let step = if major_axis > spacing * 100.0 {
+            major_axis / 100.0
         } else {
             spacing
         };
 
         let mut offset = 0.0;
-        while offset <= major {
+        while offset <= line_span {
             for slope in slopes {
-                if *slope < 0.0 {
-                    self.hatch_lines.push([
-                        [bbox[0][0], bbox[0][1] + offset.min(height)],
-                        [bbox[0][0] + offset.min(width), bbox[0][1]],
-                    ]);
-                } else {
-                    self.hatch_lines.push([
-                        [bbox[0][0], bbox[1][1] - offset.min(height)],
-                        [bbox[0][0] + offset.min(width), bbox[1][1]],
-                    ]);
+                if let Some(segment) = self.clipped_hatch_segment(bbox, *slope, offset) {
+                    self.hatch_lines.push(segment);
                 }
             }
 
@@ -1109,6 +1102,81 @@ impl Shape {
                 Some([[min_x, min_y], [max_x, max_y]])
             }
         }
+    }
+
+    // Upstream parity: reduced local helper for the line-segment half of
+    // `EDA_SHAPE::UpdateHatching()`. This is not a 1:1 port of KiCad's polygon clipping because
+    // the current model still clips only against an axis-aligned bounding box, but it exists so
+    // hatch lines span the full current bounds instead of the previous truncated half-box path.
+    fn clipped_hatch_segment(
+        &self,
+        bbox: [[f64; 2]; 2],
+        slope: f64,
+        offset: f64,
+    ) -> Option<[[f64; 2]; 2]> {
+        let min_x = bbox[0][0];
+        let min_y = bbox[0][1];
+        let max_x = bbox[1][0];
+        let max_y = bbox[1][1];
+
+        let mut points = Vec::with_capacity(4);
+
+        if slope < 0.0 {
+            let sum = min_x + min_y + offset;
+            Self::push_hatch_intersection(&mut points, [min_x, sum - min_x], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(&mut points, [max_x, sum - max_x], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(&mut points, [sum - min_y, min_y], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(&mut points, [sum - max_y, max_y], min_x, min_y, max_x, max_y);
+        } else {
+            let diff = (min_y - max_x) + offset;
+            Self::push_hatch_intersection(&mut points, [min_x, diff + min_x], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(&mut points, [max_x, diff + max_x], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(&mut points, [min_y - diff, min_y], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(&mut points, [max_y - diff, max_y], min_x, min_y, max_x, max_y);
+        }
+
+        if points.len() < 2 {
+            return None;
+        }
+
+        let first = points.first().copied()?;
+        let last = points.last().copied()?;
+
+        if (first[0] - last[0]).abs() < 1e-9 && (first[1] - last[1]).abs() < 1e-9 {
+            return None;
+        }
+
+        Some([first, last])
+    }
+
+    fn push_hatch_intersection(
+        points: &mut Vec<[f64; 2]>,
+        point: [f64; 2],
+        min_x: f64,
+        min_y: f64,
+        max_x: f64,
+        max_y: f64,
+    ) {
+        let x = point[0];
+        let y = point[1];
+
+        let within = x >= min_x - 1e-9
+            && x <= max_x + 1e-9
+            && y >= min_y - 1e-9
+            && y <= max_y + 1e-9;
+
+        if !within {
+            return;
+        }
+
+        if points
+            .iter()
+            .any(|existing| (existing[0] - x).abs() < 1e-9 && (existing[1] - y).abs() < 1e-9)
+        {
+            return;
+        }
+
+        points.push([x, y]);
     }
 }
 
@@ -1989,7 +2057,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        BusEntry, FieldAutoplacement, Junction, Label, LabelKind, LabelShape, LabelSpin,
+        BusEntry, FieldAutoplacement, FillType, Junction, Label, LabelKind, LabelShape, LabelSpin,
         LibDrawItem, LibSymbol, LibSymbolUnit, Line, LineKind, NoConnect, Property, PropertyKind,
         Shape, ShapeKind, Sheet, SheetLocalInstance, SheetPin, SheetPinShape, SheetSide,
         SimModelOrigin, SimValueBinding, StrokeStyle, Symbol, SymbolLocalInstance, SymbolPin,
@@ -3300,6 +3368,22 @@ mod tests {
         assert!(polyline.points.is_empty());
         assert!(!arc.has_stroke);
         assert!(!arc.has_fill);
+    }
+
+    #[test]
+    fn rectangle_hatching_spans_full_bounds() {
+        let mut shape = Shape::new(ShapeKind::Rectangle);
+        shape.points = vec![[0.0, 0.0], [10.0, 10.0]];
+        shape.stroke.as_mut().expect("stroke").width = Some(1.0);
+        shape.fill.as_mut().expect("fill").fill_type = FillType::Hatch;
+
+        shape.update_hatching();
+
+        assert!(!shape.hatch_lines.is_empty());
+        assert!(shape.hatch_lines.iter().any(|segment| {
+            (segment[0] == [0.0, 10.0] && segment[1] == [10.0, 0.0])
+                || (segment[0] == [10.0, 0.0] && segment[1] == [0.0, 10.0])
+        }));
     }
 
     #[test]
