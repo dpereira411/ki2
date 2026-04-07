@@ -15,9 +15,47 @@ use crate::model::{Property, SchItem};
 pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     diagnostics.extend(check_duplicate_sheet_names(project));
+    diagnostics.extend(check_text_assertions(project));
     diagnostics.extend(check_unresolved_text_variables(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
+}
+
+fn parse_text_assertion(text: &str) -> Option<(Severity, String)> {
+    for (prefix, severity) in [
+        ("${ERC_WARNING", Severity::Warning),
+        ("${ERC_ERROR", Severity::Error),
+    ] {
+        let Some(rest) = text.strip_prefix(prefix) else {
+            continue;
+        };
+        let Some((message, _tail)) = rest.split_once('}') else {
+            continue;
+        };
+        return Some((severity, message.trim().to_string()));
+    }
+
+    None
+}
+
+fn text_assertion_diagnostic(
+    path: &std::path::Path,
+    severity: Severity,
+    message: String,
+) -> Diagnostic {
+    Diagnostic {
+        severity,
+        code: match severity {
+            Severity::Warning => "erc-generic-warning",
+            Severity::Error => "erc-generic-error",
+        },
+        kind: crate::diagnostic::DiagnosticKind::Validation,
+        message,
+        path: Some(path.to_path_buf()),
+        span: None,
+        line: None,
+        column: None,
+    }
 }
 
 fn resolved_property_value(properties: &[Property], token: &str) -> Option<String> {
@@ -366,6 +404,77 @@ pub fn check_duplicate_sheet_names(project: &SchematicProject) -> Vec<Diagnostic
                     line: None,
                     column: None,
                 });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for the exercised assertion-marker half of
+// `ERC_TESTER::TestTextVars()`. This is not a 1:1 KiCad marker pass because the current tree
+// still reports plain diagnostics and does not yet cover drawing-sheet or lib-child text, but it
+// preserves `${ERC_WARNING ...}` / `${ERC_ERROR ...}` handling on the exercised item families the
+// local text-var walker already visits. Remaining divergence is the broader unported assertion
+// surface outside those item families.
+pub fn check_text_assertions(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for schematic in &project.schematics {
+        for item in &schematic.screen.items {
+            match item {
+                SchItem::Symbol(symbol) => {
+                    for property in &symbol.properties {
+                        if let Some((severity, message)) = parse_text_assertion(&property.value) {
+                            diagnostics.push(text_assertion_diagnostic(
+                                &schematic.path,
+                                severity,
+                                message,
+                            ));
+                        }
+                    }
+                }
+                SchItem::Label(label) => {
+                    for property in &label.properties {
+                        if let Some((severity, message)) = parse_text_assertion(&property.value) {
+                            diagnostics.push(text_assertion_diagnostic(
+                                &schematic.path,
+                                severity,
+                                message,
+                            ));
+                        }
+                    }
+                }
+                SchItem::Sheet(sheet) => {
+                    for property in &sheet.properties {
+                        if let Some((severity, message)) = parse_text_assertion(&property.value) {
+                            diagnostics.push(text_assertion_diagnostic(
+                                &schematic.path,
+                                severity,
+                                message,
+                            ));
+                        }
+                    }
+                }
+                SchItem::Text(text) => {
+                    if let Some((severity, message)) = parse_text_assertion(&text.text) {
+                        diagnostics.push(text_assertion_diagnostic(
+                            &schematic.path,
+                            severity,
+                            message,
+                        ));
+                    }
+                }
+                SchItem::TextBox(text_box) => {
+                    if let Some((severity, message)) = parse_text_assertion(&text_box.text) {
+                        diagnostics.push(text_assertion_diagnostic(
+                            &schematic.path,
+                            severity,
+                            message,
+                        ));
+                    }
+                }
+                _ => {}
             }
         }
     }

@@ -319,6 +319,52 @@ fn erc_reports_unresolved_text_variables_on_exercised_items() {
 }
 
 #[test]
+fn erc_reports_text_assertions_on_exercised_items() {
+    let path = temp_schematic(
+        "erc_text_assertions",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73300000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (text "${ERC_WARNING top level warning}" (at 0 0 0))
+  (text_box "${ERC_ERROR textbox error}" (at 0 10 0) (size 5 5))
+  (symbol
+    (lib_id "Device:R")
+    (at 10 0 0)
+    (property "Custom" "${ERC_WARNING symbol warning}"))
+  (global_label "GL" (shape input) (at 20 0 0)
+    (property "Custom" "${ERC_ERROR label error}"))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| {
+            diagnostic.code == "erc-generic-warning" || diagnostic.code == "erc-generic-error"
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 4);
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-generic-warning" && diagnostic.message == "top level warning"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-generic-error" && diagnostic.message == "textbox error"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-generic-warning" && diagnostic.message == "symbol warning"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-generic-error" && diagnostic.message == "label error"
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)
