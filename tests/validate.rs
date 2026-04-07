@@ -8517,6 +8517,76 @@ fn load_tree_records_warning_for_invalid_current_sim_type_without_reference() {
 }
 
 #[test]
+fn load_tree_accepts_explicit_ibis_device_type_pair() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000913")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "driver.ibs")
+      (type model)
+      (data |[Component] DRIVER
+[Pin]
+pin signal model
+A1 SIGA MODEL_A
+B2 SIGB MODEL_B
+|)))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "U?")
+    (property "Value" "DRIVER")
+    (property "Sim.Device" "IBIS")
+    (property "Sim.Type" "DEVICE")
+    (property "Sim.Library" "driver.ibs")
+    (property "Sim.Name" "DRIVER")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_accepts_explicit_ibis_device_type_pair", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert!(
+        schematic
+            .screen
+            .parse_warnings
+            .iter()
+            .all(|warning| !warning
+                .contains("No simulation model definition found for symbol 'U?'."),)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::Ibis)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::IbisComponent)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_does_not_warn_for_valid_behavioral_current_sim_pairs() {
     let src = r#"(kicad_sch
   (version 20260306)

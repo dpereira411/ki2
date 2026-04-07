@@ -1317,6 +1317,7 @@ fn is_supported_builtin_sim_type(device: Option<&str>, model_type: Option<&str>)
                     | "TRRANDOM"
                     | "="
             )
+            | ("IBIS", "DEVICE" | "DCDRIVER" | "RECTDRIVER" | "PRBSDRIVER")
             | ("E" | "F" | "G" | "H" | "SUBCKT" | "XSPICE", "")
     )
 }
