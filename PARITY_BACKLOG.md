@@ -258,6 +258,187 @@ set is:
 - net codes
 - exporter-facing resolved net model
 
+## Netlist Export Parity Requirements
+
+If the target includes schematic export parity with KiCad CLI, the backlog must cover the upstream
+netlist/exporter stack too, not just ERC.
+
+Relevant upstream files:
+- `/Users/Daniel/Desktop/kicad/eeschema/eeschema_jobs_handler.cpp`
+- `/Users/Daniel/Desktop/kicad/eeschema/netlist_exporters/netlist_generator.cpp`
+- `/Users/Daniel/Desktop/kicad/eeschema/netlist_exporters/netlist_exporter_base.h`
+- `/Users/Daniel/Desktop/kicad/eeschema/netlist_exporters/netlist_exporter_base.cpp`
+- `/Users/Daniel/Desktop/kicad/eeschema/netlist_exporters/netlist_exporter_xml.cpp`
+- `/Users/Daniel/Desktop/kicad/eeschema/netlist_exporters/netlist_exporter_kicad.cpp`
+- `/Users/Daniel/Desktop/kicad/eeschema/netlist_exporters/netlist_exporter_spice.cpp`
+- format-specific exporters such as:
+  - OrCAD
+  - CADSTAR
+  - Allegro
+  - PADS
+
+### Upstream Export Preconditions
+
+Before KiCad writes a netlist, it does more than just serialize current symbols.
+
+Observed upstream preconditions:
+
+1. Annotation must be valid
+- `ReadyToNetlist()` / CLI job checks annotation first
+
+2. Duplicate sheet names are checked
+- `ERC_TESTER::TestDuplicateSheetNames(false)` is used as an export precondition
+
+3. Power symbols are annotated/fixed before export
+- `Hierarchy().AnnotatePowerSymbols()`
+
+4. Connectivity must be rebuilt/up to date
+- when incremental connectivity is enabled, netlist generation forces a full rebuild
+- exporter code assumes a valid connection model underneath
+
+This means export parity depends on:
+- hierarchy/load parity
+- annotation-visible symbol state
+- duplicate-sheet-name ERC parity
+- connectivity graph/net naming parity
+
+### Common Exporter Base Requirements
+
+The common exporter layer requires:
+
+1. Symbol iteration and filtering parity
+- `findNextSymbol(...)`
+- skip virtual/power-only/internal symbols where KiCad does
+- process only the correct occurrence/unit set
+
+2. Pin-list construction parity
+- `CreatePinList(...)`
+- `findAllUnitsOfSymbol(...)`
+- `eraseDuplicatePins(...)`
+- multi-unit symbol handling
+- duplicate power/common pins deduplication
+- connected vs unconnected pin retention rules per exporter
+
+3. Library-part collection parity
+- `m_libParts`
+- stable part/library identity for export
+
+4. Field/value exposure parity
+- mandatory/user/generated field visibility as seen by exporters
+- current variant and occurrence-aware field text where exporters use shown text
+
+### XML / KiCad Netlist Requirements
+
+The XML / KiCad-style exporters need:
+
+1. symbol list parity
+- references
+- values
+- footprints
+- fields
+- sheet paths
+- current variant-sensitive symbol state
+
+2. library / libpart parity
+- linked library identity
+- pins
+- aliases / units as exposed in export
+
+3. net list parity
+- resolved nets
+- per-net node membership
+- stable effective net names
+
+4. groups / variants / component class parity
+- upstream XML exporter includes:
+  - groups
+  - variants
+  - component class aggregation
+
+### SPICE Export Requirements
+
+SPICE export is a separate parity surface and is broader than core ERC.
+
+It needs:
+
+1. current-sheet-as-root behavior
+- `OPTION_CUR_SHEET_AS_ROOT`
+- reduced hierarchy-root selection parity
+
+2. SPICE net-name conversion
+- `ConvertToSpiceMarkup(...)`
+
+3. directive collection
+- `.include`
+- directives
+- save options / simulation command options
+
+4. simulation-model parity
+- this is why SPICE export is still downstream from the currently deferred sim-model backlog
+
+5. per-pin net-name generation
+- resolved net names must already exist before SPICE export can be 1:1
+
+### Non-SPICE Netlist Formats
+
+Formats like OrCAD, CADSTAR, Allegro, and PADS depend mostly on:
+- hierarchy/load parity
+- symbol/unit/pin-list parity
+- resolved net names
+- stable pin ordering and duplicate-pin handling
+- format-specific text normalization/sorting
+
+These are downstream from the common exporter base plus net naming.
+
+### Export Parity Queue
+
+Do not treat exporter parity as complete until all of these have been audited explicitly:
+
+1. common exporter base
+- symbol filtering
+- multi-unit collection
+- duplicate-pin erasure
+
+2. XML / KiCad netlist exporter
+- symbols
+- libraries/libparts
+- nets
+- variants/groups/component classes
+
+3. net naming parity
+- exporter-visible net names are only as good as the connection model
+
+4. format-specific exporters
+- only after the common exporter and XML/KiCad surfaces are locked
+
+5. SPICE exporter
+- explicitly last among exporters unless simulation parity becomes primary
+
+### Current Exporter Backlog Status
+
+What is already covered indirectly:
+- duplicate sheet names check is implemented on the ERC side
+- much of the hierarchy/current-sheet/variant groundwork is already present
+
+What is not yet explicitly tracked as complete:
+- exporter-base symbol/pin collection parity
+- XML/KiCad netlist structure parity
+- exporter-visible net naming parity
+- format-specific sorting/text normalization parity
+- SPICE exporter parity
+
+### Exporter-Specific Blockers
+
+1. Net exports are still blocked on reduced/full connectivity work
+- resolved net names
+- connected nodes
+- netclass-backed naming where relevant
+
+2. SPICE export remains blocked on deferred sim-model parity
+
+3. Some exporter-visible symbol/unit behavior may still expose occurrence/model reductions once
+   exporter audits begin
+
 ## Hierarchy / Loader Sign-Off Checklist
 
 Hierarchy/loading should not be called 1:1 signed off until these are closed:
