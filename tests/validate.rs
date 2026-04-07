@@ -8752,6 +8752,109 @@ fn load_tree_hydrates_current_behavioral_resistor_sim_model_from_value() {
 }
 
 #[test]
+fn load_tree_normalizes_current_resistor_value_notation() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000933")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "1" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "2" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Value" "3,300u")
+    (property "Sim.Device" "R")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_normalizes_current_resistor_value_notation", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![("r".to_string(), "3300u".to_string())])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_normalizes_current_source_value_notation() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000934")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:V"
+      (symbol "V_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "+" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "-" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:V")
+    (property "Reference" "V?")
+    (property "Value" "AC 1Meg")
+    (property "Sim.Device" "V")
+    (property "Sim.Type" "DC")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_normalizes_current_source_value_notation", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![("ac".to_string(), "1M".to_string())])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_defaults_current_resistor_sim_pins_from_fields() {
     let src = r#"(kicad_sch
   (version 20260306)

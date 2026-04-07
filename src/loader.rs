@@ -1661,12 +1661,13 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
     if matches!(device.as_str(), "R" | "L" | "C") && model_type.is_empty() {
         if params.is_empty() {
             let key = device.to_ascii_lowercase();
+            let normalized = normalize_inferred_si_value(&value);
 
             if looks_behavioral_value(&value) {
                 model_type = "=".to_string();
             }
 
-            params = format!("{key}=\"{value}\"");
+            params = format!("{key}=\"{}\"", normalized.as_deref().unwrap_or(&value));
         }
     } else if device.is_empty()
         && model_type.is_empty()
@@ -1674,12 +1675,13 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
     {
         device = prefix.chars().next().unwrap().to_string();
         let key = device.to_ascii_lowercase();
+        let normalized = normalize_inferred_si_value(&value);
 
         if looks_behavioral_value(&value) {
             model_type = "=".to_string();
         }
 
-        params = format!("{key}=\"{value}\"");
+        params = format!("{key}=\"{}\"", normalized.as_deref().unwrap_or(&value));
     } else if matches!(device.as_str(), "V" | "I") && (model_type.is_empty() || model_type == "DC")
     {
         if params.is_empty() {
@@ -1793,7 +1795,10 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
                 sim_model.model_type = Some("=".to_string());
             }
 
-            sim_model.param_pairs = vec![(prefix_param, value.to_string())];
+            sim_model.param_pairs = vec![(
+                prefix_param,
+                normalize_inferred_si_value(value).unwrap_or_else(|| value.to_string()),
+            )];
         }
         (Some("V") | Some("I"), None | Some("") | Some("DC")) => {
             if sim_model.params.is_some()
@@ -1941,22 +1946,210 @@ fn split_inferred_source_value(value: &str) -> (&'static str, String) {
     let trimmed = value.trim();
 
     if let Some(rest) = trimmed.strip_prefix("AC ") {
-        return ("ac", rest.trim().to_string());
+        return (
+            "ac",
+            normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
+        );
     }
 
     if let Some(rest) = trimmed.strip_prefix("ac ") {
-        return ("ac", rest.trim().to_string());
+        return (
+            "ac",
+            normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
+        );
     }
 
     if let Some(rest) = trimmed.strip_prefix("DC ") {
-        return ("dc", rest.trim().to_string());
+        return (
+            "dc",
+            normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
+        );
     }
 
     if let Some(rest) = trimmed.strip_prefix("dc ") {
-        return ("dc", rest.trim().to_string());
+        return (
+            "dc",
+            normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
+        );
     }
 
-    ("dc", trimmed.to_string())
+    (
+        "dc",
+        normalize_inferred_si_value(trimmed).unwrap_or_else(|| trimmed.to_string()),
+    )
+}
+
+fn normalize_inferred_si_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let split_at = trimmed
+        .find(|ch: char| !(ch.is_ascii_digit() || matches!(ch, '.' | ',' | ' ')))
+        .unwrap_or(trimmed.len());
+    let (mantissa, suffix) = trimmed.split_at(split_at);
+
+    if mantissa.is_empty() {
+        return None;
+    }
+
+    let normalized_mantissa = normalize_inferred_si_mantissa(mantissa)?;
+    let normalized_suffix = normalize_inferred_si_suffix(suffix.trim())?;
+
+    Some(format!("{normalized_mantissa}{normalized_suffix}"))
+}
+
+fn normalize_inferred_si_suffix(suffix: &str) -> Option<String> {
+    if suffix.is_empty() {
+        return Some(String::new());
+    }
+
+    if suffix == "µ" || suffix == "μ" {
+        return Some("u".to_string());
+    }
+
+    if suffix.eq_ignore_ascii_case("Meg") {
+        return Some("M".to_string());
+    }
+
+    if !suffix.chars().all(|ch| {
+        matches!(
+            ch,
+            'f' | 'F'
+                | 'p'
+                | 'P'
+                | 'n'
+                | 'N'
+                | 'u'
+                | 'U'
+                | 'm'
+                | 'M'
+                | 'k'
+                | 'K'
+                | 'g'
+                | 'G'
+                | 't'
+                | 'T'
+                | 'r'
+                | 'R'
+                | 'h'
+                | 'H'
+                | 'o'
+                | 'O'
+                | 'v'
+                | 'V'
+                | 'a'
+                | 'A'
+                | 'Ω'
+                | 'Ω'
+                | 'µ'
+                | 'μ'
+        )
+    }) {
+        return None;
+    }
+
+    Some(
+        suffix
+            .chars()
+            .map(|ch| match ch {
+                'µ' | 'μ' => 'u',
+                _ => ch,
+            })
+            .collect(),
+    )
+}
+
+fn normalize_inferred_si_mantissa(mantissa: &str) -> Option<String> {
+    let mut compact = mantissa.replace(' ', "");
+
+    if compact.is_empty() {
+        return None;
+    }
+
+    let mut ambiguous_separator: Option<char> = None;
+    let mut thousands_separator: Option<char> = None;
+    let mut thousands_found = false;
+    let mut decimal_separator: Option<char> = None;
+    let mut decimal_found = false;
+    let mut digits = 0usize;
+    let chars = compact.chars().collect::<Vec<_>>();
+
+    for index in (0..chars.len()).rev() {
+        let ch = chars[index];
+
+        if ch.is_ascii_digit() {
+            digits += 1;
+            continue;
+        }
+
+        if !matches!(ch, '.' | ',') {
+            return None;
+        }
+
+        match (decimal_separator, thousands_separator, ambiguous_separator) {
+            (Some(decimal), Some(thousands), _) => {
+                if ch == decimal {
+                    if thousands_found || decimal_found {
+                        return None;
+                    }
+
+                    decimal_found = true;
+                } else if ch == thousands {
+                    if digits != 3 {
+                        return None;
+                    }
+
+                    thousands_found = true;
+                } else {
+                    return None;
+                }
+            }
+            (None, None, Some(ambiguous)) => {
+                if ch == ambiguous {
+                    thousands_separator = Some(ambiguous);
+                    thousands_found = true;
+                    decimal_separator = Some(if ch == '.' { ',' } else { '.' });
+                } else {
+                    decimal_separator = Some(ambiguous);
+                    decimal_found = true;
+                    thousands_separator = Some(ch);
+                    thousands_found = true;
+                }
+            }
+            _ => {
+                if (index == 1 && chars[0] == '0') || digits != 3 {
+                    decimal_separator = Some(ch);
+                    decimal_found = true;
+                    thousands_separator = Some(if ch == '.' { ',' } else { '.' });
+                } else {
+                    ambiguous_separator = Some(ch);
+                }
+            }
+        }
+
+        digits = 0;
+    }
+
+    if decimal_separator.is_none() && thousands_separator.is_none() {
+        decimal_separator = Some('.');
+        thousands_separator = Some(',');
+    }
+
+    if let Some(thousands) = thousands_separator {
+        compact = compact.replace(thousands, "");
+    }
+
+    if let Some(decimal) = decimal_separator {
+        compact = compact
+            .chars()
+            .map(|ch| if ch == decimal { '.' } else { ch })
+            .collect();
+    }
+
+    Some(compact)
 }
 
 fn parse_loader_sim_param_pairs(params: &str) -> Vec<(String, String)> {
