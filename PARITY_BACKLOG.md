@@ -292,12 +292,14 @@ Current status:
   - loader, ERC, and net export now share one reduced connection owner
   - reduced connected-label driver/name selection now also lives there instead of being rebuilt in
     loader helpers
+  - reduced modern power-symbol net drivers now also live there instead of being silently unnamed
+    on export/current-sheet net-name paths
   - reduced sheet-pin name drivers now participate in that shared net-name ownership too
   - reduced point-netclass ownership now also lives there instead of being rebuilt in loader
     geometry scans
 - the next honest step is no longer "move connected label/rule-area scans":
-  - grow the shared owner from reduced connected-label/sheet-pin/netclass selection toward real
-    subgraph ownership and broader driver resolution
+  - grow the shared owner from reduced connected-label/power/sheet-pin/netclass selection toward
+    real subgraph ownership and broader driver resolution
 
 Remaining divergence:
 - this is still not a full KiCad `CONNECTION_GRAPH`

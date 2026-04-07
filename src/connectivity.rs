@@ -521,9 +521,9 @@ fn rule_area_contains_connected_component(
 
 fn reduced_label_driver_priority(label: &Label) -> i32 {
     match label.kind {
-        LabelKind::Global => 3,
-        LabelKind::Local => 2,
-        LabelKind::Hierarchical => 1,
+        LabelKind::Global => 7,
+        LabelKind::Local => 4,
+        LabelKind::Hierarchical => 3,
         LabelKind::Directive => 0,
     }
 }
@@ -536,6 +536,27 @@ fn reduced_sheet_pin_driver_rank(shape: SheetPinShape) -> i32 {
         | SheetPinShape::TriState
         | SheetPinShape::Unspecified => 0,
     }
+}
+
+fn reduced_power_pin_driver_priority(
+    symbol: &Symbol,
+    electrical_type: Option<&str>,
+) -> Option<i32> {
+    let lib_symbol = symbol.lib_symbol.as_ref()?;
+
+    if electrical_type != Some("power_in") || !lib_symbol.power {
+        return None;
+    }
+
+    Some(if lib_symbol.local_power { 5 } else { 6 })
+}
+
+fn symbol_value_text(symbol: &Symbol) -> Option<String> {
+    symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == crate::model::PropertyKind::SymbolValue)
+        .map(|property| property.value.clone())
 }
 
 fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
@@ -553,7 +574,9 @@ fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
 // drivers, and cached `SCH_CONNECTION` objects. It exists so loader shown-text and export paths do
 // not each pick the "first connected label" independently. The current reduced driver ranking is
 // limited to the driver kinds the Rust tree can already model on one sheet:
-// - global labels outrank local labels
+// - global labels outrank global power pins
+// - global power pins outrank local power pins
+// - local power pins outrank local labels
 // - local labels outrank hierarchical labels
 // - sheet pins participate below labels, with output pins preferred over non-output pins
 // - equal-priority drivers fall back to alphabetical shown text for deterministic parity instead
@@ -602,6 +625,25 @@ where
                     )
                 })
                 .max_by(|lhs, rhs| lhs.1.cmp(&rhs.1).then_with(|| rhs.2.cmp(&lhs.2))),
+            SchItem::Symbol(symbol) => projected_symbol_pin_info(symbol)
+                .into_iter()
+                .filter_map(|pin| {
+                    connected_component
+                        .members
+                        .iter()
+                        .any(|member| {
+                            member.kind == ConnectionMemberKind::SymbolPin
+                                && member.symbol_uuid == symbol.uuid
+                                && points_equal(member.at, pin.at)
+                        })
+                        .then_some(pin)
+                })
+                .find_map(|pin| {
+                    reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
+                        .and_then(|priority| {
+                            symbol_value_text(symbol).map(|text| (priority, 0, text))
+                        })
+                }),
             _ => None,
         })
         .filter(|(_, _, text)| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
