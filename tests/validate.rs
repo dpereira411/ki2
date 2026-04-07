@@ -838,6 +838,34 @@ fn erc_reports_similar_labels_that_differ_only_by_case() {
 }
 
 #[test]
+fn erc_reports_connected_driver_conflicts() {
+    let path = temp_schematic(
+        "erc_driver_conflict",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "NET_B" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "NET_A" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-driver-conflict"
+            && diagnostic.severity == ki2::diagnostic::Severity::Error
+            && diagnostic
+                .message
+                .contains("Both NET_A and NET_B are attached to the same items; NET_A will be used in the netlist")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_similar_local_labels_on_different_sheets() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_similar_local_labels_{}",

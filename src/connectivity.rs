@@ -613,6 +613,76 @@ fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
         || text.contains("CONNECTION_TYPE")
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ReducedStrongDriver {
+    priority: i32,
+    name: String,
+}
+
+fn collect_reduced_strong_drivers<F>(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+    mut shown_label_text: F,
+) -> Vec<ReducedStrongDriver>
+where
+    F: FnMut(&Label) -> String,
+{
+    let mut drivers = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Label(label)
+                if label.kind != LabelKind::Directive
+                    && !label_uses_connectivity_dependent_text(label)
+                    && connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::Label
+                            && points_equal(member.at, label.at)
+                    }) =>
+            {
+                let text = shown_label_text(label);
+                Some(ReducedStrongDriver {
+                    priority: reduced_label_driver_priority(label),
+                    name: text,
+                })
+            }
+            SchItem::Symbol(symbol) => {
+                let unit_pins = projected_symbol_pin_info(symbol);
+
+                unit_pins
+                    .iter()
+                    .filter(|pin| {
+                        connected_component.members.iter().any(|member| {
+                            member.kind == ConnectionMemberKind::SymbolPin
+                                && member.symbol_uuid == symbol.uuid
+                                && points_equal(member.at, pin.at)
+                        })
+                    })
+                    .find_map(|pin| {
+                        reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
+                            .and_then(|priority| {
+                                symbol_value_text(symbol).map(|text| ReducedStrongDriver {
+                                    priority,
+                                    name: text,
+                                })
+                            })
+                    })
+            }
+            _ => None,
+        })
+        .filter(|driver| {
+            !driver.name.is_empty() && !driver.name.contains("${") && !driver.name.starts_with('<')
+        })
+        .collect::<Vec<_>>();
+
+    drivers.sort_by(|lhs, rhs| {
+        rhs.priority
+            .cmp(&lhs.priority)
+            .then_with(|| lhs.name.cmp(&rhs.name))
+    });
+    drivers
+}
+
 // Upstream parity: reduced local analogue for the connected-driver naming part of
 // `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `driverName()/GetNameForDriver()`. This is not a
 // 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, sheet pins, power-pin
@@ -716,6 +786,31 @@ where
     );
 
     candidates.into_iter().map(|(_, _, text)| text).next()
+}
+
+// Upstream parity: reduced local analogue for the strong-driver conflict part of
+// `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `ercCheckMultipleDrivers()`. This is not a 1:1
+// KiCad subgraph conflict owner because the Rust tree still lacks full subgraphs, cached driver
+// item identity, and marker placement. It exists so ERC can report the exercised case where two
+// different strong driver names are attached to one reduced connected component and one wins the
+// net name according to the shared driver ranking.
+pub(crate) fn resolve_reduced_driver_conflict_at<F>(
+    schematic: &Schematic,
+    at: [f64; 2],
+    shown_label_text: F,
+) -> Option<(String, String)>
+where
+    F: FnMut(&Label) -> String,
+{
+    let connected_component = connection_component_at(schematic, at)?;
+    let drivers = collect_reduced_strong_drivers(schematic, &connected_component, shown_label_text);
+    let primary = drivers.first()?;
+    let secondary = drivers
+        .iter()
+        .skip(1)
+        .find(|driver| driver.name != primary.name)?;
+
+    Some((primary.name.clone(), secondary.name.clone()))
 }
 
 // Upstream parity: reduced local analogue for the driver-netclass lookup side of

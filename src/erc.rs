@@ -1,6 +1,6 @@
 use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
-    projected_symbol_pin_info,
+    projected_symbol_pin_info, resolve_reduced_driver_conflict_at,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -32,6 +32,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_mult_unit_pin_conflicts(project));
     diagnostics.extend(check_pin_to_pin(project));
+    diagnostics.extend(check_driver_conflicts(project));
     diagnostics.extend(check_duplicate_pin_nets(project));
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
@@ -1386,6 +1387,47 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                     column: None,
                 });
             }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckMultipleDrivers()`. This
+// is not a 1:1 KiCad subgraph-marker pass because the Rust tree still lacks full subgraph objects
+// and marker-owned item identity, but it reports the exercised connection-graph rule: when two
+// different strong driver names resolve on one connected component, the winning shared driver name
+// is reported and the lower-priority name is flagged. Remaining divergence is fuller bus/power
+// subgraph coverage and exact marker attachment.
+pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for component in collect_connection_components(schematic) {
+            let Some((primary_name, secondary_name)) =
+                resolve_reduced_driver_conflict_at(schematic, component.anchor, |label| {
+                    shown_label_text(project, sheet_path, label)
+                })
+            else {
+                continue;
+            };
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-driver-conflict",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Both {primary_name} and {secondary_name} are attached to the same items; {primary_name} will be used in the netlist"
+                ),
+                path: Some(schematic.path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 

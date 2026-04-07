@@ -356,6 +356,7 @@ Current status:
 - reduced four-way junction coverage is done
 - reduced no-connect pin coverage is done
 - reduced same-net / connected-component ownership is now live for the exercised ERC slice
+- reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
   - `${REF:NET_NAME(pin)}`
