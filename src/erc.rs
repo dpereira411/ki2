@@ -6,14 +6,14 @@ use crate::loader::{
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
     resolved_symbol_text_state,
 };
-use crate::model::{Property, SchItem};
+use crate::model::{MirrorAxis, Property, SchItem, Schematic, Symbol};
 use std::collections::BTreeMap;
 
-// Upstream parity: local entrypoint for the first implemented `ERC_TESTER` slice. This is not a
-// 1:1 KiCad ERC runner because the current tree still lacks markers, rule matrices, and connection
-// graph ownership, but it exists so ERC work can start from real upstream routines instead of
-// ad-hoc checks. Remaining divergence is the broader unported `ERC_TESTER` surface beyond the
-// implemented field-name-whitespace pass.
+// Upstream parity: local entrypoint for the implemented `ERC_TESTER` slice. This is not a 1:1
+// KiCad ERC runner because the current tree still lacks markers, the full pin-conflict matrix, and
+// full `CONNECTION_GRAPH` ownership. It exists so ERC work can proceed in upstream routine order
+// against real loaded schematic state instead of ad-hoc checks. Remaining divergence is the
+// broader unported `ERC_TESTER` surface beyond the reduced rules currently implemented here.
 pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     diagnostics.extend(check_duplicate_sheet_names(project));
@@ -23,8 +23,209 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_missing_netclasses(project));
     diagnostics.extend(check_missing_units(project));
     diagnostics.extend(check_label_multiple_wires(project));
+    diagnostics.extend(check_four_way_junction(project));
+    diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PointKey(u64, u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConnectionMemberKind {
+    SymbolPin,
+    SheetPin,
+    Wire,
+    Label,
+    Junction,
+    NoConnectMarker,
+}
+
+#[derive(Clone, Debug)]
+struct ConnectionMember {
+    kind: ConnectionMemberKind,
+    at: [f64; 2],
+    symbol_uuid: Option<String>,
+    visible: bool,
+    electrical_type: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ConnectionPointSnapshot {
+    at: [f64; 2],
+    members: Vec<ConnectionMember>,
+}
+
+fn point_key(at: [f64; 2]) -> PointKey {
+    PointKey(at[0].to_bits(), at[1].to_bits())
+}
+
+fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
+    let radians = angle_degrees.to_radians();
+    let (sin, cos) = radians.sin_cos();
+    [
+        (point[0] * cos) - (point[1] * sin),
+        (point[0] * sin) + (point[1] * cos),
+    ]
+}
+
+// Upstream parity: reduced local helper for `SCH_SYMBOL::GetPins( &sheet )` point projection. This
+// is not a 1:1 KiCad pin object path because the Rust tree still lacks live `SCH_PIN` instances on
+// placed symbols. It exists so the reduced ERC connection snapshot can include placed symbol pins
+// from linked lib-pin draw items instead of falling back to wire-only geometry.
+fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
+    let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+        return Vec::new();
+    };
+
+    let unit_number = symbol.unit.unwrap_or(1);
+    let body_style = symbol.body_style.unwrap_or(1);
+    let symbol_uuid = symbol.uuid.clone();
+
+    lib_symbol
+        .units
+        .iter()
+        .filter(|unit| unit.unit_number == unit_number && unit.body_style == body_style)
+        .flat_map(|unit| unit.draw_items.iter())
+        .filter(|item| item.kind == "pin")
+        .map(|pin| {
+            let mut local_at = pin.at.unwrap_or([0.0, 0.0]);
+
+            match symbol.mirror {
+                Some(MirrorAxis::X) => local_at[1] = -local_at[1],
+                Some(MirrorAxis::Y) => local_at[0] = -local_at[0],
+                None => {}
+            }
+
+            let rotated = rotate_point(local_at, symbol.angle);
+            let at = [symbol.at[0] + rotated[0], symbol.at[1] + rotated[1]];
+
+            ConnectionMember {
+                kind: ConnectionMemberKind::SymbolPin,
+                at,
+                symbol_uuid: symbol_uuid.clone(),
+                visible: pin.visible,
+                electrical_type: pin.electrical_type.clone(),
+            }
+        })
+        .collect()
+}
+
+fn push_connection_member(
+    snapshot: &mut BTreeMap<PointKey, ConnectionPointSnapshot>,
+    member: ConnectionMember,
+) {
+    let key = point_key(member.at);
+    let entry = snapshot
+        .entry(key)
+        .or_insert_with(|| ConnectionPointSnapshot {
+            at: member.at,
+            members: Vec::new(),
+        });
+
+    if member.kind == ConnectionMemberKind::SymbolPin {
+        if let Some(existing) = entry.members.iter_mut().find(|existing| {
+            existing.kind == ConnectionMemberKind::SymbolPin
+                && existing.symbol_uuid == member.symbol_uuid
+        }) {
+            if member.visible && !existing.visible {
+                *existing = member;
+            }
+
+            return;
+        }
+    }
+
+    entry.members.push(member);
+}
+
+// Upstream parity: reduced local analogue for the connection-point map built inside
+// `ERC_TESTER::TestFourWayJunction()` / `TestNoConnectPins()`. This is not a 1:1
+// `CONNECTION_GRAPH` port because the Rust tree still lacks KiCad's full subgraph ownership, but
+// it is needed so the remaining connection-driven ERC rules can run on pins, wires, sheet pins,
+// labels, junctions, and no-connect markers together instead of repeating isolated geometry scans.
+// Remaining divergence is fuller graph/subgraph ownership and item-class coverage beyond the
+// current ERC slice.
+fn collect_connection_points(schematic: &Schematic) -> BTreeMap<PointKey, ConnectionPointSnapshot> {
+    let mut snapshot = BTreeMap::new();
+
+    for item in &schematic.screen.items {
+        match item {
+            SchItem::Symbol(symbol) => {
+                for pin in projected_symbol_pins(symbol) {
+                    push_connection_member(&mut snapshot, pin);
+                }
+            }
+            SchItem::Sheet(sheet) => {
+                for pin in &sheet.pins {
+                    push_connection_member(
+                        &mut snapshot,
+                        ConnectionMember {
+                            kind: ConnectionMemberKind::SheetPin,
+                            at: pin.at,
+                            symbol_uuid: None,
+                            visible: pin.visible,
+                            electrical_type: None,
+                        },
+                    );
+                }
+            }
+            SchItem::Wire(line) => {
+                for point in &line.points {
+                    push_connection_member(
+                        &mut snapshot,
+                        ConnectionMember {
+                            kind: ConnectionMemberKind::Wire,
+                            at: *point,
+                            symbol_uuid: None,
+                            visible: true,
+                            electrical_type: None,
+                        },
+                    );
+                }
+            }
+            SchItem::Label(label) => {
+                push_connection_member(
+                    &mut snapshot,
+                    ConnectionMember {
+                        kind: ConnectionMemberKind::Label,
+                        at: label.at,
+                        symbol_uuid: None,
+                        visible: true,
+                        electrical_type: None,
+                    },
+                );
+            }
+            SchItem::Junction(junction) => {
+                push_connection_member(
+                    &mut snapshot,
+                    ConnectionMember {
+                        kind: ConnectionMemberKind::Junction,
+                        at: junction.at,
+                        symbol_uuid: None,
+                        visible: true,
+                        electrical_type: None,
+                    },
+                );
+            }
+            SchItem::NoConnect(no_connect) => {
+                push_connection_member(
+                    &mut snapshot,
+                    ConnectionMember {
+                        kind: ConnectionMemberKind::NoConnectMarker,
+                        at: no_connect.at,
+                        symbol_uuid: None,
+                        visible: true,
+                        electrical_type: None,
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    snapshot
 }
 
 #[derive(Clone)]
@@ -873,6 +1074,115 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
                     column: None,
                 });
             }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestFourWayJunction()`. This is not a
+// 1:1 KiCad marker pass because the Rust tree still lacks `SCH_MARKER` / `ERC_ITEM` and the full
+// connection graph, but it now uses a shared connection-point snapshot that includes projected
+// symbol pins and wire endpoints instead of a wire-only geometry shortcut. Remaining divergence is
+// fuller connection-graph ownership and broader item-class participation beyond the exercised ERC
+// slice.
+pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for point in collect_connection_points(schematic).into_values() {
+            let junction_items = point
+                .members
+                .iter()
+                .filter(|member| {
+                    matches!(
+                        member.kind,
+                        ConnectionMemberKind::SymbolPin
+                            | ConnectionMemberKind::SheetPin
+                            | ConnectionMemberKind::Wire
+                    )
+                })
+                .count();
+
+            if junction_items < 4 {
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-four-way-junction",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!("Four items connected at {}, {}", point.at[0], point.at[1]),
+                path: Some(schematic.path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestNoConnectPins()`. This is not a
+// 1:1 KiCad connectable-item walk because the Rust tree still lacks the full item connectivity API,
+// but it uses the shared connection-point snapshot and projected symbol pins so no-connect ERC now
+// checks real pin positions instead of a parser-only field approximation. Remaining divergence is
+// fuller connectable-item coverage and connection-graph ownership beyond the exercised rule.
+pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for point in collect_connection_points(schematic).into_values() {
+            let nc_pins = point
+                .members
+                .iter()
+                .filter(|member| {
+                    member.kind == ConnectionMemberKind::SymbolPin
+                        && member.electrical_type.as_deref() == Some("no_connect")
+                })
+                .count();
+
+            if nc_pins == 0 {
+                continue;
+            }
+
+            let connected_others = point.members.iter().filter(|member| {
+                !matches!(member.kind, ConnectionMemberKind::NoConnectMarker)
+                    && !(member.kind == ConnectionMemberKind::SymbolPin
+                        && member.electrical_type.as_deref() == Some("no_connect"))
+            });
+
+            if connected_others.clone().next().is_none() {
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-nc-pin-connected",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: "Pin with 'no connection' type is connected".to_string(),
+                path: Some(schematic.path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 

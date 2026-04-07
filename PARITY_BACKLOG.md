@@ -81,10 +81,10 @@ Implemented reduced analogues:
 - `ERC_TESTER::TestMissingUnits()`
 - `ERC_TESTER::TestMissingNetclasses()`
 - `ERC_TESTER::TestLabelMultipleWires()`
-
-Still pending for ERC:
 - `ERC_TESTER::TestFourWayJunction()`
 - `ERC_TESTER::TestNoConnectPins()`
+
+Still pending for ERC:
 - `ERC_TESTER::TestPinToPin()`
 - remaining drawing-sheet slice of `ERC_TESTER::TestTextVars()`
 
@@ -101,13 +101,11 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 
 1. Reduced current-sheet connectivity snapshot
 2. `NET_NAME` / `SHORT_NET_NAME` / `NET_CLASS` connection-backed parity
-3. `ERC_TESTER::TestFourWayJunction()`
-4. `ERC_TESTER::TestNoConnectPins()`
-5. `ERC_TESTER::TestPinToPin()`
-6. Remaining drawing-sheet `TestTextVars()` coverage
-7. Hierarchy/loading 1:1 sign-off gaps
-8. Final parser diagnostic wording polish
-9. Simulation-model parity last
+3. `ERC_TESTER::TestPinToPin()`
+4. Remaining drawing-sheet `TestTextVars()` coverage
+5. Hierarchy/loading 1:1 sign-off gaps
+6. Final parser diagnostic wording polish
+7. Simulation-model parity last
 
 ## Connectivity Graph Requirements
 
@@ -183,6 +181,24 @@ That reduced layer must provide:
 - default netclass
 - directive/rule-area influence for connected items
 
+Current status:
+- the reduced connection-point snapshot is now live in `src/erc.rs`
+- it currently includes:
+  - projected placed-symbol pins from linked lib-pin draw items
+  - sheet pins
+  - wire endpoints
+  - labels
+  - junctions
+  - no-connect markers
+- it is already used by:
+  - reduced `ERC_TESTER::TestFourWayJunction()`
+  - reduced `ERC_TESTER::TestNoConnectPins()`
+
+Remaining divergence:
+- this is still not a full KiCad `CONNECTION_GRAPH`
+- it still lacks subgraph ownership, driver resolution, and the broader graph-owned item model
+- the next real consumer is the pin-conflict matrix behind `TestPinToPin()`
+
 ### What Full KiCad Connectivity Is Used For
 
 The full graph is broader than ERC.
@@ -218,9 +234,14 @@ Required before implementing the remaining connection-driven ERC rules:
    - `NET_CLASS`
 4. Reused-sheet/current-sheet regressions for those variables
 5. Connection-point-driven regressions for:
-   - four-way junctions
-   - no-connect pins
    - pin-to-pin conflicts
+
+Current status:
+- step 1 is done
+- reduced four-way junction coverage is done
+- reduced no-connect pin coverage is done
+- the next missing dependency is step 2: reduced same-net / connected-component ownership for
+  pin-to-pin conflict checks
 
 ## Net Naming / CLI Requirements
 
@@ -474,11 +495,14 @@ ported that way.
 
 Unblock path:
 1. add reduced current-sheet connection-point snapshot
-2. group it into reduced connected components
-3. resolve effective driver / net naming on those components
-4. expose connection lookups to shown-text and ERC
-5. port `TestFourWayJunction()`
-6. port `TestNoConnectPins()`
+   - done
+2. use that snapshot for `TestFourWayJunction()`
+   - done
+3. use that snapshot for `TestNoConnectPins()`
+   - done
+4. group the same points into reduced connected components
+5. resolve effective same-net ownership on those components
+6. expose that reduced ownership to shown-text and ERC
 7. port `TestPinToPin()`
 
 ### Blocker: Hierarchy loading is not yet fully 1:1 signed off

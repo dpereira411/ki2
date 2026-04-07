@@ -610,6 +610,76 @@ fn erc_reports_labels_touching_multiple_wire_segments() {
 }
 
 #[test]
+fn erc_reports_four_way_junctions() {
+    let path = temp_schematic(
+        "erc_four_way_junction",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73910000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (wire (pts (xy 0 -10) (xy 0 0)))
+  (wire (pts (xy 0 0) (xy 0 10)))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-four-way-junction")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "Four items connected at 0, 0");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_connected_no_connect_pins() {
+    let path = temp_schematic(
+        "erc_no_connect_pin_connected",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73920000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:NC"
+      (symbol "NC_1_1"
+        (pin no_connect line
+          (at 0 0 0)
+          (length 2.54)
+          (name "NC")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:NC")
+    (at 0 0 0)
+    (uuid "73920000-0000-0000-0000-000000000002"))
+  (wire (pts (xy 0 0) (xy 10 0)))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-nc-pin-connected")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "Pin with 'no connection' type is connected"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)
