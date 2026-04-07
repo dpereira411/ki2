@@ -475,6 +475,114 @@ fn erc_reports_duplicate_sheet_names_case_insensitively() {
 }
 
 #[test]
+fn erc_reports_same_local_and_global_labels() {
+    let path = temp_schematic(
+        "erc_same_local_global_label",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (label "SIG" (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "SIG" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-same-local-global-label"
+            && diagnostic
+                .message
+                .contains("Local and global labels share the same shown text")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_similar_labels_that_differ_only_by_case() {
+    let path = temp_schematic(
+        "erc_similar_labels",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (label "Net_A" (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "net_a" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-similar-labels"
+            && diagnostic.severity == ki2::diagnostic::Severity::Warning
+            && diagnostic
+                .message
+                .contains("Similar labels differ only by case")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_similar_local_labels_on_different_sheets() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_similar_local_labels_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (label "net_a" (at 0 0 0) (effects (font (size 1 1)))))"#;
+    let root_src = format!(
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet (at 0 0) (size 20 20)
+    (uuid 11111111-1111-1111-1111-111111111111)
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1)))))
+  (label "Net_A" (at 0 0 0) (effects (font (size 1 1))))
+  (sheet_instances
+    (path "/"
+      (page "1"))
+    (path "/11111111-1111-1111-1111-111111111111"
+      (page "2"))))"#,
+        child_path.display()
+    );
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-similar-labels"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",

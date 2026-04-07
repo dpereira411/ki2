@@ -6,7 +6,7 @@ use crate::loader::{
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
     resolved_symbol_text_state,
 };
-use crate::model::{MirrorAxis, Property, SchItem, Schematic, Symbol};
+use crate::model::{LabelKind, MirrorAxis, Property, PropertyKind, SchItem, Schematic, Symbol};
 use std::collections::BTreeMap;
 
 // Upstream parity: local entrypoint for the implemented `ERC_TESTER` slice. This is not a 1:1
@@ -26,6 +26,8 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_four_way_junction(project));
     diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_pin_to_pin(project));
+    diagnostics.extend(check_similar_labels(project));
+    diagnostics.extend(check_same_local_global_label(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -746,6 +748,73 @@ fn shown_label_property_text(
         },
         0,
     )
+}
+
+// Upstream parity: reduced local analogue for `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1
+// KiCad label resolver because the current tree still runs through the reduced Rust text-variable
+// helpers instead of KiCad's full label/item resolver stack, but it preserves the exercised shown-
+// text behavior needed by ERC label checks.
+fn shown_label_text(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+    label: &crate::model::Label,
+) -> String {
+    resolve_text_variables(
+        &label.text,
+        &|token| {
+            resolve_label_connectivity_text_var(
+                &project.schematics,
+                &project.sheet_paths,
+                sheet_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                label,
+                token,
+            )
+            .or_else(|| {
+                if token.contains(':') {
+                    resolve_cross_reference_text_var(
+                        &project.schematics,
+                        &project.sheet_paths,
+                        sheet_path,
+                        project.project.as_ref(),
+                        project.current_variant(),
+                        token,
+                    )
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                resolve_label_text_token_without_connectivity(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    label,
+                    token,
+                )
+            })
+        },
+        0,
+    )
+}
+
+// Upstream parity: reduced local analogue for the power-label `GetValue( true, &sheet, false )`
+// path used by `ERC_TESTER::TestSimilarLabels()`. This is not a 1:1 placed-pin/value resolver
+// because the Rust tree still lacks live power-pin items, but it keeps power-symbol comparisons on
+// the same shown-value semantics already used elsewhere in the reduced text stack.
+fn shown_symbol_value_text(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+    symbol: &crate::model::Symbol,
+) -> Option<String> {
+    symbol
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::SymbolValue)
+        .map(|property| shown_symbol_property_text(project, sheet_path, symbol, property))
 }
 
 fn shown_text_item_text(
@@ -1548,6 +1617,226 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     }
 
     diagnostics
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SimilarLabelItemKind {
+    LocalLabel,
+    Label,
+    Power,
+}
+
+#[derive(Clone, Debug)]
+struct SimilarLabelEntry {
+    kind: SimilarLabelItemKind,
+    shown_text: String,
+    path: std::path::PathBuf,
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestSimilarLabels()`. This is not a
+// 1:1 KiCad marker pass because the Rust tree still compares reduced label/power snapshots instead
+// of `CONNECTION_SUBGRAPH` items and marker objects, but it preserves the exercised normalized
+// label/power collision rules, including the "similar local labels on different sheets are fine"
+// exception. Remaining divergence is broader connection-graph participation and marker selection.
+pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut seen: BTreeMap<String, Vec<SimilarLabelEntry>> = BTreeMap::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            match item {
+                SchItem::Label(label)
+                    if matches!(
+                        label.kind,
+                        LabelKind::Local | LabelKind::Global | LabelKind::Hierarchical
+                    ) =>
+                {
+                    let shown_text = shown_label_text(project, sheet_path, label);
+                    let normalized = shown_text.to_ascii_lowercase();
+                    let kind = if label.kind == LabelKind::Local {
+                        SimilarLabelItemKind::LocalLabel
+                    } else {
+                        SimilarLabelItemKind::Label
+                    };
+
+                    if let Some(existing) = seen.get(&normalized) {
+                        for other in existing {
+                            if shown_text == other.shown_text {
+                                continue;
+                            }
+
+                            if kind == SimilarLabelItemKind::LocalLabel
+                                && other.kind == SimilarLabelItemKind::LocalLabel
+                                && sheet_path.schematic_path != other.path
+                            {
+                                continue;
+                            }
+
+                            let (code, message) = match (kind, other.kind) {
+                                (SimilarLabelItemKind::Power, SimilarLabelItemKind::Power) => (
+                                    "erc-similar-power",
+                                    format!(
+                                        "Similar power names differ only by case: '{}' and '{}'",
+                                        shown_text, other.shown_text
+                                    ),
+                                ),
+                                (SimilarLabelItemKind::Power, _)
+                                | (_, SimilarLabelItemKind::Power) => (
+                                    "erc-similar-label-and-power",
+                                    format!(
+                                        "Similar label and power names differ only by case: '{}' and '{}'",
+                                        shown_text, other.shown_text
+                                    ),
+                                ),
+                                _ => (
+                                    "erc-similar-labels",
+                                    format!(
+                                        "Similar labels differ only by case: '{}' and '{}'",
+                                        shown_text, other.shown_text
+                                    ),
+                                ),
+                            };
+
+                            diagnostics.push(Diagnostic {
+                                severity: Severity::Warning,
+                                code,
+                                kind: crate::diagnostic::DiagnosticKind::Validation,
+                                message,
+                                path: Some(sheet_path.schematic_path.clone()),
+                                span: None,
+                                line: None,
+                                column: None,
+                            });
+                        }
+                    }
+
+                    seen.entry(normalized).or_default().push(SimilarLabelEntry {
+                        kind,
+                        shown_text,
+                        path: sheet_path.schematic_path.clone(),
+                    });
+                }
+                SchItem::Symbol(symbol)
+                    if symbol
+                        .lib_symbol
+                        .as_ref()
+                        .is_some_and(|lib_symbol| lib_symbol.power) =>
+                {
+                    let Some(shown_text) = shown_symbol_value_text(project, sheet_path, symbol)
+                    else {
+                        continue;
+                    };
+                    let normalized = shown_text.to_ascii_lowercase();
+
+                    if let Some(existing) = seen.get(&normalized) {
+                        for other in existing {
+                            if shown_text == other.shown_text {
+                                continue;
+                            }
+
+                            let (code, message) = match other.kind {
+                                SimilarLabelItemKind::Power => (
+                                    "erc-similar-power",
+                                    format!(
+                                        "Similar power names differ only by case: '{}' and '{}'",
+                                        shown_text, other.shown_text
+                                    ),
+                                ),
+                                _ => (
+                                    "erc-similar-label-and-power",
+                                    format!(
+                                        "Similar label and power names differ only by case: '{}' and '{}'",
+                                        shown_text, other.shown_text
+                                    ),
+                                ),
+                            };
+
+                            diagnostics.push(Diagnostic {
+                                severity: Severity::Warning,
+                                code,
+                                kind: crate::diagnostic::DiagnosticKind::Validation,
+                                message,
+                                path: Some(sheet_path.schematic_path.clone()),
+                                span: None,
+                                line: None,
+                                column: None,
+                            });
+                        }
+                    }
+
+                    seen.entry(normalized).or_default().push(SimilarLabelEntry {
+                        kind: SimilarLabelItemKind::Power,
+                        shown_text,
+                        path: sheet_path.schematic_path.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestSameLocalGlobalLabel()`. This is
+// not a 1:1 KiCad marker pass because the Rust tree still compares current shown-text snapshots
+// directly instead of subgraph-owned label items, but it preserves the exercised local-vs-global
+// name collision rule across the loaded hierarchy. Remaining divergence is fuller connection-graph
+// ownership and marker sheet-path metadata.
+pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut globals = BTreeMap::<String, std::path::PathBuf>::new();
+    let mut locals = BTreeMap::<String, std::path::PathBuf>::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Label(label) = item else {
+                continue;
+            };
+
+            let shown_text = shown_label_text(project, sheet_path, label);
+
+            match label.kind {
+                LabelKind::Global => {
+                    globals
+                        .entry(shown_text)
+                        .or_insert_with(|| sheet_path.schematic_path.clone());
+                }
+                LabelKind::Local => {
+                    locals
+                        .entry(shown_text)
+                        .or_insert_with(|| sheet_path.schematic_path.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    globals
+        .into_iter()
+        .filter_map(|(shown_text, path)| {
+            locals.get(&shown_text).map(|_| Diagnostic {
+                severity: Severity::Error,
+                code: "erc-same-local-global-label",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Local and global labels share the same shown text: '{}'",
+                    shown_text
+                ),
+                path: Some(path),
+                span: None,
+                line: None,
+                column: None,
+            })
+        })
+        .collect()
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestFieldNameWhitespace()`. This is

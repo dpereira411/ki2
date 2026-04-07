@@ -84,6 +84,8 @@ Implemented reduced analogues:
 - `ERC_TESTER::TestFourWayJunction()`
 - `ERC_TESTER::TestNoConnectPins()`
 - `ERC_TESTER::TestPinToPin()` reduced default-matrix slice
+- `ERC_TESTER::TestSameLocalGlobalLabel()`
+- `ERC_TESTER::TestSimilarLabels()` reduced label/power name slice
 - first local `erc` CLI command on top of the live loader/ERC engine
 - reduced ERC text-report output and default `<stem>-erc.rpt` behavior
 - reduced ERC JSON report output
