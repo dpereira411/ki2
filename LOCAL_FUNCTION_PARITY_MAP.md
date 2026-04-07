@@ -76,9 +76,10 @@ Current ERC blocker:
       - that exercised slice now also includes current-variant sheet-field / `DNP` resolution and
         variant-triggered page-ref-map recompute
       - the reduced resolver also now covers schematic `VARIANT` / `VARIANTNAME`, stable
-        title-block tokens, `${PROJECTNAME}`, and companion `.kicad_pro` `text_variables`
+        title-block tokens, `${PROJECTNAME}`, `${CURRENT_DATE}`, and companion `.kicad_pro`
+        `text_variables`
       - remaining divergence is the broader unported text-variable resolver surface
-        (`CURRENT_DATE`, VCS, net/cross-reference variables), not this exercised intersheet-ref
+        (VCS, net/cross-reference variables), not this exercised intersheet-ref
         branch
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also

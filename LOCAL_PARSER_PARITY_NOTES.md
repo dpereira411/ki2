@@ -322,9 +322,11 @@ What remains after that correction:
         the reduced resolver
       - current coverage now also locks project-level `${PROJECTNAME}` and companion
         `.kicad_pro` `text_variables` grouping in the reduced resolver
+      - current coverage now also locks project-level `${CURRENT_DATE}` grouping in the reduced
+        resolver
       - remaining divergence is the broader unported text-variable resolver surface
-        (`ResolveTextVar`, project date/VCS vars, net/cross-reference variables), not this
-        exercised intersheet-ref path
+        (`ResolveTextVar`, VCS vars, net/cross-reference variables), not this exercised
+        intersheet-ref path
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond

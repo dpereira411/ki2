@@ -14,6 +14,7 @@ use crate::sim::{
     resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
 };
 use serde_json::Value;
+use time::{OffsetDateTime, macros::format_description};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HierarchyLink {
@@ -3699,11 +3700,36 @@ fn resolved_sheet_text_state(
     Some(state)
 }
 
+fn current_iso_date() -> Option<String> {
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    now.date()
+        .format(format_description!("[year]-[month]-[day]"))
+        .ok()
+}
+
+// Upstream parity: reduced local helper for the currently exercised `PROJECT::TextVarResolver()`
+// slice. This is not a 1:1 KiCad boundary because the Rust tree still lacks KiCad's fuller
+// project/VCS resolver stack, but it keeps project-owned token handling in one place for the
+// intersheet shown-text path. Remaining divergence is the blocked VCS token branch.
+fn resolve_project_text_var(project: Option<&LoadedProjectSettings>, token: &str) -> Option<String> {
+    let project = project?;
+
+    if token.eq("PROJECTNAME") {
+        return Some(project.project_name());
+    }
+
+    if token.eq("CURRENT_DATE") {
+        return current_iso_date();
+    }
+
+    project.text_variable(token).map(str::to_string)
+}
+
 // Upstream parity: reduced local analogue for the schematic/project fallback half of
 // `SCHEMATIC::ResolveTextVar()`. This is not 1:1 because the current tree still lacks the full
 // project/controller resolver stack, but it now covers the exercised schematic/title-block/project
 // token slice used by intersheet shown text. Remaining divergence is broader project variables
-// like date/VCS and cross-reference/net resolvers.
+// like VCS and cross-reference/net resolvers.
 fn resolve_schematic_text_var(
     schematics: &[Schematic],
     loaded_path: &LoadedSheetPath,
@@ -3716,20 +3742,12 @@ fn resolve_schematic_text_var(
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
     let token_upper = token.to_ascii_uppercase();
 
-    match token_upper.as_str() {
-        "VARIANT" | "VARIANTNAME" => {
-            return Some(current_variant.unwrap_or_default().to_string());
-        }
-        "PROJECTNAME" => {
-            return project.map(LoadedProjectSettings::project_name);
-        }
-        _ => {}
+    if matches!(token_upper.as_str(), "VARIANT" | "VARIANTNAME") {
+        return Some(current_variant.unwrap_or_default().to_string());
     }
 
-    if let Some(project) = project {
-        if let Some(value) = project.text_variable(token) {
-            return Some(value.to_string());
-        }
+    if let Some(value) = resolve_project_text_var(project, token) {
+        return Some(value);
     }
 
     let title_block = schematic.screen.title_block.as_ref()?;
