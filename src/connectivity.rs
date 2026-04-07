@@ -13,6 +13,7 @@ pub(crate) enum ConnectionMemberKind {
     SymbolPin,
     SheetPin,
     Wire,
+    BusEntry,
     Label,
     Junction,
     NoConnectMarker,
@@ -217,6 +218,23 @@ pub(crate) fn collect_connection_points(
                     );
                 }
             }
+            SchItem::BusEntry(entry) => {
+                for point in [
+                    entry.at,
+                    [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]],
+                ] {
+                    push_connection_member(
+                        &mut snapshot,
+                        ConnectionMember {
+                            kind: ConnectionMemberKind::BusEntry,
+                            at: point,
+                            symbol_uuid: entry.uuid.clone(),
+                            visible: true,
+                            electrical_type: None,
+                        },
+                    );
+                }
+            }
             SchItem::Label(label) => {
                 push_connection_member(
                     &mut snapshot,
@@ -343,7 +361,14 @@ impl DisjointSet {
 pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<ConnectionComponent> {
     let point_snapshot = collect_connection_points(schematic);
     let points = point_snapshot.into_values().collect::<Vec<_>>();
-    let segments = collect_wire_segments(schematic);
+    let mut segments = collect_wire_segments(schematic);
+    segments.extend(schematic.screen.items.iter().filter_map(|item| match item {
+        SchItem::BusEntry(entry) => Some([
+            entry.at,
+            [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]],
+        ]),
+        _ => None,
+    }));
     let junctions = schematic
         .screen
         .items

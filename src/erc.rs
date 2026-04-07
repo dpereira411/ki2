@@ -1444,12 +1444,12 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics
 }
 
-// Upstream parity: reduced local analogue for the wire-only part of
+// Upstream parity: reduced local analogue for the wire/bus-entry part of
 // `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`. This is not a 1:1 KiCad endpoint-owner path
 // because the Rust tree still uses the shared reduced point snapshot instead of live dangling flags
 // on `SCH_LINE` / bus-entry items. It exists so ERC now checks unconnected wire endpoints on the
 // same shared connectivity carrier as the other graph-owned wire rules. Remaining divergence is
-// bus-entry endpoint ownership.
+// fuller bus-layer ownership beyond the current shared segment carrier.
 pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -1460,29 +1460,44 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
         let points = collect_connection_points(schematic);
 
         for item in &schematic.screen.items {
-            let SchItem::Wire(line) = item else {
-                continue;
+            let (endpoints, is_bus_entry) = match item {
+                SchItem::Wire(line) => (
+                    [line.points.first().copied(), line.points.last().copied()]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>(),
+                    false,
+                ),
+                SchItem::BusEntry(entry) => (
+                    vec![
+                        entry.at,
+                        [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]],
+                    ],
+                    true,
+                ),
+                _ => continue,
             };
 
-            for endpoint in [line.points.first().copied(), line.points.last().copied()]
-                .into_iter()
-                .flatten()
-            {
+            for endpoint in endpoints {
                 let is_dangling = points
                     .values()
                     .find(|point| points_equal(point.at, endpoint))
                     .is_some_and(|point| {
                         !point.members.iter().any(|member| {
-                            member.kind != ConnectionMemberKind::Wire
-                                || point
-                                    .members
-                                    .iter()
-                                    .filter(|member| {
-                                        member.kind == ConnectionMemberKind::Wire
-                                            && points_equal(member.at, endpoint)
-                                    })
-                                    .count()
-                                    > 1
+                            !matches!(
+                                member.kind,
+                                ConnectionMemberKind::Wire | ConnectionMemberKind::BusEntry
+                            ) || point
+                                .members
+                                .iter()
+                                .filter(|member| {
+                                    matches!(
+                                        member.kind,
+                                        ConnectionMemberKind::Wire | ConnectionMemberKind::BusEntry
+                                    ) && points_equal(member.at, endpoint)
+                                })
+                                .count()
+                                > 1
                         })
                     });
 
@@ -1494,10 +1509,17 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     severity: Severity::Warning,
                     code: "erc-unconnected-wire-endpoint",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Unconnected wire endpoint at {}, {}",
-                        endpoint[0], endpoint[1]
-                    ),
+                    message: if is_bus_entry {
+                        format!(
+                            "Unconnected wire to bus entry at {}, {}",
+                            endpoint[0], endpoint[1]
+                        )
+                    } else {
+                        format!(
+                            "Unconnected wire endpoint at {}, {}",
+                            endpoint[0], endpoint[1]
+                        )
+                    },
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
@@ -1510,13 +1532,13 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
     diagnostics
 }
 
-// Upstream parity: reduced local analogue for the wire-only part of
+// Upstream parity: reduced local analogue for the wire/bus-entry part of
 // `CONNECTION_GRAPH::ercCheckFloatingWires()`. This is not a 1:1 KiCad subgraph-driver pass
 // because the Rust tree still treats "floating" as a shared connected wire component with no
 // attached pins, labels, sheet pins, or no-connect markers rather than a full graph-owned driver
 // object. It exists so the current ERC runner now flags reduced floating wire components instead of
 // stopping at point-local endpoint warnings. Remaining divergence is fuller driver ownership and
-// bus-entry participation.
+// bus-layer semantics beyond the current shared segment carrier.
 pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -1526,10 +1548,12 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
         };
 
         for component in collect_connection_components(schematic) {
-            let has_wire = component
-                .members
-                .iter()
-                .any(|member| member.kind == ConnectionMemberKind::Wire);
+            let has_wire = component.members.iter().any(|member| {
+                matches!(
+                    member.kind,
+                    ConnectionMemberKind::Wire | ConnectionMemberKind::BusEntry
+                )
+            });
 
             if !has_wire {
                 continue;

@@ -1144,6 +1144,64 @@ fn erc_allows_connected_wire_endpoints() {
 }
 
 #[test]
+fn erc_reports_floating_bus_entries_and_dangling_bus_entry_endpoints() {
+    let path = temp_schematic(
+        "erc_floating_bus_entry",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (bus_entry (at 0 0) (size 10 10)))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-wire-dangling"
+            && diagnostic.message == "Floating wire component at 0, 0"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-unconnected-wire-endpoint"
+            && diagnostic.message == "Unconnected wire to bus entry at 0, 0"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-unconnected-wire-endpoint"
+            && diagnostic.message == "Unconnected wire to bus entry at 10, 10"
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_bus_entry_endpoint_connected_to_wire() {
+    let path = temp_schematic(
+        "erc_connected_bus_entry",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 0) (xy 0 0)))
+  (bus_entry (at 0 0) (size 10 10)))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "erc-unconnected-wire-endpoint"
+                && diagnostic.message == "Unconnected wire to bus entry at 0, 0"
+        }),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_connected_directive_labels() {
     let path = temp_schematic(
         "erc_connected_directive_label",
