@@ -286,7 +286,7 @@ Current status:
   - reduced `ERC_TESTER::TestPinToPin()`
   - connection-backed shown-text / net-name resolution in `src/loader.rs`
   - connection-backed `NET_CLASS` ownership in `src/loader.rs`
-  - reduced XML net export pin/net ownership in `src/netlist.rs`
+  - reduced XML net export pin/net ownership and component-first net grouping in `src/netlist.rs`
 - ownership is now materially closer to KiCad than before:
   - ERC no longer owns the only connection-point/component builder
   - loader, ERC, and net export now share one reduced connection owner
@@ -299,6 +299,8 @@ Current status:
     longer dropped from reduced export/current-sheet naming
   - reduced point-netclass ownership now also lives there instead of being rebuilt in loader
     geometry scans
+  - reduced XML export now walks shared connection components first instead of only asking every
+    pin for an independent point-net name
 - the next honest step is no longer "move connected label/rule-area scans":
   - grow the shared owner from reduced connected-label/power/sheet-pin/default-pin/netclass
     selection toward real subgraph ownership and broader driver resolution
