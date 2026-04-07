@@ -298,15 +298,33 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 ### More Exact Current Priority
 
-1. Re-open the remaining blocked `MigrateSimModels` branch on the new structured `Symbol.sim_model` state instead of flat field-only rewrites.
-2. Revisit loader page/intersheet branches only if a new concrete model-visible mismatch appears.
-3. Leave parser-only blocked surfaces alone unless we explicitly choose fixture migration or error-model expansion.
+Primary goal has changed from full simulation parity to ERC-critical loader parity.
+
+1. Keep simulation-model work at the end of the backlog. It is not a prerequisite for hierarchy
+   loading, current-sheet semantics, intersheet references, or core ERC-visible symbol/sheet state.
+2. Re-open loader/post-load branches that materially affect ERC parity first:
+   - `UpdateAllScreenReferences`
+   - `UpdateSymbolInstanceData`
+   - `UpdateSheetInstanceData`
+   - `SetSheetNumberAndCount`
+   - `RecomputeIntersheetRefs`
+   - `FixLegacyPowerSymbolMismatches`
+3. Only reopen parser blocked surfaces if ERC-driven loader work exposes a concrete parser/state
+   mismatch.
+4. Leave the remaining `MigrateSimModels` branch parked until the ERC-critical queue is exhausted or
+   we explicitly decide to build the fuller resolved simulator-model layer.
 
 ### Recommended Next Order
 
-1. move the active queue to the remaining blocked `MigrateSimModels` branch on structured `Symbol.sim_model`
-2. revisit loader page/intersheet branches only when a concrete new mismatch appears
-3. only then revisit parser blocked surfaces
+1. direct upstream re-audit of `UpdateAllScreenReferences` for remaining ERC-visible reused-screen /
+   current-occurrence drift
+2. direct upstream re-audit of `UpdateSymbolInstanceData` and `UpdateSheetInstanceData` for any
+   remaining symbol/sheet occurrence mismatches that affect ERC-visible state
+3. revisit `SetSheetNumberAndCount` / `RecomputeIntersheetRefs` only when a concrete current-sheet,
+   page-state, or intersheet-reference discrepancy appears
+4. revisit `FixLegacyPowerSymbolMismatches` only when a concrete lib-pin/screen mismatch appears
+5. keep the remaining `MigrateSimModels` branch at the end of the backlog as non-ERC simulation
+   parity work
 
 ### Bottom Line
 
@@ -316,4 +334,6 @@ prevent a literal claim of perfect parser parity:
 - UUID semantics blocked on fixture/model migration
 - diagnostic / error parity blocked on error-model expansion and formatting audit
 
-The active executable backlog is now loader/post-load parity.
+The active executable backlog is now ERC-critical loader/post-load parity. The remaining
+`MigrateSimModels` / resolved simulator-model branch is intentionally deferred to the end of the
+backlog because it is simulation-facing, not hierarchy/ERC-critical.

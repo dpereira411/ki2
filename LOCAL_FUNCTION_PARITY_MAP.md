@@ -7,6 +7,8 @@ Current state:
 - every parser-only routine is now either `same`, `not_applicable`, or explicitly `blocked`
 - parser-only routine work is exhausted in the current model
 - active parity work has moved to `src/loader.rs` / post-load flow
+- simulation-model parity is no longer the primary queue; ERC-critical loader parity takes
+  precedence and sim-model work is deferred to the end of the backlog
 
 Boundary:
 - In scope: `src/token.rs`, `src/model.rs`, `src/error.rs`, `src/diagnostic.rs`, `src/parser.rs`
@@ -28,6 +30,24 @@ Resolve these in order unless a direct comparison shows a prerequisite blocker f
 
 This queue is intentionally parked while loader/post-load parity is active. Do not reopen routine
 work in `src/parser.rs` unless one of the blocked surfaces is explicitly being unblocked.
+
+## Loader / ERC Priority
+
+When working beyond the parser boundary, use this loader-side priority order:
+
+1. `UpdateAllScreenReferences`
+2. `UpdateSymbolInstanceData`
+3. `UpdateSheetInstanceData`
+4. `SetSheetNumberAndCount`
+5. `RecomputeIntersheetRefs`
+6. `FixLegacyPowerSymbolMismatches`
+7. `MigrateSimModels` last
+
+Reason:
+- the first six items materially affect hierarchy/current-sheet/reference state and ERC-visible
+  symbol/sheet behavior
+- `MigrateSimModels` is simulation-facing parity, not a prerequisite for hierarchy loading or core
+  ERC behavior
 
 If diagnostic/error unblocking is chosen, execute it in this order:
 1. audit `src/error.rs` / `src/diagnostic.rs` and enumerate the parser fields lost by the current
