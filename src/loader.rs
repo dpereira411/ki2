@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::diagnostic::Diagnostic;
@@ -12,6 +13,7 @@ use crate::sim::{
     expected_missing_sim_library_locations, load_symbol_sim_library_content_from_embedded_files,
     resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
 };
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HierarchyLink {
@@ -35,9 +37,27 @@ pub struct LoadedSheetPath {
     pub sheet_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedProjectSettings {
+    pub path: PathBuf,
+    pub json: Value,
+}
+
+impl LoadedProjectSettings {
+    pub fn meta_version(&self) -> Option<i32> {
+        self.json
+            .get("meta")
+            .and_then(Value::as_object)
+            .and_then(|meta| meta.get("version"))
+            .and_then(Value::as_i64)
+            .and_then(|value| i32::try_from(value).ok())
+    }
+}
+
 #[derive(Debug)]
 pub struct LoadResult {
     pub root_path: PathBuf,
+    pub project: Option<LoadedProjectSettings>,
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
@@ -78,6 +98,10 @@ impl LoadResult {
 
     pub fn current_variant(&self) -> Option<&str> {
         self.current_variant.as_deref()
+    }
+
+    pub fn project(&self) -> Option<&LoadedProjectSettings> {
+        self.project.as_ref()
     }
 
     // Upstream parity: current-sheet selection is the local entrypoint that exercises KiCad's
@@ -233,6 +257,13 @@ impl LoadResult {
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
+    // Upstream parity: local loader entrypoint for KiCad's cross-file schematic/project load
+    // boundary. This is not a 1:1 upstream routine because the Rust tree still lacks KiCad's full
+    // project/settings classes; for now it discovers and preserves the companion `.kicad_pro`
+    // document so project-derived loader state has a real source. Remaining divergence is limited
+    // to the still-unconfirmed current-variant field shape and other project settings not yet
+    // modeled.
+    let project = load_companion_project_settings(root)?;
     let mut loader = SchematicLoader::new();
     let root_path = loader.load_schematic_file(root)?;
     let mut sheet_paths = loader.build_sheet_list_sorted_by_page_numbers(&root_path);
@@ -248,12 +279,46 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     snapshot_symbol_occurrence_bases(&mut loader.schematics);
     Ok(LoadResult {
         root_path,
+        project,
         schematics: loader.schematics,
         links: loader.links,
         sheet_paths,
         current_sheet_instance_path: String::new(),
         current_variant: None,
     })
+}
+
+// Upstream parity: local helper for the project/settings half of the KiCad load pipeline. This is
+// not a 1:1 upstream routine because the current tree still does not model KiCad's project object;
+// it discovers the companion `.kicad_pro` file and preserves its raw JSON so later loader work can
+// source project-backed state without inventing a second parser. Remaining divergence is limited to
+// the unknown current-variant key shape and other project semantics not yet mapped.
+fn load_companion_project_settings(root: &Path) -> Result<Option<LoadedProjectSettings>, Error> {
+    let dir = root.parent().unwrap_or(Path::new("."));
+    let Some(stem) = root.file_stem().and_then(|stem| stem.to_str()) else {
+        return Ok(None);
+    };
+    let project_path = dir.join(format!("{stem}.kicad_pro"));
+    if !project_path.exists() {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(&project_path).map_err(|source| Error::Io {
+        path: project_path.clone(),
+        source,
+    })?;
+    let json = serde_json::from_str::<Value>(&raw).map_err(|source| Error::Validation {
+        path: project_path.clone(),
+        diagnostic: Diagnostic::validation(
+            "project_json_invalid",
+            format!("invalid .kicad_pro json: {source}"),
+        ),
+    })?;
+
+    Ok(Some(LoadedProjectSettings {
+        path: project_path,
+        json,
+    }))
 }
 
 struct SchematicLoader {

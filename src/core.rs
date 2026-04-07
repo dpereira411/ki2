@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::loader::{HierarchyLink, LoadResult, LoadedSheetPath};
+use crate::loader::{HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath};
 use crate::model::{PropertyKind, SchItem, Schematic};
 
 #[derive(Debug)]
 pub struct SchematicProject {
     pub root_path: PathBuf,
+    pub project: Option<LoadedProjectSettings>,
     pub schematics: Vec<Schematic>,
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
@@ -32,6 +33,7 @@ impl SchematicProject {
 
         Self {
             root_path: load.root_path,
+            project: load.project,
             schematics: load.schematics,
             links: load.links,
             sheet_paths: load.sheet_paths,

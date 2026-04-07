@@ -270,28 +270,29 @@ Concrete unblock path:
 
 There is also a second unblock requirement now:
 
-- the current tree has no project/settings loader and no `.kicad_pro` parsing at all
+- the current tree now has a minimal companion `.kicad_pro` loader and preserves raw project JSON
+- but `current_variant` still cannot be sourced automatically because the actual project-side field
+  shape is still unknown in the local evidence set
 - so `current_variant` can only be set programmatically on `LoadResult`, not sourced the way KiCad
   project state would source `SCHEMATIC::GetCurrentVariant()`
 
 Concrete unblock path for that source gap:
 
-1. add a minimal project/settings representation that can carry current variant selection
-   - current tree has no JSON/project loader at all and no `serde` / `serde_json` plumbing yet
-2. teach the loader entrypoint to discover and ingest the companion `.kicad_pro` settings source
-   before building the loaded hierarchy
+1. done: add a minimal project/settings representation and companion `.kicad_pro` discovery path
+   that preserves raw project JSON on the loaded result
+2. identify the real project-side field shape for current-variant selection from upstream or a
+   concrete fixture
 3. route that source into `LoadResult.current_variant`
-4. once a real sample or upstream field shape for current-variant selection is identified, lock it
+4. once that field shape is identified, lock it
    with a focused fixture and only then tighten ERC behavior that depends on project-selected
    variants instead of a manual API
 
 Current blocker evidence:
 
-- local code search found no project/settings loader and no `.kicad_pro` parsing anywhere in this
-  tree
-- local dependency scan found no JSON parsing support in `Cargo.toml`
 - nearby ERC parity `.kicad_pro` / `.kicad_prl` fixtures currently exposed no obvious
   `variant` / `current_variant` key to wire up blindly
+- local code search in the nearby parity workspace still did not expose a concrete current-variant
+  project key or helper path to port directly
 
 Until that model exists, the remaining loader drift should be treated as blocked rather than as an
 unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or

@@ -1681,6 +1681,70 @@ fn current_variant_refreshes_live_sheet_variant_state() {
 }
 
 #[test]
+fn load_tree_discovers_companion_project_settings() {
+    let dir = std::env::temp_dir().join(format!("ki2_companion_project_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
+    )
+    .expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = loaded.project().expect("project settings");
+    assert_eq!(project.path, project_path);
+    assert_eq!(project.meta_version(), Some(2));
+    assert_eq!(
+        project
+            .json
+            .get("erc")
+            .and_then(|erc| erc.get("rule_severities"))
+            .and_then(|rules| rules.as_object())
+            .map(|rules| rules.len()),
+        Some(0)
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn load_tree_rejects_invalid_companion_project_settings() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_invalid_companion_project_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2"))"#,
+    )
+    .expect("write schematic");
+    fs::write(&project_path, "{ invalid json\n").expect("write project");
+
+    let err = load_schematic_tree(&root_path).expect_err("invalid project must fail");
+    assert!(err.to_string().contains("invalid .kicad_pro json"));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn legacy_symbol_instances_apply_explicit_empty_value_and_footprint() {
     let dir = env::temp_dir().join(format!(
         "ki2_legacy_empty_instances_{}",

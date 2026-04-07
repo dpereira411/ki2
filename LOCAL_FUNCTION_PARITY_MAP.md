@@ -66,10 +66,9 @@ Current ERC blocker:
   - broader ERC semantics that depend on richer occurrence-aware sheet/project state remain blocked
     on that fuller model
 - separate source blocker:
-  - the current tree still has no project/settings loader or `.kicad_pro` parsing, so
-    `current_variant` can only be driven manually on `LoadResult`
-  - current code also has no JSON parsing layer yet, and nearby `.kicad_pro` fixtures do not
-    expose an obvious variant key to wire up blindly
+  - the current tree now preserves companion `.kicad_pro` JSON on the loaded result, but
+    `current_variant` still has no confirmed project-side key shape to read from that source
+  - nearby `.kicad_pro` fixtures still do not expose an obvious variant key to wire up blindly
   - do not pretend `SCHEMATIC::GetCurrentVariant` parity is complete until that source layer exists
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
   model is expanded

@@ -252,26 +252,10 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "image",
- "kiutils-rs",
- "kiutils_sexpr",
- "thiserror",
- "uuid",
-]
-
-[[package]]
-name = "kiutils-rs"
-version = "0.2.0"
-dependencies = [
- "kiutils_kicad",
-]
-
-[[package]]
-name = "kiutils_kicad"
-version = "0.3.0"
-dependencies = [
  "kiutils_sexpr",
  "serde_json",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
