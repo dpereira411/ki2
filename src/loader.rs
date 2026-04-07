@@ -2008,21 +2008,7 @@ fn split_inferred_source_value(value: &str) -> (&'static str, String) {
         );
     }
 
-    if let Some(rest) = trimmed.strip_prefix("ac ") {
-        return (
-            "ac",
-            normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
-        );
-    }
-
     if let Some(rest) = trimmed.strip_prefix("DC ") {
-        return (
-            "dc",
-            normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
-        );
-    }
-
-    if let Some(rest) = trimmed.strip_prefix("dc ") {
         return (
             "dc",
             normalize_inferred_si_value(rest.trim()).unwrap_or_else(|| rest.trim().to_string()),
