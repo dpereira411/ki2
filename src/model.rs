@@ -1194,7 +1194,7 @@ impl Symbol {
             Some(SimModelOrigin::LibraryReference)
         } else if device.as_deref() == Some("SPICE") {
             Some(SimModelOrigin::RawSpice)
-        } else if model_type.is_some() {
+        } else if is_supported_builtin_sim_type(device.as_deref(), model_type.as_deref()) {
             Some(SimModelOrigin::BuiltIn)
         } else if value_binding.is_some() {
             Some(SimModelOrigin::InferredValue)
@@ -1251,6 +1251,61 @@ impl Symbol {
             generated_param_pairs: Vec::new(),
         });
     }
+}
+
+fn is_supported_builtin_sim_type(device: Option<&str>, model_type: Option<&str>) -> bool {
+    let Some(device) = device else {
+        return false;
+    };
+
+    let device = device.trim().to_ascii_uppercase();
+    let model_type = model_type.unwrap_or("").trim().to_ascii_uppercase();
+
+    matches!(
+        (device.as_str(), model_type.as_str()),
+        ("R", "" | "POT" | "=")
+            | ("C" | "L", "" | "=")
+            | ("K", "")
+            | ("TLINE", "" | "RLGC")
+            | ("SW", "V" | "I")
+            | ("D", "")
+            | ("NPN" | "PNP", "VBIC" | "GUMMELPOON" | "HICUM2")
+            | ("NJFET" | "PJFET", "SHICHMANHODGES" | "PARKERSKELLERN")
+            | ("NMES" | "PMES", "STATZ" | "YTTERDAL" | "HFET1" | "HFET2")
+            | (
+                "NMOS" | "PMOS",
+                "VDMOS"
+                    | "MOS1"
+                    | "MOS2"
+                    | "MOS3"
+                    | "BSIM1"
+                    | "BSIM2"
+                    | "MOS6"
+                    | "BSIM3"
+                    | "MOS9"
+                    | "B4SOI"
+                    | "BSIM4"
+                    | "B3SOIFD"
+                    | "B3SOIDD"
+                    | "B3SOIPD"
+                    | "HISIM2"
+                    | "HISIMHV1"
+                    | "HISIMHV2"
+            )
+            | (
+                "V" | "I",
+                "DC" | "SIN"
+                    | "PULSE"
+                    | "EXP"
+                    | "AM"
+                    | "SFFM"
+                    | "PWL"
+                    | "TRNOISE"
+                    | "TRRANDOM"
+                    | "="
+            )
+            | ("E" | "F" | "G" | "H" | "SUBCKT" | "XSPICE", "")
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

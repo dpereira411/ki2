@@ -8188,6 +8188,89 @@ fn load_tree_does_not_warn_for_hicum2_current_sim_pairs() {
 }
 
 #[test]
+fn load_tree_marks_control_source_sim_fields_as_built_in() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000931")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "E?")
+    (property "Sim.Device" "E")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_marks_control_source_sim_fields_as_built_in", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::BuiltIn)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn load_tree_keeps_invalid_sim_pairs_on_field_origin() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000932")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "R")
+    (property "Sim.Type" "V")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_keeps_invalid_sim_pairs_on_field_origin", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::Fields)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_infers_passive_structured_sim_model_from_value() {
     let src = r#"(kicad_sch
   (version 20260306)
