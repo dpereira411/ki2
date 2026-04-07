@@ -15,6 +15,7 @@ use crate::sim::{
     expected_missing_sim_library_locations, load_symbol_sim_library_content_from_embedded_files,
     resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
 };
+use crate::worksheet::{WorksheetTextItem, parse_reduced_worksheet_text_items};
 use serde_json::Value;
 use time::{OffsetDateTime, macros::format_description};
 
@@ -377,6 +378,69 @@ impl LoadResult {
             .unwrap_or(DrawingSheetSource::Default)
     }
 
+    // Upstream parity: reduced local analogue for the drawing-sheet `DS_DRAW_ITEM_TEXT` list that
+    // `ERC_TESTER::TestTextVars()` walks. This is not 1:1 yet because the local tree only parses
+    // `tbtext` items and still has no default worksheet model or full draw-item/styling support.
+    pub fn current_drawing_sheet_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
+        let Some(current) = self.current_schematic() else {
+            return Ok(Vec::new());
+        };
+
+        match self.current_drawing_sheet_source() {
+            DrawingSheetSource::Default => Ok(Vec::new()),
+            DrawingSheetSource::Filesystem(path) => {
+                let raw = fs::read_to_string(&path).map_err(|source| Error::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+                parse_reduced_worksheet_text_items(&path, &raw)
+            }
+            DrawingSheetSource::SchematicEmbedded { name, text } => {
+                parse_reduced_worksheet_text_items(
+                    &current
+                        .path
+                        .parent()
+                        .unwrap_or_else(|| Path::new("."))
+                        .join(name),
+                    &text,
+                )
+            }
+        }
+    }
+
+    // Upstream parity: reduced local analogue for `DS_DRAW_ITEM_TEXT::GetShownText()` on the
+    // exercised drawing-sheet ERC path. This is not 1:1 because the local tree still lacks the
+    // full worksheet painter/title-block resolver stack, but it now reuses the existing
+    // sheet/schematic/project text resolver for the exercised worksheet token slice.
+    pub fn current_drawing_sheet_shown_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
+        let Some(loaded_path) = self.current_sheet_path() else {
+            return Ok(Vec::new());
+        };
+
+        let raw_items = self.current_drawing_sheet_text_items()?;
+
+        Ok(raw_items
+            .into_iter()
+            .map(|mut item| {
+                item.text = resolve_text_variables(
+                    &item.text,
+                    &|token| {
+                        resolve_drawing_sheet_text_var(
+                            &self.schematics,
+                            &self.sheet_paths,
+                            loaded_path,
+                            self.project.as_ref(),
+                            self.current_variant.as_deref(),
+                            token,
+                        )
+                    },
+                    0,
+                );
+                item
+            })
+            .collect())
+    }
+
     // Upstream parity: current-sheet selection is the local entrypoint that exercises KiCad's
     // reused-screen occurrence switching side effects after load. This helper is not a 1:1
     // upstream routine because the Rust loader exposes selection directly on `LoadResult`, but it
@@ -634,7 +698,7 @@ fn resolve_drawing_sheet_path(
 // drawing-sheet source selection ahead of worksheet parsing. This is not 1:1 because the local
 // tree has no worksheet parser/model yet and no schematic-global embedded-file owner, so the
 // embedded-file fallback currently searches the active schematic screen's embedded files only.
-fn resolve_drawing_sheet_source_from_embedded_files(
+pub(crate) fn resolve_drawing_sheet_source_from_embedded_files(
     schematic_path: &Path,
     project: Option<&LoadedProjectSettings>,
     embedded_files: &[EmbeddedFile],
@@ -5109,6 +5173,60 @@ fn resolve_schematic_text_var(
             .map(|number| title_block.comment(number).unwrap_or_default().to_string()),
         _ => None,
     }
+}
+
+// Upstream parity: reduced local analogue for the drawing-sheet text-variable path used by
+// `DS_DRAW_ITEM_TEXT::GetShownText()` in ERC `TestTextVars()`. This is not 1:1 because the local
+// tree still lacks KiCad's fuller worksheet/title-block painter stack, but it now resolves the
+// exercised worksheet tokens through the same loaded sheet/schematic/project state used elsewhere.
+pub(crate) fn resolve_drawing_sheet_text_var(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    token: &str,
+) -> Option<String> {
+    let token_upper = token.to_ascii_uppercase();
+
+    match token {
+        "#" => {
+            return Some(
+                loaded_path
+                    .page
+                    .clone()
+                    .unwrap_or_else(|| loaded_path.sheet_number.to_string()),
+            );
+        }
+        "##" => {
+            return Some(loaded_path.sheet_count.to_string());
+        }
+        "SHEETPATH" => {
+            return Some(loaded_path.instance_path.clone());
+        }
+        _ => {}
+    }
+
+    if token_upper == "PAPER" {
+        return schematics
+            .iter()
+            .find(|schematic| schematic.path == loaded_path.schematic_path)
+            .and_then(|schematic| schematic.screen.paper.as_ref())
+            .map(|paper| paper.kind.clone());
+    }
+
+    resolve_sheet_text_var(
+        schematics,
+        sheet_paths,
+        loaded_path,
+        project,
+        current_variant,
+        token,
+        0,
+    )
+    .or_else(|| {
+        resolve_schematic_text_var(schematics, loaded_path, project, current_variant, token)
+    })
 }
 
 // Upstream parity: local helper for the page-ref-map portion of

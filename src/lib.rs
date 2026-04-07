@@ -8,3 +8,4 @@ pub mod parser;
 pub mod sexpr;
 pub mod sim;
 mod token;
+pub mod worksheet;

@@ -1,14 +1,19 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::Error;
 use crate::loader::{
-    ActiveSchematicSettings, HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath,
-    build_intersheet_ref_maps, refresh_current_screen_page_state,
+    ActiveSchematicSettings, DrawingSheetSource, HierarchyLink, LoadResult, LoadedProjectSettings,
+    LoadedSheetPath, build_intersheet_ref_maps, refresh_current_screen_page_state,
     refresh_current_sheet_intersheet_refs, refresh_live_sheet_variant_state,
     refresh_live_symbol_occurrence_state, reset_reused_screen_symbol_state,
+    resolve_drawing_sheet_source_from_embedded_files, resolve_drawing_sheet_text_var,
+    resolve_text_variables,
 };
 use crate::model::Schematic;
+use crate::worksheet::{WorksheetTextItem, parse_reduced_worksheet_text_items};
 
 #[derive(Debug)]
 pub struct SchematicProject {
@@ -93,6 +98,86 @@ impl SchematicProject {
 
     pub fn current_variant(&self) -> Option<&str> {
         self.current_variant.as_deref()
+    }
+
+    // Upstream parity: reduced local analogue for KiCad's current drawing-sheet source selection
+    // on the project-facing API. This is not 1:1 because the tree still lacks a schematic-global
+    // worksheet owner and full page-layout model, but it keeps the current-sheet ERC path on the
+    // same source-selection behavior as `LoadResult`.
+    pub fn current_drawing_sheet_source(&self) -> DrawingSheetSource {
+        self.current_schematic()
+            .map(|schematic| {
+                resolve_drawing_sheet_source_from_embedded_files(
+                    &schematic.path,
+                    self.project.as_ref(),
+                    &schematic.screen.embedded_files,
+                )
+            })
+            .unwrap_or(DrawingSheetSource::Default)
+    }
+
+    // Upstream parity: reduced local analogue for the drawing-sheet `DS_DRAW_ITEM_TEXT` list on
+    // the project-facing API. This is not 1:1 because the local tree still only parses `tbtext`
+    // items and has no default worksheet model, but it keeps ERC on the same reduced worksheet
+    // carrier as loader callers.
+    pub fn current_drawing_sheet_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
+        let Some(current) = self.current_schematic() else {
+            return Ok(Vec::new());
+        };
+
+        match self.current_drawing_sheet_source() {
+            DrawingSheetSource::Default => Ok(Vec::new()),
+            DrawingSheetSource::Filesystem(path) => {
+                let raw = fs::read_to_string(&path).map_err(|source| Error::Io {
+                    path: path.clone(),
+                    source,
+                })?;
+                parse_reduced_worksheet_text_items(&path, &raw)
+            }
+            DrawingSheetSource::SchematicEmbedded { name, text } => {
+                parse_reduced_worksheet_text_items(
+                    &current
+                        .path
+                        .parent()
+                        .unwrap_or_else(|| Path::new("."))
+                        .join(name),
+                    &text,
+                )
+            }
+        }
+    }
+
+    // Upstream parity: reduced local analogue for `DS_DRAW_ITEM_TEXT::GetShownText()` on the
+    // project-facing ERC path. This is not 1:1 because the local tree still lacks the full
+    // worksheet painter/title-block resolver stack, but it reuses the same reduced worksheet
+    // shown-text slice as the loader API.
+    pub fn current_drawing_sheet_shown_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
+        let Some(loaded_path) = self.current_sheet_path() else {
+            return Ok(Vec::new());
+        };
+
+        let raw_items = self.current_drawing_sheet_text_items()?;
+
+        Ok(raw_items
+            .into_iter()
+            .map(|mut item| {
+                item.text = resolve_text_variables(
+                    &item.text,
+                    &|token| {
+                        resolve_drawing_sheet_text_var(
+                            &self.schematics,
+                            &self.sheet_paths,
+                            loaded_path,
+                            self.project.as_ref(),
+                            self.current_variant(),
+                            token,
+                        )
+                    },
+                    0,
+                );
+                item
+            })
+            .collect())
     }
 
     // Upstream parity: local current-sheet selection helper for project callers. This is not a

@@ -772,10 +772,10 @@ fn shown_text_item_text(
 
 // Upstream parity: reduced local analogue for the exercised unresolved-variable half of
 // `ERC_TESTER::TestTextVars()`. This is not a 1:1 KiCad marker pass because the current tree still
-// reports plain diagnostics and still lacks drawing-sheet text coverage. It exists so ERC now
-// checks the real loaded symbol/sheet/label/text/textbox/sheet-pin and linked-lib-text shown-text
-// paths that this tree already exercises. Remaining divergence is the broader unported
-// drawing-sheet resolver surface.
+// reports plain diagnostics and only covers the reduced worksheet `tbtext` slice instead of the
+// full drawing-sheet draw-item model. It exists so ERC now checks the real loaded
+// symbol/sheet/label/text/textbox/sheet-pin, linked-lib-text, and reduced current drawing-sheet
+// shown-text paths. Remaining divergence is the fuller worksheet/default-drawing-sheet surface.
 pub fn check_unresolved_text_variables(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -902,6 +902,19 @@ pub fn check_unresolved_text_variables(project: &SchematicProject) -> Vec<Diagno
         }
     }
 
+    if let Some(current) = project.current_schematic() {
+        if let Ok(items) = project.current_drawing_sheet_shown_text_items() {
+            for item in items {
+                if item.text.contains("${") {
+                    diagnostics.push(unresolved_variable_diagnostic(
+                        &current.path,
+                        "Unresolved text variable in drawing sheet".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
     diagnostics
 }
 
@@ -970,10 +983,11 @@ pub fn check_duplicate_sheet_names(project: &SchematicProject) -> Vec<Diagnostic
 
 // Upstream parity: reduced local analogue for the exercised assertion-marker half of
 // `ERC_TESTER::TestTextVars()`. This is not a 1:1 KiCad marker pass because the current tree
-// still reports plain diagnostics and does not yet cover drawing-sheet or lib-child text, but it
-// preserves `${ERC_WARNING ...}` / `${ERC_ERROR ...}` handling on the exercised item families the
-// local text-var walker already visits. Remaining divergence is the broader unported assertion
-// surface outside those item families.
+// still reports plain diagnostics and only covers the reduced worksheet `tbtext` slice instead of
+// the full drawing-sheet draw-item model, but it preserves `${ERC_WARNING ...}` / `${ERC_ERROR
+// ...}` handling on the exercised item families the local text-var walker now visits, including
+// reduced drawing-sheet text. Remaining divergence is the broader unported assertion surface
+// outside those item families.
 pub fn check_text_assertions(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -1055,6 +1069,16 @@ pub fn check_text_assertions(project: &SchematicProject) -> Vec<Diagnostic> {
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    if let Some(current) = project.current_schematic() {
+        if let Ok(items) = project.current_drawing_sheet_text_items() {
+            for item in items {
+                if let Some((severity, message)) = parse_text_assertion(&item.text) {
+                    diagnostics.push(text_assertion_diagnostic(&current.path, severity, message));
+                }
             }
         }
     }

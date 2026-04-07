@@ -579,6 +579,262 @@ fn erc_reports_undefined_netclasses_from_project_settings() {
 }
 
 #[test]
+fn current_drawing_sheet_text_items_parse_filesystem_tbtext() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_filesystem_drawing_sheet_text_items_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (tbtext "%T" (pos 10 20))
+  (tbtext "${REVISION}" (pos 30 40 rbcorner))
+  (rect (start 0 0) (end 1 1)))"#,
+    )
+    .expect("write worksheet");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let items = loaded
+        .current_drawing_sheet_text_items()
+        .expect("worksheet items");
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].text, "${TITLE}");
+    assert_eq!(items[0].at, [10.0, 20.0]);
+    assert_eq!(items[1].text, "${REVISION}");
+    assert_eq!(items[1].at, [30.0, 40.0]);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn current_drawing_sheet_text_items_parse_embedded_tbtext() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_embedded_drawing_sheet_text_items_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20250114)
+  (generator "ki2")
+  (uuid "60000000-0000-0000-0000-000000000100")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "custom.kicad_wks")
+      (checksum deadbeef)
+      (type worksheet)
+      (data |(kicad_wks (version 20210606) (generator pl_editor) (tbtext "${COMMENT1}" (pos 5 6)))|))))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let items = loaded
+        .current_drawing_sheet_text_items()
+        .expect("worksheet items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].text, "${COMMENT1}");
+    assert_eq!(items[0].at, [5.0, 6.0]);
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn current_drawing_sheet_shown_text_items_resolve_sheet_and_project_vars() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_drawing_sheet_shown_text_items_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20231120)
+  (generator "ki2")
+  (uuid "60000000-0000-0000-0000-000000000101")
+  (paper "A4")
+  (title_block (title "Demo Title"))
+  (sheet_instances (path "" (page "7"))))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (tbtext "${TITLE}" (pos 1 2))
+  (tbtext "Sheet ${#}/${##}" (pos 3 4))
+  (tbtext "${PAPER}" (pos 5 6))
+  (tbtext "${PROJECTNAME}" (pos 7 8)))"#,
+    )
+    .expect("write worksheet");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let items = loaded
+        .current_drawing_sheet_shown_text_items()
+        .expect("shown worksheet items");
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Demo Title", "Sheet 7/1", "A4", "demo"]
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn erc_reports_unresolved_text_variable_in_drawing_sheet() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_erc_drawing_sheet_unresolved_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (tbtext "${UNKNOWN_VAR}" (pos 1 2)))"#,
+    )
+    .expect("write worksheet");
+
+    let load = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-unresolved-variable")
+        .collect::<Vec<_>>();
+
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.message == "Unresolved text variable in drawing sheet"
+        })
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn erc_reports_text_assertions_in_drawing_sheet() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_erc_drawing_sheet_assertions_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+    let worksheet_path = dir.join("custom.kicad_wks");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch (version 20231120) (generator "ki2"))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+    fs::write(
+        &worksheet_path,
+        r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (tbtext "${ERC_WARNING worksheet warning}" (pos 1 2))
+  (tbtext "${ERC_ERROR worksheet error}" (pos 3 4)))"#,
+    )
+    .expect("write worksheet");
+
+    let load = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| {
+            diagnostic.code == "erc-generic-warning" || diagnostic.code == "erc-generic-error"
+        })
+        .collect::<Vec<_>>();
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-generic-warning" && diagnostic.message == "worksheet warning"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-generic-error" && diagnostic.message == "worksheet error"
+    }));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(worksheet_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_labels_touching_multiple_wire_segments() {
     let path = temp_schematic(
         "erc_label_multiple_wires",

@@ -93,14 +93,18 @@ Still pending for ERC:
   - broader driver/no-connect/subgraph exactness
 
 Current drawing-sheet blocker:
-- the Rust tree still has no drawing-sheet/page-layout object model
-- there is no local equivalent of KiCad's `DS_PROXY_VIEW_ITEM` / `DS_DRAW_ITEM_LIST` path used by
-  `ERC_TESTER::TestTextVars( aDrawingSheet )`
+- the Rust tree now has a reduced worksheet text-item carrier for custom/embedded `tbtext` items
+  plus reduced shown-text/assertion/unresolved ERC coverage for that slice
+- but there is still no local equivalent of KiCad's full `DS_PROXY_VIEW_ITEM` /
+  `DS_DRAW_ITEM_LIST` path used by `ERC_TESTER::TestTextVars( aDrawingSheet )`
 - parser support for embedded-file type `worksheet` exists, and the typed project-settings carrier
   now preserves `schematic.page_layout_descr_file`
 - the loader can now resolve the active drawing-sheet source through that path, including matching
   schematic-embedded worksheet fallback
-- but there is still no loader-side worksheet parsing or shown-text model to run ERC against
+- the remaining gap is:
+  - default drawing-sheet coverage
+  - non-`tbtext` worksheet items
+  - fuller drawing-sheet shown-text/painter semantics beyond the reduced token slice
 
 ### Simulation
 
@@ -117,7 +121,8 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
    - `${REF:NET_CLASS(pin)}`
 2. Remaining drawing-sheet `TestTextVars()` coverage
    - typed project source path is now modeled
-   - remaining work is the worksheet/page-layout object and shown-text path
+   - reduced custom/embedded worksheet `tbtext` parsing and shown-text ERC coverage are live
+   - remaining work is default/full worksheet parity
 3. Hierarchy/loading 1:1 sign-off gaps
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
@@ -535,18 +540,23 @@ Unblock path:
 7. tighten fuller `TestPinToPin()` settings/subgraph exactness only if real KiCad divergence is
    found
 
-### Blocker: Drawing-sheet `TestTextVars()` has no local model surface
+### Blocker: Drawing-sheet `TestTextVars()` is only reduced-custom-worksheet complete
 
-The current tree can resolve title-block and project text variables on schematic items, but it has
-no drawing-sheet item model to run ERC against.
+The current tree can now resolve reduced custom/embedded worksheet `tbtext` items, but it still
+does not have the fuller drawing-sheet model KiCad uses for complete worksheet parity.
 
 Unblock path:
 1. add a reduced worksheet/page-layout model on the load side
    - enough to represent the exercised text-bearing drawing-sheet items
+   - done for custom/embedded `tbtext`
 2. source the active worksheet/page-layout from project/schematic inputs
    - done for typed project path + current schematic embedded-file fallback
 3. add a reduced shown-text resolver for those drawing-sheet text items
+   - done for the exercised custom/embedded `tbtext` token slice
 4. port the remaining drawing-sheet branch of `ERC_TESTER::TestTextVars()`
+   - remaining:
+     - default worksheet fallback
+     - broader worksheet item/painter semantics if exercised by CLI parity tests
 
 ### Blocker: Hierarchy loading is not yet fully 1:1 signed off
 
