@@ -61,6 +61,8 @@ Current ERC blocker:
     occurrence or selected variant changes
   - live sheet objects now apply current-variant state through the selected local sheet occurrence
     when one matches the current sheet path, with first-instance fallback in the current model
+  - `SchematicProject` now carries the same `current_variant` session state and reuses the same
+    variant-aware occurrence refresh helpers as `LoadResult`
 - remaining blocker is narrower:
   - direct upstream re-audit showed `SCHEMATIC::GetCurrentVariant()` is schematic-owned session
     state, not project-file state

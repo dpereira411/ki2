@@ -266,8 +266,9 @@ Concrete unblock path:
    - done for sheet-side selected-occurrence refresh
 5. only after that, reopen `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, and
    `UpdateAllScreenReferences` for branch-level parity tightening
+   - done for the current architecture: `SchematicProject` now carries `current_variant` too and
+     shares the same variant-aware symbol/sheet occurrence refresh path as `LoadResult`
    - remaining active gap is now narrower:
-     - project-side sourcing for the current variant
      - any broader ERC semantics that need variant-aware sheet state beyond the current model
 
 Upstream re-audit against `/Users/Daniel/Desktop/kicad/eeschema/schematic.cpp` corrected one

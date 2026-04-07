@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 
 use crate::loader::{
     HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath,
-    refresh_current_sheet_intersheet_refs,
+    refresh_current_screen_page_state, refresh_current_sheet_intersheet_refs,
+    refresh_live_sheet_variant_state, refresh_live_symbol_occurrence_state,
+    reset_reused_screen_symbol_state,
 };
-use crate::model::{PropertyKind, SchItem, Schematic};
+use crate::model::Schematic;
 
 #[derive(Debug)]
 pub struct SchematicProject {
@@ -17,6 +19,7 @@ pub struct SchematicProject {
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
     pub current_sheet_instance_path: String,
+    pub current_variant: Option<String>,
     intersheet_ref_values: HashMap<String, String>,
     intersheet_ref_pages_by_label: HashMap<String, BTreeSet<usize>>,
     sheet_pages_by_virtual_page: HashMap<usize, String>,
@@ -47,6 +50,7 @@ impl SchematicProject {
             links: load.links,
             sheet_paths: load.sheet_paths,
             current_sheet_instance_path: load.current_sheet_instance_path,
+            current_variant: load.current_variant,
             intersheet_ref_values: load.intersheet_ref_values,
             intersheet_ref_pages_by_label: load.intersheet_ref_pages_by_label,
             sheet_pages_by_virtual_page: load.sheet_pages_by_virtual_page,
@@ -87,11 +91,15 @@ impl SchematicProject {
         self.schematic(&current_sheet_path.schematic_path)
     }
 
+    pub fn current_variant(&self) -> Option<&str> {
+        self.current_variant.as_deref()
+    }
+
     // Upstream parity: local current-sheet selection helper for project callers. This is not a
     // 1:1 KiCad routine because the reduced Rust project view still exposes selection directly on
-    // `SchematicProject`, but it now keeps current-sheet intersheet-ref refresh scoped to the
-    // selected sheet instead of rewriting all screens. Remaining divergence is limited to the same
-    // missing settings gate and richer current-sheet display semantics as the loader path.
+    // `SchematicProject`, but it now reuses the same loader-owned occurrence refresh helpers as
+    // `LoadResult` while keeping current-sheet intersheet-ref refresh scoped to the selected sheet.
+    // Remaining divergence is limited to the same settings/display/model gaps as the loader path.
     pub fn set_current_sheet_path(&mut self, instance_path: &str) -> bool {
         if self.sheet_paths_by_instance.contains_key(instance_path) {
             let previous = self.current_sheet_path().cloned();
@@ -101,6 +109,7 @@ impl SchematicProject {
                 &self.sheet_paths,
                 previous.as_ref(),
                 next.as_ref(),
+                self.current_variant.as_deref(),
             );
             refresh_current_screen_page_state(
                 &mut self.schematics,
@@ -143,17 +152,45 @@ impl SchematicProject {
                 intersheet_refs_prefix.as_deref(),
                 intersheet_refs_suffix.as_deref(),
             );
-            if let Some(schematic) = self
-                .current_sheet_path()
-                .and_then(|sheet_path| self.by_path.get(&sheet_path.schematic_path).copied())
-                .and_then(|index| self.schematics.get_mut(index))
-            {
-                apply_symbol_instance_state(schematic, instance_path);
-            }
+            refresh_live_symbol_occurrence_state(
+                &mut self.schematics,
+                &self.sheet_paths,
+                &self.current_sheet_instance_path,
+                self.current_variant.as_deref(),
+            );
+            refresh_live_sheet_variant_state(
+                &mut self.schematics,
+                &self.sheet_paths,
+                &self.current_sheet_instance_path,
+                self.current_variant.as_deref(),
+            );
             true
         } else {
             false
         }
+    }
+
+    // Upstream parity: local project-view analogue for `SCHEMATIC::SetCurrentVariant()`. This is
+    // not a 1:1 KiCad boundary because the reduced Rust project view still exposes selection
+    // directly on `SchematicProject`, but it now shares the same occurrence refresh path as
+    // `LoadResult`. Remaining divergence is limited to broader sheet-occurrence semantics.
+    pub fn set_current_variant(&mut self, variant: Option<&str>) {
+        self.current_variant = variant
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        refresh_live_sheet_variant_state(
+            &mut self.schematics,
+            &self.sheet_paths,
+            &self.current_sheet_instance_path,
+            self.current_variant.as_deref(),
+        );
+        refresh_live_symbol_occurrence_state(
+            &mut self.schematics,
+            &self.sheet_paths,
+            &self.current_sheet_instance_path,
+            self.current_variant.as_deref(),
+        );
     }
 
     pub fn schematic(&self, path: &Path) -> Option<&Schematic> {
@@ -244,152 +281,5 @@ impl SchematicProject {
                     .is_some_and(|parent| parent.instance_path == instance_path)
             })
             .collect()
-    }
-}
-
-fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
-    for item in &mut schematic.screen.items {
-        let SchItem::Symbol(symbol) = item else {
-            continue;
-        };
-
-        let Some(instance) = symbol
-            .instances
-            .iter()
-            .find(|instance| instance.path == instance_path)
-            .cloned()
-        else {
-            continue;
-        };
-
-        if let Some(reference) = instance.reference {
-            symbol.set_field_text(PropertyKind::SymbolReference, reference);
-        }
-
-        if let Some(unit) = instance.unit {
-            symbol.unit = Some(unit);
-        }
-
-        if let Some(value) = instance.value {
-            symbol.set_field_text(PropertyKind::SymbolValue, value);
-        }
-
-        if let Some(footprint) = instance.footprint {
-            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
-        }
-    }
-}
-
-fn seed_first_symbol_instance_state(schematic: &mut Schematic) {
-    for item in &mut schematic.screen.items {
-        let SchItem::Symbol(symbol) = item else {
-            continue;
-        };
-
-        let Some(instance) = symbol.instances.first().cloned() else {
-            continue;
-        };
-
-        if let Some(reference) = instance.reference {
-            symbol.set_field_text(PropertyKind::SymbolReference, reference);
-        }
-
-        if let Some(unit) = instance.unit {
-            symbol.unit = Some(unit);
-        }
-
-        if let Some(value) = instance.value {
-            symbol.set_field_text(PropertyKind::SymbolValue, value);
-        }
-
-        if let Some(footprint) = instance.footprint {
-            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
-        }
-    }
-}
-
-fn reset_reused_screen_symbol_state(
-    schematics: &mut [Schematic],
-    sheet_paths: &[LoadedSheetPath],
-    previous: Option<&LoadedSheetPath>,
-    next: Option<&LoadedSheetPath>,
-) {
-    let Some(previous) = previous else {
-        return;
-    };
-
-    let previous_occurrence_count = sheet_paths
-        .iter()
-        .filter(|sheet_path| sheet_path.schematic_path == previous.schematic_path)
-        .count();
-    let switching_schematic = next
-        .map(|next| next.schematic_path != previous.schematic_path)
-        .unwrap_or(true);
-
-    if previous_occurrence_count <= 1 || !switching_schematic {
-        return;
-    }
-
-    if let Some(schematic) = schematics
-        .iter_mut()
-        .find(|schematic| schematic.path == previous.schematic_path)
-    {
-        seed_first_symbol_instance_state(schematic);
-    }
-}
-
-fn refresh_current_screen_page_state(
-    schematics: &mut [Schematic],
-    sheet_paths: &[LoadedSheetPath],
-    previous_instance_path: &str,
-    next_instance_path: &str,
-) {
-    let previous = sheet_paths
-        .iter()
-        .find(|sheet_path| sheet_path.instance_path == previous_instance_path);
-    let next = sheet_paths
-        .iter()
-        .find(|sheet_path| sheet_path.instance_path == next_instance_path);
-
-    if let Some(previous) = previous {
-        let previous_occurrence_count = sheet_paths
-            .iter()
-            .filter(|sheet_path| sheet_path.schematic_path == previous.schematic_path)
-            .count();
-        let switching_schematic = next
-            .map(|next| next.schematic_path != previous.schematic_path)
-            .unwrap_or(true);
-
-        if previous_occurrence_count > 1 && switching_schematic {
-            if let Some(schematic) = schematics
-                .iter_mut()
-                .find(|schematic| schematic.path == previous.schematic_path)
-            {
-                schematic.screen.page_number = None;
-                schematic.screen.page_count = None;
-                schematic.screen.virtual_page_number = None;
-            }
-        }
-    }
-
-    if let Some(next) = next {
-        let next_occurrence_count = sheet_paths
-            .iter()
-            .filter(|sheet_path| sheet_path.schematic_path == next.schematic_path)
-            .count();
-
-        if next_occurrence_count > 1 {
-            if let Some(schematic) = schematics
-                .iter_mut()
-                .find(|schematic| schematic.path == next.schematic_path)
-            {
-                schematic.screen.page_number = next
-                    .page
-                    .clone()
-                    .or_else(|| Some(next.sheet_number.to_string()));
-                schematic.screen.page_count = Some(next.sheet_count);
-                schematic.screen.virtual_page_number = Some(next.sheet_number);
-            }
-        }
     }
 }

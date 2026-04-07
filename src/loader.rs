@@ -1954,7 +1954,7 @@ fn seed_first_symbol_instance_state(schematic: &mut Schematic, current_variant: 
 // This helper exists because the Rust loader performs current-sheet switching directly on
 // `LoadResult`. Remaining divergence is blocked on richer per-occurrence state beyond the current
 // reference/unit/value/footprint baseline, especially active variant selection.
-fn reset_reused_screen_symbol_state(
+pub(crate) fn reset_reused_screen_symbol_state(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],
     previous: Option<&LoadedSheetPath>,
@@ -2116,7 +2116,7 @@ fn snapshot_symbol_occurrence_bases(schematics: &mut [Schematic]) {
 // current-variant selection. This helper exists because the Rust loader exposes both selections on
 // `LoadResult` rather than the upstream project/schematic classes. Remaining divergence is blocked
 // on sheet occurrence variants and richer per-occurrence state.
-fn refresh_live_symbol_occurrence_state(
+pub(crate) fn refresh_live_symbol_occurrence_state(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],
     current_sheet_instance_path: &str,
@@ -2168,9 +2168,9 @@ fn refresh_live_symbol_occurrence_state(
 // selection. This is not a 1:1 upstream routine because the current tree still lacks KiCad's
 // fuller project/settings layer and screen-owned sheet occurrence objects; it resolves the active
 // local sheet instance from the selected sheet path and falls back to the first parsed instance
-// when no active occurrence matches. Remaining divergence is limited to project-side variant source
-// and any broader sheet-occurrence semantics beyond the current model.
-fn refresh_live_sheet_variant_state(
+// when no active occurrence matches. Remaining divergence is limited to broader sheet-occurrence
+// semantics beyond the current model.
+pub(crate) fn refresh_live_sheet_variant_state(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],
     current_sheet_instance_path: &str,
@@ -3349,7 +3349,7 @@ fn migrated_sim_pins_value(prefix: &str, source_pins: &[String], pin_indexes: &[
 // This helper exists because the Rust loader stores selected occurrence page metadata on `Screen`
 // and `LoadedSheetPath` instead of KiCad's owning screen/project objects. Remaining divergence is
 // blocked on richer reused-screen/current-sheet state beyond the current page fields and variants.
-fn refresh_current_screen_page_state(
+pub(crate) fn refresh_current_screen_page_state(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],
     previous_instance_path: &str,
