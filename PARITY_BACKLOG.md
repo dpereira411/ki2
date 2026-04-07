@@ -364,8 +364,12 @@ Current status:
     the graph-owned label rule
 - reduced `CONNECTION_GRAPH::ercCheckSingleGlobalLabel()` coverage is now live through the loaded
   sheet-list shown-text walk
-- current remaining graph-owned label/hierarchy gap is `ercCheckHierSheets()`, not absence of the
-  single-global-label rule
+- reduced `CONNECTION_GRAPH::ercCheckHierSheets()` coverage is now live for:
+  - root-sheet hierarchical labels
+  - dangling parent sheet pins
+  - parent/child sheet-pin name mismatches
+- current remaining graph-owned label/hierarchy gap is `ercCheckDirectiveLabels()`, not absence of
+  the single-global-label or hier-sheet rules
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
@@ -380,7 +384,7 @@ Current status:
   `ERC_TESTER::TestTextVars()` text behavior
 - the next honest connection-graph ERC gaps are no longer label ownership itself; they are the
   remaining graph-owned passes without local analogues:
-  - `ercCheckHierSheets()`
+  - `ercCheckDirectiveLabels()`
   - fuller bus/floating-wire/dangling-endpoint ownership once the stricter graph model grows
 
 ## Net Naming / CLI Requirements

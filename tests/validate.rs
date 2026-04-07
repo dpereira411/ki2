@@ -921,6 +921,144 @@ fn erc_allows_repeated_global_labels() {
 }
 
 #[test]
+fn erc_reports_root_hierarchical_labels() {
+    let path = temp_schematic(
+        "erc_root_hierarchical_label",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "NET_A" (shape input) (at 0 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "Hierarchical label 'NET_A' in root sheet cannot be connected to non-existent parent sheet"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_hierarchical_sheet_name_mismatches() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_hier_sheet_mismatch_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "OUT" (shape input) (at 0 5 0) (effects (font (size 1 1)))))"#;
+    let root_src = format!(
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 5) (xy 0 5)))
+  (sheet (at 0 0) (size 20 10)
+    (uuid "81111111-1111-1111-1111-111111111111")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "IN" input (at 0 5 180) (uuid "82222222-2222-2222-2222-222222222222"))))"#,
+        child_path.display()
+    );
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-hierarchical-label-mismatch")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 2);
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("Sheet pin IN has no matching hierarchical label inside the sheet")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("Hierarchical label OUT has no matching sheet pin in the parent sheet")
+    }));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn erc_reports_dangling_sheet_pins() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_dangling_sheet_pin_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "IN" (shape input) (at 0 5 0) (effects (font (size 1 1)))))"#;
+    let root_src = format!(
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet (at 0 0) (size 20 10)
+    (uuid "83333333-3333-3333-3333-333333333333")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "IN" input (at 0 5 180) (uuid "84444444-4444-4444-4444-444444444444"))))"#,
+        child_path.display()
+    );
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+        .collect::<Vec<_>>();
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message == "Sheet pin 'IN' is not connected")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_allows_similar_local_labels_on_different_sheets() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_similar_local_labels_{}",

@@ -32,6 +32,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_four_way_junction(project));
     diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_label_connectivity(project));
+    diagnostics.extend(check_hierarchical_sheets(project));
     diagnostics.extend(check_mult_unit_pin_conflicts(project));
     diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_driver_conflicts(project));
@@ -1384,6 +1385,155 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                         label.at[0], label.at[1]
                     ),
                     path: Some(schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+fn sheet_pin_is_dangling(schematic: &crate::model::Schematic, pin_at: [f64; 2]) -> bool {
+    let Some(component) = collect_connection_components(schematic)
+        .into_iter()
+        .find(|component| {
+            component.members.iter().any(|member| {
+                member.kind == ConnectionMemberKind::SheetPin && points_equal(member.at, pin_at)
+            })
+        })
+    else {
+        return true;
+    };
+
+    !component.members.iter().any(|member| {
+        !matches!(member.kind, ConnectionMemberKind::SheetPin) || !points_equal(member.at, pin_at)
+    })
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckHierSheets()`. This is
+// not a 1:1 KiCad marker/`GetShownText()` path because the Rust tree still compares raw sheet-pin
+// names, not full pin shown-text with all project text expansion, and it still uses reduced sheet-
+// path helpers instead of KiCad sheet/screen owners. It exists so the current ERC runner now owns
+// the same hierarchy-side checks: root hierarchical labels, dangling parent sheet pins, and
+// parent/child sheet-pin name mismatches. Remaining divergence is fuller pin shown-text and marker
+// attachment parity.
+pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        if project
+            .parent_sheet_path(&sheet_path.instance_path)
+            .is_none()
+        {
+            for item in &schematic.screen.items {
+                let SchItem::Label(label) = item else {
+                    continue;
+                };
+
+                if label.kind != LabelKind::Hierarchical {
+                    continue;
+                }
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-pin-not-connected",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Hierarchical label '{}' in root sheet cannot be connected to non-existent parent sheet",
+                        shown_label_text(project, sheet_path, label)
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+
+        for item in &schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
+                continue;
+            };
+
+            for pin in &sheet.pins {
+                if sheet_pin_is_dangling(schematic, pin.at) {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Error,
+                        code: "erc-pin-not-connected",
+                        kind: crate::diagnostic::DiagnosticKind::Validation,
+                        message: format!("Sheet pin '{}' is not connected", pin.name),
+                        path: Some(sheet_path.schematic_path.clone()),
+                        span: None,
+                        line: None,
+                        column: None,
+                    });
+                }
+            }
+
+            let Some(_) = sheet.uuid.as_deref() else {
+                continue;
+            };
+            let Some(child_sheet_path) = child_sheet_path_for_sheet(project, sheet_path, sheet)
+            else {
+                continue;
+            };
+            let Some(child_schematic) = project.schematic(&child_sheet_path.schematic_path) else {
+                continue;
+            };
+
+            let mut pins = BTreeMap::new();
+            for pin in &sheet.pins {
+                pins.insert(pin.name.clone(), pin);
+            }
+
+            let mut child_labels = BTreeMap::new();
+            for sub_item in &child_schematic.screen.items {
+                let SchItem::Label(label) = sub_item else {
+                    continue;
+                };
+
+                if label.kind != LabelKind::Hierarchical {
+                    continue;
+                }
+
+                let label_text = shown_label_text(project, child_sheet_path, label);
+
+                if pins.remove(&label_text).is_none() {
+                    child_labels.insert(label_text, label);
+                }
+            }
+
+            for (name, _) in pins {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-hierarchical-label-mismatch",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Sheet pin {name} has no matching hierarchical label inside the sheet"
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+
+            for (name, _) in child_labels {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-hierarchical-label-mismatch",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Hierarchical label {name} has no matching sheet pin in the parent sheet"
+                    ),
+                    path: Some(child_sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
