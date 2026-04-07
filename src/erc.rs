@@ -19,6 +19,8 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_text_assertions(project));
     diagnostics.extend(check_unresolved_text_variables(project));
     diagnostics.extend(check_multiunit_footprints(project));
+    diagnostics.extend(check_missing_netclasses(project));
+    diagnostics.extend(check_missing_units(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -28,6 +30,8 @@ struct SymbolOccurrence {
     schematic_path: std::path::PathBuf,
     reference: String,
     footprint: String,
+    unit: Option<i32>,
+    lib_unit_count: Option<usize>,
 }
 
 fn parse_text_assertion(text: &str) -> Option<(Severity, String)> {
@@ -109,11 +113,21 @@ fn collect_symbol_occurrences(project: &SchematicProject) -> Vec<SymbolOccurrenc
             };
             let footprint =
                 resolved_property_value(&state.properties, "Footprint").unwrap_or_default();
+            let lib_unit_count = symbol.lib_symbol.as_ref().map(|lib_symbol| {
+                lib_symbol
+                    .units
+                    .iter()
+                    .map(|unit| unit.unit_number)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+            });
 
             occurrences.push(SymbolOccurrence {
                 schematic_path: schematic.path.clone(),
                 reference,
                 footprint,
+                unit: symbol.unit,
+                lib_unit_count,
             });
         }
     }
@@ -660,6 +674,145 @@ pub fn check_multiunit_footprints(project: &SchematicProject) -> Vec<Diagnostic>
                 line: None,
                 column: None,
             });
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestMissingUnits()`. This is not a 1:1
+// KiCad reference-list pass because the current tree still groups through reduced loaded symbol
+// occurrence snapshots and reports a simpler diagnostic message, but it preserves the exercised
+// same-reference missing-unit check against linked library unit counts. Remaining divergence is
+// richer unit-display-name/sheet-path marker context.
+pub fn check_missing_units(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut by_reference: BTreeMap<String, Vec<SymbolOccurrence>> = BTreeMap::new();
+
+    for occurrence in collect_symbol_occurrences(project) {
+        by_reference
+            .entry(occurrence.reference.clone())
+            .or_default()
+            .push(occurrence);
+    }
+
+    for (reference, occurrences) in by_reference {
+        let Some(lib_unit_count) = occurrences
+            .iter()
+            .find_map(|occurrence| occurrence.lib_unit_count)
+        else {
+            continue;
+        };
+
+        if lib_unit_count <= 1 {
+            continue;
+        }
+
+        let present_units = occurrences
+            .iter()
+            .filter_map(|occurrence| occurrence.unit)
+            .collect::<std::collections::BTreeSet<_>>();
+
+        if present_units.len() >= lib_unit_count {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-missing-units",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!("Missing symbol units for reference '{reference}'"),
+            path: occurrences
+                .first()
+                .map(|occurrence| occurrence.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestMissingNetclasses()`. This is not
+// a 1:1 KiCad marker/settings pass because the current tree still uses a reduced typed
+// companion-project netclass set instead of full `NET_SETTINGS`, but it preserves the exercised
+// undefined-netclass check on item child fields using the same shown-text resolution paths as the
+// local ERC text pass. Remaining divergence is broader project/netclass-pattern semantics.
+pub fn check_missing_netclasses(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let default_netclass = project
+        .project
+        .as_ref()
+        .map(|project| project.default_netclass().to_string())
+        .unwrap_or_else(|| "Default".to_string());
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let mut check_value = |value: String| {
+                if value.is_empty() || value == default_netclass {
+                    return;
+                }
+
+                if project
+                    .project
+                    .as_ref()
+                    .is_some_and(|project| project.has_netclass(&value))
+                {
+                    return;
+                }
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-undefined-netclass",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!("Netclass {value} is not defined"),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            };
+
+            match item {
+                SchItem::Symbol(symbol) => {
+                    for property in &symbol.properties {
+                        if !property.key.eq_ignore_ascii_case("Netclass") {
+                            continue;
+                        }
+                        check_value(shown_symbol_property_text(
+                            project, sheet_path, symbol, property,
+                        ));
+                    }
+                }
+                SchItem::Label(label) => {
+                    for property in &label.properties {
+                        if !property.key.eq_ignore_ascii_case("Netclass") {
+                            continue;
+                        }
+                        check_value(shown_label_property_text(
+                            project, sheet_path, label, property,
+                        ));
+                    }
+                }
+                SchItem::Sheet(sheet) => {
+                    for property in &sheet.properties {
+                        if !property.key.eq_ignore_ascii_case("Netclass") {
+                            continue;
+                        }
+                        check_value(shown_sheet_property_text(project, sheet_path, property));
+                    }
+                }
+                _ => {}
+            }
         }
     }
 

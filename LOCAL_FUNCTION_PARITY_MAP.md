@@ -53,6 +53,9 @@ Current ERC blocker:
 - first local ERC routine is now implemented:
   - reduced `ERC_TESTER::TestDuplicateSheetNames()` analogue is live and tested for same-screen
     case-insensitive sheet-name collisions
+  - reduced `ERC_TESTER::TestMissingUnits()` analogue is live against linked library unit counts
+  - reduced `ERC_TESTER::TestMissingNetclasses()` analogue is live against typed companion-project
+    netclass names
   - reduced `ERC_TESTER::TestMultiunitFootprints()` analogue is live and tested for
     same-reference footprint mismatches across placed units
   - reduced `ERC_TESTER::TestTextVars()` analogue is live for symbol fields, linked library text /
@@ -63,7 +66,13 @@ Current ERC blocker:
 - next active upstream ERC target after that reduced text-vars slice is the remaining
   `ERC_TESTER::TestTextVars()` divergence:
   - drawing-sheet text coverage
-- next upstream ERC routine after the current reduced text-vars gap is `ERC_TESTER::TestMissingUnits()`
+- next upstream ERC blocker cluster after the current reduced text-vars gap is:
+  - `ERC_TESTER::TestLabelMultipleWires()`
+  - `ERC_TESTER::TestFourWayJunction()`
+  - `ERC_TESTER::TestNoConnectPins()`
+- unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`:
+  - reduced current-sheet connection-point snapshot
+  - then the first three connection-point ERC routines on top of it
 - direct re-audit did not find another honest branch-level mismatch in
   `UpdateAllScreenReferences`, `UpdateSymbolInstanceData`, or `UpdateSheetInstanceData`
 - the remaining executable gap is model-shaped: the loader has no notion of an active variant per

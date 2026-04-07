@@ -51,6 +51,8 @@ pub struct LoadedProjectSettings {
 pub struct LoadedSchematicSettings {
     pub intersheet_refs: LoadedIntersheetRefsSettings,
     pub variant_descriptions: BTreeMap<String, String>,
+    pub netclasses: BTreeSet<String>,
+    pub default_netclass: String,
 }
 
 impl Default for LoadedSchematicSettings {
@@ -58,6 +60,8 @@ impl Default for LoadedSchematicSettings {
         Self {
             intersheet_refs: LoadedIntersheetRefsSettings::default(),
             variant_descriptions: BTreeMap::new(),
+            netclasses: BTreeSet::from(["Default".to_string()]),
+            default_netclass: "Default".to_string(),
         }
     }
 }
@@ -96,8 +100,8 @@ impl LoadedProjectSettings {
     // Upstream parity: typed local analogue for the exercised companion-project settings slice.
     // This is not a 1:1 KiCad settings object because the current tree still preserves raw
     // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
-    // the exercised `SCHEMATIC_SETTINGS` intersheet subset, project text vars, and schematic
-    // variant descriptions.
+    // the exercised `SCHEMATIC_SETTINGS` intersheet subset, project text vars, schematic variant
+    // descriptions, and the reduced ERC-visible netclass-name set.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
         let mut text_variables = BTreeMap::new();
@@ -164,6 +168,31 @@ impl LoadedProjectSettings {
             }
         }
 
+        if let Some(classes) = json
+            .get("net_settings")
+            .and_then(Value::as_object)
+            .and_then(|net_settings| net_settings.get("classes"))
+            .and_then(Value::as_array)
+        {
+            schematic.netclasses.clear();
+
+            for class in classes {
+                if let Some(name) = class
+                    .as_object()
+                    .and_then(|class| class.get("name"))
+                    .and_then(Value::as_str)
+                {
+                    schematic.netclasses.insert(name.to_string());
+                }
+            }
+
+            if schematic.netclasses.is_empty() {
+                schematic
+                    .netclasses
+                    .insert(schematic.default_netclass.clone());
+            }
+        }
+
         Self {
             path,
             json,
@@ -203,6 +232,14 @@ impl LoadedProjectSettings {
             .variant_descriptions
             .get(name)
             .map(String::as_str)
+    }
+
+    pub fn default_netclass(&self) -> &str {
+        &self.schematic.default_netclass
+    }
+
+    pub fn has_netclass(&self, name: &str) -> bool {
+        self.schematic.netclasses.contains(name)
     }
 }
 

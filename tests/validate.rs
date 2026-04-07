@@ -487,6 +487,98 @@ fn erc_reports_different_multiunit_footprints() {
 }
 
 #[test]
+fn erc_reports_missing_units_for_multiunit_symbols() {
+    let path = temp_schematic(
+        "erc_missing_units",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73700000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:U"
+      (property "Reference" "U")
+      (property "Value" "U")
+      (symbol "U_1_1" (text "A" (at 0 0 0)))
+      (symbol "U_2_1" (text "B" (at 0 0 0)))))
+  (symbol
+    (lib_id "Device:U")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1"))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-missing-units")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "Missing symbol units for reference 'U1'"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_undefined_netclasses_from_project_settings() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_missing_netclasses_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73800000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (global_label "GL" (shape input) (at 0 0 0)
+    (property "Netclass" "Fast"))
+)"#,
+    )
+    .expect("write root");
+    fs::write(
+        &project_path,
+        r#"{
+  "meta": { "version": 2 },
+  "net_settings": {
+    "classes": [
+      { "name": "Default" }
+    ]
+  }
+}"#,
+    )
+    .expect("write project");
+
+    let load = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-undefined-netclass")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "Netclass Fast is not defined");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)
