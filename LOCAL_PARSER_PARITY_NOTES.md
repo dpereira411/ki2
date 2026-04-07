@@ -291,9 +291,12 @@ What remains after that correction:
     label property across all loaded schematics
   - done: page-ref computation now stays hierarchy-wide while resolved intersheet-ref text is only
     applied on the selected sheet
+  - done: current-sheet visibility now also honors companion `.kicad_pro`
+    `drawing.intersheets_ref_show` when that project setting is present
   - remaining narrower drift under the same routine:
-    - the current Rust model still lacks KiCad's `m_IntersheetRefsShow` settings gate, so current-
-      sheet refresh applies resolved text without a real show/hide setting source
+    - the current Rust tree still lacks KiCad's fuller typed schematic-settings/config layer, so
+      the no-project fallback for `m_IntersheetRefsShow` is still reduced to the current local
+      property state
     - KiCad also calls `shape->UpdateHatching()` during current-sheet refresh
     - the current Rust shape model does not carry hatch geometry/update state beyond fill type/color
     - treat both as model/settings expansion work, not as another branch tweak in `loader.rs`
@@ -434,7 +437,7 @@ Working strategy has changed with that goal:
    current-occurrence drift
    - done for the currently representable symbol/sheet occurrence and current-sheet intersheet-ref
      paths
-   - remaining drift under this routine is the missing intersheet-ref show/hide settings gate and
+   - remaining drift under this routine is the reduced no-project settings fallback plus
      shape-hatching refresh state
 2. direct upstream re-audit of `UpdateSymbolInstanceData` and `UpdateSheetInstanceData` for any
    remaining symbol/sheet occurrence mismatches that affect ERC-visible state
@@ -443,7 +446,7 @@ Working strategy has changed with that goal:
    - remaining drift is model-shaped rather than another obvious branch mismatch
 3. revisit `SetSheetNumberAndCount` / `RecomputeIntersheetRefs` only when a concrete current-sheet,
    page-state, or intersheet-reference discrepancy appears
-   - active discrepancy now narrowed to the missing intersheet-ref settings gate rather than the
+   - active discrepancy now narrowed to the reduced no-project settings fallback rather than the
      hierarchy/current-sheet split itself
 4. revisit `FixLegacyPowerSymbolMismatches` only when a concrete lib-pin/screen mismatch appears
 5. keep the remaining `MigrateSimModels` branch at the end of the backlog as non-ERC simulation

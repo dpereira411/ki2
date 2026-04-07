@@ -109,6 +109,9 @@ impl SchematicProject {
                 &self.sheet_paths,
                 &self.current_sheet_instance_path,
                 &self.intersheet_ref_values,
+                self.project
+                    .as_ref()
+                    .and_then(LoadedProjectSettings::intersheet_refs_show),
             );
             if let Some(schematic) = self
                 .current_sheet_path()

@@ -3217,6 +3217,64 @@ fn switching_current_sheet_resets_noncurrent_intersheet_refs() {
 }
 
 #[test]
+fn project_setting_hides_current_sheet_intersheet_refs() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_project_setting_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000301")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 1 2 0))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": false }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let global = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("global label");
+    let property = global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("intersheet refs");
+
+    assert_eq!(property.value, "${INTERSHEET_REFS}");
+    assert!(!property.visible);
+    assert_eq!(property.at, Some([1.0, 2.0]));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn updates_symbol_references_from_loaded_sheet_paths() {
     let dir = env::temp_dir().join(format!(
         "ki2_update_screen_refs_{}",

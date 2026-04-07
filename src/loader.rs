@@ -52,6 +52,18 @@ impl LoadedProjectSettings {
             .and_then(Value::as_i64)
             .and_then(|value| i32::try_from(value).ok())
     }
+
+    // Upstream parity: local settings lookup for KiCad's `SCHEMATIC_SETTINGS::m_IntersheetRefsShow`.
+    // This is not a 1:1 upstream routine because the current tree still preserves raw project JSON
+    // instead of a typed schematic-settings object; it exists so loader-side current-sheet refresh
+    // can honor real project formatting settings when they are available.
+    pub fn intersheet_refs_show(&self) -> Option<bool> {
+        self.json
+            .get("drawing")
+            .and_then(Value::as_object)
+            .and_then(|drawing| drawing.get("intersheets_ref_show"))
+            .and_then(Value::as_bool)
+    }
 }
 
 #[derive(Debug)]
@@ -68,6 +80,12 @@ pub struct LoadResult {
 }
 
 impl LoadResult {
+    fn intersheet_refs_show(&self) -> Option<bool> {
+        self.project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_show)
+    }
+
     pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
         self.sheet_path("")
     }
@@ -140,11 +158,13 @@ impl LoadResult {
                 &self.current_sheet_instance_path,
                 self.current_variant.as_deref(),
             );
+            let intersheet_refs_show = self.intersheet_refs_show();
             refresh_current_sheet_intersheet_refs(
                 &mut self.schematics,
                 &self.sheet_paths,
                 &self.current_sheet_instance_path,
                 &self.intersheet_ref_values,
+                intersheet_refs_show,
             );
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -294,7 +314,12 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.migrate_sim_models();
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
-    loader.update_all_screen_references(&sheet_paths);
+    loader.update_all_screen_references(
+        &sheet_paths,
+        project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_show),
+    );
     snapshot_sheet_occurrence_bases(&mut loader.schematics);
     snapshot_symbol_occurrence_bases(&mut loader.schematics);
     Ok(LoadResult {
@@ -1548,7 +1573,11 @@ impl SchematicLoader {
     // current-sheet-only intersheet-ref text refresh separate from the hierarchy-wide page-ref map,
     // which is materially closer to native flow. Remaining divergence is limited to the still-
     // missing `m_IntersheetRefsShow` setting gate and richer schematic-shape hatch state.
-    fn update_all_screen_references(&mut self, sheet_paths: &[LoadedSheetPath]) {
+    fn update_all_screen_references(
+        &mut self,
+        sheet_paths: &[LoadedSheetPath],
+        intersheet_refs_show: Option<bool>,
+    ) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
                 .iter()
@@ -1609,6 +1638,7 @@ impl SchematicLoader {
             sheet_paths,
             "",
             &self.intersheet_ref_values,
+            intersheet_refs_show,
         );
     }
 }
@@ -1626,6 +1656,7 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     sheet_paths: &[LoadedSheetPath],
     current_sheet_instance_path: &str,
     intersheet_ref_values: &HashMap<String, String>,
+    intersheet_refs_show: Option<bool>,
 ) {
     for schematic in schematics.iter_mut() {
         for item in &mut schematic.screen.items {
@@ -1643,6 +1674,10 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
             else {
                 continue;
             };
+
+            if intersheet_refs.base_value.is_none() {
+                intersheet_refs.base_value = Some(intersheet_refs.value.clone());
+            }
 
             if let Some(base_value) = intersheet_refs.base_value.clone() {
                 intersheet_refs.value = base_value;
@@ -1680,6 +1715,20 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
             continue;
         };
 
+        if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
+            && !intersheet_refs.visible
+        {
+            intersheet_refs.at = Some(label.at);
+        }
+
+        if let Some(show) = intersheet_refs_show {
+            intersheet_refs.visible = show;
+
+            if !show {
+                continue;
+            }
+        }
+
         intersheet_refs.value = intersheet_ref_values
             .get(&label.text)
             .cloned()
@@ -1688,12 +1737,6 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
         intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
             .canonical_key()
             .to_string();
-
-        if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
-            && !intersheet_refs.visible
-        {
-            intersheet_refs.at = Some(label.at);
-        }
     }
 }
 
