@@ -4,6 +4,11 @@
 
 This repository is not aiming for a "KiCad-inspired" parser. The target is a structural Rust port of KiCad's schematic parsing and validation flow, with behavior tracked against upstream `eeschema/sch_io/kicad_sexpr/sch_io_kicad_sexpr_parser.cpp`.
 
+For every feature in scope, the target is 1:1 KiCad parity in control flow and behavior, not just
+similar output. Parser, loader, connectivity, ERC, and export work should all be judged against
+the upstream owning code path, object construction timing, state mutation timing, accepted input,
+and failure behavior.
+
 ## Working Rules
 
 1. Prefer literal upstream structure over cleaner local abstractions.
@@ -18,6 +23,9 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
    - which upstream routine or branch it corresponds to
    - whether it is at parity or what still diverges from upstream
    - if it is not a 1:1 upstream routine, why the local helper exists and why it is still needed
+10. Do not treat any feature as complete because it produces plausible output. A feature is only
+    "done" when its local owning code flow is intentionally aligned with the upstream KiCad owning
+    code path, or when the remaining gap is explicitly documented as blocked in `PARITY_BACKLOG.md`.
 
 ## Strict Mode
 
@@ -40,6 +48,10 @@ Strict mode is the default for parser-parity work in this repository.
 15. If backlog remains, the default action after every successful work unit is: pick the next largest mismatch, edit, test, commit, continue. Do not wait for another user prompt to resume.
 16. If a reply is unavoidable, it must explain the blocker or state that the backlog is exhausted. Do not send celebratory, summary-only, or “latest progress” replies while executable parity work still remains.
 17. When a real blocker is identified, do not stop at naming it. Find the concrete path to unblocking it and record that path in `PARITY_BACKLOG.md` before treating the work as blocked.
+18. When the product goal is strict ERC, net naming, or netlist/export parity, connection-graph
+    parity is a primary workstream, not a side task. Do not keep extending reduced geometry-only
+    checks once the backlog shows the remaining gaps depend on KiCad's fuller connection ownership
+    model.
 
 ## Parser-Only Parity Strategy
 

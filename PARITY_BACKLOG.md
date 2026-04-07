@@ -23,12 +23,19 @@ KiCad schematic pipeline with behavior tracked against upstream KiCad in:
 - `/Users/Daniel/Desktop/kicad/eeschema/eeschema_jobs_handler.cpp`
 
 Primary product goal now:
-- ERC parity first
-- net naming parity second
+- strict ERC parity
+- strict net naming parity
+- strict netlist/export parity
 - simulation-model parity last
 
 Secondary product goal:
 - expose a CLI-facing API surface that behaves like `kicad-cli` for the exercised schematic paths
+
+Feature completion standard:
+- every feature in scope must target 1:1 KiCad parity in owning code flow and behavior
+- "close enough" output is not sufficient for sign-off
+- reduced local slices are acceptable only as temporary unblock steps and must stay marked as
+  transitional until the owning upstream code path is either matched or explicitly blocked
 
 ## Current State
 
@@ -163,11 +170,21 @@ naming, which it currently does not.
 
 Work this list from top to bottom unless direct upstream comparison reveals a real prerequisite.
 
-1. Remaining connection-backed shown-text exactness
+1. Connection-graph parity
+   - reduced connectivity is no longer the end target
+   - strict ERC/net naming/export parity now depends on moving toward KiCad's fuller connection
+     ownership model:
+     - connection points
+     - connected subgraphs
+     - driver selection
+     - item-to-subgraph lookup
+     - resolved full/short net names
+     - exporter-visible net ownership
+2. Remaining connection-backed shown-text exactness
    - reduced connection-backed shown-text is live for the exercised ERC slice
    - remaining work is fuller KiCad settings/subgraph exactness, not missing variable support
-2. Hierarchy/loading 1:1 sign-off gaps
-3. Netlist/export connectivity parity
+3. Hierarchy/loading 1:1 sign-off gaps
+4. Netlist/export connectivity parity
    - first local `erc` command is live
    - first local `netlist --format xml` command is live
    - reduced text-report output, default report-path behavior, JSON output, severity filters,
@@ -177,8 +194,8 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
      - ignored-check sections / exclusions
      - fuller JSON schema fields
      - KiCad job/config plumbing beyond direct CLI flags
-4. Final parser diagnostic wording polish
-5. Simulation-model parity last
+5. Final parser diagnostic wording polish
+6. Simulation-model parity last
 
 ## Connectivity Graph Requirements
 
