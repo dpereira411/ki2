@@ -626,6 +626,44 @@ fn cli_netlist_uses_default_symbol_pin_net_name() {
 }
 
 #[test]
+fn cli_netlist_marks_single_no_connect_nodes() {
+    let path = temp_schematic(
+        "cli_netlist_no_connect",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:IN"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "IN" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "IN_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "IN" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:IN")
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "IN" (at 0 0 0) (effects (font (size 1 1)))))
+  (no_connect (at 0 0)))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("pintype=\"input+no_connect\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

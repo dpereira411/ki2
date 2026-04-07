@@ -301,6 +301,7 @@ Current status:
     geometry scans
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
+  - reduced XML single-node `+no_connect` marking is now live in `src/netlist.rs`
 - the next honest step is no longer "move connected label/rule-area scans":
   - grow the shared owner from reduced connected-label/power/sheet-pin/default-pin/netclass
     selection toward real subgraph ownership and broader driver resolution
@@ -627,6 +628,10 @@ What is not yet explicitly tracked as complete:
 - exporter-visible net naming parity
 - format-specific sorting/text normalization parity
 - SPICE exporter parity
+- remaining XML net-node drift is now narrower:
+  - stacked-pin expansion and de-dup semantics
+  - conditional `pinfunction` emission
+  - fuller graph-owned netcode/name ownership
 
 ### Exporter-Specific Blockers
 

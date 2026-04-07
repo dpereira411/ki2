@@ -164,11 +164,13 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
 // not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
 // shared connectivity carrier instead of full `CONNECTION_GRAPH` subgraphs, but it preserves the
-// exercised current-sheet node grouping, per-net net/class lookup, and duplicate ref/pin erasure
-// needed by the first live XML netlist slice. Remaining divergence is the fuller KiCad subgraph
-// object model, stacked-pin handling, and graph-owned netcode/name caches.
+// exercised current-sheet node grouping, per-net net/class lookup, duplicate ref/pin erasure, and
+// single-node `+no_connect` marking needed by the first live XML netlist slice. Remaining
+// divergence is the fuller KiCad subgraph object model, stacked-pin handling, and graph-owned
+// netcode/name caches.
 pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
-    let mut nets = BTreeMap::<String, (String, BTreeMap<(String, String), NetlistNode>)>::new();
+    let mut nets =
+        BTreeMap::<String, (String, bool, BTreeMap<(String, String), NetlistNode>)>::new();
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -204,7 +206,15 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
 
             let net_nodes = nets
                 .entry(net_name)
-                .or_insert_with(|| (net_class, BTreeMap::new()));
+                .or_insert_with(|| (net_class, false, BTreeMap::new()));
+
+            if component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker)
+            {
+                net_nodes.1 = true;
+            }
 
             for item in &schematic.screen.items {
                 let SchItem::Symbol(symbol) = item else {
@@ -245,7 +255,7 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                         pintype: pin.electrical_type.clone().unwrap_or_default(),
                     };
 
-                    net_nodes.1.insert((reference.clone(), pin_number), node);
+                    net_nodes.2.insert((reference.clone(), pin_number), node);
                 }
             }
         }
@@ -253,11 +263,19 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
 
     nets.into_iter()
         .enumerate()
-        .map(|(index, (name, (class, nodes)))| NetlistNet {
-            code: index + 1,
-            name,
-            class,
-            nodes: nodes.into_values().collect(),
+        .map(|(index, (name, (class, has_no_connect, nodes)))| {
+            let mut nodes = nodes.into_values().collect::<Vec<_>>();
+
+            if has_no_connect && nodes.len() == 1 {
+                nodes[0].pintype.push_str("+no_connect");
+            }
+
+            NetlistNet {
+                code: index + 1,
+                name,
+                class,
+                nodes,
+            }
         })
         .collect()
 }
