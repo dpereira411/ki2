@@ -13,7 +13,9 @@ use crate::loader::{
     resolve_text_variables,
 };
 use crate::model::Schematic;
-use crate::worksheet::{WorksheetTextItem, parse_reduced_worksheet_text_items};
+use crate::worksheet::{
+    WorksheetTextItem, default_reduced_worksheet_text_items, parse_reduced_worksheet_text_items,
+};
 
 #[derive(Debug)]
 pub struct SchematicProject {
@@ -118,15 +120,15 @@ impl SchematicProject {
 
     // Upstream parity: reduced local analogue for the drawing-sheet `DS_DRAW_ITEM_TEXT` list on
     // the project-facing API. This is not 1:1 because the local tree still only parses `tbtext`
-    // items and has no default worksheet model, but it keeps ERC on the same reduced worksheet
-    // carrier as loader callers.
+    // items and lacks the full worksheet draw-item model, but it keeps ERC on the same reduced
+    // default/custom worksheet carrier as loader callers.
     pub fn current_drawing_sheet_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
         let Some(current) = self.current_schematic() else {
             return Ok(Vec::new());
         };
 
         match self.current_drawing_sheet_source() {
-            DrawingSheetSource::Default => Ok(Vec::new()),
+            DrawingSheetSource::Default => default_reduced_worksheet_text_items(),
             DrawingSheetSource::Filesystem(path) => {
                 let raw = fs::read_to_string(&path).map_err(|source| Error::Io {
                     path: path.clone(),

@@ -102,7 +102,6 @@ Current drawing-sheet blocker:
 - the loader can now resolve the active drawing-sheet source through that path, including matching
   schematic-embedded worksheet fallback
 - the remaining gap is:
-  - default drawing-sheet coverage
   - non-`tbtext` worksheet items
   - fuller drawing-sheet shown-text/painter semantics beyond the reduced token slice
 
@@ -121,8 +120,8 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
    - drawing-sheet/default worksheet exactness now outranks the remaining connection-backed tail
 2. Remaining drawing-sheet `TestTextVars()` coverage
    - typed project source path is now modeled
-   - reduced custom/embedded worksheet `tbtext` parsing and shown-text ERC coverage are live
-   - remaining work is default/full worksheet parity
+   - reduced default/custom/embedded worksheet `tbtext` parsing and shown-text ERC coverage are live
+   - remaining work is fuller draw-item/painter parity beyond `tbtext`
 3. Hierarchy/loading 1:1 sign-off gaps
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
@@ -556,7 +555,6 @@ Unblock path:
    - done for the exercised custom/embedded `tbtext` token slice
 4. port the remaining drawing-sheet branch of `ERC_TESTER::TestTextVars()`
    - remaining:
-     - default worksheet fallback
      - broader worksheet item/painter semantics if exercised by CLI parity tests
 
 ### Blocker: Hierarchy loading is not yet fully 1:1 signed off

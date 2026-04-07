@@ -11,6 +11,30 @@ pub struct WorksheetTextItem {
     pub at: [f64; 2],
 }
 
+const REDUCED_DEFAULT_DRAWING_SHEET: &str = r#"(kicad_wks
+  (version 20210606)
+  (generator pl_editor)
+  (tbtext "Date: ${ISSUE_DATE}" (pos 87 6.9))
+  (tbtext "${KICAD_VERSION}" (pos 109 4.1))
+  (tbtext "Rev: ${REVISION}" (pos 24 6.9))
+  (tbtext "Size: ${PAPER}" (pos 109 6.9))
+  (tbtext "Id: ${#}/${##}" (pos 24 4.1))
+  (tbtext "Title: ${TITLE}" (pos 109 10.7))
+  (tbtext "File: ${FILENAME}" (pos 109 14.3))
+  (tbtext "Sheet: ${SHEETPATH}" (pos 109 17))
+  (tbtext "${COMPANY}" (pos 109 20))
+  (tbtext "${COMMENT1}" (pos 109 23))
+  (tbtext "${COMMENT2}" (pos 109 26))
+  (tbtext "${COMMENT3}" (pos 109 29))
+  (tbtext "${COMMENT4}" (pos 109 32)))"#;
+
+pub fn default_reduced_worksheet_text_items() -> Result<Vec<WorksheetTextItem>, Error> {
+    parse_reduced_worksheet_text_items(
+        Path::new("<default drawing sheet>"),
+        REDUCED_DEFAULT_DRAWING_SHEET,
+    )
+}
+
 pub fn parse_reduced_worksheet_text_items(
     path: &Path,
     raw: &str,

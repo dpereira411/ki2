@@ -15,7 +15,9 @@ use crate::sim::{
     expected_missing_sim_library_locations, load_symbol_sim_library_content_from_embedded_files,
     resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
 };
-use crate::worksheet::{WorksheetTextItem, parse_reduced_worksheet_text_items};
+use crate::worksheet::{
+    WorksheetTextItem, default_reduced_worksheet_text_items, parse_reduced_worksheet_text_items,
+};
 use serde_json::Value;
 use time::{OffsetDateTime, macros::format_description};
 
@@ -380,14 +382,15 @@ impl LoadResult {
 
     // Upstream parity: reduced local analogue for the drawing-sheet `DS_DRAW_ITEM_TEXT` list that
     // `ERC_TESTER::TestTextVars()` walks. This is not 1:1 yet because the local tree only parses
-    // `tbtext` items and still has no default worksheet model or full draw-item/styling support.
+    // `tbtext` items and still lacks the full draw-item/styling model, but it now covers both the
+    // reduced built-in default worksheet text slice and custom/embedded worksheet text items.
     pub fn current_drawing_sheet_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
         let Some(current) = self.current_schematic() else {
             return Ok(Vec::new());
         };
 
         match self.current_drawing_sheet_source() {
-            DrawingSheetSource::Default => Ok(Vec::new()),
+            DrawingSheetSource::Default => default_reduced_worksheet_text_items(),
             DrawingSheetSource::Filesystem(path) => {
                 let raw = fs::read_to_string(&path).map_err(|source| Error::Io {
                     path: path.clone(),
@@ -5159,8 +5162,9 @@ fn resolve_project_text_var(
 // Upstream parity: reduced local analogue for the schematic/project fallback half of
 // `SCHEMATIC::ResolveTextVar()`. This is not 1:1 because the current tree still lacks the full
 // project/controller resolver stack, but it now covers the exercised schematic/title-block/project
-// token slice used by intersheet shown text. Remaining divergence is broader project variables
-// like VCS and cross-reference/net resolvers.
+// token slice used by intersheet shown text and reduced drawing-sheet text. `KICAD_VERSION` is
+// still not 1:1 KiCad because the local tree falls back to schematic generator metadata instead of
+// the real application version string.
 fn resolve_schematic_text_var(
     schematics: &[Schematic],
     loaded_path: &LoadedSheetPath,
@@ -5189,6 +5193,14 @@ fn resolve_schematic_text_var(
     }
 
     match token_upper.as_str() {
+        "KICAD_VERSION" => {
+            return Some(
+                schematic
+                    .generator_version
+                    .clone()
+                    .unwrap_or_else(|| schematic.generator.clone()),
+            );
+        }
         "FILENAME" => {
             return loaded_path
                 .schematic_path
@@ -5206,17 +5218,38 @@ fn resolve_schematic_text_var(
         return Some(value);
     }
 
-    let title_block = schematic.screen.title_block.as_ref()?;
+    let title_block = schematic.screen.title_block.as_ref();
     match token_upper.as_str() {
-        "ISSUE_DATE" => Some(title_block.date.clone().unwrap_or_default()),
-        "REVISION" => Some(title_block.revision.clone().unwrap_or_default()),
-        "TITLE" => Some(title_block.title.clone().unwrap_or_default()),
-        "COMPANY" => Some(title_block.company.clone().unwrap_or_default()),
+        "ISSUE_DATE" => Some(
+            title_block
+                .and_then(|title_block| title_block.date.clone())
+                .unwrap_or_default(),
+        ),
+        "REVISION" => Some(
+            title_block
+                .and_then(|title_block| title_block.revision.clone())
+                .unwrap_or_default(),
+        ),
+        "TITLE" => Some(
+            title_block
+                .and_then(|title_block| title_block.title.clone())
+                .unwrap_or_default(),
+        ),
+        "COMPANY" => Some(
+            title_block
+                .and_then(|title_block| title_block.company.clone())
+                .unwrap_or_default(),
+        ),
         _ if token_upper.starts_with("COMMENT") => token_upper["COMMENT".len()..]
             .parse::<usize>()
             .ok()
             .filter(|number| (1..=9).contains(number))
-            .map(|number| title_block.comment(number).unwrap_or_default().to_string()),
+            .map(|number| {
+                title_block
+                    .and_then(|title_block| title_block.comment(number))
+                    .unwrap_or_default()
+                    .to_string()
+            }),
         _ => None,
     }
 }

@@ -731,6 +731,36 @@ fn current_drawing_sheet_shown_text_items_resolve_sheet_and_project_vars() {
 }
 
 #[test]
+fn current_drawing_sheet_shown_text_items_use_reduced_default_worksheet() {
+    let path = temp_schematic(
+        "default_drawing_sheet_shown_text",
+        r#"(kicad_sch
+  (version 20231120)
+  (generator "ki2")
+  (uuid "60000000-0000-0000-0000-000000000102")
+  (paper "A4")
+  (title_block (title "Demo Title") (company "Acme") (comment 1 "First"))
+  (sheet_instances (path "" (page "7"))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let items = loaded
+        .current_drawing_sheet_shown_text_items()
+        .expect("shown worksheet items");
+    let texts = items
+        .iter()
+        .map(|item| item.text.as_str())
+        .collect::<Vec<_>>();
+    assert!(texts.contains(&"Title: Demo Title"));
+    assert!(texts.contains(&"Size: A4"));
+    assert!(texts.contains(&"Id: 7/1"));
+    assert!(texts.contains(&"Acme"));
+    assert!(texts.contains(&"First"));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variable_in_drawing_sheet() {
     let dir = std::env::temp_dir().join(format!(
         "ki2_erc_drawing_sheet_unresolved_{}",
@@ -778,6 +808,31 @@ fn erc_reports_unresolved_text_variable_in_drawing_sheet() {
     let _ = fs::remove_file(project_path);
     let _ = fs::remove_file(worksheet_path);
     let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn erc_default_drawing_sheet_does_not_report_unresolved_text_variables() {
+    let path = temp_schematic(
+        "erc_default_drawing_sheet_resolves",
+        r#"(kicad_sch
+  (version 20231120)
+  (generator "ki2")
+  (uuid "60000000-0000-0000-0000-000000000103")
+  (paper "A4")
+  (title_block (title "Demo Title"))
+  (sheet_instances (path "" (page "7"))))"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-unresolved-variable")
+        .collect::<Vec<_>>();
+
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]
