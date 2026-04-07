@@ -64,8 +64,10 @@ Execution order:
 4. tighten final `Display` formatting and wording polish
    - in progress: parser-built diagnostics now render with the same `parse error at ...` prefix
      shape as lexer failures instead of the older local `validation error at ...` split
-   - remaining active diagnostic task is now narrower final wording polish after that shared prefix
-     unification
+   - done: rendered validation errors now prefer KiCad-style line/column locations over the older
+     repo-local byte-span suffix when both are available
+   - remaining active diagnostic task is now narrower local CLI wording polish after that shared
+     prefix/location cleanup; there is no broader parser/source-fidelity gap left here
 5. re-audit blocked parser helpers in `LOCAL_FUNCTION_PARITY_MAP.md`
 
 Closest-to-upstream areas so far:

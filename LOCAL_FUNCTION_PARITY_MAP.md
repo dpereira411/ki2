@@ -96,7 +96,7 @@ If diagnostic/error unblocking is chosen, execute it in this order:
    - done
 5. tighten final `Display` / formatting behavior to match native KiCad wording as far as the local
    CLI model can support
-   - active
+   - active, but now narrowed to local CLI wording polish after the line/column display cleanup
 
 ## Layer 0: Support Files
 
@@ -118,7 +118,7 @@ If diagnostic/error unblocking is chosen, execute it in this order:
 
 | Local function | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus byte-span and 1-based line/column source positions now exist, and parser-built diagnostics now share the `parse error at ...` display prefix with lexer failures; the remaining gap is narrower final wording fidelity | parser notes + diagnostic regressions | tighten final formatting wording |
+| `Diagnostic::error` | parse error construction | `blocked` | structured diagnostic kinds plus raw spans and 1-based line/column source positions now exist, and rendered validation errors now prefer KiCad-style line/column output over repo-local byte-span text; the remaining gap is narrower local CLI wording fidelity | parser notes + diagnostic regressions | tighten final formatting wording only if a concrete wording mismatch is found |
 | `Diagnostic::with_path` | none; local support | `not_applicable` | local helper only | source inspection | none |
 | `Diagnostic::with_span` | none; local support | `not_applicable` | local helper only | source inspection | none |
 
@@ -129,7 +129,7 @@ still depends on error/diagnostic exactness.
 
 | Local item | Upstream counterpart | Status | Reason | Evidence | Next action |
 | --- | --- | --- | --- | --- | --- |
-| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist, and parser/validation failures no longer split on a repo-local `validation error at ...` prefix; the remaining gap is narrower final wording fidelity in rendered errors | parser notes + diagnostic regressions | tighten `Display` formatting wording |
+| `Error` enum formatting | parse/validation error reporting | `blocked` | structured parser-helper data and source positions now exist, parser/validation failures no longer split on a repo-local `validation error at ...` prefix, and rendered validation locations now use line/column instead of local byte-span noise; the remaining gap is narrower local CLI wording fidelity in rendered errors | parser notes + diagnostic regressions | tighten `Display` formatting wording only if a concrete mismatch is found |
 
 ### `src/model.rs` parser support methods
 
