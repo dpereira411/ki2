@@ -64,6 +64,18 @@ impl LoadedProjectSettings {
             .and_then(|drawing| drawing.get("intersheets_ref_show"))
             .and_then(Value::as_bool)
     }
+
+    // Upstream parity: local settings lookup for KiCad's
+    // `SCHEMATIC_SETTINGS::m_IntersheetRefsListOwnPage`. This exists for the same reason as the
+    // show/hide lookup above: the current tree still carries raw project JSON rather than a typed
+    // schematic-settings object.
+    pub fn intersheet_refs_own_page(&self) -> Option<bool> {
+        self.json
+            .get("drawing")
+            .and_then(Value::as_object)
+            .and_then(|drawing| drawing.get("intersheets_ref_own_page"))
+            .and_then(Value::as_bool)
+    }
 }
 
 #[derive(Debug)]
@@ -77,6 +89,8 @@ pub struct LoadResult {
     pub current_sheet_instance_path: String,
     pub current_variant: Option<String>,
     pub intersheet_ref_values: HashMap<String, String>,
+    pub intersheet_ref_pages_by_label: HashMap<String, BTreeSet<usize>>,
+    pub sheet_pages_by_virtual_page: HashMap<usize, String>,
 }
 
 impl LoadResult {
@@ -84,6 +98,12 @@ impl LoadResult {
         self.project
             .as_ref()
             .and_then(LoadedProjectSettings::intersheet_refs_show)
+    }
+
+    fn intersheet_refs_own_page(&self) -> Option<bool> {
+        self.project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_own_page)
     }
 
     pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
@@ -159,12 +179,16 @@ impl LoadResult {
                 self.current_variant.as_deref(),
             );
             let intersheet_refs_show = self.intersheet_refs_show();
+            let intersheet_refs_own_page = self.intersheet_refs_own_page();
             refresh_current_sheet_intersheet_refs(
                 &mut self.schematics,
                 &self.sheet_paths,
                 &self.current_sheet_instance_path,
                 &self.intersheet_ref_values,
+                &self.intersheet_ref_pages_by_label,
+                &self.sheet_pages_by_virtual_page,
                 intersheet_refs_show,
+                intersheet_refs_own_page,
             );
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -319,6 +343,9 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
         project
             .as_ref()
             .and_then(LoadedProjectSettings::intersheet_refs_show),
+        project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_own_page),
     );
     snapshot_sheet_occurrence_bases(&mut loader.schematics);
     snapshot_symbol_occurrence_bases(&mut loader.schematics);
@@ -332,6 +359,8 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
         current_sheet_instance_path: String::new(),
         current_variant: None,
         intersheet_ref_values: loader.intersheet_ref_values,
+        intersheet_ref_pages_by_label: loader.intersheet_ref_pages_by_label,
+        sheet_pages_by_virtual_page: loader.sheet_pages_by_virtual_page,
     })
 }
 
@@ -396,6 +425,8 @@ struct SchematicLoader {
     current_sheet_path: Vec<PathBuf>,
     current_path: Vec<PathBuf>,
     intersheet_ref_values: HashMap<String, String>,
+    intersheet_ref_pages_by_label: HashMap<String, BTreeSet<usize>>,
+    sheet_pages_by_virtual_page: HashMap<usize, String>,
 }
 
 #[derive(Clone)]
@@ -412,6 +443,8 @@ impl SchematicLoader {
             current_sheet_path: Vec::new(),
             current_path: Vec::new(),
             intersheet_ref_values: HashMap::new(),
+            intersheet_ref_pages_by_label: HashMap::new(),
+            sheet_pages_by_virtual_page: HashMap::new(),
         }
     }
 
@@ -1554,7 +1587,7 @@ impl SchematicLoader {
         }
 
         self.intersheet_ref_values = page_refs_map
-            .into_iter()
+            .iter()
             .map(|(label, page_numbers)| {
                 let refs = page_numbers
                     .iter()
@@ -1562,9 +1595,11 @@ impl SchematicLoader {
                     .cloned()
                     .collect::<Vec<_>>()
                     .join(",");
-                (label, format!("[{refs}]"))
+                (label.clone(), format!("[{refs}]"))
             })
             .collect();
+        self.intersheet_ref_pages_by_label = page_refs_map;
+        self.sheet_pages_by_virtual_page = virtual_page_to_sheet_page;
     }
 
     // Upstream parity: loader-side `SCH_SHEET_PATH::UpdateAllScreenReferences()` analogue. This
@@ -1577,6 +1612,7 @@ impl SchematicLoader {
         &mut self,
         sheet_paths: &[LoadedSheetPath],
         intersheet_refs_show: Option<bool>,
+        intersheet_refs_own_page: Option<bool>,
     ) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
@@ -1638,7 +1674,10 @@ impl SchematicLoader {
             sheet_paths,
             "",
             &self.intersheet_ref_values,
+            &self.intersheet_ref_pages_by_label,
+            &self.sheet_pages_by_virtual_page,
             intersheet_refs_show,
+            intersheet_refs_own_page,
         );
     }
 }
@@ -1656,7 +1695,10 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     sheet_paths: &[LoadedSheetPath],
     current_sheet_instance_path: &str,
     intersheet_ref_values: &HashMap<String, String>,
+    intersheet_ref_pages_by_label: &HashMap<String, BTreeSet<usize>>,
+    sheet_pages_by_virtual_page: &HashMap<usize, String>,
     intersheet_refs_show: Option<bool>,
+    intersheet_refs_own_page: Option<bool>,
 ) {
     for schematic in schematics.iter_mut() {
         for item in &mut schematic.screen.items {
@@ -1729,10 +1771,31 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
             }
         }
 
-        intersheet_refs.value = intersheet_ref_values
-            .get(&label.text)
-            .cloned()
-            .unwrap_or_else(|| "[?]".to_string());
+        intersheet_refs.value = if intersheet_refs_own_page == Some(false) {
+            match intersheet_ref_pages_by_label.get(&label.text) {
+                Some(raw_pages) => {
+                    let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();
+                    pages.retain(|page_number| *page_number != current_sheet_path.sheet_number);
+                    let refs = pages
+                        .into_iter()
+                        .filter_map(|page_number| sheet_pages_by_virtual_page.get(&page_number))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    if refs.is_empty() {
+                        String::new()
+                    } else {
+                        format!("[{refs}]")
+                    }
+                }
+                None => "[?]".to_string(),
+            }
+        } else {
+            intersheet_ref_values
+                .get(&label.text)
+                .cloned()
+                .unwrap_or_else(|| "[?]".to_string())
+        };
         intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
         intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs
             .canonical_key()

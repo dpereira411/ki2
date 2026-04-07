@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,8 @@ pub struct SchematicProject {
     pub sheet_paths: Vec<LoadedSheetPath>,
     pub current_sheet_instance_path: String,
     intersheet_ref_values: HashMap<String, String>,
+    intersheet_ref_pages_by_label: HashMap<String, BTreeSet<usize>>,
+    sheet_pages_by_virtual_page: HashMap<usize, String>,
     by_path: HashMap<PathBuf, usize>,
     sheet_paths_by_instance: HashMap<String, usize>,
 }
@@ -45,6 +48,8 @@ impl SchematicProject {
             sheet_paths: load.sheet_paths,
             current_sheet_instance_path: load.current_sheet_instance_path,
             intersheet_ref_values: load.intersheet_ref_values,
+            intersheet_ref_pages_by_label: load.intersheet_ref_pages_by_label,
+            sheet_pages_by_virtual_page: load.sheet_pages_by_virtual_page,
             by_path,
             sheet_paths_by_instance,
         }
@@ -109,9 +114,14 @@ impl SchematicProject {
                 &self.sheet_paths,
                 &self.current_sheet_instance_path,
                 &self.intersheet_ref_values,
+                &self.intersheet_ref_pages_by_label,
+                &self.sheet_pages_by_virtual_page,
                 self.project
                     .as_ref()
                     .and_then(LoadedProjectSettings::intersheet_refs_show),
+                self.project
+                    .as_ref()
+                    .and_then(LoadedProjectSettings::intersheet_refs_own_page),
             );
             if let Some(schematic) = self
                 .current_sheet_path()

@@ -293,10 +293,13 @@ What remains after that correction:
     applied on the selected sheet
   - done: current-sheet visibility now also honors companion `.kicad_pro`
     `drawing.intersheets_ref_show` when that project setting is present
+  - done: current-sheet page-list text now also honors companion `.kicad_pro`
+    `drawing.intersheets_ref_own_page`, so the selected page can be excluded from the displayed
+    intersheet-ref list like upstream
   - remaining narrower drift under the same routine:
     - the current Rust tree still lacks KiCad's fuller typed schematic-settings/config layer, so
-      the no-project fallback for `m_IntersheetRefsShow` is still reduced to the current local
-      property state
+      the no-project fallback for intersheet-ref display settings is still reduced to the current
+      local property state/default formatting
     - KiCad also calls `shape->UpdateHatching()` during current-sheet refresh
     - the current Rust shape model does not carry hatch geometry/update state beyond fill type/color
     - treat both as model/settings expansion work, not as another branch tweak in `loader.rs`

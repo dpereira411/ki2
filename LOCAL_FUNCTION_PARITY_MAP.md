@@ -69,9 +69,10 @@ Current ERC blocker:
     hierarchy-wide page-ref computation stays separate from current-sheet label refresh, and
     non-current screens keep their parsed intersheet-ref field text
   - remaining blocker under that same routine is narrower:
-    - companion `.kicad_pro` `drawing.intersheets_ref_show` is now honored when present, but the
-      current tree still lacks KiCad's fuller typed schematic-settings/config fallback when no
-      project setting is available
+    - companion `.kicad_pro` `drawing.intersheets_ref_show` and
+      `drawing.intersheets_ref_own_page` are now honored when present, but the current tree still
+      lacks KiCad's fuller typed schematic-settings/config fallback when no project setting is
+      available
     - current Rust shapes do not yet have the hatch/update state KiCad mutates with
       `shape->UpdateHatching()`
   - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked

@@ -3275,6 +3275,115 @@ fn project_setting_hides_current_sheet_intersheet_refs() {
 }
 
 #[test]
+fn project_setting_excludes_current_page_from_intersheet_refs() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_own_page_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000313")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000311")
+  (paper "A4")
+  (global_label "VCC" (shape input) (at 1 2 0))
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000312")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "2"))
+    (path "/71000000-0000-0000-0000-000000000312" (page "1")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": {
+    "intersheets_ref_show": true,
+    "intersheets_ref_own_page": false
+  }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let root_global = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("root global label");
+    let root_property = root_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("root intersheet refs");
+    assert_eq!(root_property.value, "[1]");
+
+    let child_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && !sheet_path.instance_path.is_empty()
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child instance path");
+    assert!(loaded.set_current_sheet_path(&child_instance_path));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "[2]");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn updates_symbol_references_from_loaded_sheet_paths() {
     let dir = env::temp_dir().join(format!(
         "ki2_update_screen_refs_{}",
