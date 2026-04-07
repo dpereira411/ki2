@@ -664,6 +664,49 @@ fn cli_netlist_marks_single_no_connect_nodes() {
 }
 
 #[test]
+fn cli_netlist_omits_pinfunction_for_single_unnamed_pins() {
+    let path = temp_schematic(
+        "cli_netlist_unnamed_pinfunction",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(
+        report.contains("<node ref=\"R1\" pin=\"1\" pintype=\"passive\" />"),
+        "{report}"
+    );
+    assert!(!report.contains("pinfunction=\"~\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

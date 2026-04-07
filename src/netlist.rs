@@ -41,7 +41,7 @@ pub struct NetlistLibPart {
 pub struct NetlistNode {
     pub reference: String,
     pub pin: String,
-    pub pinfunction: String,
+    pub pinfunction: Option<String>,
     pub pintype: String,
 }
 
@@ -248,10 +248,15 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                         continue;
                     }
 
+                    let pinfunction = pin.name.clone().and_then(|name| {
+                        let trimmed = name.trim();
+                        (!trimmed.is_empty() && trimmed != "~").then_some(name)
+                    });
+
                     let node = NetlistNode {
                         reference: reference.clone(),
                         pin: pin_number.clone(),
-                        pinfunction: pin.name.clone().unwrap_or_else(|| pin_number.clone()),
+                        pinfunction,
                         pintype: pin.electrical_type.clone().unwrap_or_default(),
                     };
 
@@ -711,12 +716,16 @@ pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
 
         for node in net.nodes {
             xml.push_str(&format!(
-                "      <node ref=\"{}\" pin=\"{}\" pinfunction=\"{}\" pintype=\"{}\" />\n",
+                "      <node ref=\"{}\" pin=\"{}\"",
                 escape_xml(&node.reference),
                 escape_xml(&node.pin),
-                escape_xml(&node.pinfunction),
-                escape_xml(&node.pintype)
             ));
+
+            if let Some(pinfunction) = node.pinfunction {
+                xml.push_str(&format!(" pinfunction=\"{}\"", escape_xml(&pinfunction)));
+            }
+
+            xml.push_str(&format!(" pintype=\"{}\" />\n", escape_xml(&node.pintype)));
         }
 
         xml.push_str("    </net>\n");
