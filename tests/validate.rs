@@ -125,6 +125,12 @@ fn cli_erc_reports_clean_schematic() {
   (generator "ki2")
   (paper "A4"))"#,
     );
+    let report_path = path.with_file_name(format!(
+        "{}-erc.rpt",
+        path.file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("report stem")
+    ));
 
     let output = Command::new(ki2_binary())
         .args(["erc", path.to_str().expect("path string")])
@@ -137,8 +143,15 @@ fn cli_erc_reports_clean_schematic() {
     );
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("found 0 violations"), "{stdout}");
+    assert!(
+        stdout.contains(report_path.to_str().expect("report path")),
+        "{stdout}"
+    );
+    let report = fs::read_to_string(&report_path).expect("read report");
+    assert!(report.contains("found 0 violations"), "{report}");
 
     let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
 }
 
 #[test]
@@ -151,9 +164,15 @@ fn cli_erc_reports_violations() {
   (paper "A4")
   (text "${ERC_ERROR worksheet-like failure}" (at 1 2 0) (effects (font (size 1 1)))))"#,
     );
+    let report_path = path.with_extension("erc.txt");
 
     let output = Command::new(ki2_binary())
-        .args(["erc", path.to_str().expect("path string")])
+        .args([
+            "erc",
+            path.to_str().expect("path string"),
+            "--output",
+            report_path.to_str().expect("report path"),
+        ])
         .output()
         .expect("run ki2 erc");
 
@@ -164,8 +183,16 @@ fn cli_erc_reports_violations() {
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("worksheet-like failure"), "{stdout}");
     assert!(stdout.contains("found 2 violations"), "{stdout}");
+    assert!(
+        stdout.contains(report_path.to_str().expect("report path")),
+        "{stdout}"
+    );
+    let report = fs::read_to_string(&report_path).expect("read report");
+    assert!(report.contains("worksheet-like failure"), "{report}");
+    assert!(report.contains("found 2 violations"), "{report}");
 
     let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
 }
 
 #[test]

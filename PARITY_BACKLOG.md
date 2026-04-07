@@ -85,6 +85,7 @@ Implemented reduced analogues:
 - `ERC_TESTER::TestNoConnectPins()`
 - `ERC_TESTER::TestPinToPin()` reduced default-matrix slice
 - first local `erc` CLI command on top of the live loader/ERC engine
+- reduced ERC text-report output and default `<stem>-erc.rpt` behavior
 
 Still pending for ERC:
 - remaining drawing-sheet slice of `ERC_TESTER::TestTextVars()`
@@ -123,7 +124,8 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 2. Hierarchy/loading 1:1 sign-off gaps
 3. Netlist/export connectivity parity
    - first local `erc` command is live
-   - remaining CLI/report parity is output/config shape, not absence of the command
+   - reduced text-report output and default report-path behavior are live
+   - remaining CLI/report parity is fuller config/severity/format shape, not absence of the command
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
 
