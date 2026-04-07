@@ -10342,6 +10342,114 @@ fn load_tree_hydrates_current_library_backed_sim_model_from_value() {
 }
 
 #[test]
+fn load_tree_hydrates_library_backed_control_source_sim_model_from_value() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000091e")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "models.lib")
+      (type model)
+      (data |.subckt MODEL OUT IN CTRL_P CTRL_N
+.ends MODEL|)))
+  (lib_symbols
+    (symbol "Device:G"
+      (symbol "G_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "+" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "-" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "C+" (effects (font (size 1.27 1.27))))
+          (number "3" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "C-" (effects (font (size 1.27 1.27))))
+          (number "4" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:G")
+    (property "Reference" "G?")
+    (property "Value" "5m")
+    (property "Sim.Device" "G")
+    (property "Sim.Library" "models.lib")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic(
+        "loader_hydrates_library_backed_control_source_sim_model_from_value",
+        src,
+    );
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::LibraryReference)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_kind),
+        Some(ResolvedSimModelKind::SpiceSubckt)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.stored_value.as_deref()),
+        Some("5m")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("gain=5m")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "+".to_string()),
+            ("2".to_string(), "-".to_string()),
+            ("3".to_string(), "C+".to_string()),
+            ("4".to_string(), "C-".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_fixes_legacy_global_power_symbol_value_from_hidden_power_pin() {
     let src = r##"(kicad_sch
   (version 20230220)
