@@ -32,6 +32,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_four_way_junction(project));
     diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_label_connectivity(project));
+    diagnostics.extend(check_directive_labels(project));
     diagnostics.extend(check_hierarchical_sheets(project));
     diagnostics.extend(check_mult_unit_pin_conflicts(project));
     diagnostics.extend(check_pin_to_pin(project));
@@ -1354,6 +1355,10 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         }
 
         for label in &component.labels {
+            if label.kind == LabelKind::Directive {
+                continue;
+            }
+
             if label.dangling
                 || (label.kind == LabelKind::Local
                     && local_pins == 0
@@ -1385,6 +1390,47 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                         label.at[0], label.at[1]
                     ),
                     path: Some(schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckDirectiveLabels()`. This
+// is not a 1:1 KiCad `SCH_TEXT::IsDangling()`/marker path because the Rust tree still runs through
+// the shared reduced label-component snapshot instead of live graph-owned text items. It exists so
+// directive labels now participate in the same shared connectivity owner as the other graph-backed
+// label checks instead of remaining an uncovered `RunERC()` branch.
+pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for component in collect_reduced_label_component_snapshots(schematic, |label| {
+            shown_label_text(project, sheet_path, label)
+        }) {
+            for label in component
+                .labels
+                .iter()
+                .filter(|label| label.kind == LabelKind::Directive && label.dangling)
+            {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-label-not-connected",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Directive label is not connected at {}, {}",
+                        label.at[0], label.at[1]
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,

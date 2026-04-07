@@ -1059,6 +1059,60 @@ fn erc_reports_dangling_sheet_pins() {
 }
 
 #[test]
+fn erc_reports_dangling_directive_labels() {
+    let path = temp_schematic(
+        "erc_dangling_directive_label",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (directive_label "D" (shape dot) (at 5 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-label-not-connected")
+        .collect::<Vec<_>>();
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message == "Directive label is not connected at 5, 0")
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_connected_directive_labels() {
+    let path = temp_schematic(
+        "erc_connected_directive_label",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (directive_label "D" (shape dot) (at 5 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "erc-label-not-connected"
+                && diagnostic.message.contains("Directive label")
+        }),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_similar_local_labels_on_different_sheets() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_similar_local_labels_{}",

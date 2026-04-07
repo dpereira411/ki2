@@ -435,11 +435,10 @@ where
                 .iter()
                 .filter_map(|item| match item {
                     SchItem::Label(label)
-                        if label.kind != LabelKind::Directive
-                            && connected_component.members.iter().any(|member| {
-                                member.kind == ConnectionMemberKind::Label
-                                    && points_equal(member.at, label.at)
-                            }) =>
+                        if connected_component.members.iter().any(|member| {
+                            member.kind == ConnectionMemberKind::Label
+                                && points_equal(member.at, label.at)
+                        }) =>
                     {
                         Some(ReducedLabelComponentLabel {
                             at: label.at,
