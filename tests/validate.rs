@@ -1446,6 +1446,86 @@ fn cli_kicad_netlist_filters_excluded_board_symbols() {
 }
 
 #[test]
+fn cli_netlist_uses_human_readable_component_sheet_paths() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_netlist_sheetpath_names_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let report_path = root_path.with_extension("xml");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 20 20)
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (property "Sheetname" "Child" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "child.kicad_sch" (at 0 1 0) (effects (font (size 1 1))))))"#,
+    )
+    .expect("write root schematic");
+
+    fs::write(
+        &child_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73100000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73100000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    )
+    .expect("write child schematic");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", root_path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(
+        report.contains("sheetpath names=\"/Child\"")
+            && report.contains(
+                "tstamps=\"/73000000-0000-0000-0000-000000000001/73000000-0000-0000-0000-000000000010\""
+            ),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(report_path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",

@@ -23,6 +23,7 @@ pub struct NetlistComponent {
     pub description: String,
     pub lib: String,
     pub part: String,
+    pub path_names: String,
     pub path: String,
     pub tstamps: Vec<String>,
     pub units: Vec<NetlistComponentUnit>,
@@ -290,6 +291,38 @@ fn collect_component_class_names_for_all_symbol_units(
     class_names.sort();
     class_names.dedup();
     class_names
+}
+
+fn human_component_sheet_path(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+) -> String {
+    if sheet_path.instance_path.is_empty() {
+        return "/".to_string();
+    }
+
+    let mut names = project
+        .ancestor_sheet_paths(&sheet_path.instance_path)
+        .into_iter()
+        .rev()
+        .filter_map(|path| path.sheet_name.as_deref())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    if let Some(name) = sheet_path
+        .sheet_name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+    {
+        names.push(name.to_string());
+    }
+
+    if names.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", names.join("/"))
+    }
 }
 
 fn parse_alphanumeric_pin(pin: &str) -> (String, Option<i64>) {
@@ -939,6 +972,7 @@ fn symbol_to_xml_component(
         description,
         lib,
         part,
+        path_names: human_component_sheet_path(project, sheet_path),
         path: sheet_path.instance_path.clone(),
         tstamps: symbol.uuid.clone().into_iter().collect(),
         units: symbol
@@ -1381,7 +1415,8 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
 
         xml.push_str(" />\n");
         xml.push_str(&format!(
-            "      <sheetpath names=\"/\" tstamps=\"{}\" />\n",
+            "      <sheetpath names=\"{}\" tstamps=\"{}\" />\n",
+            escape_xml(&component.path_names),
             escape_xml(if component.path.is_empty() {
                 "/"
             } else {

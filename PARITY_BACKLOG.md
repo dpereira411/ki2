@@ -635,7 +635,7 @@ What is already covered indirectly:
   - reduced `<component_classes>` export from symbol fields and enclosing rule-area directives
   - reduced `GNL_OPT_KICAD` board-mode filtering for symbols and net nodes
   - reduced user-field export
-  - reduced `sheetpath`
+  - reduced `sheetpath names` / `tstamps` from loaded hierarchy paths
   - reduced `tstamps`
   - reduced per-lib-unit pin export on `<units>`
   - reduced `libparts`
