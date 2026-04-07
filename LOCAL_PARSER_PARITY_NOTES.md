@@ -318,9 +318,11 @@ What remains after that correction:
       - current coverage now also locks variant-sensitive `${DNP}` grouping on reused child
         schematics, and `set_current_variant(...)` now recomputes the page-ref map before current
         sheet intersheet refresh
+      - current coverage now also locks schematic-level `${TITLE}` and `${VARIANT}` grouping in
+        the reduced resolver
       - remaining divergence is the broader unported text-variable resolver surface
-        (`ResolveTextVar`, title block/project text vars, net/cross-reference variables), not this
-        exercised intersheet-ref path
+        (`ResolveTextVar`, project text vars, net/cross-reference variables), not this exercised
+        intersheet-ref path
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond

@@ -3668,6 +3668,39 @@ fn resolved_sheet_text_state(
     Some(state)
 }
 
+fn resolve_schematic_text_var(
+    schematics: &[Schematic],
+    loaded_path: &LoadedSheetPath,
+    current_variant: Option<&str>,
+    token: &str,
+) -> Option<String> {
+    let schematic = schematics
+        .iter()
+        .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let token_upper = token.to_ascii_uppercase();
+
+    match token_upper.as_str() {
+        "VARIANT" | "VARIANTNAME" => {
+            return Some(current_variant.unwrap_or_default().to_string());
+        }
+        _ => {}
+    }
+
+    let title_block = schematic.screen.title_block.as_ref()?;
+    match token_upper.as_str() {
+        "ISSUE_DATE" => Some(title_block.date.clone().unwrap_or_default()),
+        "REVISION" => Some(title_block.revision.clone().unwrap_or_default()),
+        "TITLE" => Some(title_block.title.clone().unwrap_or_default()),
+        "COMPANY" => Some(title_block.company.clone().unwrap_or_default()),
+        _ if token_upper.starts_with("COMMENT") => token_upper["COMMENT".len()..]
+            .parse::<usize>()
+            .ok()
+            .filter(|number| (1..=9).contains(number))
+            .map(|number| title_block.comment(number).unwrap_or_default().to_string()),
+        _ => None,
+    }
+}
+
 // Upstream parity: local helper for the page-ref-map portion of `SCHEMATIC::RecomputeIntersheetRefs()`.
 // This is not a 1:1 KiCad routine because the Rust loader still builds from loaded-sheet-path
 // snapshots instead of schematic-owned hierarchy objects, but it now shares the same reduced
@@ -3831,16 +3864,18 @@ fn resolve_sheet_text_var(
         })
         .max_by_key(|sheet_path| sheet_path.symbol_path.len());
 
-    parent_sheet_path.and_then(|parent| {
-        resolve_sheet_text_var(
-            schematics,
-            sheet_paths,
-            parent,
-            current_variant,
-            token,
-            depth + 1,
-        )
-    })
+    parent_sheet_path
+        .and_then(|parent| {
+            resolve_sheet_text_var(
+                schematics,
+                sheet_paths,
+                parent,
+                current_variant,
+                token,
+                depth + 1,
+            )
+        })
+        .or_else(|| resolve_schematic_text_var(schematics, loaded_path, current_variant, token))
 }
 
 fn resolve_text_variables(
@@ -3882,11 +3917,12 @@ fn resolve_text_variables(
 
 // Upstream parity: reduced local analogue for `SCH_LABEL_BASE::GetShownText( sheet )` on the
 // loader's intersheet-ref path. This is not 1:1 KiCad because the current tree still lacks the
-// broader text-variable resolver stack (`ResolveTextVar`, title block/project text vars, net
-// connection variables, cross references). It exists to restore the ERC-visible sheet-path text
-// resolution slice needed for global-label page-ref grouping on reused sheets, including the
-// current-variant sheet-field / `DNP` / exclusion-token slice; remaining divergence is the
-// unported broader resolver surface, not this exercised loader path.
+// broader text-variable resolver stack (`ResolveTextVar`, project text vars, net connection
+// variables, cross references). It exists to restore the ERC-visible sheet-path text resolution
+// slice needed for global-label page-ref grouping on reused sheets, including the current-variant
+// schematic `VARIANT` / `VARIANTNAME` tokens, title-block tokens, and sheet-field / `DNP` /
+// exclusion-token slice; remaining divergence is the unported broader resolver surface, not this
+// exercised loader path.
 fn shown_global_label_text(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
