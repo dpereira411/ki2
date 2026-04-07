@@ -1423,7 +1423,7 @@ fn parse_sim_quoted_token(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) 
     token
 }
 
-fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
+pub(crate) fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
     let mut values = Vec::new();
     let mut chars = params.chars().peekable();
 
@@ -1447,10 +1447,187 @@ fn parse_sim_param_pairs(params: &str) -> Vec<(String, String)> {
             parse_sim_bare_token(&mut chars)
         };
 
-        values.push((key, value));
+        values.push((key, normalize_sim_param_value(&value)));
     }
 
     values
+}
+
+fn normalize_sim_param_value(value: &str) -> String {
+    normalize_sim_si_value(value).unwrap_or_else(|| value.to_string())
+}
+
+fn normalize_sim_si_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let split_at = trimmed
+        .find(|ch: char| !(ch.is_ascii_digit() || matches!(ch, '.' | ',' | ' ')))
+        .unwrap_or(trimmed.len());
+    let (mantissa, suffix) = trimmed.split_at(split_at);
+
+    if mantissa.is_empty() {
+        return None;
+    }
+
+    let normalized_mantissa = normalize_sim_si_mantissa(mantissa)?;
+    let normalized_suffix = normalize_sim_si_suffix(suffix.trim())?;
+
+    Some(format!("{normalized_mantissa}{normalized_suffix}"))
+}
+
+fn normalize_sim_si_suffix(suffix: &str) -> Option<String> {
+    if suffix.is_empty() {
+        return Some(String::new());
+    }
+
+    if suffix == "µ" || suffix == "μ" {
+        return Some("u".to_string());
+    }
+
+    if suffix.eq_ignore_ascii_case("Meg") {
+        return Some("M".to_string());
+    }
+
+    if !suffix.chars().all(|ch| {
+        matches!(
+            ch,
+            'f' | 'F'
+                | 'p'
+                | 'P'
+                | 'n'
+                | 'N'
+                | 'u'
+                | 'U'
+                | 'm'
+                | 'M'
+                | 'k'
+                | 'K'
+                | 'g'
+                | 'G'
+                | 't'
+                | 'T'
+                | 'r'
+                | 'R'
+                | 'h'
+                | 'H'
+                | 'o'
+                | 'O'
+                | 'v'
+                | 'V'
+                | 'a'
+                | 'A'
+                | 'Ω'
+                | 'Ω'
+                | 'µ'
+                | 'μ'
+        )
+    }) {
+        return None;
+    }
+
+    Some(
+        suffix
+            .chars()
+            .map(|ch| match ch {
+                'µ' | 'μ' => 'u',
+                _ => ch,
+            })
+            .collect(),
+    )
+}
+
+fn normalize_sim_si_mantissa(mantissa: &str) -> Option<String> {
+    let mut compact = mantissa.replace(' ', "");
+
+    if compact.is_empty() {
+        return None;
+    }
+
+    let mut ambiguous_separator: Option<char> = None;
+    let mut thousands_separator: Option<char> = None;
+    let mut thousands_found = false;
+    let mut decimal_separator: Option<char> = None;
+    let mut decimal_found = false;
+    let mut digits = 0usize;
+    let chars = compact.chars().collect::<Vec<_>>();
+
+    for index in (0..chars.len()).rev() {
+        let ch = chars[index];
+
+        if ch.is_ascii_digit() {
+            digits += 1;
+            continue;
+        }
+
+        if !matches!(ch, '.' | ',') {
+            return None;
+        }
+
+        match (decimal_separator, thousands_separator, ambiguous_separator) {
+            (Some(decimal), Some(thousands), _) => {
+                if ch == decimal {
+                    if thousands_found || decimal_found {
+                        return None;
+                    }
+
+                    decimal_found = true;
+                } else if ch == thousands {
+                    if digits != 3 {
+                        return None;
+                    }
+
+                    thousands_found = true;
+                } else {
+                    return None;
+                }
+            }
+            (None, None, Some(ambiguous)) => {
+                if ch == ambiguous {
+                    thousands_separator = Some(ambiguous);
+                    thousands_found = true;
+                    decimal_separator = Some(if ch == '.' { ',' } else { '.' });
+                } else {
+                    decimal_separator = Some(ambiguous);
+                    decimal_found = true;
+                    thousands_separator = Some(ch);
+                    thousands_found = true;
+                }
+            }
+            _ => {
+                if (index == 1 && chars[0] == '0') || digits != 3 {
+                    decimal_separator = Some(ch);
+                    decimal_found = true;
+                    thousands_separator = Some(if ch == '.' { ',' } else { '.' });
+                } else {
+                    ambiguous_separator = Some(ch);
+                }
+            }
+        }
+
+        digits = 0;
+    }
+
+    if decimal_separator.is_none() && thousands_separator.is_none() {
+        decimal_separator = Some('.');
+        thousands_separator = Some(',');
+    }
+
+    if let Some(thousands) = thousands_separator {
+        compact = compact.replace(thousands, "");
+    }
+
+    if let Some(decimal) = decimal_separator {
+        compact = compact
+            .chars()
+            .map(|ch| if ch == decimal { '.' } else { ch })
+            .collect();
+    }
+
+    Some(compact)
 }
 
 fn parse_sim_pin_pairs(pins: &str) -> Vec<(String, String)> {
@@ -2023,6 +2200,42 @@ mod tests {
                 ("flag".to_string(), "1".to_string()),
                 ("gain".to_string(), "2".to_string()),
                 ("model".to_string(), "BC\"547".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn symbol_normalizes_sim_param_pair_si_values() {
+        let mut symbol = Symbol::new();
+        symbol.properties.push(Property::new_named(
+            PropertyKind::User,
+            "Sim.Params",
+            r#"gain=1Meg bias=3,300u extra="x y""#.to_string(),
+            false,
+        ));
+
+        symbol.sync_sim_model_from_properties();
+
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_pairs.clone()),
+            Some(vec![
+                ("gain".to_string(), "1M".to_string()),
+                ("bias".to_string(), "3300u".to_string()),
+                ("extra".to_string(), "x y".to_string()),
+            ])
+        );
+        assert_eq!(
+            symbol
+                .sim_model
+                .as_ref()
+                .map(|sim_model| sim_model.param_values.clone()),
+            Some(BTreeMap::from([
+                ("bias".to_string(), "3300u".to_string()),
+                ("extra".to_string(), "x y".to_string()),
+                ("gain".to_string(), "1M".to_string()),
             ]))
         );
     }

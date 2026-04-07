@@ -1715,7 +1715,7 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
     };
 
     let pins = pin_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
-    let param_pairs = parse_loader_sim_param_pairs(&params);
+    let param_pairs = crate::model::parse_sim_param_pairs(&params);
     let param_values = param_pairs.iter().cloned().collect::<BTreeMap<_, _>>();
 
     symbol.sim_model = Some(crate::model::SimModel {
@@ -2150,18 +2150,6 @@ fn normalize_inferred_si_mantissa(mantissa: &str) -> Option<String> {
     }
 
     Some(compact)
-}
-
-fn parse_loader_sim_param_pairs(params: &str) -> Vec<(String, String)> {
-    params
-        .split_whitespace()
-        .filter_map(|token| {
-            token
-                .split_once('=')
-                .map(|(name, value)| (name.to_string(), value.trim_matches('"').to_string()))
-                .or_else(|| Some((token.to_string(), "1".to_string())))
-        })
-        .collect()
 }
 
 fn parse_loader_sim_pin_pairs(pins: &str) -> Vec<(String, String)> {

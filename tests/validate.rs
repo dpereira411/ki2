@@ -5908,6 +5908,71 @@ fn load_tree_preserves_serializer_style_sim_field_payloads() {
 }
 
 #[test]
+fn load_tree_normalizes_explicit_sim_param_field_values() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-00000000032b")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Params" "gain=1Meg bias=3,300u extra=\"x y\"")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_normalizes_explicit_sim_param_field_values", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "Sim.Params")
+            .map(|property| property.value.as_str()),
+        Some(r#"gain=1Meg bias=3,300u extra="x y""#)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_pairs.clone()),
+        Some(vec![
+            ("gain".to_string(), "1M".to_string()),
+            ("bias".to_string(), "3300u".to_string()),
+            ("extra".to_string(), "x y".to_string()),
+        ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.param_values.clone()),
+        Some(BTreeMap::from([
+            ("bias".to_string(), "3300u".to_string()),
+            ("extra".to_string(), "x y".to_string()),
+            ("gain".to_string(), "1M".to_string()),
+        ]))
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn resolves_symbol_sim_library_sources_from_embedded_stack_before_filesystem() {
     let src = r#"(kicad_sch
   (version 20260306)
