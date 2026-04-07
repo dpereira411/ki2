@@ -117,17 +117,10 @@ naming, which it currently does not.
 Work this list from top to bottom unless direct upstream comparison reveals a real prerequisite.
 
 1. Remaining connection-backed shown-text exactness
-   - drawing-sheet/default worksheet exactness now outranks the remaining connection-backed tail
-2. Remaining drawing-sheet `TestTextVars()` coverage
-   - typed project source path is now modeled
-   - reduced default/custom/embedded worksheet `tbtext` parsing, repeat/increment expansion,
-     page-one filtering, setup-margin/corner positioning, repeat clipping, and shown-text ERC
-     coverage are live
-   - the reduced default drawing sheet now comes from KiCad's real default worksheet description
-     instead of a repo-local trimmed text list
-   - reduced worksheet backslash-sequence decoding (`\\n`, `\\\\`) is now live too
-   - remaining work is broader draw-item/painter parity beyond the reduced `tbtext` carrier
-3. Hierarchy/loading 1:1 sign-off gaps
+   - reduced connection-backed shown-text is live for the exercised ERC slice
+   - remaining work is fuller KiCad settings/subgraph exactness, not missing variable support
+2. Hierarchy/loading 1:1 sign-off gaps
+3. Netlist/export connectivity parity
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
 
@@ -277,8 +270,9 @@ Current status:
 - reduced cross-reference shown-text now also covers:
   - `${REF:NET_CLASS(pin)}`
 - the remaining gap is fuller KiCad settings/subgraph exactness, not absence of the rule
-- the remaining drawing-sheet text-vars slice is now blocked on default/full worksheet parity, not
-  on the current reduced connectivity layer
+- the drawing-sheet text-vars slice is now functionally covered for the exercised ERC path
+- remaining drawing-sheet work is broader worksheet draw-item/painter parity, not missing
+  `ERC_TESTER::TestTextVars()` text behavior
 
 ## Net Naming / CLI Requirements
 
@@ -544,27 +538,6 @@ Unblock path:
 6. expose that reduced ownership to shown-text and ERC
 7. tighten fuller `TestPinToPin()` settings/subgraph exactness only if real KiCad divergence is
    found
-
-### Blocker: Drawing-sheet `TestTextVars()` is only reduced-custom-worksheet complete
-
-The current tree can now resolve reduced custom/embedded worksheet `tbtext` items, but it still
-does not have the fuller drawing-sheet model KiCad uses for complete worksheet parity.
-
-Unblock path:
-1. add a reduced worksheet/page-layout model on the load side
-   - enough to represent the exercised text-bearing drawing-sheet items
-   - done for default/custom/embedded `tbtext`, including repeat/increment expansion and first-page
-     option filtering
-   - reduced setup-margin, corner-anchor, and repeated-item page clipping behavior is now live too
-   - reduced default worksheet loading now uses KiCad's upstream default text-bearing description
-   - reduced worksheet text escape decoding now matches the exercised KiCad branch too
-2. source the active worksheet/page-layout from project/schematic inputs
-   - done for typed project path + current schematic embedded-file fallback
-3. add a reduced shown-text resolver for those drawing-sheet text items
-   - done for the exercised custom/embedded `tbtext` token slice
-4. port the remaining drawing-sheet branch of `ERC_TESTER::TestTextVars()`
-   - remaining:
-     - broader worksheet item/painter semantics if exercised by CLI parity tests
 
 ### Blocker: Hierarchy loading is not yet fully 1:1 signed off
 
