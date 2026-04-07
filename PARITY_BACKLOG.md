@@ -84,6 +84,7 @@ Implemented reduced analogues:
 - `ERC_TESTER::TestFourWayJunction()`
 - `ERC_TESTER::TestNoConnectPins()`
 - `ERC_TESTER::TestPinToPin()` reduced default-matrix slice
+- `ERC_TESTER::TestDuplicatePinNets()`
 - `ERC_TESTER::TestSameLocalGlobalLabel()`
 - `ERC_TESTER::TestSimilarLabels()` reduced label/power name slice
 - `ERC_TESTER::TestFootprintFilters()`

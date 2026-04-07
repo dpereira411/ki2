@@ -819,6 +819,97 @@ fn erc_allows_ground_pins_on_ground_nets() {
 }
 
 #[test]
+fn erc_reports_duplicate_pin_numbers_on_different_nets() {
+    let path = temp_schematic(
+        "erc_duplicate_pin_nets",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:BadDup"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "BadDup" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "BadDup_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:BadDup")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "BadDup" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "NET_B" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-duplicate-pin-nets"
+            && diagnostic
+                .message
+                .contains("Pin 1 on symbol 'U1' is connected to different nets: NET_A and NET_B")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_ignores_duplicate_jumper_pin_numbers() {
+    let path = temp_schematic(
+        "erc_duplicate_jumper_pin_nets",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:JumperDup"
+      (duplicate_pin_numbers_are_jumpers yes)
+      (property "Reference" "JP" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "JumperDup" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "JumperDup_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:JumperDup")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "JumperDup" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "NET_B" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-duplicate-pin-nets"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",

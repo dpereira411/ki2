@@ -27,6 +27,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_four_way_junction(project));
     diagnostics.extend(check_no_connect_pins(project));
     diagnostics.extend(check_pin_to_pin(project));
+    diagnostics.extend(check_duplicate_pin_nets(project));
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
     diagnostics.extend(check_footprint_filters(project));
@@ -194,7 +195,8 @@ fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
 // Upstream parity: reduced local analogue for the placed-symbol `SCH_PIN` projection KiCad uses
 // across ERC and export code. This is not a 1:1 live-pin object path because the Rust tree still
 // stores pins only on linked lib draw items, but it preserves the exercised unit/body-style pin
-// projection and pin text payload needed by ERC checks that reason about pin syntax.
+// projection and pin text payload needed by ERC checks that reason about pin syntax and duplicate
+// pin-net ownership.
 fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolPin> {
     let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
         return Vec::new();
@@ -1717,6 +1719,116 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: article.to_string(),
                     path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestDuplicatePinNets()`. This is not a
+// 1:1 KiCad marker pass because the Rust tree still groups projected lib pins by reduced resolved
+// point-net names instead of live `SCH_PIN::Connection()` objects, but it preserves the exercised
+// rule: duplicate numbered pins on the same placed symbol must not resolve to different nets unless
+// the lib symbol explicitly treats duplicate numbers as jumper pins. Remaining divergence is fuller
+// connection-graph ownership and KiCad marker/item attachment.
+pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+                continue;
+            };
+
+            if lib_symbol.duplicate_pin_numbers_are_jumpers {
+                continue;
+            }
+
+            let state = resolved_symbol_text_state(
+                symbol,
+                &sheet_path.instance_path,
+                project.current_variant(),
+            );
+            let reference = resolved_property_value(&state.properties, "Reference")
+                .unwrap_or_else(|| "?".to_string());
+
+            let mut pins_by_number = BTreeMap::<String, Vec<(Option<String>, String)>>::new();
+
+            for pin in projected_symbol_pin_info(symbol) {
+                let Some(pin_number) = pin.number else {
+                    continue;
+                };
+
+                let net_name = resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    pin.at,
+                    SymbolPinTextVarKind::NetName,
+                )
+                .unwrap_or_default();
+
+                pins_by_number
+                    .entry(pin_number)
+                    .or_default()
+                    .push((pin.name, net_name));
+            }
+
+            for (pin_number, pin_net_pairs) in pins_by_number {
+                if pin_net_pairs.len() < 2 {
+                    continue;
+                }
+
+                let first_net = pin_net_pairs[0].1.clone();
+                let first_display = if first_net.is_empty() {
+                    "<no net>".to_string()
+                } else {
+                    first_net.clone()
+                };
+
+                let mut conflict_net = None;
+
+                for (_, net_name) in pin_net_pairs.iter().skip(1) {
+                    if *net_name != first_net {
+                        conflict_net = Some(net_name.clone());
+                        break;
+                    }
+                }
+
+                let Some(conflict_net) = conflict_net else {
+                    continue;
+                };
+
+                let conflict_display = if conflict_net.is_empty() {
+                    "<no net>".to_string()
+                } else {
+                    conflict_net
+                };
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-duplicate-pin-nets",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Pin {} on symbol '{}' is connected to different nets: {} and {}",
+                        pin_number, reference, first_display, conflict_display
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
