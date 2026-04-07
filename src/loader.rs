@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::connectivity::{ConnectionMemberKind, collect_connection_components};
+use crate::connectivity::resolve_reduced_net_name_at;
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
@@ -4239,15 +4239,6 @@ pub(crate) fn resolve_point_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
-    let connected_component =
-        collect_connection_components(schematic)
-            .into_iter()
-            .find(|component| {
-                component
-                    .members
-                    .iter()
-                    .any(|member| points_equal(member.at, at))
-            });
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
         .screen
@@ -4262,35 +4253,16 @@ pub(crate) fn resolve_point_connectivity_text_var(
 
     match token_kind {
         SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
-            let net_name = schematic
-                .screen
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
-                        connected_component
-                            .as_ref()
-                            .is_some_and(|component| {
-                                component.members.iter().any(|member| {
-                                    member.kind == ConnectionMemberKind::Label
-                                        && points_equal(member.at, other.at)
-                                })
-                            })
-                            .then_some(other)
-                    }
-                    _ => None,
-                })
-                .map(|other| {
-                    shown_label_text_without_connectivity(
-                        schematics,
-                        sheet_paths,
-                        loaded_path,
-                        project,
-                        current_variant,
-                        other,
-                    )
-                })
-                .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))?;
+            let net_name = resolve_reduced_net_name_at(schematic, at, |other| {
+                shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    other,
+                )
+            })?;
 
             match token_kind {
                 SymbolPinTextVarKind::NetName => Some(net_name),
@@ -4995,10 +4967,10 @@ fn shown_label_text_without_connectivity(
 // Upstream parity: reduced local analogue for the `SCH_LABEL_BASE::ResolveTextVar()` connectivity
 // branch. This is not a 1:1 `SCH_ITEM::Connection()` / `CONNECTION_GRAPH` port because the Rust
 // loader still lacks KiCad's full connectivity graph. It exists so current-sheet shown text can
-// resolve simple wire-connected `NET_NAME` / `SHORT_NET_NAME` (and a narrow field-based
-// `NET_CLASS`) instead of leaving those tokens raw. Remaining divergence is fuller connection-graph
-// semantics, especially fuller cached connection-graph ownership beyond this reduced
-// component/directive/rule-area snapshot.
+// resolve reduced `NET_NAME` / `SHORT_NET_NAME` / `NET_CLASS` through the shared connectivity
+// owner instead of each loader caller choosing connected label drivers independently. Remaining
+// divergence is fuller connection-graph driver, subgraph, and cached netclass ownership beyond the
+// current reduced component/directive/rule-area snapshot.
 pub(crate) fn resolve_label_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -5019,14 +4991,6 @@ pub(crate) fn resolve_label_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
-    let connected_component =
-        collect_connection_components(schematic)
-            .into_iter()
-            .find(|component| {
-                component.members.iter().any(|member| {
-                    member.kind == ConnectionMemberKind::Label && points_equal(member.at, label.at)
-                })
-            });
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
         .screen
@@ -5048,43 +5012,20 @@ pub(crate) fn resolve_label_connectivity_text_var(
         label,
     );
 
-    let net_name = if connected_component.is_none() {
-        if own_text.contains("${") || own_text.starts_with('<') || own_text.is_empty() {
-            None
-        } else {
-            Some(own_text)
-        }
-    } else {
-        schematic
-            .screen
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
-                    connected_component
-                        .as_ref()
-                        .is_some_and(|component| {
-                            component.members.iter().any(|member| {
-                                member.kind == ConnectionMemberKind::Label
-                                    && points_equal(member.at, other.at)
-                            })
-                        })
-                        .then_some(other)
-                }
-                _ => None,
-            })
-            .map(|other| {
-                shown_label_text_without_connectivity(
-                    schematics,
-                    sheet_paths,
-                    loaded_path,
-                    project,
-                    current_variant,
-                    other,
-                )
-            })
-            .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
-    }?;
+    let net_name = resolve_reduced_net_name_at(schematic, label.at, |other| {
+        shown_label_text_without_connectivity(
+            schematics,
+            sheet_paths,
+            loaded_path,
+            project,
+            current_variant,
+            other,
+        )
+    })
+    .or_else(|| {
+        (!own_text.contains("${") && !own_text.starts_with('<') && !own_text.is_empty())
+            .then_some(own_text)
+    })?;
 
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),

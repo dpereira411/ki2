@@ -289,13 +289,16 @@ Current status:
 - ownership is now materially closer to KiCad than before:
   - ERC no longer owns the only connection-point/component builder
   - loader, ERC, and net export now share one reduced connection owner
-- the next honest step is no longer "add another wire scan":
-  - move driver and name selection onto that shared owner
-  - then grow it toward real subgraph ownership
+  - reduced connected-label driver/name selection now also lives there instead of being rebuilt in
+    loader helpers
+- the next honest step is no longer "move connected label scans":
+  - grow the shared owner from reduced connected-label driver selection toward real subgraph
+    ownership and broader driver resolution
 
 Remaining divergence:
 - this is still not a full KiCad `CONNECTION_GRAPH`
-- it still lacks subgraph ownership, driver resolution, and the broader graph-owned item model
+- it still lacks subgraph ownership, fuller driver resolution, and the broader graph-owned item
+  model
 - the next real consumers are:
   - fuller connection-backed shown-text precedence
   - hierarchy/loading sign-off on connectivity-backed state

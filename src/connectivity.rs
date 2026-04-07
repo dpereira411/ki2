@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::{collect_wire_segments, point_on_wire_segment, points_equal};
-use crate::model::{MirrorAxis, SchItem, Schematic, Symbol};
+use crate::model::{Label, LabelKind, MirrorAxis, SchItem, Schematic, Symbol};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PointKey(pub(crate) u64, pub(crate) u64);
@@ -43,6 +43,17 @@ pub(crate) struct ProjectedSymbolPin {
     pub(crate) name: Option<String>,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
+}
+
+fn connection_component_at(schematic: &Schematic, at: [f64; 2]) -> Option<ConnectionComponent> {
+    collect_connection_components(schematic)
+        .into_iter()
+        .find(|component| {
+            component
+                .members
+                .iter()
+                .any(|member| points_equal(member.at, at))
+        })
 }
 
 fn point_key(at: [f64; 2]) -> PointKey {
@@ -360,4 +371,77 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
     }
 
     groups.into_values().collect()
+}
+
+fn reduced_label_driver_priority(label: &Label) -> i32 {
+    match label.kind {
+        LabelKind::Global => 3,
+        LabelKind::Local => 2,
+        LabelKind::Hierarchical => 1,
+        LabelKind::Directive => 0,
+    }
+}
+
+fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
+    let text = label.text.to_ascii_uppercase();
+
+    text.contains("NET_NAME")
+        || text.contains("SHORT_NET_NAME")
+        || text.contains("NET_CLASS")
+        || text.contains("CONNECTION_TYPE")
+}
+
+// Upstream parity: reduced local analogue for the connected-driver naming part of
+// `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `driverName()/GetNameForDriver()`. This is not a
+// 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, sheet pins, power-pin
+// drivers, and cached `SCH_CONNECTION` objects. It exists so loader shown-text and export paths do
+// not each pick the "first connected label" independently. The current reduced driver ranking is
+// limited to non-directive label kinds on one sheet: global labels outrank local labels, local
+// labels outrank hierarchical labels, equal-priority labels fall back to alphabetical shown text
+// for deterministic parity instead of file order, and labels whose raw text still depends on the
+// reduced connectivity resolver are skipped so the current reduced driver path does not recurse
+// back into itself.
+pub(crate) fn resolve_reduced_net_name_at<F>(
+    schematic: &Schematic,
+    at: [f64; 2],
+    mut shown_label_text: F,
+) -> Option<String>
+where
+    F: FnMut(&Label) -> String,
+{
+    let connected_component = connection_component_at(schematic, at)?;
+    let mut candidates = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Label(label)
+                if label.kind != LabelKind::Directive
+                    && !label_uses_connectivity_dependent_text(label) =>
+            {
+                connected_component
+                    .members
+                    .iter()
+                    .any(|member| {
+                        member.kind == ConnectionMemberKind::Label
+                            && points_equal(member.at, label.at)
+                    })
+                    .then_some(label)
+            }
+            _ => None,
+        })
+        .map(|label| {
+            let text = shown_label_text(label);
+            (reduced_label_driver_priority(label), text)
+        })
+        .filter(|(_, text)| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+        .collect::<Vec<_>>();
+
+    candidates.sort_by(|(lhs_priority, lhs_text), (rhs_priority, rhs_text)| {
+        rhs_priority
+            .cmp(lhs_priority)
+            .then_with(|| lhs_text.cmp(rhs_text))
+    });
+
+    candidates.into_iter().map(|(_, text)| text).next()
 }
