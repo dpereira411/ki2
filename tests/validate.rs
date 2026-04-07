@@ -866,6 +866,61 @@ fn erc_reports_connected_driver_conflicts() {
 }
 
 #[test]
+fn erc_reports_single_global_labels() {
+    let path = temp_schematic(
+        "erc_single_global_label",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (global_label "NET_A" (shape input) (at 0 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-single-global-label")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].severity, ki2::diagnostic::Severity::Warning);
+    assert_eq!(
+        diagnostics[0].message,
+        "Global label 'NET_A' appears only once"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_repeated_global_labels() {
+    let path = temp_schematic(
+        "erc_repeated_global_labels",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "NET_A" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "NET_A" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-single-global-label"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_similar_local_labels_on_different_sheets() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_similar_local_labels_{}",

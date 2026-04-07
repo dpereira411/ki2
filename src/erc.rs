@@ -36,6 +36,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_driver_conflicts(project));
     diagnostics.extend(check_duplicate_pin_nets(project));
+    diagnostics.extend(check_single_global_labels(project));
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
     diagnostics.extend(check_footprint_filters(project));
@@ -1738,6 +1739,61 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                 });
             }
         }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckSingleGlobalLabel()`.
+// This is not a 1:1 KiCad marker/severity path because the Rust tree still lacks ERC settings and
+// marker-owned item attachment. It exists so the current ERC runner checks the same shown-text
+// uniqueness rule across the loaded sheet list instead of leaving single global labels unchecked.
+// Remaining divergence is configurable severity/default-ignore handling.
+pub fn check_single_global_labels(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut label_data = BTreeMap::<String, (usize, Option<std::path::PathBuf>)>::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Label(label) = item else {
+                continue;
+            };
+
+            if label.kind != LabelKind::Global {
+                continue;
+            }
+
+            let shown_text = shown_label_text(project, sheet_path, label);
+            let entry = label_data
+                .entry(shown_text)
+                .or_insert_with(|| (0, Some(sheet_path.schematic_path.clone())));
+            entry.0 += 1;
+
+            if entry.0 > 1 {
+                entry.1 = None;
+            }
+        }
+    }
+
+    for (shown_text, (count, path)) in label_data {
+        if count != 1 {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            code: "erc-single-global-label",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!("Global label '{}' appears only once", shown_text),
+            path,
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
