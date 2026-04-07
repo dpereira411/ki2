@@ -120,9 +120,11 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
    - drawing-sheet/default worksheet exactness now outranks the remaining connection-backed tail
 2. Remaining drawing-sheet `TestTextVars()` coverage
    - typed project source path is now modeled
-   - reduced default/custom/embedded worksheet `tbtext` parsing, repeat/increment expansion,
+    - reduced default/custom/embedded worksheet `tbtext` parsing, repeat/increment expansion,
      page-one filtering, setup-margin/corner positioning, repeat clipping, and shown-text ERC
      coverage are live
+   - the reduced default drawing sheet now comes from KiCad's real default worksheet description
+     instead of a repo-local trimmed text list
    - remaining work is broader draw-item/painter parity beyond the reduced `tbtext` carrier
 3. Hierarchy/loading 1:1 sign-off gaps
 4. Final parser diagnostic wording polish
@@ -553,6 +555,7 @@ Unblock path:
    - done for default/custom/embedded `tbtext`, including repeat/increment expansion and first-page
      option filtering
    - reduced setup-margin, corner-anchor, and repeated-item page clipping behavior is now live too
+   - reduced default worksheet loading now uses KiCad's upstream default text-bearing description
 2. source the active worksheet/page-layout from project/schematic inputs
    - done for typed project path + current schematic embedded-file fallback
 3. add a reduced shown-text resolver for those drawing-sheet text items

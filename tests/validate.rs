@@ -1074,6 +1074,8 @@ fn current_drawing_sheet_shown_text_items_use_reduced_default_worksheet() {
     assert!(texts.contains(&"Id: 7/1"));
     assert!(texts.contains(&"Acme"));
     assert!(texts.contains(&"First"));
+    assert!(texts.contains(&"A"));
+    assert!(texts.contains(&"1"));
 
     let _ = fs::remove_file(path);
 }
