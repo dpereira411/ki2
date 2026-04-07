@@ -732,6 +732,93 @@ fn erc_allows_valid_stacked_pin_notation() {
 }
 
 #[test]
+fn erc_reports_ground_pins_on_non_ground_nets() {
+    let path = temp_schematic(
+        "erc_ground_pin_not_ground",
+        r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:SplitGround"
+      (power)
+      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "SplitGround" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "SplitGround_1_1"
+        (pin power_in line (at 0 0 180) (length 2.54)
+          (name "GND" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin power_in line (at 10 0 0) (length 2.54)
+          (name "AGND" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "power:SplitGround")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitGround" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "VCC" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "GND" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"##,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-ground-pin-not-ground"
+            && diagnostic
+                .message
+                .contains("Pin GND not connected to ground net")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_ground_pins_on_ground_nets() {
+    let path = temp_schematic(
+        "erc_ground_pin_grounded",
+        r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:G"
+      (power)
+      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "G" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "G_1_1"
+        (pin power_in line (at 0 0 180) (length 2.54)
+          (name "GND" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "power:G")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "G" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "GND" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"##,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-ground-pin-not-ground"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",

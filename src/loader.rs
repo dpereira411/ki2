@@ -4123,7 +4123,7 @@ fn is_parent_reference_match(reference: &str, resolved_reference: &str) -> bool 
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SymbolPinTextVarKind {
+pub(crate) enum SymbolPinTextVarKind {
     NetName,
     ShortNetName,
     NetClass,
@@ -4208,11 +4208,11 @@ fn resolved_symbol_pin_in_unit<'a>(
 // Upstream parity: reduced local helper for the pin-connection half of
 // `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 `SCH_PIN::Connection()` /
 // `GetEffectiveNetClass()` path because the Rust tree still lacks live `SCH_PIN` instances and the
-// full connection graph. It exists so the exercised pin net-name text vars can reuse the current
-// reduced wire/label snapshot instead of diverging into a second ad hoc resolver. Remaining
-// divergence is fuller connection-graph ownership beyond the current reduced point/directive/rule-
-// area model.
-fn resolve_point_connectivity_text_var(
+// full connection graph. It exists so the exercised pin net-name text vars, and now ERC's reduced
+// ground-pin check, can reuse the current reduced wire/label snapshot instead of diverging into a
+// second ad hoc resolver. Remaining divergence is fuller connection-graph ownership beyond the
+// current reduced point/directive/rule-area model.
+pub(crate) fn resolve_point_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,

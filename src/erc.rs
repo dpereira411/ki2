@@ -1,8 +1,9 @@
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    collect_wire_segments, point_on_wire_segment, points_equal, resolve_cross_reference_text_var,
-    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
+    SymbolPinTextVarKind, collect_wire_segments, point_on_wire_segment, points_equal,
+    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
+    resolve_label_text_token_without_connectivity, resolve_point_connectivity_text_var,
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
     resolved_symbol_text_state,
 };
@@ -30,6 +31,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_same_local_global_label(project));
     diagnostics.extend(check_footprint_filters(project));
     diagnostics.extend(check_stacked_pin_notation(project));
+    diagnostics.extend(check_ground_pins(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -71,6 +73,7 @@ struct ConnectionComponent {
 #[derive(Clone, Debug)]
 struct ProjectedSymbolPin {
     at: [f64; 2],
+    name: Option<String>,
     number: Option<String>,
     electrical_type: Option<String>,
 }
@@ -219,6 +222,7 @@ fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolPin> {
 
             ProjectedSymbolPin {
                 at,
+                name: pin.name.clone(),
                 number: pin.number.clone(),
                 electrical_type: pin.electrical_type.clone(),
             }
@@ -2057,6 +2061,84 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
                     column: None,
                 });
                 break;
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestGroundPins()`. This is not a 1:1
+// KiCad marker pass because the Rust tree still checks projected lib pins against the reduced
+// point-net resolver instead of live `SCH_PIN` connections, but it preserves the exercised rule:
+// once a symbol has a real ground net, any `GND`-named power pin on a different net is an ERC
+// error. Remaining divergence is fuller connection-graph ownership and richer pin metadata.
+pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let mut has_ground_net = false;
+            let mut mismatched_pins = Vec::new();
+
+            for pin in projected_symbol_pin_info(symbol) {
+                let Some(pin_type) = pin.electrical_type.as_deref() else {
+                    continue;
+                };
+
+                if !matches!(pin_type, "power_in" | "power_out") {
+                    continue;
+                }
+
+                let net_name = resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    pin.at,
+                    SymbolPinTextVarKind::NetName,
+                )
+                .unwrap_or_default();
+                let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
+
+                if net_is_ground {
+                    has_ground_net = true;
+                }
+
+                if pin
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| name.to_ascii_uppercase().contains("GND"))
+                    && !net_is_ground
+                {
+                    mismatched_pins.push((pin.name.unwrap_or_default(), pin.at));
+                }
+            }
+
+            if !has_ground_net {
+                continue;
+            }
+
+            for (pin_name, _pin_at) in mismatched_pins {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-ground-pin-not-ground",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!("Pin {} not connected to ground net", pin_name),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
             }
         }
     }
