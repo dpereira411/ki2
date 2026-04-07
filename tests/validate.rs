@@ -8409,7 +8409,7 @@ fn keeps_non_space_sim_name_separators_in_library_lookup() {
             .sim_model
             .as_ref()
             .and_then(|sim_model| sim_model.resolved_name.as_deref()),
-        None
+        Some("MODEL\tAREA=2")
     );
     assert_eq!(
         resolve_symbol_sim_model(&schematic.path, &schematic.screen, symbol),
@@ -8602,11 +8602,27 @@ fn load_tree_records_warning_for_missing_library_base_model() {
         .iter()
         .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
         .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
 
     assert!(schematic.screen.parse_warnings.iter().any(|warning| {
         warning.contains("Error loading simulation model: could not find base model 'MODEL'")
             && warning.contains("models.lib")
     }));
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_name.as_deref()),
+        Some("MODEL")
+    );
 
     let _ = fs::remove_file(path);
 }
