@@ -1673,8 +1673,9 @@ impl SchematicLoader {
     // local routine keeps reused-screen refresh on the loaded-sheet-path list plus symbol-instance
     // helpers instead of KiCad's exact screen/instance object boundaries. It now also keeps
     // current-sheet-only intersheet-ref text refresh separate from the hierarchy-wide page-ref map,
-    // which is materially closer to native flow. Remaining divergence is limited to the still-
-    // missing `m_IntersheetRefsShow` setting gate and richer schematic-shape hatch state.
+    // which is materially closer to native flow. Remaining divergence is limited to richer typed
+    // schematic-settings coverage beyond the current raw companion-project JSON fields and richer
+    // schematic-shape hatch state.
     fn update_all_screen_references(
         &mut self,
         sheet_paths: &[LoadedSheetPath],
@@ -1758,11 +1759,11 @@ impl SchematicLoader {
 // Upstream parity: local helper for the global-label portion of
 // `SCHEMATIC::RecomputeIntersheetRefs()` plus `SCH_SHEET_PATH::UpdateAllScreenReferences()`. This
 // is not a 1:1 upstream routine because the Rust tree still lacks KiCad's current-sheet object and
-// settings-owned `m_IntersheetRefsShow` gate, so the page-ref map and current-sheet field refresh
-// are split across loader state plus this helper. It exists to keep non-current screens on their
+// fuller typed schematic-settings object, so the page-ref map and current-sheet field refresh are
+// split across loader state plus this helper. It exists to keep non-current screens on their
 // parsed intersheet-ref field text while applying resolved text/legacy position fixup only on the
-// selected sheet. Remaining divergence is limited to the missing show/hide setting gate and shape
-// hatching side effects.
+// selected sheet. Remaining divergence is limited to richer typed settings coverage beyond the
+// current companion-project JSON fields and shape-hatching side effects.
 pub(crate) fn refresh_current_sheet_intersheet_refs(
     schematics: &mut [Schematic],
     sheet_paths: &[LoadedSheetPath],

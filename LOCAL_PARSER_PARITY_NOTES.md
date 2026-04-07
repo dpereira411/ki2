@@ -469,8 +469,8 @@ Working strategy has changed with that goal:
    current-occurrence drift
    - done for the currently representable symbol/sheet occurrence and current-sheet intersheet-ref
      paths
-   - remaining drift under this routine is the reduced no-project settings fallback plus
-     shape-hatching refresh state
+   - remaining drift under this routine is typed schematic-settings coverage beyond companion
+     project JSON plus shape-hatching refresh state
 2. direct upstream re-audit of `UpdateSymbolInstanceData` and `UpdateSheetInstanceData` for any
    remaining symbol/sheet occurrence mismatches that affect ERC-visible state
    - done for the currently representable empty-payload, selected-occurrence, and current-variant
@@ -478,8 +478,7 @@ Working strategy has changed with that goal:
    - remaining drift is model-shaped rather than another obvious branch mismatch
 3. revisit `SetSheetNumberAndCount` / `RecomputeIntersheetRefs` only when a concrete current-sheet,
    page-state, or intersheet-reference discrepancy appears
-   - active discrepancy now narrowed to the reduced no-project settings fallback rather than the
-     hierarchy/current-sheet split itself
+   - current hierarchy/current-sheet split looks structurally covered in the present model
 4. revisit `FixLegacyPowerSymbolMismatches` only when a concrete lib-pin/screen mismatch appears
 5. keep the remaining `MigrateSimModels` branch at the end of the backlog as non-ERC simulation
    parity work
