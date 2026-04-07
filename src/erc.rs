@@ -26,6 +26,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_label_multiple_wires(project));
     diagnostics.extend(check_four_way_junction(project));
     diagnostics.extend(check_no_connect_pins(project));
+    diagnostics.extend(check_mult_unit_pin_conflicts(project));
     diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_duplicate_pin_nets(project));
     diagnostics.extend(check_similar_labels(project));
@@ -1723,6 +1724,93 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                     line: None,
                     column: None,
                 });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestMultUnitPinConflicts()`. This is
+// not a 1:1 KiCad marker pass because the Rust tree still keys conflicts off projected lib pins
+// plus reduced point-net names instead of `CONNECTION_SUBGRAPH`-owned `SCH_PIN` items, but it
+// preserves the exercised rule: the same reference/pin number across different units of a multi-
+// unit symbol must not resolve to different nets. Remaining divergence is fuller graph ownership
+// and KiCad marker attachment.
+pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut pin_to_net = BTreeMap::<String, String>::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+                continue;
+            };
+
+            let unit_count = lib_symbol
+                .units
+                .iter()
+                .map(|unit| unit.unit_number)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+
+            if unit_count < 2 {
+                continue;
+            }
+
+            let state = resolved_symbol_text_state(
+                symbol,
+                &sheet_path.instance_path,
+                project.current_variant(),
+            );
+            let Some(reference) = resolved_property_value(&state.properties, "Reference") else {
+                continue;
+            };
+
+            for pin in projected_symbol_pin_info(symbol) {
+                let Some(pin_number) = pin.number else {
+                    continue;
+                };
+
+                let net_name = resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    pin.at,
+                    SymbolPinTextVarKind::NetName,
+                )
+                .unwrap_or_default();
+                let key = format!("{reference}:{pin_number}");
+
+                if let Some(existing_net) = pin_to_net.get(&key) {
+                    if *existing_net != net_name {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Error,
+                            code: "erc-different-unit-net",
+                            kind: crate::diagnostic::DiagnosticKind::Validation,
+                            message: format!(
+                                "Pin {} is connected to both {} and {}",
+                                pin_number, net_name, existing_net
+                            ),
+                            path: Some(sheet_path.schematic_path.clone()),
+                            span: None,
+                            line: None,
+                            column: None,
+                        });
+                    }
+                } else {
+                    pin_to_net.insert(key, net_name);
+                }
             }
         }
     }

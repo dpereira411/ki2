@@ -910,6 +910,109 @@ fn erc_ignores_duplicate_jumper_pin_numbers() {
 }
 
 #[test]
+fn erc_reports_multiunit_pin_number_on_different_nets() {
+    let path = temp_schematic(
+        "erc_multiunit_pin_conflict",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:SplitUnit"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "SplitUnit" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "SplitUnit_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))
+      (symbol "SplitUnit_2_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:SplitUnit")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitUnit" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:SplitUnit")
+    (at 20 0 0)
+    (unit 2)
+    (property "Reference" "U1" (at 20 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitUnit" (at 20 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 20 0) (xy 30 0)))
+  (global_label "NET_B" (shape input) (at 30 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-different-unit-net"
+            && diagnostic
+                .message
+                .contains("Pin 1 is connected to both NET_B and NET_A")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_multiunit_pin_number_on_same_net() {
+    let path = temp_schematic(
+        "erc_multiunit_pin_same_net",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:SplitUnit"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "SplitUnit" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "SplitUnit_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))
+      (symbol "SplitUnit_2_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:SplitUnit")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitUnit" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:SplitUnit")
+    (at 20 0 0)
+    (unit 2)
+    (property "Reference" "U1" (at 20 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitUnit" (at 20 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (wire (pts (xy 20 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-different-unit-net"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",
