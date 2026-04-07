@@ -339,11 +339,16 @@ What remains after that correction:
         (`ResolveTextVar` and connectivity-backed net variables), not this exercised
         intersheet-ref path
       - unblock path for the remaining text-variable surface:
-        1. add a reduced current-sheet connectivity snapshot so labels can expose resolved
-           `NET_NAME`, `SHORT_NET_NAME`, and `NET_CLASS`
-        2. expand the reduced cross-reference resolver only if a future ERC-visible gap proves a
+        1. add a reduced current-sheet connectivity snapshot keyed by loaded sheet path plus item
+           UUID so labels can expose resolved `NET_NAME`, `SHORT_NET_NAME`, and `NET_CLASS`
+        2. seed that snapshot from a minimal connection walk over the already-loaded screen items
+           instead of trying to port full `CONNECTION_GRAPH` immediately
+        3. thread the snapshot into the shared shown-text resolver as the local analogue for
+           `SCH_ITEM::Connection()` / `SCH_LABEL_BASE::ResolveTextVar()`
+        4. expand the reduced cross-reference resolver only if a future ERC-visible gap proves a
            still-missing KiCad branch
-        3. thread that connectivity/cross-reference state into the shared shown-text resolver
+        5. lock the reduced connectivity slice with reused-sheet regressions for
+           `${NET_NAME}`, `${SHORT_NET_NAME}`, and `${NET_CLASS}`
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond

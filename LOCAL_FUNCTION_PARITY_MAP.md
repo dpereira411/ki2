@@ -83,7 +83,9 @@ Current ERC blocker:
         `text_variables`
       - remaining divergence is the broader unported text-variable resolver surface
         (connectivity-backed net variables), not this exercised intersheet-ref branch
-      - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
+      - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`:
+        reduced current-sheet connectivity snapshot -> shown-text resolver wiring -> reused-sheet
+        `${NET_NAME}` / `${SHORT_NET_NAME}` / `${NET_CLASS}` regressions
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet
