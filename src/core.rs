@@ -15,6 +15,7 @@ use crate::loader::{
 use crate::model::Schematic;
 use crate::worksheet::{
     WorksheetTextItem, default_reduced_worksheet_text_items, parse_reduced_worksheet_text_items,
+    replace_worksheet_backslash_sequences,
 };
 
 #[derive(Debug)]
@@ -164,7 +165,7 @@ impl SchematicProject {
     // Upstream parity: reduced local analogue for `DS_DRAW_ITEM_TEXT::GetShownText()` on the
     // project-facing ERC path. This is not 1:1 because the local tree still lacks the full
     // worksheet painter/title-block resolver stack, but it reuses the same reduced worksheet
-    // shown-text slice as the loader API.
+    // shown-text slice plus reduced worksheet backslash-sequence handling as the loader API.
     pub fn current_drawing_sheet_shown_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
         let Some(loaded_path) = self.current_sheet_path() else {
             return Ok(Vec::new());
@@ -189,6 +190,7 @@ impl SchematicProject {
                     },
                     0,
                 );
+                item.text = replace_worksheet_backslash_sequences(&item.text);
                 item
             })
             .collect())

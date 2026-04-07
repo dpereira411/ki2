@@ -349,8 +349,9 @@ impl ReducedWorksheetParser {
                 continue;
             }
 
+            let expanded_text = replace_worksheet_backslash_sequences(&item.text);
             out.push(ParsedWorksheetTextItem {
-                text: increment_label_text(&item.text, index * item.incrlabel, index == 0),
+                text: increment_label_text(&expanded_text, index * item.incrlabel, index == 0),
                 at,
                 page_option: item.page_option,
             });
@@ -614,6 +615,33 @@ fn include_on_page(
         WorksheetPageOption::FirstPageOnly => is_first_page,
         WorksheetPageOption::SubsequentPages => !is_first_page,
     }
+}
+
+// Upstream parity: reduced analogue for `DS_DATA_ITEM_TEXT::ReplaceAntiSlashSequence()`. This is
+// intentionally narrower than the full drawing-sheet text object flow, but it preserves the
+// exercised newline and escaped-backslash behavior before ERC consumes worksheet text.
+pub(crate) fn replace_worksheet_backslash_sequences(text: &str) -> String {
+    let mut out = String::new();
+    let mut chars = text.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('\\') => out.push('\\'),
+            Some('n') => out.push('\n'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+
+    out
 }
 
 // Upstream parity: reduced analogue for KiCad's repeated worksheet label increment behavior. It is

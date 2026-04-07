@@ -17,6 +17,7 @@ use crate::sim::{
 };
 use crate::worksheet::{
     WorksheetTextItem, default_reduced_worksheet_text_items, parse_reduced_worksheet_text_items,
+    replace_worksheet_backslash_sequences,
 };
 use serde_json::Value;
 use time::{OffsetDateTime, macros::format_description};
@@ -427,7 +428,8 @@ impl LoadResult {
     // Upstream parity: reduced local analogue for `DS_DRAW_ITEM_TEXT::GetShownText()` on the
     // exercised drawing-sheet ERC path. This is not 1:1 because the local tree still lacks the
     // full worksheet painter/title-block resolver stack, but it now reuses the existing
-    // sheet/schematic/project text resolver for the exercised worksheet token slice.
+    // sheet/schematic/project text resolver plus the reduced worksheet backslash-sequence handling
+    // for the exercised worksheet token slice.
     pub fn current_drawing_sheet_shown_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
         let Some(loaded_path) = self.current_sheet_path() else {
             return Ok(Vec::new());
@@ -452,6 +454,7 @@ impl LoadResult {
                     },
                     0,
                 );
+                item.text = replace_worksheet_backslash_sequences(&item.text);
                 item
             })
             .collect())
