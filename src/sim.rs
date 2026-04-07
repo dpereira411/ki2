@@ -335,9 +335,14 @@ fn resolve_relative_sim_library_source_from_embedded_files(
                 })
             } else {
                 let fs_path = resolve_sim_library_path(schematic_path, &resolved_name);
-                fs_path
-                    .exists()
-                    .then_some(SimLibrarySource::Filesystem(fs_path))
+                if fs_path.exists() {
+                    Some(SimLibrarySource::Filesystem(fs_path))
+                } else {
+                    let fallback_path = resolve_sim_library_path(schematic_path, &relative_lib);
+                    fallback_path
+                        .exists()
+                        .then_some(SimLibrarySource::Filesystem(fallback_path))
+                }
             }
         }
         SimLibrarySource::SymbolEmbedded { name } => {
@@ -361,9 +366,14 @@ fn resolve_relative_sim_library_source_from_embedded_files(
                 })
             } else {
                 let fs_path = resolve_sim_library_path(schematic_path, &resolved_name);
-                fs_path
-                    .exists()
-                    .then_some(SimLibrarySource::Filesystem(fs_path))
+                if fs_path.exists() {
+                    Some(SimLibrarySource::Filesystem(fs_path))
+                } else {
+                    let fallback_path = resolve_sim_library_path(schematic_path, &relative_lib);
+                    fallback_path
+                        .exists()
+                        .then_some(SimLibrarySource::Filesystem(fallback_path))
+                }
             }
         }
     }
