@@ -59,11 +59,12 @@ Current ERC blocker:
   - the loaded project now carries `current_variant`
   - live symbol occurrence refresh is variant-aware and restores baseline state when the selected
     occurrence or selected variant changes
-  - live sheet objects now apply current-variant state through their first parsed local instance
-    and restore baseline state when the variant changes
+  - live sheet objects now apply current-variant state through the selected local sheet occurrence
+    when one matches the current sheet path, with first-instance fallback in the current model
 - remaining blocker is narrower:
-  - multiple local sheet occurrences still lack an honest active-occurrence selection path
-  - broader ERC semantics that depend on variant-aware sheet state remain blocked on that model
+  - the current tree still lacks a project/settings source for `current_variant`
+  - broader ERC semantics that depend on richer occurrence-aware sheet/project state remain blocked
+    on that fuller model
 - separate source blocker:
   - the current tree still has no project/settings loader or `.kicad_pro` parsing, so
     `current_variant` can only be driven manually on `LoadResult`

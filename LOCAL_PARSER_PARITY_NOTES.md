@@ -252,19 +252,20 @@ Concrete unblock path:
    - done for symbols: symbol `dnp` / `exclude_from_sim` / `in_bom` / `on_board` /
      `in_pos_files` and variant field overrides now apply on top of occurrence refresh, with base
      state restoration when the current occurrence or current variant changes
-   - partial for sheets: current variant now applies onto live sheet objects through the first
-     parsed local instance, with baseline restoration when the variant changes
-   - still blocked for sheets: the current loader model still has no honest active-occurrence
-     selection path when one sheet object carries multiple local instances
+   - done for sheets in the current model: current variant now applies onto live sheet objects
+     through the selected local sheet occurrence when one matches the current sheet path, with
+     baseline restoration when the occurrence or variant changes and first-instance fallback when no
+     active occurrence matches
 4. add ERC-facing regressions for:
    - symbol variant `dnp` / `in_bom` / `on_board` / `in_pos_files`
    - sheet variant `exclude_from_sim`
    - variant field overrides on the selected occurrence
    - done for symbol-side selected-occurrence refresh
+   - done for sheet-side selected-occurrence refresh
 5. only after that, reopen `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, and
    `UpdateAllScreenReferences` for branch-level parity tightening
    - remaining active gap is now narrower:
-     - active selection across multiple local sheet occurrences
+     - project-side sourcing for the current variant
      - any broader ERC semantics that need variant-aware sheet state beyond the current model
 
 There is also a second unblock requirement now:

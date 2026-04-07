@@ -1498,7 +1498,7 @@ fn current_variant_refreshes_live_sheet_variant_state() {
     (at 0 0)
     (size 10 10)
     (uuid "72000000-0000-0000-0000-000000000212")
-    (property "Sheetname" "Child")
+    (property "Sheetname" "A")
     (property "Sheetfile" "child.kicad_sch")
     (property "POP" "seed-pop")
     (instances
@@ -1512,9 +1512,28 @@ fn current_variant_refreshes_live_sheet_variant_state() {
             (in_bom no)
             (on_board no)
             (field (name "POP") (value "ALT-POP")))))))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000213")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch")
+    (property "POP" "seed-pop-b")
+    (instances
+      (project "demo"
+        (path "/72000000-0000-0000-0000-000000000211/72000000-0000-0000-0000-000000000213"
+          (page "3")
+          (variant
+            (name "ALT")
+            (dnp no)
+            (exclude_from_sim no)
+            (in_bom yes)
+            (on_board yes)
+            (field (name "POP") (value "ALT-POP-B")))))))
   (sheet_instances
     (path "" (page "2"))
-    (path "/72000000-0000-0000-0000-000000000212" (page "1")))
+    (path "/72000000-0000-0000-0000-000000000212" (page "1"))
+    (path "/72000000-0000-0000-0000-000000000213" (page "3")))
 )"#;
 
     fs::write(&root_path, root_src).expect("write root");
@@ -1531,7 +1550,7 @@ fn current_variant_refreshes_live_sheet_variant_state() {
         .items
         .iter()
         .find_map(|item| match item {
-            SchItem::Sheet(sheet) => Some(sheet),
+            SchItem::Sheet(sheet) if sheet.name() == Some("A") => Some(sheet),
             _ => None,
         })
         .expect("sheet");
@@ -1559,7 +1578,7 @@ fn current_variant_refreshes_live_sheet_variant_state() {
         .items
         .iter()
         .find_map(|item| match item {
-            SchItem::Sheet(sheet) => Some(sheet),
+            SchItem::Sheet(sheet) if sheet.name() == Some("A") => Some(sheet),
             _ => None,
         })
         .expect("sheet");
@@ -1576,6 +1595,36 @@ fn current_variant_refreshes_live_sheet_variant_state() {
         Some("ALT-POP")
     );
 
+    assert!(loaded.set_current_sheet_path(
+        "/72000000-0000-0000-0000-000000000211/72000000-0000-0000-0000-000000000213"
+    ));
+    let root = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("root.kicad_sch"))
+        .expect("root schematic");
+    let sheet_b = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) if sheet.name() == Some("B") => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet b");
+    assert!(!sheet_b.dnp);
+    assert!(!sheet_b.excluded_from_sim);
+    assert!(sheet_b.in_bom);
+    assert!(sheet_b.on_board);
+    assert_eq!(
+        sheet_b
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("ALT-POP-B")
+    );
+
     loaded.set_current_variant(None);
     let root = loaded
         .schematics
@@ -1587,7 +1636,7 @@ fn current_variant_refreshes_live_sheet_variant_state() {
         .items
         .iter()
         .find_map(|item| match item {
-            SchItem::Sheet(sheet) => Some(sheet),
+            SchItem::Sheet(sheet) if sheet.name() == Some("A") => Some(sheet),
             _ => None,
         })
         .expect("sheet");
@@ -1602,6 +1651,28 @@ fn current_variant_refreshes_live_sheet_variant_state() {
             .find(|property| property.key == "POP")
             .map(|property| property.value.as_str()),
         Some("seed-pop")
+    );
+
+    let sheet_b = root
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Sheet(sheet) if sheet.name() == Some("B") => Some(sheet),
+            _ => None,
+        })
+        .expect("sheet b");
+    assert!(!sheet_b.dnp);
+    assert!(!sheet_b.excluded_from_sim);
+    assert!(sheet_b.in_bom);
+    assert!(sheet_b.on_board);
+    assert_eq!(
+        sheet_b
+            .properties
+            .iter()
+            .find(|property| property.key == "POP")
+            .map(|property| property.value.as_str()),
+        Some("seed-pop-b")
     );
 
     let _ = fs::remove_file(root_path);

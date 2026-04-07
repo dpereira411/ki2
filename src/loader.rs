@@ -134,7 +134,12 @@ impl LoadResult {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        refresh_live_sheet_variant_state(&mut self.schematics, self.current_variant.as_deref());
+        refresh_live_sheet_variant_state(
+            &mut self.schematics,
+            &self.sheet_paths,
+            &self.current_sheet_instance_path,
+            self.current_variant.as_deref(),
+        );
         refresh_live_symbol_occurrence_state(
             &mut self.schematics,
             &self.sheet_paths,
@@ -1797,11 +1802,20 @@ fn refresh_live_symbol_occurrence_state(
 
 // Upstream parity: local helper for project-wide live sheet refresh under current-variant
 // selection. This is not a 1:1 upstream routine because the current tree still lacks KiCad's
-// fuller active-occurrence sheet model; for now it restores each live sheet object to its parsed
-// baseline and applies the selected variant from the first parsed local instance when one exists.
-// Remaining divergence is limited to multiple local sheet occurrences and occurrence-aware sheet
-// selection.
-fn refresh_live_sheet_variant_state(schematics: &mut [Schematic], current_variant: Option<&str>) {
+// fuller project/settings layer and screen-owned sheet occurrence objects; it resolves the active
+// local sheet instance from the selected sheet path and falls back to the first parsed instance
+// when no active occurrence matches. Remaining divergence is limited to project-side variant source
+// and any broader sheet-occurrence semantics beyond the current model.
+fn refresh_live_sheet_variant_state(
+    schematics: &mut [Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    current_sheet_instance_path: &str,
+    current_variant: Option<&str>,
+) {
+    let selected_sheet_path = sheet_paths
+        .iter()
+        .find(|sheet_path| sheet_path.instance_path == current_sheet_instance_path);
+
     for schematic in schematics {
         for item in &mut schematic.screen.items {
             let SchItem::Sheet(sheet) = item else {
@@ -1813,7 +1827,22 @@ fn refresh_live_sheet_variant_state(schematics: &mut [Schematic], current_varian
             let Some(variant_name) = current_variant else {
                 continue;
             };
-            let Some(instance) = sheet.instances.first() else {
+            let active_instance = if let Some(selected) = selected_sheet_path {
+                sheet
+                    .instances
+                    .iter()
+                    .filter(|instance| {
+                        selected.instance_path == instance.path
+                            || selected
+                                .instance_path
+                                .starts_with(&(instance.path.clone() + "/"))
+                    })
+                    .max_by_key(|instance| instance.path.len())
+                    .or_else(|| sheet.instances.first())
+            } else {
+                sheet.instances.first()
+            };
+            let Some(instance) = active_instance else {
                 continue;
             };
             let Some(variant) = instance.variants.get(variant_name).cloned() else {
