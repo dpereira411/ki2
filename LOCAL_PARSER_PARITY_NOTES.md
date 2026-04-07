@@ -315,6 +315,9 @@ What remains after that correction:
       instead of raw `label.text`
       - current coverage now locks reused child schematics with `${SHEETNAME}`-backed global
         labels so page-ref grouping no longer collapses by raw text
+      - current coverage now also locks variant-sensitive `${DNP}` grouping on reused child
+        schematics, and `set_current_variant(...)` now recomputes the page-ref map before current
+        sheet intersheet refresh
       - remaining divergence is the broader unported text-variable resolver surface
         (`ResolveTextVar`, title block/project text vars, net/cross-reference variables), not this
         exercised intersheet-ref path

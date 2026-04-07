@@ -1853,6 +1853,127 @@ fn current_variant_refreshes_live_sheet_variant_state() {
 }
 
 #[test]
+fn current_variant_recomputes_intersheet_refs_for_variant_text() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_current_variant_intersheet_text_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000221")
+  (paper "A4")
+  (global_label "${DNP}" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000231")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000232")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/72000000-0000-0000-0000-000000000231/72000000-0000-0000-0000-000000000232"
+          (page "1")
+          (variant
+            (name "ALT")
+            (dnp yes))))))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000233")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch")
+    (instances
+      (project "demo"
+        (path "/72000000-0000-0000-0000-000000000231/72000000-0000-0000-0000-000000000233"
+          (page "3")
+          (variant
+            (name "ALT")
+            (dnp no))))))
+  (sheet_instances
+    (path "" (page "2"))
+    (path "/72000000-0000-0000-0000-000000000232" (page "1"))
+    (path "/72000000-0000-0000-0000-000000000233" (page "3")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get(""),
+        Some(&BTreeSet::from([1, 3]))
+    );
+    assert!(!loaded.intersheet_ref_pages_by_label.contains_key("DNP"));
+
+    let child_a_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && sheet_path.sheet_name.as_deref() == Some("A")
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child A instance path");
+    assert!(loaded.set_current_sheet_path(&child_a_instance_path));
+    loaded.set_current_variant(Some("ALT"));
+
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get("DNP"),
+        Some(&BTreeSet::from([1]))
+    );
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get(""),
+        Some(&BTreeSet::from([3]))
+    );
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "[1]");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn project_current_variant_refreshes_live_sheet_variant_state() {
     let dir = env::temp_dir().join(format!(
         "ki2_project_current_variant_sheet_{}",

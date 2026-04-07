@@ -285,6 +285,7 @@ impl LoadResult {
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
                 &schematic_settings,
+                self.current_variant.as_deref(),
             );
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -310,8 +311,10 @@ impl LoadResult {
     // Upstream parity: local selection analogue for KiCad's `SCHEMATIC::SetCurrentVariant()`.
     // This is not a 1:1 upstream routine because the current tree does not yet have a real
     // schematic-owned controller object; the selected variant lives on `LoadResult` instead. The
-    // current implementation now refreshes both symbol and sheet occurrence state; remaining
-    // divergence is limited to richer occurrence semantics beyond the current model.
+    // current implementation now refreshes both symbol and sheet occurrence state and recomputes
+    // intersheet-ref maps for variant-sensitive shown text. Remaining divergence is limited to
+    // richer occurrence semantics beyond the current model and the broader unported text-variable
+    // resolver surface.
     pub fn set_current_variant(&mut self, variant: Option<&str>) {
         self.current_variant = variant
             .map(str::trim)
@@ -327,6 +330,25 @@ impl LoadResult {
             &mut self.schematics,
             &self.sheet_paths,
             &self.current_sheet_instance_path,
+            self.current_variant.as_deref(),
+        );
+        let (values, pages_by_label, pages_by_virtual_page) = build_intersheet_ref_maps(
+            &self.schematics,
+            &self.sheet_paths,
+            self.current_variant.as_deref(),
+        );
+        self.intersheet_ref_values = values;
+        self.intersheet_ref_pages_by_label = pages_by_label;
+        self.sheet_pages_by_virtual_page = pages_by_virtual_page;
+        let schematic_settings = self.schematic_settings();
+        refresh_current_sheet_intersheet_refs(
+            &mut self.schematics,
+            &self.sheet_paths,
+            &self.current_sheet_instance_path,
+            &self.intersheet_ref_values,
+            &self.intersheet_ref_pages_by_label,
+            &self.sheet_pages_by_virtual_page,
+            &schematic_settings,
             self.current_variant.as_deref(),
         );
     }
@@ -1646,58 +1668,11 @@ impl SchematicLoader {
     // local reduced resolver instead of raw label text. Remaining divergence is outside this
     // routine's direct branch flow.
     fn recompute_intersheet_refs(&mut self, sheet_paths: &[LoadedSheetPath]) {
-        let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
-        let mut virtual_page_to_sheet_page = HashMap::new();
-
-        for sheet_path in sheet_paths {
-            virtual_page_to_sheet_page.insert(
-                sheet_path.sheet_number,
-                sheet_path
-                    .page
-                    .clone()
-                    .unwrap_or_else(|| sheet_path.sheet_number.to_string()),
-            );
-
-            let Some(schematic_index) = self
-                .loaded_by_canonical
-                .get(&sheet_path.schematic_path)
-                .copied()
-            else {
-                continue;
-            };
-
-            for item in &self.schematics[schematic_index].screen.items {
-                if let SchItem::Label(label) = item {
-                    if label.kind == crate::model::LabelKind::Global {
-                        let shown_text = shown_global_label_text(
-                            &self.schematics,
-                            sheet_paths,
-                            sheet_path,
-                            label,
-                        );
-                        page_refs_map
-                            .entry(shown_text)
-                            .or_default()
-                            .insert(sheet_path.sheet_number);
-                    }
-                }
-            }
-        }
-
-        self.intersheet_ref_values = page_refs_map
-            .iter()
-            .map(|(label, page_numbers)| {
-                let refs = page_numbers
-                    .iter()
-                    .filter_map(|page_number| virtual_page_to_sheet_page.get(page_number))
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(",");
-                (label.clone(), format!("[{refs}]"))
-            })
-            .collect();
-        self.intersheet_ref_pages_by_label = page_refs_map;
-        self.sheet_pages_by_virtual_page = virtual_page_to_sheet_page;
+        let (values, pages_by_label, pages_by_virtual_page) =
+            build_intersheet_ref_maps(&self.schematics, sheet_paths, None);
+        self.intersheet_ref_values = values;
+        self.intersheet_ref_pages_by_label = pages_by_label;
+        self.sheet_pages_by_virtual_page = pages_by_virtual_page;
     }
 
     // Upstream parity: loader-side `SCH_SHEET_PATH::UpdateAllScreenReferences()` analogue. This
@@ -1775,6 +1750,7 @@ impl SchematicLoader {
             &self.intersheet_ref_pages_by_label,
             &self.sheet_pages_by_virtual_page,
             schematic_settings,
+            None,
         );
     }
 }
@@ -1795,6 +1771,7 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     intersheet_ref_pages_by_label: &HashMap<String, BTreeSet<usize>>,
     sheet_pages_by_virtual_page: &HashMap<usize, String>,
     schematic_settings: &ActiveSchematicSettings,
+    current_variant: Option<&str>,
 ) {
     for schematic in schematics.iter_mut() {
         for item in &mut schematic.screen.items {
@@ -1845,7 +1822,13 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
         .filter_map(|(index, item)| match item {
             SchItem::Label(label) if label.kind == crate::model::LabelKind::Global => Some((
                 index,
-                shown_global_label_text(schematics, sheet_paths, current_sheet_path, label),
+                shown_global_label_text(
+                    schematics,
+                    sheet_paths,
+                    current_sheet_path,
+                    current_variant,
+                    label,
+                ),
             )),
             _ => None,
         })
@@ -3585,6 +3568,15 @@ fn canonical_text_var_name(property: &Property) -> String {
     }
 }
 
+#[derive(Clone)]
+struct ResolvedSheetTextState {
+    properties: Vec<Property>,
+    excluded_from_sim: bool,
+    in_bom: bool,
+    on_board: bool,
+    dnp: bool,
+}
+
 fn find_sheet_for_loaded_path<'a>(
     schematics: &'a [Schematic],
     sheet_paths: &'a [LoadedSheetPath],
@@ -3616,10 +3608,139 @@ fn find_sheet_for_loaded_path<'a>(
     })
 }
 
+fn resolved_sheet_text_state(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    current_variant: Option<&str>,
+) -> Option<ResolvedSheetTextState> {
+    let sheet = find_sheet_for_loaded_path(schematics, sheet_paths, loaded_path)?;
+    let mut state = ResolvedSheetTextState {
+        properties: sheet.properties.clone(),
+        excluded_from_sim: sheet.excluded_from_sim,
+        in_bom: sheet.in_bom,
+        on_board: sheet.on_board,
+        dnp: sheet.dnp,
+    };
+
+    let Some(variant_name) = current_variant else {
+        return Some(state);
+    };
+    let Some(instance) = sheet
+        .instances
+        .iter()
+        .find(|instance| instance.path == loaded_path.instance_path)
+    else {
+        return Some(state);
+    };
+    let Some(variant) = instance.variants.get(variant_name) else {
+        return Some(state);
+    };
+
+    state.excluded_from_sim = variant.excluded_from_sim;
+    state.in_bom = variant.in_bom;
+    state.on_board = variant.on_board;
+    state.dnp = variant.dnp;
+
+    for (name, value) in &variant.fields {
+        if let Some(existing) = state.properties.iter_mut().find(|property| {
+            property.kind.is_user_field() && property.key.eq_ignore_ascii_case(name)
+        }) {
+            existing.value = value.clone();
+            continue;
+        }
+
+        if let Some(existing) = state.properties.iter_mut().find(|property| {
+            property.kind.is_mandatory() && property.kind.canonical_key().eq_ignore_ascii_case(name)
+        }) {
+            existing.value = value.clone();
+            continue;
+        }
+
+        state.properties.push(Property::new_named(
+            PropertyKind::SheetUser,
+            name,
+            value.clone(),
+            false,
+        ));
+    }
+
+    Some(state)
+}
+
+// Upstream parity: local helper for the page-ref-map portion of `SCHEMATIC::RecomputeIntersheetRefs()`.
+// This is not a 1:1 KiCad routine because the Rust loader still builds from loaded-sheet-path
+// snapshots instead of schematic-owned hierarchy objects, but it now shares the same reduced
+// shown-text resolution path used by current-sheet refresh, including current-variant sheet-state
+// tokens.
+pub(crate) fn build_intersheet_ref_maps(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    current_variant: Option<&str>,
+) -> (
+    HashMap<String, String>,
+    HashMap<String, BTreeSet<usize>>,
+    HashMap<usize, String>,
+) {
+    let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
+    let mut virtual_page_to_sheet_page = HashMap::new();
+
+    for sheet_path in sheet_paths {
+        virtual_page_to_sheet_page.insert(
+            sheet_path.sheet_number,
+            sheet_path
+                .page
+                .clone()
+                .unwrap_or_else(|| sheet_path.sheet_number.to_string()),
+        );
+
+        let Some(schematic) = schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            if let SchItem::Label(label) = item {
+                if label.kind == crate::model::LabelKind::Global {
+                    let shown_text = shown_global_label_text(
+                        schematics,
+                        sheet_paths,
+                        sheet_path,
+                        current_variant,
+                        label,
+                    );
+                    page_refs_map
+                        .entry(shown_text)
+                        .or_default()
+                        .insert(sheet_path.sheet_number);
+                }
+            }
+        }
+    }
+
+    let values = page_refs_map
+        .iter()
+        .map(|(label, page_numbers)| {
+            let refs = page_numbers
+                .iter()
+                .filter_map(|page_number| virtual_page_to_sheet_page.get(page_number))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",");
+            (label.clone(), format!("[{refs}]"))
+        })
+        .collect();
+
+    (values, page_refs_map, virtual_page_to_sheet_page)
+}
+
 fn resolve_sheet_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
+    current_variant: Option<&str>,
     token: &str,
     depth: usize,
 ) -> Option<String> {
@@ -3627,10 +3748,10 @@ fn resolve_sheet_text_var(
         return None;
     }
 
-    let sheet = find_sheet_for_loaded_path(schematics, sheet_paths, loaded_path)?;
+    let state = resolved_sheet_text_state(schematics, sheet_paths, loaded_path, current_variant)?;
     let token_upper = token.to_ascii_uppercase();
 
-    if let Some(property) = sheet
+    if let Some(property) = state
         .properties
         .iter()
         .find(|property| canonical_text_var_name(property) == token_upper)
@@ -3638,7 +3759,14 @@ fn resolve_sheet_text_var(
         return Some(resolve_text_variables(
             &property.value,
             &|nested| {
-                resolve_sheet_text_var(schematics, sheet_paths, loaded_path, nested, depth + 1)
+                resolve_sheet_text_var(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    current_variant,
+                    nested,
+                    depth + 1,
+                )
             },
             depth + 1,
         ));
@@ -3659,6 +3787,34 @@ fn resolve_sheet_text_var(
         "SHEETPATH" => {
             return Some(loaded_path.instance_path.clone());
         }
+        "EXCLUDE_FROM_BOM" => {
+            return Some(if state.in_bom {
+                String::new()
+            } else {
+                "Excluded from BOM".to_string()
+            });
+        }
+        "EXCLUDE_FROM_BOARD" => {
+            return Some(if state.on_board {
+                String::new()
+            } else {
+                "Excluded from board".to_string()
+            });
+        }
+        "EXCLUDE_FROM_SIM" => {
+            return Some(if state.excluded_from_sim {
+                "Excluded from simulation".to_string()
+            } else {
+                String::new()
+            });
+        }
+        "DNP" => {
+            return Some(if state.dnp {
+                "DNP".to_string()
+            } else {
+                String::new()
+            });
+        }
         _ => {}
     }
 
@@ -3676,7 +3832,14 @@ fn resolve_sheet_text_var(
         .max_by_key(|sheet_path| sheet_path.symbol_path.len());
 
     parent_sheet_path.and_then(|parent| {
-        resolve_sheet_text_var(schematics, sheet_paths, parent, token, depth + 1)
+        resolve_sheet_text_var(
+            schematics,
+            sheet_paths,
+            parent,
+            current_variant,
+            token,
+            depth + 1,
+        )
     })
 }
 
@@ -3721,12 +3884,14 @@ fn resolve_text_variables(
 // loader's intersheet-ref path. This is not 1:1 KiCad because the current tree still lacks the
 // broader text-variable resolver stack (`ResolveTextVar`, title block/project text vars, net
 // connection variables, cross references). It exists to restore the ERC-visible sheet-path text
-// resolution slice needed for global-label page-ref grouping on reused sheets; remaining
-// divergence is the unported broader resolver surface, not this exercised loader path.
+// resolution slice needed for global-label page-ref grouping on reused sheets, including the
+// current-variant sheet-field / `DNP` / exclusion-token slice; remaining divergence is the
+// unported broader resolver surface, not this exercised loader path.
 fn shown_global_label_text(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
+    current_variant: Option<&str>,
     label: &crate::model::Label,
 ) -> String {
     resolve_text_variables(
@@ -3742,13 +3907,27 @@ fn shown_global_label_text(
                 return Some(resolve_text_variables(
                     &property.value,
                     &|nested| {
-                        resolve_sheet_text_var(schematics, sheet_paths, loaded_path, nested, 1)
+                        resolve_sheet_text_var(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            current_variant,
+                            nested,
+                            1,
+                        )
                     },
                     1,
                 ));
             }
 
-            resolve_sheet_text_var(schematics, sheet_paths, loaded_path, token, 1)
+            resolve_sheet_text_var(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                current_variant,
+                token,
+                1,
+            )
         },
         0,
     )

@@ -73,6 +73,8 @@ Current ERC blocker:
   - remaining blocker under that same routine is narrower:
     - hierarchy-wide intersheet page-ref recompute and current-sheet intersheet display now use a
       reduced sheet-path shown-text resolver for global labels instead of raw `label.text`
+      - that exercised slice now also includes current-variant sheet-field / `DNP` resolution and
+        variant-triggered page-ref-map recompute
       - remaining divergence is the broader unported text-variable resolver surface, not this
         exercised intersheet-ref branch
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and

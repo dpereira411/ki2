@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 use crate::loader::{
     ActiveSchematicSettings, HierarchyLink, LoadResult, LoadedProjectSettings, LoadedSheetPath,
-    refresh_current_screen_page_state, refresh_current_sheet_intersheet_refs,
-    refresh_live_sheet_variant_state, refresh_live_symbol_occurrence_state,
-    reset_reused_screen_symbol_state,
+    build_intersheet_ref_maps, refresh_current_screen_page_state,
+    refresh_current_sheet_intersheet_refs, refresh_live_sheet_variant_state,
+    refresh_live_symbol_occurrence_state, reset_reused_screen_symbol_state,
 };
 use crate::model::Schematic;
 
@@ -128,6 +128,7 @@ impl SchematicProject {
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
                 &schematic_settings,
+                self.current_variant.as_deref(),
             );
             refresh_live_symbol_occurrence_state(
                 &mut self.schematics,
@@ -150,7 +151,9 @@ impl SchematicProject {
     // Upstream parity: local project-view analogue for `SCHEMATIC::SetCurrentVariant()`. This is
     // not a 1:1 KiCad boundary because the reduced Rust project view still exposes selection
     // directly on `SchematicProject`, but it now shares the same occurrence refresh path as
-    // `LoadResult`. Remaining divergence is limited to broader sheet-occurrence semantics.
+    // `LoadResult`, including variant-sensitive intersheet-ref recompute. Remaining divergence is
+    // limited to broader sheet-occurrence semantics and the broader unported text-variable
+    // resolver surface.
     pub fn set_current_variant(&mut self, variant: Option<&str>) {
         self.current_variant = variant
             .map(str::trim)
@@ -166,6 +169,26 @@ impl SchematicProject {
             &mut self.schematics,
             &self.sheet_paths,
             &self.current_sheet_instance_path,
+            self.current_variant.as_deref(),
+        );
+        let (values, pages_by_label, pages_by_virtual_page) = build_intersheet_ref_maps(
+            &self.schematics,
+            &self.sheet_paths,
+            self.current_variant.as_deref(),
+        );
+        self.intersheet_ref_values = values;
+        self.intersheet_ref_pages_by_label = pages_by_label;
+        self.sheet_pages_by_virtual_page = pages_by_virtual_page;
+        let schematic_settings =
+            ActiveSchematicSettings::from_project_settings(self.project.as_ref());
+        refresh_current_sheet_intersheet_refs(
+            &mut self.schematics,
+            &self.sheet_paths,
+            &self.current_sheet_instance_path,
+            &self.intersheet_ref_values,
+            &self.intersheet_ref_pages_by_label,
+            &self.sheet_pages_by_virtual_page,
+            &schematic_settings,
             self.current_variant.as_deref(),
         );
     }
