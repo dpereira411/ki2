@@ -242,6 +242,83 @@ fn erc_reports_duplicate_sheet_names_case_insensitively() {
 }
 
 #[test]
+fn erc_reports_unresolved_text_variables_on_exercised_items() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_unresolved_text_vars_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73200000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (text "${UNKNOWN_TEXT}" (at 0 0 0))
+  (symbol
+    (lib_id "Device:R")
+    (at 10 0 0)
+    (property "Custom" "${UNKNOWN_FIELD}"))
+  (global_label "GL" (shape input) (at 20 0 0)
+    (property "Custom" "${UNKNOWN_LABEL_FIELD}"))
+  (sheet
+    (at 0 20)
+    (size 20 10)
+    (uuid "73200000-0000-0000-0000-000000000002")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "${UNKNOWN_PIN}" input (at 20 5 180)))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/73200000-0000-0000-0000-000000000002" (page "2")))
+)"#,
+    )
+    .expect("write root");
+    fs::write(
+        &child_path,
+        r#"(kicad_sch (version 20260306) (generator "eeschema") (uuid "73200000-0000-0000-0000-000000000003"))"#,
+    )
+    .expect("write child");
+
+    let load = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-unresolved-variable")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 5);
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.message == "Unresolved text variable in schematic text"
+        })
+    );
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Unresolved text variable in symbol field 'Custom'"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Unresolved text variable in label field 'Custom'"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Unresolved text variable in label field 'Intersheet References'"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Unresolved text variable in sheet pin '${UNKNOWN_PIN}'"
+    }));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)

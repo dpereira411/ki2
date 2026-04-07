@@ -3632,17 +3632,17 @@ fn canonical_text_var_name(property: &Property) -> String {
 }
 
 #[derive(Clone)]
-struct ResolvedSheetTextState {
-    properties: Vec<Property>,
-    excluded_from_sim: bool,
-    in_bom: bool,
-    on_board: bool,
-    dnp: bool,
+pub(crate) struct ResolvedSheetTextState {
+    pub properties: Vec<Property>,
+    pub excluded_from_sim: bool,
+    pub in_bom: bool,
+    pub on_board: bool,
+    pub dnp: bool,
 }
 
 #[derive(Clone)]
-struct ResolvedSymbolTextState {
-    properties: Vec<Property>,
+pub(crate) struct ResolvedSymbolTextState {
+    pub properties: Vec<Property>,
 }
 
 fn find_sheet_for_loaded_path<'a>(
@@ -3676,7 +3676,7 @@ fn find_sheet_for_loaded_path<'a>(
     })
 }
 
-fn resolved_sheet_text_state(
+pub(crate) fn resolved_sheet_text_state(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
@@ -3775,7 +3775,7 @@ fn upsert_symbol_state_property(properties: &mut Vec<Property>, kind: PropertyKi
 // needed so cross-referenced symbol fields can follow the same occurrence/variant state as the
 // current loader. Remaining divergence is broader net/sim/cross-reference semantics outside this
 // direct field lookup slice.
-fn resolved_symbol_text_state(
+pub(crate) fn resolved_symbol_text_state(
     symbol: &Symbol,
     instance_path: &str,
     current_variant: Option<&str>,
@@ -3876,7 +3876,7 @@ fn is_parent_reference_match(reference: &str, resolved_reference: &str) -> bool 
 // fuller hierarchy resolver stack, but it is needed so `${ref:FIELD[:VARIANT]}` can follow loaded
 // symbol/sheet occurrence state instead of staying stuck on the raw token. Remaining divergence is
 // the unported net-name and broader resolver surface, not this direct field lookup slice.
-fn resolve_cross_reference_text_var(
+pub(crate) fn resolve_cross_reference_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
@@ -4189,7 +4189,7 @@ fn rule_area_contains_connected_wire_component(
 // reduced net snapshots can still resolve sheet/project/cross-reference text instead of seeing
 // only raw `${...}` tokens. Remaining divergence is limited to the still-blocked
 // connectivity-backed variables.
-fn resolve_label_text_token_without_connectivity(
+pub(crate) fn resolve_label_text_token_without_connectivity(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
@@ -4330,7 +4330,7 @@ fn shown_label_text_without_connectivity(
 // `NET_CLASS`) instead of leaving those tokens raw. Remaining divergence is fuller connection-graph
 // semantics, especially fuller cached connection-graph ownership beyond this reduced
 // wire/directive/rule-area snapshot.
-fn resolve_label_connectivity_text_var(
+pub(crate) fn resolve_label_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
@@ -4705,7 +4705,7 @@ pub(crate) fn build_intersheet_ref_maps(
 // from loaded path snapshots instead of KiCad's live sheet objects, but it now carries the
 // exercised sheet/schematic/project variable chain used by intersheet shown text. Remaining
 // divergence is outside this recursive branch.
-fn resolve_sheet_text_var(
+pub(crate) fn resolve_sheet_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
@@ -4819,7 +4819,7 @@ fn resolve_sheet_text_var(
         })
 }
 
-fn resolve_text_variables(
+pub(crate) fn resolve_text_variables(
     text: &str,
     resolver: &dyn Fn(&str) -> Option<String>,
     depth: usize,
@@ -4863,7 +4863,7 @@ fn resolve_text_variables(
 // global-label page-ref grouping on reused sheets, including current-variant tokens, title-block
 // tokens, project text variables, and the sheet-field / `DNP` / exclusion-token slice; remaining
 // divergence is the unported broader resolver surface, not this exercised loader path.
-fn shown_global_label_text(
+pub(crate) fn shown_global_label_text(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,

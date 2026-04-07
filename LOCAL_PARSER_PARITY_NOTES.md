@@ -368,11 +368,20 @@ What remains after that correction:
         for same-screen case-insensitive sheet-name collisions
       - reduced local `ERC_TESTER::TestFieldNameWhitespace()` analogue is implemented and tested
         for symbol and sheet fields
-      - next active ERC routine is `ERC_TESTER::TestTextVars()`
+      - reduced local `ERC_TESTER::TestTextVars()` analogue is now implemented and tested for the
+        exercised loaded-text surfaces:
+        - symbol fields
+        - label fields
+        - sheet fields
+        - sheet pins
+        - top-level schematic text
+        - top-level text boxes
       - unblock path there is narrower than before because the reduced shown-text path now covers
         the exercised sheet/project/cross-reference/current-sheet connectivity tokens
-      - remaining likely blockers for full `TestTextVars()` parity are symbol/lib-text shown-text
-        coverage and drawing-sheet text coverage, not the already-ported global-label path
+      - remaining likely blockers for fuller `TestTextVars()` parity are:
+        - lib-child text / text box coverage under symbols
+        - drawing-sheet text coverage
+        - assertion markers (`${ERC_WARNING...}` / `${ERC_ERROR...}`)
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
       - the reduced cache now also respects parsed rectangle corner radius instead of running
