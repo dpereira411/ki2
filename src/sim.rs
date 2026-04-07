@@ -228,7 +228,7 @@ pub fn expected_missing_sim_library_locations(
     schematic_path: &Path,
     library: &str,
 ) -> Vec<PathBuf> {
-    let expanded_library = expand_sim_library_env_vars(library);
+    let expanded_library = normalize_sim_library_path_string(&expand_sim_library_env_vars(library));
     let library_path = PathBuf::from(&expanded_library);
 
     if library_path.is_absolute() {
@@ -940,7 +940,7 @@ fn parse_spice_model_param_token(token: &str) -> Option<(String, Option<String>)
 }
 
 fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {
-    let expanded_library = expand_sim_library_env_vars(library);
+    let expanded_library = normalize_sim_library_path_string(&expand_sim_library_env_vars(library));
     let library_path = PathBuf::from(&expanded_library);
 
     if library_path.is_absolute() {
@@ -964,6 +964,10 @@ fn resolve_sim_library_path(schematic_path: &Path, library: &str) -> PathBuf {
     }
 
     project_path
+}
+
+fn normalize_sim_library_path_string(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 fn expand_sim_library_env_vars(path: &str) -> String {

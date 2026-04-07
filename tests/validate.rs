@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
@@ -36,6 +37,14 @@ fn temp_schematic(name: &str, src: &str) -> PathBuf {
     let path = env::temp_dir().join(format!("{name}_{nanos}.kicad_sch"));
     fs::write(&path, src).expect("write temp schematic");
     path
+}
+
+fn env_lock() -> MutexGuard<'static, ()> {
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("env lock")
 }
 
 fn temp_dir_path(name: &str) -> PathBuf {
@@ -6126,6 +6135,7 @@ fn loads_symbol_sim_library_content_from_filesystem() {
 
 #[test]
 fn loads_symbol_sim_library_content_from_spice_lib_dir() {
+    let _env_lock = env_lock();
     let dir = env::temp_dir().join(format!(
         "sim_lib_dir_{}",
         SystemTime::now()
@@ -6201,6 +6211,7 @@ fn loads_symbol_sim_library_content_from_spice_lib_dir() {
 
 #[test]
 fn loads_symbol_sim_library_content_from_env_expanded_path() {
+    let _env_lock = env_lock();
     let dir = env::temp_dir().join(format!(
         "sim_lib_env_path_{}",
         SystemTime::now()
@@ -6275,6 +6286,7 @@ fn loads_symbol_sim_library_content_from_env_expanded_path() {
 
 #[test]
 fn loads_symbol_sim_library_content_from_braced_env_expanded_path() {
+    let _env_lock = env_lock();
     let dir = env::temp_dir().join(format!(
         "sim_lib_braced_env_path_{}",
         SystemTime::now()
@@ -6346,6 +6358,69 @@ fn loads_symbol_sim_library_content_from_braced_env_expanded_path() {
             unsafe { env::remove_var("KI2_SIM_MODELS_BRACED") }
         }
     }
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn loads_symbol_sim_library_content_from_windows_style_relative_path() {
+    let dir = env::temp_dir().join(format!(
+        "sim_lib_windows_path_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(dir.join("models")).expect("create dir");
+    fs::write(dir.join("models/model.kicad_sim"), "windows-style-model").expect("write sim lib");
+    let path = dir.join("windows_path_loader.kicad_sch");
+    fs::write(
+        &path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000316")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models\\model.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#,
+    )
+    .expect("write schematic");
+
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+    let resolved_path = dir
+        .join("models/model.kicad_sim")
+        .canonicalize()
+        .unwrap_or(dir.join("models/model.kicad_sim"));
+
+    assert_eq!(
+        load_symbol_sim_library_content(&schematic.path, &schematic.screen, symbol),
+        Some(SimLibraryContent {
+            source: SimLibrarySource::Filesystem(resolved_path),
+            text: "windows-style-model".to_string(),
+        })
+    );
+
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(dir.join("models/model.kicad_sim"));
     let _ = fs::remove_dir_all(dir);
@@ -7910,6 +7985,7 @@ fn load_tree_records_warning_for_missing_sim_library() {
 
 #[test]
 fn load_tree_records_warning_for_missing_sim_library_in_project_and_spice_lib_dir() {
+    let _env_lock = env_lock();
     let dir = env::temp_dir().join(format!(
         "ki2_missing_sim_library_warning_{}",
         SystemTime::now()
