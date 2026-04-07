@@ -1681,6 +1681,64 @@ fn cli_netlist_merges_multi_unit_fields_by_unit_order() {
 }
 
 #[test]
+fn cli_netlist_prefers_non_pad_default_driver_names() {
+    let path = temp_schematic(
+        "cli_netlist_prefers_non_pad_driver",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:A"
+      (property "Reference" "A" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "A" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "A_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))))
+    (symbol "Device:Z"
+      (property "Reference" "Z" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "Z" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "Z_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "OUT" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:A")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "A1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "A" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:Z")
+    (uuid "73000000-0000-0000-0000-000000000011")
+    (at 10 0 0)
+    (property "Reference" "Z1" (at 10 0 0) (effects (font (size 1 1))))
+    (property "Value" "Z" (at 10 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)) (stroke (width 0.2)) (uuid "73000000-0000-0000-0000-000000000020")))"#,
+    );
+
+    let report_path = path.with_extension("xml");
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("name=\"Net-(Z1-OUT)\""), "{report}");
+    assert!(!report.contains("name=\"Net-(A1-Pad1)\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",

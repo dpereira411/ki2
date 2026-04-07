@@ -933,9 +933,13 @@ where
     candidates.sort_by(
         |(lhs_priority, lhs_sheet_pin_rank, lhs_text),
          (rhs_priority, rhs_sheet_pin_rank, rhs_text)| {
+            let lhs_low_quality_name = lhs_text.contains("-Pad");
+            let rhs_low_quality_name = rhs_text.contains("-Pad");
+
             rhs_priority
                 .cmp(lhs_priority)
                 .then_with(|| rhs_sheet_pin_rank.cmp(lhs_sheet_pin_rank))
+                .then_with(|| lhs_low_quality_name.cmp(&rhs_low_quality_name))
                 .then_with(|| lhs_text.cmp(rhs_text))
         },
     );
