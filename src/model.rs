@@ -582,6 +582,30 @@ impl Label {
     pub fn set_spin(&mut self, spin: LabelSpin) {
         self.spin = spin;
     }
+
+    // Upstream parity: reduced local analogue for the `SCH_LABEL_BASE::AutoplaceFields()`
+    // intersheet-ref branch. This is not a 1:1 port because the current model lacks KiCad's text
+    // bounding-box and pen-width geometry, so it uses an estimated label run length instead of
+    // `GetBodyBoundingBox()` / `GetTextOffset()`. It exists so visible default intersheet refs no
+    // longer stay stacked on the label position during loader refresh.
+    pub fn autoplace_intersheet_refs_field(&mut self) {
+        let Some(intersheet_refs) = self
+            .properties
+            .iter_mut()
+            .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        else {
+            return;
+        };
+
+        let margin = 2.54;
+        let label_len = (self.text.chars().count().max(1) as f64 * 1.27) + margin;
+        intersheet_refs.at = Some(match self.spin {
+            LabelSpin::Left => [self.at[0] - label_len, self.at[1]],
+            LabelSpin::Up => [self.at[0], self.at[1] - label_len],
+            LabelSpin::Right => [self.at[0] + label_len, self.at[1]],
+            LabelSpin::Bottom => [self.at[0], self.at[1] + label_len],
+        });
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

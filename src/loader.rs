@@ -1832,28 +1832,43 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
                     continue;
                 }
 
-                let Some(intersheet_refs) = label
-                    .properties
-                    .iter_mut()
-                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
-                else {
-                    continue;
-                };
-
-                if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
-                    && !intersheet_refs.visible
+                let property_count = label.properties.len();
+                let should_autoplace;
                 {
-                    intersheet_refs.at = Some(label.at);
+                    let Some(intersheet_refs) = label
+                        .properties
+                        .iter_mut()
+                        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                    else {
+                        continue;
+                    };
+
+                    if (intersheet_refs.at.is_none() || intersheet_refs.at == Some([0.0, 0.0]))
+                        && !intersheet_refs.visible
+                    {
+                        intersheet_refs.at = Some(label.at);
+                    }
+
+                    intersheet_refs.visible = schematic_settings.intersheet_refs.show;
+
+                    if !schematic_settings.intersheet_refs.show {
+                        continue;
+                    }
+
+                    should_autoplace = property_count == 1 && intersheet_refs.at == Some(label.at);
                 }
 
-                intersheet_refs.visible = schematic_settings.intersheet_refs.show;
-
-                if !schematic_settings.intersheet_refs.show {
-                    continue;
+                if should_autoplace {
+                    label.autoplace_intersheet_refs_field();
                 }
 
                 let prefix = schematic_settings.intersheet_refs.prefix.as_str();
                 let suffix = schematic_settings.intersheet_refs.suffix.as_str();
+                let intersheet_refs = label
+                    .properties
+                    .iter_mut()
+                    .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+                    .expect("global label intersheet refs");
                 intersheet_refs.value = match intersheet_ref_pages_by_label.get(&label.text) {
                     Some(raw_pages) => {
                         let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();

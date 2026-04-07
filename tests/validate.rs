@@ -3806,6 +3806,8 @@ fn project_settings_format_current_sheet_intersheet_refs() {
         .expect("root intersheet refs");
 
     assert_eq!(root_property.value, "@1..2!");
+    assert!(root_property.visible);
+    assert_ne!(root_property.at, Some(root_global.at));
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_a_path);
