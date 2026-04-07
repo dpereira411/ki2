@@ -68,6 +68,8 @@ Current ERC blocker:
 - separate source blocker:
   - the current tree still has no project/settings loader or `.kicad_pro` parsing, so
     `current_variant` can only be driven manually on `LoadResult`
+  - current code also has no JSON parsing layer yet, and nearby `.kicad_pro` fixtures do not
+    expose an obvious variant key to wire up blindly
   - do not pretend `SCHEMATIC::GetCurrentVariant` parity is complete until that source layer exists
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
   model is expanded

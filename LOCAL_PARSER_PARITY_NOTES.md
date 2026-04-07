@@ -277,9 +277,21 @@ There is also a second unblock requirement now:
 Concrete unblock path for that source gap:
 
 1. add a minimal project/settings representation that can carry current variant selection
-2. teach the loader entrypoint to ingest that project-side variant source
+   - current tree has no JSON/project loader at all and no `serde` / `serde_json` plumbing yet
+2. teach the loader entrypoint to discover and ingest the companion `.kicad_pro` settings source
+   before building the loaded hierarchy
 3. route that source into `LoadResult.current_variant`
-4. only then tighten ERC behavior that depends on project-selected variants instead of a manual API
+4. once a real sample or upstream field shape for current-variant selection is identified, lock it
+   with a focused fixture and only then tighten ERC behavior that depends on project-selected
+   variants instead of a manual API
+
+Current blocker evidence:
+
+- local code search found no project/settings loader and no `.kicad_pro` parsing anywhere in this
+  tree
+- local dependency scan found no JSON parsing support in `Cargo.toml`
+- nearby ERC parity `.kicad_pro` / `.kicad_prl` fixtures currently exposed no obvious
+  `variant` / `current_variant` key to wire up blindly
 
 Until that model exists, the remaining loader drift should be treated as blocked rather than as an
 unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or
