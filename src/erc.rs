@@ -28,6 +28,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
+    diagnostics.extend(check_footprint_filters(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -815,6 +816,25 @@ fn shown_symbol_value_text(
         .iter()
         .find(|property| property.kind == PropertyKind::SymbolValue)
         .map(|property| shown_symbol_property_text(project, sheet_path, symbol, property))
+}
+
+// Upstream parity: reduced local analogue for the wildcard matching KiCad uses in
+// `ERC_TESTER::TestFootprintFilters()`. This is not a 1:1 `wxString::Matches()` replacement
+// because it only carries the exercised `*` and `?` glob semantics, but it is enough to keep
+// footprint-filter ERC on the same pattern language instead of a repo-local exact-string check.
+fn wildcard_matches(pattern: &str, text: &str) -> bool {
+    fn inner(pattern: &[u8], text: &[u8]) -> bool {
+        match pattern.split_first() {
+            None => text.is_empty(),
+            Some((b'*', rest)) => {
+                inner(rest, text) || (!text.is_empty() && inner(pattern, &text[1..]))
+            }
+            Some((b'?', rest)) => !text.is_empty() && inner(rest, &text[1..]),
+            Some((head, rest)) => !text.is_empty() && *head == text[0] && inner(rest, &text[1..]),
+        }
+    }
+
+    inner(pattern.as_bytes(), text.as_bytes())
 }
 
 fn shown_text_item_text(
@@ -1837,6 +1857,79 @@ pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnost
             })
         })
         .collect()
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestFootprintFilters()`. This is not a
+// 1:1 KiCad marker pass because the Rust tree still lacks full `LIB_ID` parsing and marker-owned
+// symbol metadata, but it preserves the exercised footprint-filter matching flow on shown
+// footprint text and library filters instead of dropping the rule entirely.
+pub fn check_footprint_filters(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+                continue;
+            };
+
+            if lib_symbol.fp_filters.is_empty() {
+                continue;
+            }
+
+            let Some(footprint_property) = symbol
+                .properties
+                .iter()
+                .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            else {
+                continue;
+            };
+
+            let footprint =
+                shown_symbol_property_text(project, sheet_path, symbol, footprint_property);
+            let lower_id = footprint.to_ascii_lowercase();
+            let Some((_, item_name)) = lower_id.rsplit_once(':') else {
+                continue;
+            };
+
+            let found = lib_symbol.fp_filters.iter().any(|filter| {
+                let filter = filter.to_ascii_lowercase();
+                if filter.contains(':') {
+                    wildcard_matches(&filter, &lower_id)
+                } else {
+                    wildcard_matches(&filter, item_name)
+                }
+            });
+
+            if found {
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-footprint-link-issues",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Assigned footprint ({}) doesn't match footprint filters ({})",
+                    item_name,
+                    lib_symbol.fp_filters.join(" ")
+                ),
+                path: Some(sheet_path.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
+        }
+    }
+
+    diagnostics
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestFieldNameWhitespace()`. This is

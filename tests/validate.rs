@@ -583,6 +583,78 @@ fn erc_allows_similar_local_labels_on_different_sheets() {
 }
 
 #[test]
+fn erc_reports_footprint_filter_mismatches() {
+    let path = temp_schematic(
+        "erc_footprint_filter_mismatch",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (property "ki_fp_filters" "R_* 0603")))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Footprint" "Package_SO:SOIC-8" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-footprint-link-issues"
+            && diagnostic
+                .message
+                .contains("Assigned footprint (soic-8) doesn't match footprint filters (R_* 0603)")
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_allows_matching_footprint_filters() {
+    let path = temp_schematic(
+        "erc_footprint_filter_match",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (property "ki_fp_filters" "R_* 0603")))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Footprint" "Resistor_SMD:R_0603_1608Metric" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-footprint-link-issues"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",
