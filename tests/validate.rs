@@ -1280,6 +1280,106 @@ fn legacy_reused_screens_keep_first_instance_state_until_selected() {
 }
 
 #[test]
+fn legacy_symbol_instances_apply_explicit_empty_value_and_footprint() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_legacy_empty_instances_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20221001)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000201")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "70000000-0000-0000-0000-000000000202")
+    (property "Reference" "R?")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20221001)
+  (generator "eeschema")
+  (uuid "70000000-0000-0000-0000-000000000211")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "70000000-0000-0000-0000-000000000212")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/70000000-0000-0000-0000-000000000212" (page "2")))
+  (symbol_instances
+    (path "/70000000-0000-0000-0000-000000000212/70000000-0000-0000-0000-000000000202"
+      (reference "R1")
+      (unit 1)
+      (value "")
+      (footprint "")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load legacy child");
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let symbol = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("child symbol");
+
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("")
+    );
+    assert_eq!(symbol.instances.len(), 1);
+    assert_eq!(symbol.instances[0].value.as_deref(), Some(""));
+    assert_eq!(symbol.instances[0].footprint.as_deref(), Some(""));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn placed_symbols_start_with_mandatory_fields() {
     let src = r#"(kicad_sch
   (version 20260306)

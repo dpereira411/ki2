@@ -422,6 +422,11 @@ impl SchematicLoader {
         }
     }
 
+    // Upstream parity: loader-side `UpdateSymbolInstanceData` analogue for legacy
+    // root `symbol_instances` (< 20221002). This is not a 1:1 upstream function boundary because
+    // the local loader keeps the surrounding sheet-path traversal in Rust-owned helpers, but this
+    // routine owns the legacy root-instance application timing. Remaining divergence is limited to
+    // richer hierarchical-reference state beyond the current symbol/local-instance model.
     fn update_symbol_instance_data(&mut self, root_path: &Path, sheet_paths: &[LoadedSheetPath]) {
         let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
             return;
@@ -475,15 +480,11 @@ impl SchematicLoader {
                 }
 
                 if let Some(value) = instance.value.as_ref() {
-                    if !value.is_empty() {
-                        symbol.set_field_text(PropertyKind::SymbolValue, value.clone());
-                    }
+                    symbol.set_field_text(PropertyKind::SymbolValue, value.clone());
                 }
 
                 if let Some(footprint) = instance.footprint.as_ref() {
-                    if !footprint.is_empty() {
-                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint.clone());
-                    }
+                    symbol.set_field_text(PropertyKind::SymbolFootprint, footprint.clone());
                 }
 
                 let mut local_instance = crate::model::SymbolLocalInstance {

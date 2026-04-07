@@ -300,6 +300,12 @@ parser-only work should be driven elsewhere unless a parent routine exposes a co
 
 Primary goal has changed from full simulation parity to ERC-critical loader parity.
 
+Working strategy has changed with that goal:
+- parser parity was driven bottom-up by dependency because helper/token/ownership leaves controlled
+  parent correctness
+- loader/ERC parity should now be driven in upstream pipeline order, function by function, because
+  the remaining risk is in loaded-screen state transitions rather than missing parser leaves
+
 1. Keep simulation-model work at the end of the backlog. It is not a prerequisite for hierarchy
    loading, current-sheet semantics, intersheet references, or core ERC-visible symbol/sheet state.
 2. Re-open loader/post-load branches that materially affect ERC parity first:
