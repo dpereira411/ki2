@@ -579,6 +579,37 @@ fn erc_reports_undefined_netclasses_from_project_settings() {
 }
 
 #[test]
+fn erc_reports_labels_touching_multiple_wire_segments() {
+    let path = temp_schematic(
+        "erc_label_multiple_wires",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73900000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (label "L" (at 0 0 0))
+  (wire (pts (xy -10 0) (xy 10 0)))
+  (wire (pts (xy 0 -10) (xy 0 10)))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-label-multiple-wires")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "Label connects more than one wire at 0, 0"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)

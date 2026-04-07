@@ -1,9 +1,10 @@
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
-    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
-    resolved_sheet_text_state, resolved_symbol_text_state,
+    collect_wire_segments, point_on_wire_segment, points_equal, resolve_cross_reference_text_var,
+    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
+    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
+    resolved_symbol_text_state,
 };
 use crate::model::{Property, SchItem};
 use std::collections::BTreeMap;
@@ -21,6 +22,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_multiunit_footprints(project));
     diagnostics.extend(check_missing_netclasses(project));
     diagnostics.extend(check_missing_units(project));
+    diagnostics.extend(check_label_multiple_wires(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -812,6 +814,64 @@ pub fn check_missing_netclasses(project: &SchematicProject) -> Vec<Diagnostic> {
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestLabelMultipleWires()`. This is not
+// a 1:1 KiCad overlapping-item pass because the current tree still uses reduced wire-segment
+// geometry instead of a full connection-point graph, but it preserves the exercised local-label
+// rule: a label touching more than one non-endpoint wire segment is an ERC error. Remaining
+// divergence is the broader connection-point snapshot needed by the later connectivity routines.
+pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        let wire_segments = collect_wire_segments(schematic);
+
+        for item in &schematic.screen.items {
+            let SchItem::Label(label) = item else {
+                continue;
+            };
+
+            if label.kind != crate::model::LabelKind::Local {
+                continue;
+            }
+
+            let touching_segments = wire_segments
+                .iter()
+                .filter(|segment| {
+                    point_on_wire_segment(label.at, segment[0], segment[1])
+                        && !points_equal(label.at, segment[0])
+                        && !points_equal(label.at, segment[1])
+                })
+                .count();
+
+            if touching_segments > 1 {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-label-multiple-wires",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Label connects more than one wire at {}, {}",
+                        label.at[0], label.at[1]
+                    ),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
             }
         }
     }

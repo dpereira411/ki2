@@ -390,16 +390,18 @@ What remains after that correction:
       - remaining likely blockers for fuller `TestTextVars()` parity are:
         - drawing-sheet text coverage
       - next upstream ERC blocker cluster is the first connection-point routines:
-        - `TestLabelMultipleWires()`
         - `TestFourWayJunction()`
         - `TestNoConnectPins()`
+        - `TestPinToPin()`
+      - reduced local `ERC_TESTER::TestLabelMultipleWires()` analogue is now implemented and
+        tested on the reduced wire-segment geometry path
       - direct upstream audit shows those routines all depend on real per-item connection-point
         enumeration across pins, labels, wires, junctions, and no-connect markers
       - concrete unblock path:
         1. add a reduced current-sheet connection-point snapshot keyed by loaded sheet path and XY
         2. feed it from symbol pins, labels, wire endpoints/midpoints, junctions, and no-connects
-        3. port the first three connection-point ERC routines onto that shared snapshot before
-           attempting `TestPinToPin()`
+        3. port `TestFourWayJunction()` and `TestNoConnectPins()` onto that shared snapshot before
+           attempting the fuller `TestPinToPin()` conflict matrix
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
       - the reduced cache now also respects parsed rectangle corner radius instead of running

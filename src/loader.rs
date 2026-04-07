@@ -4025,11 +4025,11 @@ pub(crate) fn resolve_cross_reference_text_var(
     Some(format!("<Unknown reference: {reference}>"))
 }
 
-fn points_equal(a: [f64; 2], b: [f64; 2]) -> bool {
+pub(crate) fn points_equal(a: [f64; 2], b: [f64; 2]) -> bool {
     (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9
 }
 
-fn point_on_wire_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
+pub(crate) fn point_on_wire_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
     let dx = end[0] - start[0];
     let dy = end[1] - start[1];
     let px = point[0] - start[0];
@@ -4057,7 +4057,7 @@ fn short_net_name(net_name: &str) -> String {
         .to_string()
 }
 
-fn collect_wire_segments(schematic: &Schematic) -> Vec<[[f64; 2]; 2]> {
+pub(crate) fn collect_wire_segments(schematic: &Schematic) -> Vec<[[f64; 2]; 2]> {
     let mut segments = Vec::new();
 
     for item in &schematic.screen.items {

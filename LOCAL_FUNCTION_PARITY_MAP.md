@@ -67,12 +67,14 @@ Current ERC blocker:
   `ERC_TESTER::TestTextVars()` divergence:
   - drawing-sheet text coverage
 - next upstream ERC blocker cluster after the current reduced text-vars gap is:
-  - `ERC_TESTER::TestLabelMultipleWires()`
   - `ERC_TESTER::TestFourWayJunction()`
   - `ERC_TESTER::TestNoConnectPins()`
+  - `ERC_TESTER::TestPinToPin()`
+- reduced `ERC_TESTER::TestLabelMultipleWires()` analogue is live on the reduced wire-segment
+  geometry path
 - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`:
   - reduced current-sheet connection-point snapshot
-  - then the first three connection-point ERC routines on top of it
+  - then `TestFourWayJunction()` / `TestNoConnectPins()` before the fuller pin-conflict matrix
 - direct re-audit did not find another honest branch-level mismatch in
   `UpdateAllScreenReferences`, `UpdateSymbolInstanceData`, or `UpdateSheetInstanceData`
 - the remaining executable gap is model-shaped: the loader has no notion of an active variant per
