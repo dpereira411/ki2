@@ -368,6 +368,8 @@ What remains after that correction:
         for same-screen case-insensitive sheet-name collisions
       - reduced local `ERC_TESTER::TestFieldNameWhitespace()` analogue is implemented and tested
         for symbol and sheet fields
+      - reduced local `ERC_TESTER::TestMultiunitFootprints()` analogue is implemented and tested
+        for same-reference footprint mismatches across placed units
       - reduced local `ERC_TESTER::TestTextVars()` analogue is now implemented and tested for the
         exercised loaded-text surfaces:
         - symbol fields
@@ -383,6 +385,7 @@ What remains after that correction:
         the exercised sheet/project/cross-reference/current-sheet connectivity tokens
       - remaining likely blockers for fuller `TestTextVars()` parity are:
         - drawing-sheet text coverage
+      - next upstream ERC routine after that current text-vars divergence is `TestMissingUnits()`
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
       - the reduced cache now also respects parsed rectangle corner radius instead of running

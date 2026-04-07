@@ -53,6 +53,8 @@ Current ERC blocker:
 - first local ERC routine is now implemented:
   - reduced `ERC_TESTER::TestDuplicateSheetNames()` analogue is live and tested for same-screen
     case-insensitive sheet-name collisions
+  - reduced `ERC_TESTER::TestMultiunitFootprints()` analogue is live and tested for
+    same-reference footprint mismatches across placed units
   - reduced `ERC_TESTER::TestTextVars()` analogue is live for symbol fields, linked library text /
     text boxes, label fields, sheet fields, sheet pins, top-level text, top-level text boxes, and
     exercised assertion markers on those item families including linked library text / text boxes
@@ -61,6 +63,7 @@ Current ERC blocker:
 - next active upstream ERC target after that reduced text-vars slice is the remaining
   `ERC_TESTER::TestTextVars()` divergence:
   - drawing-sheet text coverage
+- next upstream ERC routine after the current reduced text-vars gap is `ERC_TESTER::TestMissingUnits()`
 - direct re-audit did not find another honest branch-level mismatch in
   `UpdateAllScreenReferences`, `UpdateSymbolInstanceData`, or `UpdateSheetInstanceData`
 - the remaining executable gap is model-shaped: the loader has no notion of an active variant per

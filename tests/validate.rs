@@ -447,6 +447,46 @@ fn erc_reports_text_assertions_in_linked_library_items() {
 }
 
 #[test]
+fn erc_reports_different_multiunit_footprints() {
+    let path = temp_schematic(
+        "erc_multiunit_footprints",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73600000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:U")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1")
+    (property "Footprint" "Package_SO:SOIC-8"))
+  (symbol
+    (lib_id "Device:U")
+    (at 20 0 0)
+    (unit 2)
+    (property "Reference" "U1")
+    (property "Footprint" "Package_DIP:DIP-8_W7.62mm"))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-different-unit-footprint")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "Different footprints assigned to reference 'U1'"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)

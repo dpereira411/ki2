@@ -6,6 +6,7 @@ use crate::loader::{
     resolved_sheet_text_state, resolved_symbol_text_state,
 };
 use crate::model::{Property, SchItem};
+use std::collections::BTreeMap;
 
 // Upstream parity: local entrypoint for the first implemented `ERC_TESTER` slice. This is not a
 // 1:1 KiCad ERC runner because the current tree still lacks markers, rule matrices, and connection
@@ -17,8 +18,16 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_duplicate_sheet_names(project));
     diagnostics.extend(check_text_assertions(project));
     diagnostics.extend(check_unresolved_text_variables(project));
+    diagnostics.extend(check_multiunit_footprints(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
+}
+
+#[derive(Clone)]
+struct SymbolOccurrence {
+    schematic_path: std::path::PathBuf,
+    reference: String,
+    footprint: String,
 }
 
 fn parse_text_assertion(text: &str) -> Option<(Severity, String)> {
@@ -71,6 +80,45 @@ fn resolved_property_value(properties: &[Property], token: &str) -> Option<Strin
             property_key == canonical
         })
         .map(|property| property.value.clone())
+}
+
+fn collect_symbol_occurrences(project: &SchematicProject) -> Vec<SymbolOccurrence> {
+    let mut occurrences = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let state = resolved_symbol_text_state(
+                symbol,
+                &sheet_path.instance_path,
+                project.current_variant(),
+            );
+            let Some(reference) = resolved_property_value(&state.properties, "Reference") else {
+                continue;
+            };
+            let footprint =
+                resolved_property_value(&state.properties, "Footprint").unwrap_or_default();
+
+            occurrences.push(SymbolOccurrence {
+                schematic_path: schematic.path.clone(),
+                reference,
+                footprint,
+            });
+        }
+    }
+
+    occurrences
 }
 
 fn unresolved_variable_diagnostic(path: &std::path::Path, message: String) -> Diagnostic {
@@ -565,6 +613,53 @@ pub fn check_text_assertions(project: &SchematicProject) -> Vec<Diagnostic> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestMultiunitFootprints()`. This is
+// not a 1:1 KiCad marker/ref-map pass because the current tree still groups through reduced loaded
+// symbol occurrence snapshots instead of `SCH_REFERENCE_LIST`, but it preserves the exercised
+// same-reference footprint mismatch rule. Remaining divergence is richer unit-name/sheet-path
+// marker context.
+pub fn check_multiunit_footprints(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut by_reference: BTreeMap<String, Vec<SymbolOccurrence>> = BTreeMap::new();
+
+    for occurrence in collect_symbol_occurrences(project) {
+        by_reference
+            .entry(occurrence.reference.clone())
+            .or_default()
+            .push(occurrence);
+    }
+
+    for (reference, occurrences) in by_reference {
+        let Some(first_with_footprint) = occurrences
+            .iter()
+            .find(|occurrence| !occurrence.footprint.is_empty())
+        else {
+            continue;
+        };
+
+        for occurrence in occurrences.iter().skip(1) {
+            if occurrence.footprint.is_empty()
+                || occurrence.footprint == first_with_footprint.footprint
+            {
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-different-unit-footprint",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!("Different footprints assigned to reference '{reference}'"),
+                path: Some(occurrence.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 
