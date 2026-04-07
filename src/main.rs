@@ -7,6 +7,7 @@ use ki2::diagnostic::Diagnostic;
 use ki2::diagnostic::Severity;
 use ki2::erc;
 use ki2::loader::load_schematic_tree;
+use ki2::netlist::render_reduced_xml_netlist;
 use ki2::parser::parse_schematic_file;
 use serde_json::json;
 
@@ -19,6 +20,7 @@ fn main() {
     let exit_code = match command.as_str() {
         "validate" => run_validate_command(args.collect()),
         "erc" => run_erc_command(args.collect()),
+        "netlist" => run_netlist_command(args.collect()),
         _ => {
             eprintln!("unknown command: {command}");
             print_usage_and_exit();
@@ -39,6 +41,11 @@ enum ErcReportUnits {
     Millimeters,
     Inches,
     Mils,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NetlistOutputFormat {
+    Xml,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,6 +144,7 @@ fn print_usage_and_exit() -> ! {
         "               [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions]"
     );
     eprintln!("               [--exit-code-violations]");
+    eprintln!("       ki2 netlist <path> [--output <path>] [--format <xml>]");
     std::process::exit(2);
 }
 
@@ -315,6 +323,75 @@ fn run_erc_command(args: Vec<String>) -> i32 {
     } else {
         0
     }
+}
+
+// Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobExportNetlist()`. This
+// is not a 1:1 KiCad jobs/exporter path because the local CLI currently exposes only the first
+// live XML component export slice instead of the full common exporter base and all netlist
+// formats, but it keeps command-owned path/output/format handling on a real netlist subcommand
+// instead of burying early exporter work in test-only helpers.
+fn run_netlist_command(args: Vec<String>) -> i32 {
+    let mut path = None;
+    let mut output = None;
+    let mut format = NetlistOutputFormat::Xml;
+    let mut args = args.into_iter();
+
+    while let Some(arg) = args.next() {
+        if arg == "--output" {
+            let Some(value) = args.next() else {
+                print_usage_and_exit();
+            };
+            output = Some(value);
+        } else if arg == "--format" {
+            let Some(value) = args.next() else {
+                print_usage_and_exit();
+            };
+            format = match value.as_str() {
+                "xml" => NetlistOutputFormat::Xml,
+                _ => {
+                    eprintln!("invalid netlist format");
+                    return 2;
+                }
+            };
+        } else if path.is_none() {
+            path = Some(arg);
+        } else {
+            eprintln!("unexpected argument: {arg}");
+            print_usage_and_exit();
+        }
+    }
+
+    let Some(path) = path else {
+        print_usage_and_exit();
+    };
+
+    let path = PathBuf::from(path);
+    let output_path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| path.with_extension("xml"));
+    let loaded = match load_schematic_tree(&path) {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
+    let project = SchematicProject::from_load_result(loaded);
+    let content = match format {
+        NetlistOutputFormat::Xml => render_reduced_xml_netlist(&project),
+    };
+
+    if let Err(err) = fs::write(&output_path, content) {
+        eprintln!(
+            "failed to write netlist '{}': {}",
+            output_path.display(),
+            err
+        );
+        return 1;
+    }
+
+    println!("wrote netlist {}", output_path.display());
+    0
 }
 
 // Upstream parity: reduced local analogue for `JOB_SCH_ERC` default output-path handling. This is

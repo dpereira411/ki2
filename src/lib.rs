@@ -4,6 +4,7 @@ pub mod erc;
 pub mod error;
 pub mod loader;
 pub mod model;
+pub mod netlist;
 pub mod parser;
 pub mod sexpr;
 pub mod sim;

@@ -346,6 +346,90 @@ fn cli_erc_filters_reported_severities() {
 }
 
 #[test]
+fn cli_netlist_writes_reduced_xml_by_default() {
+    let path = temp_schematic(
+        "cli_netlist_xml",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Footprint" "Resistor_SMD:R_0603" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains(report_path.to_str().expect("report path")));
+
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("<export version=\"E\">"), "{report}");
+    assert!(report.contains("<components>"), "{report}");
+    assert!(report.contains("<comp ref=\"R1\">"), "{report}");
+    assert!(report.contains("<value>10k</value>"), "{report}");
+    assert!(
+        report.contains("<footprint>Resistor_SMD:R_0603</footprint>"),
+        "{report}"
+    );
+    assert!(report.contains("lib=\"Device\""), "{report}");
+    assert!(report.contains("part=\"R\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_netlist_rejects_unknown_formats() {
+    let path = temp_schematic(
+        "cli_netlist_bad_format",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4"))"#,
+    );
+
+    let output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "kicad",
+        ])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        !output.status.success(),
+        "netlist must reject unsupported formats"
+    );
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(stderr.contains("invalid netlist format"), "{stderr}");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",

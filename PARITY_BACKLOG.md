@@ -102,6 +102,17 @@ Still pending for ERC:
   - KiCad `ERC_SETTINGS` severity/pin-map overrides
   - graph-owned pin contexts and marker-selection heuristics
   - broader driver/no-connect/subgraph exactness
+- `ERC_TESTER::TestLibSymbolIssues()` / `ERCE_LIB_SYMBOL_MISMATCH`
+  - blocked on a real symbol-library subsystem:
+    - project symbol-library table rows
+    - disabled/missing-library resolution
+    - external `.kicad_sym` loading
+    - loaded-library symbol lookup by `LIB_ID`
+    - flattened library-symbol comparison against the schematic snapshot
+- `ERC_TESTER::TestFootprintLinkIssues()`
+  - blocked on PCB/CvPcb-side footprint-link state and footprint-library tables
+- `ERC_TESTER::TestSimModelIssues()`
+  - still deferred with the broader sim-model backlog
 
 Current drawing-sheet blocker:
 - the Rust tree now has a reduced worksheet text-item carrier for custom/embedded `tbtext` items
@@ -115,6 +126,31 @@ Current drawing-sheet blocker:
 - the remaining gap is:
   - non-`tbtext` worksheet items
   - fuller drawing-sheet shown-text/painter semantics beyond the reduced token slice
+
+Current ERC unblock paths:
+- library-symbol issues:
+  1. add a typed symbol-library table/project source layer
+  2. add external `.kicad_sym` loading keyed by library nickname and `LIB_ID`
+  3. add reduced library-symbol flatten/compare on top of that loaded symbol source
+- footprint-link issues:
+  1. add a reduced footprint-library table/project source layer
+  2. add reduced footprint-link resolution for symbols with assigned footprints
+  3. only then port the CvPcb-facing mismatch checks
+- fuller pin-to-pin exactness:
+  1. type the exercised ERC settings slice from project JSON
+  2. apply severity/pin-map overrides on top of the current default matrix
+  3. then decide whether the remaining gap is still graph-owned pin context
+
+Current local reality after audit:
+- there is no symbol-library subsystem in this tree today:
+  - no symbol-library table rows
+  - no external `.kicad_sym` loader
+  - no adapter-backed `LoadSymbol( LIB_ID )` equivalent
+- there is no footprint-library / CvPcb-side subsystem in this tree today:
+  - no footprint library table
+  - no footprint-link resolver equivalent
+- do not treat `TestLibSymbolIssues()` or `TestFootprintLinkIssues()` as ordinary loader work until
+  those missing subsystems exist
 
 ### Simulation
 
@@ -133,6 +169,7 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 2. Hierarchy/loading 1:1 sign-off gaps
 3. Netlist/export connectivity parity
    - first local `erc` command is live
+   - first local `netlist --format xml` command is live
    - reduced text-report output, default report-path behavior, JSON output, severity filters,
      report-unit metadata, `--exit-code-violations` behavior, and reduced sheet-grouped report
      structure are live
@@ -490,8 +527,15 @@ Do not treat exporter parity as complete until all of these have been audited ex
 What is already covered indirectly:
 - duplicate sheet names check is implemented on the ERC side
 - much of the hierarchy/current-sheet/variant groundwork is already present
+- reduced XML component export is now live:
+  - occurrence-aware component filtering
+  - reference/value/footprint/datasheet/description export
+  - reduced `libsource`
+  - reduced user-field export
+  - reduced `sheetpath`
 
 What is not yet explicitly tracked as complete:
+- KiCad/default `kicad` netlist CLI surface
 - exporter-base symbol/pin collection parity
 - XML/KiCad netlist structure parity
 - exporter-visible net naming parity
@@ -509,6 +553,21 @@ What is not yet explicitly tracked as complete:
 
 3. Some exporter-visible symbol/unit behavior may still expose occurrence/model reductions once
    exporter audits begin
+
+4. Library/libpart export parity is blocked on the same missing symbol-library subsystem that
+   blocks `ERC_TESTER::TestLibSymbolIssues()`
+
+Current export unblock path:
+1. add the CLI `netlist` command surface in upstream format order
+   - reduced `xml` is now live
+   - `kicad` remains the next format only if the common exporter base is still honest enough
+   - other formats only after a common exporter base exists
+2. build a reduced common exporter base on top of:
+   - current occurrence-aware symbol state
+   - current reduced connectivity/net-name snapshot
+   - current duplicate-pin / multi-unit ERC groundwork
+3. treat library/libpart export as blocked until the symbol-library subsystem exists
+4. only after that add fuller net export and then format-specific writers
 
 ## Hierarchy / Loader Sign-Off Checklist
 
