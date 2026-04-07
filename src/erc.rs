@@ -25,6 +25,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_label_multiple_wires(project));
     diagnostics.extend(check_four_way_junction(project));
     diagnostics.extend(check_no_connect_pins(project));
+    diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -57,6 +58,35 @@ struct ConnectionPointSnapshot {
     members: Vec<ConnectionMember>,
 }
 
+#[derive(Clone, Debug)]
+struct ConnectionComponent {
+    anchor: [f64; 2],
+    members: Vec<ConnectionMember>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReducedPinType {
+    Input = 0,
+    Output = 1,
+    Bidirectional = 2,
+    TriState = 3,
+    Passive = 4,
+    Free = 5,
+    Unspecified = 6,
+    PowerIn = 7,
+    PowerOut = 8,
+    OpenCollector = 9,
+    OpenEmitter = 10,
+    NoConnect = 11,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PinConflict {
+    Ok,
+    Warning,
+    Error,
+}
+
 fn point_key(at: [f64; 2]) -> PointKey {
     PointKey(at[0].to_bits(), at[1].to_bits())
 }
@@ -68,6 +98,66 @@ fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
         (point[0] * cos) - (point[1] * sin),
         (point[0] * sin) + (point[1] * cos),
     ]
+}
+
+fn parse_reduced_pin_type(electrical_type: &str) -> Option<ReducedPinType> {
+    Some(match electrical_type {
+        "input" => ReducedPinType::Input,
+        "output" => ReducedPinType::Output,
+        "bidirectional" => ReducedPinType::Bidirectional,
+        "tri_state" => ReducedPinType::TriState,
+        "passive" => ReducedPinType::Passive,
+        "free" => ReducedPinType::Free,
+        "unspecified" => ReducedPinType::Unspecified,
+        "power_in" => ReducedPinType::PowerIn,
+        "power_out" => ReducedPinType::PowerOut,
+        "open_collector" => ReducedPinType::OpenCollector,
+        "open_emitter" => ReducedPinType::OpenEmitter,
+        "no_connect" => ReducedPinType::NoConnect,
+        _ => return None,
+    })
+}
+
+fn pin_conflict(lhs: ReducedPinType, rhs: ReducedPinType) -> PinConflict {
+    use PinConflict::{Error as Err, Ok, Warning as Warn};
+
+    const MAP: [[PinConflict; 12]; 12] = [
+        [Ok, Ok, Ok, Ok, Ok, Ok, Warn, Ok, Ok, Ok, Ok, Err],
+        [Ok, Err, Ok, Warn, Ok, Ok, Warn, Ok, Err, Err, Err, Err],
+        [Ok, Ok, Ok, Ok, Ok, Ok, Warn, Ok, Warn, Ok, Warn, Err],
+        [Ok, Warn, Ok, Ok, Ok, Ok, Warn, Warn, Err, Warn, Warn, Err],
+        [Ok, Ok, Ok, Ok, Ok, Ok, Warn, Ok, Ok, Ok, Ok, Err],
+        [Ok, Ok, Ok, Ok, Ok, Ok, Ok, Ok, Ok, Ok, Ok, Err],
+        [
+            Warn, Warn, Warn, Warn, Warn, Ok, Warn, Warn, Warn, Warn, Warn, Err,
+        ],
+        [Ok, Ok, Ok, Warn, Ok, Ok, Warn, Ok, Ok, Ok, Ok, Err],
+        [Ok, Err, Warn, Err, Ok, Ok, Warn, Ok, Err, Err, Err, Err],
+        [Ok, Err, Ok, Warn, Ok, Ok, Warn, Ok, Err, Ok, Ok, Err],
+        [Ok, Err, Warn, Warn, Ok, Ok, Warn, Ok, Err, Ok, Ok, Err],
+        [Err, Err, Err, Err, Err, Err, Err, Err, Err, Err, Err, Err],
+    ];
+
+    MAP[lhs as usize][rhs as usize]
+}
+
+fn is_driven_pin_type(pin_type: ReducedPinType) -> bool {
+    matches!(pin_type, ReducedPinType::Input | ReducedPinType::PowerIn)
+}
+
+fn is_normal_driver_pin_type(pin_type: ReducedPinType) -> bool {
+    matches!(
+        pin_type,
+        ReducedPinType::Output
+            | ReducedPinType::PowerOut
+            | ReducedPinType::Passive
+            | ReducedPinType::TriState
+            | ReducedPinType::Bidirectional
+    )
+}
+
+fn is_power_driver_pin_type(pin_type: ReducedPinType) -> bool {
+    pin_type == ReducedPinType::PowerOut
 }
 
 // Upstream parity: reduced local helper for `SCH_SYMBOL::GetPins( &sheet )` point projection. This
@@ -226,6 +316,139 @@ fn collect_connection_points(schematic: &Schematic) -> BTreeMap<PointKey, Connec
     }
 
     snapshot
+}
+
+fn segment_components(segments: &[[[f64; 2]; 2]], junctions: &[[f64; 2]]) -> Vec<Vec<usize>> {
+    let mut components = Vec::new();
+    let mut seen = vec![false; segments.len()];
+
+    for start in 0..segments.len() {
+        if seen[start] {
+            continue;
+        }
+
+        let mut stack = vec![start];
+        let mut component = Vec::new();
+        seen[start] = true;
+
+        while let Some(current) = stack.pop() {
+            component.push(current);
+            let current_segment = segments[current];
+
+            for (candidate, other) in segments.iter().enumerate() {
+                if seen[candidate] {
+                    continue;
+                }
+
+                let shares_endpoint = points_equal(current_segment[0], other[0])
+                    || points_equal(current_segment[0], other[1])
+                    || points_equal(current_segment[1], other[0])
+                    || points_equal(current_segment[1], other[1]);
+                let joined_by_junction = junctions.iter().copied().any(|junction| {
+                    point_on_wire_segment(junction, current_segment[0], current_segment[1])
+                        && point_on_wire_segment(junction, other[0], other[1])
+                });
+
+                if !shares_endpoint && !joined_by_junction {
+                    continue;
+                }
+
+                seen[candidate] = true;
+                stack.push(candidate);
+            }
+        }
+
+        components.push(component);
+    }
+
+    components
+}
+
+struct DisjointSet {
+    parent: Vec<usize>,
+}
+
+impl DisjointSet {
+    fn new(size: usize) -> Self {
+        Self {
+            parent: (0..size).collect(),
+        }
+    }
+
+    fn find(&mut self, index: usize) -> usize {
+        if self.parent[index] != index {
+            let root = self.find(self.parent[index]);
+            self.parent[index] = root;
+        }
+
+        self.parent[index]
+    }
+
+    fn union(&mut self, lhs: usize, rhs: usize) {
+        let lhs_root = self.find(lhs);
+        let rhs_root = self.find(rhs);
+
+        if lhs_root != rhs_root {
+            self.parent[rhs_root] = lhs_root;
+        }
+    }
+}
+
+// Upstream parity: reduced local analogue for the sheet-local connectivity grouping behind
+// `CONNECTION_GRAPH` subgraphs. This is not a 1:1 graph owner because the Rust tree still lacks
+// KiCad's full subgraph/netcode/driver objects. It exists so reduced ERC work can ask "which
+// points/items are on the same net-like component?" instead of repeatedly walking raw wire
+// geometry. Remaining divergence is fuller connection-driver ownership and bus/subgraph semantics.
+fn collect_connection_components(schematic: &Schematic) -> Vec<ConnectionComponent> {
+    let point_snapshot = collect_connection_points(schematic);
+    let points = point_snapshot.into_values().collect::<Vec<_>>();
+    let segments = collect_wire_segments(schematic);
+    let junctions = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction.at),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let segment_components = segment_components(&segments, &junctions);
+
+    let mut dsu = DisjointSet::new(points.len());
+    let mut component_points = BTreeMap::<usize, Vec<usize>>::new();
+
+    for (segment_component_index, segment_component) in segment_components.iter().enumerate() {
+        for (point_index, point) in points.iter().enumerate() {
+            if segment_component.iter().copied().any(|segment_index| {
+                let segment = segments[segment_index];
+                point_on_wire_segment(point.at, segment[0], segment[1])
+            }) {
+                component_points
+                    .entry(segment_component_index)
+                    .or_default()
+                    .push(point_index);
+            }
+        }
+    }
+
+    for point_indexes in component_points.values() {
+        for pair in point_indexes.windows(2) {
+            dsu.union(pair[0], pair[1]);
+        }
+    }
+
+    let mut groups = BTreeMap::<usize, ConnectionComponent>::new();
+
+    for (index, point) in points.into_iter().enumerate() {
+        let root = dsu.find(index);
+        let entry = groups.entry(root).or_insert_with(|| ConnectionComponent {
+            anchor: point.at,
+            members: Vec::new(),
+        });
+        entry.members.extend(point.members);
+    }
+
+    groups.into_values().collect()
 }
 
 #[derive(Clone)]
@@ -1183,6 +1406,117 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                 line: None,
                 column: None,
             });
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestPinToPin()`. This is not a 1:1
+// KiCad pin-matrix runner because the Rust tree still lacks `ERC_SETTINGS`, graph-owned pin
+// contexts, marker placement heuristics, and the full connection graph. It exists so the current
+// ERC path can start using upstream default pin-type conflict semantics on reduced same-net
+// components instead of stopping at point-local checks. Remaining divergence is richer settings,
+// driver-missing reporting, and full subgraph ownership.
+pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for component in collect_connection_components(schematic) {
+            let pins = component
+                .members
+                .iter()
+                .filter(|member| member.kind == ConnectionMemberKind::SymbolPin)
+                .filter_map(|member| {
+                    parse_reduced_pin_type(member.electrical_type.as_deref()?)
+                        .map(|pin_type| (member.at, pin_type))
+                })
+                .collect::<Vec<_>>();
+
+            if pins.len() < 2 {
+                continue;
+            }
+
+            let is_power_net = pins
+                .iter()
+                .any(|(_, pin_type)| *pin_type == ReducedPinType::PowerIn);
+            let has_driver = pins.iter().any(|(_, pin_type)| {
+                if is_power_net {
+                    is_power_driver_pin_type(*pin_type)
+                } else {
+                    is_normal_driver_pin_type(*pin_type)
+                }
+            });
+            let has_noconnect = component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker);
+
+            for (index, (_at, lhs_type)) in pins.iter().enumerate() {
+                for (_, rhs_type) in pins.iter().skip(index + 1) {
+                    let conflict = pin_conflict(*lhs_type, *rhs_type);
+                    if conflict == PinConflict::Ok {
+                        continue;
+                    }
+
+                    diagnostics.push(Diagnostic {
+                        severity: match conflict {
+                            PinConflict::Warning => Severity::Warning,
+                            PinConflict::Error => Severity::Error,
+                            PinConflict::Ok => continue,
+                        },
+                        code: match conflict {
+                            PinConflict::Warning => "erc-pin-to-pin-warning",
+                            PinConflict::Error => "erc-pin-to-pin-error",
+                            PinConflict::Ok => continue,
+                        },
+                        kind: crate::diagnostic::DiagnosticKind::Validation,
+                        message: format!(
+                            "Conflicting pins connected at {}, {}",
+                            component.anchor[0], component.anchor[1]
+                        ),
+                        path: Some(schematic.path.clone()),
+                        span: None,
+                        line: None,
+                        column: None,
+                    });
+                    break;
+                }
+            }
+
+            if has_driver || has_noconnect {
+                continue;
+            }
+
+            if let Some((_, pin_type)) = pins
+                .iter()
+                .find(|(_, pin_type)| is_driven_pin_type(*pin_type))
+            {
+                let article = if *pin_type == ReducedPinType::PowerIn {
+                    "Power input pin is not driven"
+                } else {
+                    "Input pin is not driven"
+                };
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "erc-missing-driver",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: article.to_string(),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
         }
     }
 

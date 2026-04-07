@@ -83,10 +83,14 @@ Implemented reduced analogues:
 - `ERC_TESTER::TestLabelMultipleWires()`
 - `ERC_TESTER::TestFourWayJunction()`
 - `ERC_TESTER::TestNoConnectPins()`
+- `ERC_TESTER::TestPinToPin()` reduced default-matrix slice
 
 Still pending for ERC:
-- `ERC_TESTER::TestPinToPin()`
 - remaining drawing-sheet slice of `ERC_TESTER::TestTextVars()`
+- fuller `TestPinToPin()` exactness:
+  - KiCad `ERC_SETTINGS` severity/pin-map overrides
+  - graph-owned pin contexts and marker-selection heuristics
+  - broader driver/no-connect/subgraph exactness
 
 ### Simulation
 
@@ -101,11 +105,10 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 
 1. Reduced current-sheet connectivity snapshot
 2. `NET_NAME` / `SHORT_NET_NAME` / `NET_CLASS` connection-backed parity
-3. `ERC_TESTER::TestPinToPin()`
-4. Remaining drawing-sheet `TestTextVars()` coverage
-5. Hierarchy/loading 1:1 sign-off gaps
-6. Final parser diagnostic wording polish
-7. Simulation-model parity last
+3. Remaining drawing-sheet `TestTextVars()` coverage
+4. Hierarchy/loading 1:1 sign-off gaps
+5. Final parser diagnostic wording polish
+6. Simulation-model parity last
 
 ## Connectivity Graph Requirements
 
@@ -193,11 +196,15 @@ Current status:
 - it is already used by:
   - reduced `ERC_TESTER::TestFourWayJunction()`
   - reduced `ERC_TESTER::TestNoConnectPins()`
+  - reduced `ERC_TESTER::TestPinToPin()`
 
 Remaining divergence:
 - this is still not a full KiCad `CONNECTION_GRAPH`
 - it still lacks subgraph ownership, driver resolution, and the broader graph-owned item model
-- the next real consumer is the pin-conflict matrix behind `TestPinToPin()`
+- the next real consumers are:
+  - fuller connection-backed shown-text precedence
+  - hierarchy/loading sign-off on connectivity-backed state
+  - fuller pin-matrix/settings exactness beyond the reduced default slice
 
 ### What Full KiCad Connectivity Is Used For
 
@@ -240,8 +247,9 @@ Current status:
 - step 1 is done
 - reduced four-way junction coverage is done
 - reduced no-connect pin coverage is done
-- the next missing dependency is step 2: reduced same-net / connected-component ownership for
-  pin-to-pin conflict checks
+- reduced same-net / connected-component ownership is now live for the exercised ERC slice
+- reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
+- the remaining gap is fuller KiCad settings/subgraph exactness, not absence of the rule
 
 ## Net Naming / CLI Requirements
 
@@ -501,9 +509,12 @@ Unblock path:
 3. use that snapshot for `TestNoConnectPins()`
    - done
 4. group the same points into reduced connected components
+   - done for the exercised ERC slice
 5. resolve effective same-net ownership on those components
+   - done for reduced ERC pin conflicts
 6. expose that reduced ownership to shown-text and ERC
-7. port `TestPinToPin()`
+7. tighten fuller `TestPinToPin()` settings/subgraph exactness only if real KiCad divergence is
+   found
 
 ### Blocker: Hierarchy loading is not yet fully 1:1 signed off
 
