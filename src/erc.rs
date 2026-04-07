@@ -137,6 +137,46 @@ fn shown_symbol_property_text(
     )
 }
 
+fn shown_lib_draw_text(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+    symbol: &crate::model::Symbol,
+    text: &str,
+) -> String {
+    let state =
+        resolved_symbol_text_state(symbol, &sheet_path.instance_path, project.current_variant());
+
+    resolve_text_variables(
+        text,
+        &|token| {
+            if token.contains(':') {
+                if let Some(value) = resolve_cross_reference_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.current_variant(),
+                    token,
+                ) {
+                    return Some(value);
+                }
+            }
+
+            resolved_property_value(&state.properties, token).or_else(|| {
+                resolve_sheet_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    token,
+                    1,
+                )
+            })
+        },
+        0,
+    )
+}
+
 fn shown_sheet_property_text(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
@@ -241,10 +281,10 @@ fn shown_text_item_text(
 
 // Upstream parity: reduced local analogue for the exercised unresolved-variable half of
 // `ERC_TESTER::TestTextVars()`. This is not a 1:1 KiCad marker pass because the current tree still
-// reports plain diagnostics, still lacks drawing-sheet text coverage, and does not yet walk
-// library-child text/textboxes under symbols. It exists so ERC now checks the real loaded
-// symbol/sheet/label/text/textbox/sheet-pin shown-text paths that this tree already exercises.
-// Remaining divergence is the broader unported lib-child and drawing-sheet resolver surface.
+// reports plain diagnostics and still lacks drawing-sheet text coverage. It exists so ERC now
+// checks the real loaded symbol/sheet/label/text/textbox/sheet-pin and linked-lib-text shown-text
+// paths that this tree already exercises. Remaining divergence is the broader unported
+// drawing-sheet resolver surface.
 pub fn check_unresolved_text_variables(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -272,6 +312,32 @@ pub fn check_unresolved_text_variables(project: &SchematicProject) -> Vec<Diagno
                                     property.key
                                 ),
                             ));
+                        }
+                    }
+
+                    if let Some(lib_symbol) = symbol.lib_symbol.as_ref() {
+                        for draw_item in lib_symbol
+                            .units
+                            .iter()
+                            .flat_map(|unit| unit.draw_items.iter())
+                            .filter(|draw_item| {
+                                matches!(draw_item.kind.as_str(), "text" | "text_box")
+                            })
+                        {
+                            let Some(text) = draw_item.text.as_deref() else {
+                                continue;
+                            };
+                            let shown = shown_lib_draw_text(project, sheet_path, symbol, text);
+
+                            if shown.contains("${") {
+                                diagnostics.push(unresolved_variable_diagnostic(
+                                    &schematic.path,
+                                    format!(
+                                        "Unresolved text variable in library {}",
+                                        draw_item.kind
+                                    ),
+                                ));
+                            }
                         }
                     }
                 }

@@ -365,6 +365,47 @@ fn erc_reports_text_assertions_on_exercised_items() {
 }
 
 #[test]
+fn erc_reports_unresolved_text_variables_in_linked_library_items() {
+    let path = temp_schematic(
+        "erc_unresolved_lib_text",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73400000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R")
+      (property "Value" "R")
+      (symbol "R_1_1"
+        (text "${UNKNOWN_LIB_TEXT}" (at 0 0 0))
+        (text_box "${UNKNOWN_LIB_BOX}" (at 0 10 0) (size 5 5)))))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-unresolved-variable")
+        .collect::<Vec<_>>();
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.message == "Unresolved text variable in library text" })
+    );
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Unresolved text variable in library text_box"
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn rejects_quoted_core_grammar_keyword_heads() {
     let quoted_root = r#"("kicad_sch"
   (version 20260306)

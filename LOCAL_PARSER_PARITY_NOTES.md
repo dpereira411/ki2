@@ -371,6 +371,7 @@ What remains after that correction:
       - reduced local `ERC_TESTER::TestTextVars()` analogue is now implemented and tested for the
         exercised loaded-text surfaces:
         - symbol fields
+        - linked library text / text boxes on placed symbols
         - label fields
         - sheet fields
         - sheet pins
@@ -380,8 +381,8 @@ What remains after that correction:
       - unblock path there is narrower than before because the reduced shown-text path now covers
         the exercised sheet/project/cross-reference/current-sheet connectivity tokens
       - remaining likely blockers for fuller `TestTextVars()` parity are:
-        - lib-child text / text box coverage under symbols
         - drawing-sheet text coverage
+        - lib-child assertion markers
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
       - the reduced cache now also respects parsed rectangle corner radius instead of running
