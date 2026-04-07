@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
-use kiutils_sexpr::Span;
 use uuid::Uuid;
 
 use crate::diagnostic::Diagnostic;
@@ -16,6 +15,7 @@ use crate::model::{
     Symbol, SymbolInstance, SymbolLocalInstance, SymbolPin, Table, TableCell, Text, TextBox,
     TextEffects, TextHJustify, TextKind, TextVJustify, TitleBlock,
 };
+use crate::sexpr::{ParseError, Span};
 use crate::token::{AtomClass, TokKind, Token, lex};
 
 const SEXPR_SCHEMATIC_FILE_VERSION: i32 = 20260306;
@@ -249,12 +249,16 @@ pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
     KiCadSchematicParser::new(path.to_path_buf(), raw, tokens).parse_schematic()
 }
 
-fn sexpr_error_location(raw: &str, source: &kiutils_sexpr::ParseError) -> String {
+// Upstream parity: local render helper for lexer parse errors. This is not a 1:1 KiCad routine
+// because the Rust CLI surfaces byte-oriented lexer failures directly, but it stays needed to
+// keep local `Error::SExpr` locations aligned with the parser's line/column diagnostics.
+fn sexpr_error_location(raw: &str, source: &ParseError) -> String {
     let offset = match source {
-        kiutils_sexpr::ParseError::UnexpectedToken(offset)
-        | kiutils_sexpr::ParseError::MaxNestingExceeded(offset) => Some(*offset),
-        kiutils_sexpr::ParseError::UnexpectedEof => Some(raw.len()),
-        kiutils_sexpr::ParseError::ExpectedSingleRoot(_) => None,
+        ParseError::UnexpectedToken(offset) | ParseError::MaxNestingExceeded(offset) => {
+            Some(*offset)
+        }
+        ParseError::UnexpectedEof => Some(raw.len()),
+        ParseError::ExpectedSingleRoot(_) => None,
     };
 
     let Some(offset) = offset else {

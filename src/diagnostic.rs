@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use kiutils_sexpr::Span;
+use crate::sexpr::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {

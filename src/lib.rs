@@ -4,5 +4,6 @@ pub mod error;
 pub mod loader;
 pub mod model;
 pub mod parser;
+pub mod sexpr;
 pub mod sim;
 mod token;

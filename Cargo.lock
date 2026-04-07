@@ -252,17 +252,9 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "image",
- "kiutils_sexpr",
  "serde_json",
  "thiserror",
  "uuid",
-]
-
-[[package]]
-name = "kiutils_sexpr"
-version = "0.1.1"
-dependencies = [
- "thiserror",
 ]
 
 [[package]]

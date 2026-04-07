@@ -1,4 +1,4 @@
-use kiutils_sexpr::Span;
+use crate::sexpr::{ParseError, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AtomClass {
@@ -410,16 +410,16 @@ fn is_schematic_keyword(text: &str) -> bool {
     )
 }
 
-pub fn lex(input: &str) -> Result<Vec<Token>, kiutils_sexpr::ParseError> {
+pub fn lex(input: &str) -> Result<Vec<Token>, ParseError> {
     let knows_bar = prescan_version(input).unwrap_or(0) >= VERSION_KNOWS_BAR;
     lex_with_bar(input, knows_bar)
 }
 
-fn decode_quoted_escape(bytes: &[u8], i: &mut usize) -> Result<Vec<u8>, kiutils_sexpr::ParseError> {
+fn decode_quoted_escape(bytes: &[u8], i: &mut usize) -> Result<Vec<u8>, ParseError> {
     *i += 1;
 
     if *i >= bytes.len() {
-        return Err(kiutils_sexpr::ParseError::UnexpectedEof);
+        return Err(ParseError::UnexpectedEof);
     }
 
     let escape = bytes[*i];
@@ -448,10 +448,10 @@ fn decode_quoted_escape(bytes: &[u8], i: &mut usize) -> Result<Vec<u8>, kiutils_
             if hex_end > hex_start {
                 *i = hex_end;
                 let hex = std::str::from_utf8(&bytes[hex_start..hex_end])
-                    .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(hex_start))?;
+                    .map_err(|_| ParseError::UnexpectedToken(hex_start))?;
                 vec![
                     u8::from_str_radix(hex, 16)
-                        .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(hex_start))?,
+                        .map_err(|_| ParseError::UnexpectedToken(hex_start))?,
                 ]
             } else {
                 vec![b'x']
@@ -471,10 +471,10 @@ fn decode_quoted_escape(bytes: &[u8], i: &mut usize) -> Result<Vec<u8>, kiutils_
             if oct_end > oct_start {
                 *i = oct_end;
                 let oct = std::str::from_utf8(&bytes[oct_start..oct_end])
-                    .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(oct_start))?;
+                    .map_err(|_| ParseError::UnexpectedToken(oct_start))?;
                 vec![
                     u8::from_str_radix(oct, 8)
-                        .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(oct_start))?,
+                        .map_err(|_| ParseError::UnexpectedToken(oct_start))?,
                 ]
             } else {
                 vec![b'\\', other]
@@ -485,7 +485,7 @@ fn decode_quoted_escape(bytes: &[u8], i: &mut usize) -> Result<Vec<u8>, kiutils_
     Ok(decoded)
 }
 
-fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexpr::ParseError> {
+fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, ParseError> {
     let bytes = input.as_bytes();
     let mut i = 0usize;
     let mut tokens = Vec::new();
@@ -538,7 +538,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                         b'"' => {
                             i += 1;
                             let text = String::from_utf8(out)
-                                .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(start))?;
+                                .map_err(|_| ParseError::UnexpectedToken(start))?;
                             tokens.push(Token {
                                 kind: TokKind::Atom(text),
                                 atom_class: Some(AtomClass::Quoted),
@@ -549,7 +549,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                             break;
                         }
                         b'\n' | b'\r' => {
-                            return Err(kiutils_sexpr::ParseError::UnexpectedEof);
+                            return Err(ParseError::UnexpectedEof);
                         }
                         other => {
                             out.push(other);
@@ -558,7 +558,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                     }
                 }
                 if !closed {
-                    return Err(kiutils_sexpr::ParseError::UnexpectedEof);
+                    return Err(ParseError::UnexpectedEof);
                 }
             }
             b'|' if knows_bar => {
@@ -583,10 +583,10 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
                     i += 1;
                 }
                 if start == i {
-                    return Err(kiutils_sexpr::ParseError::UnexpectedToken(i));
+                    return Err(ParseError::UnexpectedToken(i));
                 }
                 let text = String::from_utf8(bytes[start..i].to_vec())
-                    .map_err(|_| kiutils_sexpr::ParseError::UnexpectedToken(start))?;
+                    .map_err(|_| ParseError::UnexpectedToken(start))?;
                 let atom_class = if is_dsn_number(&text) {
                     AtomClass::Number
                 } else {
@@ -617,7 +617,7 @@ fn lex_with_bar(input: &str, knows_bar: bool) -> Result<Vec<Token>, kiutils_sexp
 
 #[cfg(test)]
 mod tests {
-    use super::{AtomClass, TokKind, is_dsn_number, lex, prescan_version};
+    use super::{AtomClass, ParseError, TokKind, is_dsn_number, lex, prescan_version};
 
     #[test]
     fn prescan_version_skips_fake_version_text_inside_quotes() {
@@ -675,7 +675,7 @@ mod tests {
     #[test]
     fn lex_rejects_raw_newlines_inside_quoted_atoms() {
         let err = lex("(text \"line1\nline2\")").expect_err("lex must reject raw newline");
-        assert_eq!(err, kiutils_sexpr::ParseError::UnexpectedEof);
+        assert_eq!(err, ParseError::UnexpectedEof);
     }
 
     #[test]

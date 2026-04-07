@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::diagnostic::Diagnostic;
+use crate::sexpr::ParseError;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -17,7 +18,7 @@ pub enum Error {
         path: PathBuf,
         location: String,
         #[source]
-        source: kiutils_sexpr::ParseError,
+        source: ParseError,
     },
     #[error(
         "parse error at {path}{span_suffix}: {message}",
