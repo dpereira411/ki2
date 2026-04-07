@@ -8913,6 +8913,96 @@ fn load_tree_marks_control_source_sim_fields_as_built_in() {
 }
 
 #[test]
+fn load_tree_hydrates_control_source_sim_model_from_value() {
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000931")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:E"
+      (symbol "E_1_1"
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "+" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "-" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "C+" (effects (font (size 1.27 1.27))))
+          (number "3" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 0 0) (length 2.54)
+          (name "C-" (effects (font (size 1.27 1.27))))
+          (number "4" (effects (font (size 1.27 1.27))))))))
+  (symbol
+    (lib_id "Device:E")
+    (property "Reference" "E?")
+    (property "Value" "2")
+    (property "Sim.Device" "E")
+    (at 1 2 0))
+)"#;
+    let path = temp_schematic("loader_hydrates_control_source_sim_model_from_value", src);
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.origin),
+        Some(SimModelOrigin::BuiltIn)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.stored_value.as_deref()),
+        Some("2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.params.as_deref()),
+        Some("gain=2")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.pin_pairs.clone()),
+        Some(vec![
+            ("1".to_string(), "+".to_string()),
+            ("2".to_string(), "-".to_string()),
+            ("3".to_string(), "C+".to_string()),
+            ("4".to_string(), "C-".to_string()),
+        ])
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn load_tree_keeps_invalid_sim_pairs_on_field_origin() {
     let src = r#"(kicad_sch
   (version 20260306)
@@ -9399,7 +9489,7 @@ fn load_tree_hydrates_current_resistor_sim_model_from_value() {
             .sim_model
             .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
-        None
+        Some("r=10k")
     );
     assert_eq!(
         symbol
@@ -9499,7 +9589,7 @@ fn load_tree_hydrates_current_dc_source_sim_model_from_value() {
             .sim_model
             .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
-        None
+        Some("dc=1")
     );
     assert_eq!(
         symbol

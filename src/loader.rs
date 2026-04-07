@@ -1751,10 +1751,6 @@ fn infer_symbol_sim_model(symbol: &mut Symbol) -> bool {
 fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
     let source_pins = symbol_source_pin_numbers(symbol);
 
-    if source_pins.len() != 2 {
-        return false;
-    }
-
     let Some(sim_model) = symbol.sim_model.as_mut() else {
         return false;
     };
@@ -1794,6 +1790,14 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
             }
 
             sim_model.param_values = sim_model.param_pairs.iter().cloned().collect();
+            sim_model.params = (!sim_model.param_pairs.is_empty()).then(|| {
+                sim_model
+                    .param_pairs
+                    .iter()
+                    .map(|(param_name, param_value)| format_sim_param_pair(param_name, param_value))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            });
             sim_model.value_binding = Some(crate::model::SimValueBinding::Value);
             sim_model.stored_value = Some(value.to_string());
         };
@@ -1803,6 +1807,10 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
         sim_model.model_type.as_deref().map(str::trim),
     ) {
         (Some("R") | Some("C") | Some("L"), None | Some("")) => {
+            if source_pins.len() != 2 {
+                return defaulted_pins;
+            }
+
             if sim_model.value_binding.is_some() {
                 return defaulted_pins;
             }
@@ -1818,6 +1826,10 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
             );
         }
         (Some("V") | Some("I"), None | Some("") | Some("DC")) => {
+            if source_pins.len() != 2 {
+                return defaulted_pins;
+            }
+
             if sim_model.value_binding.is_some() {
                 return defaulted_pins;
             }
@@ -1825,6 +1837,17 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
             let (param_name, param_value) = split_inferred_source_value(value);
             sim_model.model_type.get_or_insert_with(|| "DC".to_string());
             upsert_primary_param(sim_model, param_name.to_string(), param_value);
+        }
+        (Some("E") | Some("F") | Some("G") | Some("H"), None | Some("")) => {
+            if sim_model.value_binding.is_some() {
+                return defaulted_pins;
+            }
+
+            let Some(primary_value) = normalize_inferred_si_value(value) else {
+                return defaulted_pins;
+            };
+
+            upsert_primary_param(sim_model, "gain".to_string(), primary_value);
         }
         (
             Some("V") | Some("I"),
@@ -1834,6 +1857,10 @@ fn hydrate_current_value_backed_sim_model(symbol: &mut Symbol) -> bool {
                 | "TRRANDOM",
             ),
         ) => {
+            if source_pins.len() != 2 {
+                return defaulted_pins;
+            }
+
             if sim_model.value_binding.is_some() {
                 return defaulted_pins;
             }
@@ -1904,7 +1931,7 @@ fn maybe_default_current_sim_pins(
     sim_model: &mut crate::model::SimModel,
     source_pins: &[String],
 ) -> bool {
-    if !sim_model.pin_pairs.is_empty() || source_pins.len() != 2 {
+    if !sim_model.pin_pairs.is_empty() {
         return false;
     }
 
@@ -1919,7 +1946,43 @@ fn maybe_default_current_sim_pins(
         ) | (Some("V") | Some("I"), None | Some("") | Some("DC"))
     );
 
-    if should_default_inferred {
+    if should_default_inferred && source_pins.len() == 2 {
+        sim_model.pin_pairs = vec![
+            (source_pins[0].clone(), "+".to_string()),
+            (source_pins[1].clone(), "-".to_string()),
+        ];
+        sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
+        return true;
+    }
+
+    let should_default_control_source = matches!(
+        (
+            sim_model.device.as_deref().map(str::trim),
+            sim_model.model_type.as_deref().map(str::trim),
+        ),
+        (Some("E") | Some("G"), None | Some(""))
+    );
+
+    if should_default_control_source && source_pins.len() == 4 {
+        sim_model.pin_pairs = vec![
+            (source_pins[0].clone(), "+".to_string()),
+            (source_pins[1].clone(), "-".to_string()),
+            (source_pins[2].clone(), "C+".to_string()),
+            (source_pins[3].clone(), "C-".to_string()),
+        ];
+        sim_model.pins = sim_model.pin_pairs.iter().cloned().collect();
+        return true;
+    }
+
+    let should_default_current_control_source = matches!(
+        (
+            sim_model.device.as_deref().map(str::trim),
+            sim_model.model_type.as_deref().map(str::trim),
+        ),
+        (Some("F") | Some("H"), None | Some(""))
+    );
+
+    if should_default_current_control_source && source_pins.len() == 2 {
         sim_model.pin_pairs = vec![
             (source_pins[0].clone(), "+".to_string()),
             (source_pins[1].clone(), "-".to_string()),
@@ -1953,7 +2016,7 @@ fn maybe_default_current_sim_pins(
         )
     );
 
-    if !should_default_internal_source {
+    if !should_default_internal_source || source_pins.len() != 2 {
         return false;
     }
 
