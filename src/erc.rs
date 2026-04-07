@@ -74,11 +74,11 @@ struct ConnectionComponent {
 }
 
 #[derive(Clone, Debug)]
-struct ProjectedSymbolPin {
-    at: [f64; 2],
-    name: Option<String>,
-    number: Option<String>,
-    electrical_type: Option<String>,
+pub(crate) struct ProjectedSymbolPin {
+    pub(crate) at: [f64; 2],
+    pub(crate) name: Option<String>,
+    pub(crate) number: Option<String>,
+    pub(crate) electrical_type: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,7 +216,7 @@ fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
 // stores pins only on linked lib draw items, but it preserves the exercised unit/body-style pin
 // projection and pin text payload needed by ERC checks that reason about pin syntax and duplicate
 // pin-net ownership.
-fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolPin> {
+pub(crate) fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolPin> {
     let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
         return Vec::new();
     };

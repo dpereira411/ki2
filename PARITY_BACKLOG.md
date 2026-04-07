@@ -535,6 +535,8 @@ What is already covered indirectly:
   - reduced `sheetpath`
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
+  - reduced `nets`
+  - reduced node lists from the current point-net resolver
 
 What is not yet explicitly tracked as complete:
 - KiCad/default `kicad` netlist CLI surface

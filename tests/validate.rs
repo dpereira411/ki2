@@ -370,7 +370,11 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     (unit 1)
     (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
     (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))
-    (property "Footprint" "Resistor_SMD:R_0603" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    (property "Footprint" "Resistor_SMD:R_0603" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_IN" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "NET_OUT" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
     );
     let report_path = path.with_extension("xml");
 
@@ -402,6 +406,11 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     assert!(report.contains("<pins>"), "{report}");
     assert!(report.contains("<pin num=\"1\" name=\"~\" />"), "{report}");
     assert!(report.contains("<pin num=\"2\" name=\"~\" />"), "{report}");
+    assert!(report.contains("<nets>"), "{report}");
+    assert!(report.contains("name=\"NET_IN\""), "{report}");
+    assert!(report.contains("name=\"NET_OUT\""), "{report}");
+    assert!(report.contains("<node ref=\"R1\" pin=\"1\""), "{report}");
+    assert!(report.contains("<node ref=\"R1\" pin=\"2\""), "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);

@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use crate::core::SchematicProject;
-use crate::loader::resolved_symbol_text_state;
+use crate::erc::projected_symbol_pin_info;
+use crate::loader::{
+    SymbolPinTextVarKind, resolve_point_connectivity_text_var, resolved_symbol_text_state,
+};
 use crate::model::{Property, SchItem, Symbol};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +29,22 @@ pub struct NetlistLibPart {
     pub fields: Vec<(String, String)>,
     pub footprints: Vec<String>,
     pub pins: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NetlistNode {
+    pub reference: String,
+    pub pin: String,
+    pub pinfunction: String,
+    pub pintype: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistNet {
+    pub code: usize,
+    pub name: String,
+    pub class: String,
+    pub nodes: Vec<NetlistNode>,
 }
 
 fn resolved_property_value(properties: &[Property], token: &str) -> Option<String> {
@@ -112,6 +131,94 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
     }
 
     libparts.into_values().collect()
+}
+
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
+// not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
+// point-net resolver instead of `CONNECTION_GRAPH` subgraphs, but it preserves the exercised
+// current-sheet node grouping, per-pin net/class lookup, and duplicate ref/pin erasure needed by
+// the first live XML netlist slice.
+pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
+    let mut nets = BTreeMap::<String, (String, BTreeMap<(String, String), NetlistNode>)>::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            if !symbol.in_netlist {
+                continue;
+            }
+
+            let state = resolved_symbol_text_state(
+                symbol,
+                &sheet_path.instance_path,
+                project.current_variant(),
+            );
+            let Some(reference) = resolved_property_value(&state.properties, "Reference") else {
+                continue;
+            };
+
+            for pin in projected_symbol_pin_info(symbol) {
+                let Some(pin_number) = pin.number.clone() else {
+                    continue;
+                };
+
+                let net_name = resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    pin.at,
+                    SymbolPinTextVarKind::NetName,
+                )
+                .unwrap_or_default();
+
+                if net_name.is_empty() {
+                    continue;
+                }
+
+                let net_class = resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    pin.at,
+                    SymbolPinTextVarKind::NetClass,
+                )
+                .unwrap_or_default();
+
+                let node = NetlistNode {
+                    reference: reference.clone(),
+                    pin: pin_number.clone(),
+                    pinfunction: pin.name.clone().unwrap_or_else(|| pin_number.clone()),
+                    pintype: pin.electrical_type.clone().unwrap_or_default(),
+                };
+
+                nets.entry(net_name)
+                    .or_insert_with(|| (net_class, BTreeMap::new()))
+                    .1
+                    .insert((reference.clone(), pin_number), node);
+            }
+        }
+    }
+
+    nets.into_iter()
+        .enumerate()
+        .map(|(index, (name, (class, nodes)))| NetlistNet {
+            code: index + 1,
+            name,
+            class,
+            nodes: nodes.into_values().collect(),
+        })
+        .collect()
 }
 
 // Upstream parity: reduced local helper for `NETLIST_EXPORTER_XML::addSymbolFields()` /
@@ -359,6 +466,30 @@ pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
         xml.push_str("    </libpart>\n");
     }
 
-    xml.push_str("  </libparts>\n</export>\n");
+    xml.push_str("  </libparts>\n");
+    xml.push_str("  <nets>\n");
+
+    for net in collect_xml_nets(project) {
+        xml.push_str(&format!(
+            "    <net code=\"{}\" name=\"{}\" class=\"{}\">\n",
+            net.code,
+            escape_xml(&net.name),
+            escape_xml(&net.class)
+        ));
+
+        for node in net.nodes {
+            xml.push_str(&format!(
+                "      <node ref=\"{}\" pin=\"{}\" pinfunction=\"{}\" pintype=\"{}\" />\n",
+                escape_xml(&node.reference),
+                escape_xml(&node.pin),
+                escape_xml(&node.pinfunction),
+                escape_xml(&node.pintype)
+            ));
+        }
+
+        xml.push_str("    </net>\n");
+    }
+
+    xml.push_str("  </nets>\n</export>\n");
     xml
 }
