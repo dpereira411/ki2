@@ -177,8 +177,8 @@ fn cli_erc_reports_violations() {
         .expect("run ki2 erc");
 
     assert!(
-        !output.status.success(),
-        "erc must exit nonzero when violations are present"
+        output.status.success(),
+        "erc must succeed without --exit-code-violations"
     );
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("worksheet-like failure"), "{stdout}");
@@ -188,6 +188,11 @@ fn cli_erc_reports_violations() {
         "{stdout}"
     );
     let report = fs::read_to_string(&report_path).expect("read report");
+    assert!(
+        report.contains("Report includes: error, warning"),
+        "{report}"
+    );
+    assert!(report.contains("Coordinate units: mm"), "{report}");
     assert!(report.contains("worksheet-like failure"), "{report}");
     assert!(report.contains("found 2 violations"), "{report}");
 
@@ -220,15 +225,100 @@ fn cli_erc_writes_json_report() {
         .expect("run ki2 erc");
 
     assert!(
-        !output.status.success(),
-        "erc must exit nonzero when violations are present"
+        output.status.success(),
+        "erc must succeed without --exit-code-violations"
     );
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("found 2 violations"), "{stdout}");
     let report = fs::read_to_string(&report_path).expect("read report");
     let json: serde_json::Value = serde_json::from_str(&report).expect("json report");
+    assert_eq!(
+        json["source"],
+        path.file_name().and_then(|name| name.to_str()).unwrap()
+    );
+    assert_eq!(json["coordinate_units"], "mm");
+    assert_eq!(
+        json["included_severities"],
+        serde_json::json!(["error", "warning"])
+    );
     assert_eq!(json["violation_count"], 2);
     assert_eq!(json["violations"][0]["code"], "erc-generic-error");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_erc_exit_code_violations_matches_flag() {
+    let path = temp_schematic(
+        "cli_erc_exit_code_violations",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (text "${ERC_ERROR exit code failure}" (at 1 2 0) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("erc.rpt");
+
+    let output = Command::new(ki2_binary())
+        .args([
+            "erc",
+            path.to_str().expect("path string"),
+            "--exit-code-violations",
+            "--output",
+            report_path.to_str().expect("report path"),
+        ])
+        .output()
+        .expect("run ki2 erc");
+
+    assert!(
+        !output.status.success(),
+        "erc must exit nonzero when --exit-code-violations is set and violations exist"
+    );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_erc_filters_reported_severities() {
+    let path = temp_schematic(
+        "cli_erc_severity_filter",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (text "${ERC_WARNING warning only}" (at 1 2 0) (effects (font (size 1 1))))
+  (text "${ERC_ERROR error only}" (at 3 4 0) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("erc.rpt");
+
+    let output = Command::new(ki2_binary())
+        .args([
+            "erc",
+            path.to_str().expect("path string"),
+            "--severity-warning",
+            "--units",
+            "in",
+            "--format",
+            "report",
+            "--output",
+            report_path.to_str().expect("report path"),
+        ])
+        .output()
+        .expect("run ki2 erc");
+
+    assert!(output.status.success(), "warning-only erc must succeed");
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("warning only"), "{stdout}");
+    assert!(!stdout.contains("error only"), "{stdout}");
+    assert!(stdout.contains("found 1 violations"), "{stdout}");
+
+    let report = fs::read_to_string(&report_path).expect("read report");
+    assert!(report.contains("Report includes: warning"), "{report}");
+    assert!(report.contains("Coordinate units: in"), "{report}");
+    assert!(report.contains("warning only"), "{report}");
+    assert!(!report.contains("error only"), "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);

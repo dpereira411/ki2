@@ -125,8 +125,13 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 2. Hierarchy/loading 1:1 sign-off gaps
 3. Netlist/export connectivity parity
    - first local `erc` command is live
-   - reduced text-report output, default report-path behavior, and JSON output are live
-   - remaining CLI/report parity is fuller config/severity/format shape, not absence of the command
+   - reduced text-report output, default report-path behavior, JSON output, severity filters,
+     report-unit metadata, and `--exit-code-violations` behavior are live
+   - remaining CLI/report parity is fuller schema/config fidelity:
+     - per-sheet report grouping
+     - ignored-check sections / exclusions
+     - fuller JSON schema fields
+     - KiCad job/config plumbing beyond direct CLI flags
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
 

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use ki2::core::SchematicProject;
 use ki2::diagnostic::Diagnostic;
+use ki2::diagnostic::Severity;
 use ki2::erc;
 use ki2::loader::load_schematic_tree;
 use ki2::parser::parse_schematic_file;
@@ -32,13 +33,109 @@ enum ErcOutputFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ErcReportUnits {
+    Millimeters,
+    Inches,
+    Mils,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ErcSeverityMask {
+    errors: bool,
+    warnings: bool,
+    exclusions: bool,
+}
+
+impl ErcSeverityMask {
+    // Upstream parity: reduced local analogue for `JOB_SCH_ERC` default severity selection. This
+    // is not 1:1 because the local CLI still has no exclusion marker stream, but it preserves the
+    // same default error+warning report set instead of treating every available diagnostic as
+    // implicitly selected configuration.
+    fn default_reported() -> Self {
+        Self {
+            errors: true,
+            warnings: true,
+            exclusions: false,
+        }
+    }
+
+    // Upstream parity: reduced local analogue for `SCH_ERC_COMMAND::doPerform()` severity-flag
+    // folding. This is not 1:1 because local diagnostics still lack exclusion items, but it keeps
+    // the same `--severity-all` versus explicit-flag override shape instead of a repo-local
+    // hand-picked filter policy.
+    fn from_flags(
+        severity_all: bool,
+        severity_error: bool,
+        severity_warning: bool,
+        severity_exclusions: bool,
+    ) -> Self {
+        if severity_all {
+            return Self {
+                errors: true,
+                warnings: true,
+                exclusions: true,
+            };
+        }
+
+        if severity_error || severity_warning || severity_exclusions {
+            return Self {
+                errors: severity_error,
+                warnings: severity_warning,
+                exclusions: severity_exclusions,
+            };
+        }
+
+        Self::default_reported()
+    }
+
+    // Upstream parity: reduced local analogue for `SHEETLIST_ERC_ITEMS_PROVIDER::SetSeverities()`
+    // filtering. This is not a 1:1 provider-backed marker path because the local CLI still
+    // filters plain diagnostics after ERC, but it preserves the exercised error-vs-warning report
+    // selection semantics needed by the job entrypoint.
+    fn includes(self, severity: Severity) -> bool {
+        match severity {
+            Severity::Error => self.errors,
+            Severity::Warning => self.warnings,
+        }
+    }
+
+    // Upstream parity: reduced local analogue for `ERC_REPORT` included-severity metadata. This is
+    // not 1:1 because the local CLI still lacks KiCad's full severity inventory, but it keeps the
+    // report metadata keyed to the actual selected severity mask instead of emitting unlabeled
+    // reduced reports.
+    fn included_labels(self) -> Vec<&'static str> {
+        let mut labels = Vec::new();
+
+        if self.errors {
+            labels.push("error");
+        }
+
+        if self.warnings {
+            labels.push("warning");
+        }
+
+        if self.exclusions {
+            labels.push("exclusion");
+        }
+
+        labels
+    }
+}
+
 // Upstream parity: reduced local analogue for the current `kicad-cli sch` command dispatch. This
 // is not a 1:1 command tree yet because the local binary still exposes flat subcommands instead of
 // KiCad's full job/config layer, but it keeps the exercised validate and ERC paths on explicit
 // command-owned argument parsing instead of ad-hoc test helpers.
 fn print_usage_and_exit() -> ! {
     eprintln!("usage: ki2 validate <path> [--tree]");
-    eprintln!("       ki2 erc <path> [--output <path>] [--format <text|json>]");
+    eprintln!(
+        "       ki2 erc <path> [--output <path>] [--format <report|json>] [--units <in|mm|mils>]"
+    );
+    eprintln!(
+        "               [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions]"
+    );
+    eprintln!("               [--exit-code-violations]");
     std::process::exit(2);
 }
 
@@ -84,13 +181,19 @@ fn run_validate_command(args: Vec<String>) -> i32 {
 
 // Upstream parity: reduced local analogue for KiCad's schematic ERC CLI entrypoint. This is not
 // 1:1 with `EESCHEMA_JOBS_HANDLER::JobSchErc()` because the local binary still lacks KiCad's
-// report writer, severity filters, and unit options, but it now drives the live hierarchy loader
-// and ERC engine through a real command boundary and emits reduced text/JSON reports instead of
-// staying stdout-only.
+// full settings layer and exclusion markers, but it now follows the same command-owned flag flow
+// for format, units, reported severities, and exit-code behavior while still emitting reduced
+// text/JSON reports instead of KiCad's full report schemas.
 fn run_erc_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
     let mut format = ErcOutputFormat::Text;
+    let mut units = ErcReportUnits::Millimeters;
+    let mut severity_all = false;
+    let mut severity_error = false;
+    let mut severity_warning = false;
+    let mut severity_exclusions = false;
+    let mut exit_code_violations = false;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
@@ -104,10 +207,36 @@ fn run_erc_command(args: Vec<String>) -> i32 {
                 print_usage_and_exit();
             };
             format = match value.as_str() {
-                "text" => ErcOutputFormat::Text,
+                "report" | "text" => ErcOutputFormat::Text,
                 "json" => ErcOutputFormat::Json,
-                _ => print_usage_and_exit(),
+                _ => {
+                    eprintln!("invalid report format");
+                    return 2;
+                }
             };
+        } else if arg == "--units" {
+            let Some(value) = args.next() else {
+                print_usage_and_exit();
+            };
+            units = match value.as_str() {
+                "mm" => ErcReportUnits::Millimeters,
+                "in" => ErcReportUnits::Inches,
+                "mils" => ErcReportUnits::Mils,
+                _ => {
+                    eprintln!("invalid units specified");
+                    return 2;
+                }
+            };
+        } else if arg == "--severity-all" {
+            severity_all = true;
+        } else if arg == "--severity-error" {
+            severity_error = true;
+        } else if arg == "--severity-warning" {
+            severity_warning = true;
+        } else if arg == "--severity-exclusions" {
+            severity_exclusions = true;
+        } else if arg == "--exit-code-violations" {
+            exit_code_violations = true;
         } else if path.is_none() {
             path = Some(arg);
         } else {
@@ -128,15 +257,36 @@ fn run_erc_command(args: Vec<String>) -> i32 {
         }
     };
 
+    let severity_mask = ErcSeverityMask::from_flags(
+        severity_all,
+        severity_error,
+        severity_warning,
+        severity_exclusions,
+    );
+
     let project = SchematicProject::from_load_result(loaded);
     let diagnostics = erc::run(&project);
+    let filtered_diagnostics: Vec<Diagnostic> = diagnostics
+        .into_iter()
+        .filter(|diagnostic| severity_mask.includes(diagnostic.severity))
+        .collect();
     let output_path = erc_output_path(&path, output.as_deref(), format);
     let report = match format {
-        ErcOutputFormat::Text => render_erc_text_report(&diagnostics),
-        ErcOutputFormat::Json => render_erc_json_report(&diagnostics),
+        ErcOutputFormat::Text => render_erc_text_report(
+            Path::new(&path),
+            &filtered_diagnostics,
+            units,
+            severity_mask,
+        ),
+        ErcOutputFormat::Json => render_erc_json_report(
+            Path::new(&path),
+            &filtered_diagnostics,
+            units,
+            severity_mask,
+        ),
     };
 
-    for diagnostic in &diagnostics {
+    for diagnostic in &filtered_diagnostics {
         println!(
             "{}:{}:{}: {} [{}]",
             diagnostic
@@ -151,7 +301,7 @@ fn run_erc_command(args: Vec<String>) -> i32 {
         );
     }
 
-    println!("found {} violations", diagnostics.len());
+    println!("found {} violations", filtered_diagnostics.len());
     println!("saved ERC report to {}", output_path.display());
 
     if let Err(err) = fs::write(&output_path, report) {
@@ -159,7 +309,11 @@ fn run_erc_command(args: Vec<String>) -> i32 {
         return 1;
     }
 
-    if diagnostics.is_empty() { 0 } else { 1 }
+    if exit_code_violations && !filtered_diagnostics.is_empty() {
+        1
+    } else {
+        0
+    }
 }
 
 // Upstream parity: reduced local analogue for `JOB_SCH_ERC` default output-path handling. This is
@@ -187,11 +341,41 @@ fn erc_output_path(
     output
 }
 
+// Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobSchErc()` unit handling.
+// This is not a 1:1 KiCad units-provider path because the current text diagnostics do not render
+// coordinates in report units, but the command now preserves KiCad's report-unit selection in the
+// written report metadata instead of dropping the option entirely.
+fn erc_units_label(units: ErcReportUnits) -> &'static str {
+    match units {
+        ErcReportUnits::Millimeters => "mm",
+        ErcReportUnits::Inches => "in",
+        ErcReportUnits::Mils => "mils",
+    }
+}
+
 // Upstream parity: reduced local analogue for KiCad's ERC text-report writer. This is not 1:1
-// with `ERC_REPORT` because the local command still lacks KiCad's units/settings/report sections,
-// but it now writes a stable text artifact instead of leaving ERC results ephemeral on stdout.
-fn render_erc_text_report(diagnostics: &[Diagnostic]) -> String {
+// with `ERC_REPORT` because the local command still lacks KiCad's per-sheet grouping and ignored
+// checks section, but it now records included severities and report units in the artifact instead
+// of leaving them implicit.
+fn render_erc_text_report(
+    input_path: &Path,
+    diagnostics: &[Diagnostic],
+    units: ErcReportUnits,
+    severity_mask: ErcSeverityMask,
+) -> String {
     let mut out = String::new();
+    out.push_str(&format!(
+        "ERC report ({}, Encoding UTF8)\n",
+        input_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown")
+    ));
+    out.push_str(&format!(
+        "Report includes: {}\n",
+        severity_mask.included_labels().join(", ")
+    ));
+    out.push_str(&format!("Coordinate units: {}\n", erc_units_label(units)));
 
     for diagnostic in diagnostics {
         let path = diagnostic
@@ -213,9 +397,17 @@ fn render_erc_text_report(diagnostics: &[Diagnostic]) -> String {
 
 // Upstream parity: reduced local analogue for KiCad's JSON ERC report path. This is not 1:1 with
 // KiCad's JSON schema because the local command still emits only the exercised diagnostic fields,
-// but it now supports the same broad text-vs-JSON report split as the upstream ERC job.
-fn render_erc_json_report(diagnostics: &[Diagnostic]) -> String {
+// but it now records source, included severities, and report units like the upstream ERC job.
+fn render_erc_json_report(
+    input_path: &Path,
+    diagnostics: &[Diagnostic],
+    units: ErcReportUnits,
+    severity_mask: ErcSeverityMask,
+) -> String {
     serde_json::to_string_pretty(&json!({
+        "source": input_path.file_name().and_then(|name| name.to_str()),
+        "coordinate_units": erc_units_label(units),
+        "included_severities": severity_mask.included_labels(),
         "violations": diagnostics.iter().map(|diagnostic| {
             json!({
                 "path": diagnostic.path.as_ref().map(|path| path.display().to_string()),
