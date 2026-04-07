@@ -196,6 +196,45 @@ fn cli_erc_reports_violations() {
 }
 
 #[test]
+fn cli_erc_writes_json_report() {
+    let path = temp_schematic(
+        "cli_erc_json",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (text "${ERC_ERROR json failure}" (at 1 2 0) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("erc.json");
+
+    let output = Command::new(ki2_binary())
+        .args([
+            "erc",
+            path.to_str().expect("path string"),
+            "--format",
+            "json",
+            "--output",
+            report_path.to_str().expect("report path"),
+        ])
+        .output()
+        .expect("run ki2 erc");
+
+    assert!(
+        !output.status.success(),
+        "erc must exit nonzero when violations are present"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("found 2 violations"), "{stdout}");
+    let report = fs::read_to_string(&report_path).expect("read report");
+    let json: serde_json::Value = serde_json::from_str(&report).expect("json report");
+    assert_eq!(json["violation_count"], 2);
+    assert_eq!(json["violations"][0]["code"], "erc-generic-error");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",
