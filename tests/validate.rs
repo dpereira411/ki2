@@ -7242,6 +7242,84 @@ fn intersheet_refs_group_global_labels_by_net_name() {
 }
 
 #[test]
+fn intersheet_refs_group_global_labels_by_sheet_pin_name() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_sheet_pin_net_name_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71450000-0000-0000-0000-000000000999")
+  (paper "A4"))"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71450000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71450000-0000-0000-0000-000000000002")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "OUT_A" output (at 10 5 0)))
+  (wire (pts (xy 10 5) (xy 20 5)))
+  (global_label "${NET_NAME}" (shape input) (at 20 5 0))
+  (sheet
+    (at 0 20)
+    (size 10 10)
+    (uuid "71450000-0000-0000-0000-000000000003")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "OUT_B" output (at 10 25 0)))
+  (wire (pts (xy 10 25) (xy 20 25)))
+  (global_label "${NET_NAME}" (shape input) (at 20 25 0))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71450000-0000-0000-0000-000000000002" (page "2"))
+    (path "/71450000-0000-0000-0000-000000000003" (page "3"))))"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert!(
+        loaded.intersheet_ref_pages_by_label.contains_key("OUT_A"),
+        "{:?}",
+        loaded.intersheet_ref_pages_by_label
+    );
+    assert!(
+        loaded.intersheet_ref_pages_by_label.contains_key("OUT_B"),
+        "{:?}",
+        loaded.intersheet_ref_pages_by_label
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${NET_NAME}")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn intersheet_refs_group_global_labels_by_short_net_name() {
     let dir = env::temp_dir().join(format!(
         "ki2_intersheet_refs_short_net_name_{}",

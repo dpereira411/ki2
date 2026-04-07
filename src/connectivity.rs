@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::loader::{collect_wire_segments, point_on_wire_segment, points_equal};
-use crate::model::{Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, Symbol};
+use crate::model::{
+    Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, SheetPinShape, Symbol,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PointKey(pub(crate) u64, pub(crate) u64);
@@ -526,6 +528,16 @@ fn reduced_label_driver_priority(label: &Label) -> i32 {
     }
 }
 
+fn reduced_sheet_pin_driver_rank(shape: SheetPinShape) -> i32 {
+    match shape {
+        SheetPinShape::Output => 1,
+        SheetPinShape::Input
+        | SheetPinShape::Bidirectional
+        | SheetPinShape::TriState
+        | SheetPinShape::Unspecified => 0,
+    }
+}
+
 fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
     let text = label.text.to_ascii_uppercase();
 
@@ -540,11 +552,14 @@ fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
 // 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, sheet pins, power-pin
 // drivers, and cached `SCH_CONNECTION` objects. It exists so loader shown-text and export paths do
 // not each pick the "first connected label" independently. The current reduced driver ranking is
-// limited to non-directive label kinds on one sheet: global labels outrank local labels, local
-// labels outrank hierarchical labels, equal-priority labels fall back to alphabetical shown text
-// for deterministic parity instead of file order, and labels whose raw text still depends on the
-// reduced connectivity resolver are skipped so the current reduced driver path does not recurse
-// back into itself.
+// limited to the driver kinds the Rust tree can already model on one sheet:
+// - global labels outrank local labels
+// - local labels outrank hierarchical labels
+// - sheet pins participate below labels, with output pins preferred over non-output pins
+// - equal-priority drivers fall back to alphabetical shown text for deterministic parity instead
+//   of file order
+// - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
+//   current reduced driver path does not recurse back into itself
 pub(crate) fn resolve_reduced_net_name_at<F>(
     schematic: &Schematic,
     at: [f64; 2],
@@ -561,33 +576,48 @@ where
         .filter_map(|item| match item {
             SchItem::Label(label)
                 if label.kind != LabelKind::Directive
-                    && !label_uses_connectivity_dependent_text(label) =>
-            {
-                connected_component
-                    .members
-                    .iter()
-                    .any(|member| {
+                    && !label_uses_connectivity_dependent_text(label)
+                    && connected_component.members.iter().any(|member| {
                         member.kind == ConnectionMemberKind::Label
                             && points_equal(member.at, label.at)
-                    })
-                    .then_some(label)
+                    }) =>
+            {
+                let text = shown_label_text(label);
+                Some((reduced_label_driver_priority(label), 0, text))
             }
+            SchItem::Sheet(sheet) => sheet
+                .pins
+                .iter()
+                .filter(|pin| {
+                    connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::SheetPin
+                            && points_equal(member.at, pin.at)
+                    })
+                })
+                .map(|pin| {
+                    (
+                        0,
+                        reduced_sheet_pin_driver_rank(pin.shape),
+                        pin.name.clone(),
+                    )
+                })
+                .max_by(|lhs, rhs| lhs.1.cmp(&rhs.1).then_with(|| rhs.2.cmp(&lhs.2))),
             _ => None,
         })
-        .map(|label| {
-            let text = shown_label_text(label);
-            (reduced_label_driver_priority(label), text)
-        })
-        .filter(|(_, text)| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+        .filter(|(_, _, text)| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
         .collect::<Vec<_>>();
 
-    candidates.sort_by(|(lhs_priority, lhs_text), (rhs_priority, rhs_text)| {
-        rhs_priority
-            .cmp(lhs_priority)
-            .then_with(|| lhs_text.cmp(rhs_text))
-    });
+    candidates.sort_by(
+        |(lhs_priority, lhs_sheet_pin_rank, lhs_text),
+         (rhs_priority, rhs_sheet_pin_rank, rhs_text)| {
+            rhs_priority
+                .cmp(lhs_priority)
+                .then_with(|| rhs_sheet_pin_rank.cmp(lhs_sheet_pin_rank))
+                .then_with(|| lhs_text.cmp(rhs_text))
+        },
+    );
 
-    candidates.into_iter().map(|(_, text)| text).next()
+    candidates.into_iter().map(|(_, _, text)| text).next()
 }
 
 // Upstream parity: reduced local analogue for the driver-netclass lookup side of
