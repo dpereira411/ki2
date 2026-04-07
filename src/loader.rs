@@ -2514,7 +2514,6 @@ fn is_supported_builtin_sim_type(device: &str, model_type: &str) -> bool {
             | "BURSTNOISE" | "RANDUNIFORM" | "RANDGAUSSIAN" | "RANDEXP" | "RANDPOISSON" | "TRNOISE"
             | "TRRANDOM" | "=",
         ) => true,
-        ("IBIS", "DEVICE" | "DCDRIVER" | "RECTDRIVER" | "PRBSDRIVER") => true,
         ("E" | "F" | "G" | "H" | "SUBCKT" | "XSPICE", "") => true,
         _ => false,
     }
