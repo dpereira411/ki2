@@ -626,6 +626,57 @@ fn cli_netlist_uses_default_symbol_pin_net_name() {
 }
 
 #[test]
+fn cli_netlist_prefers_user_net_for_duplicate_pin_numbers() {
+    let path = temp_schematic(
+        "cli_netlist_duplicate_pin_preference",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:DUP"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "DUP" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "DUP_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 0 10 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:DUP")
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUP" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (global_label "USER_NET" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy -10 10) (xy 0 10))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(
+        report.contains("<net code=\"1\" name=\"USER_NET\""),
+        "{report}"
+    );
+    assert!(
+        report.contains("<node ref=\"U1\" pin=\"1\" pinfunction=\"A_1\""),
+        "{report}"
+    );
+    assert!(!report.contains("Net-(U1-Pad1)"), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_expands_stacked_pin_notation() {
     let path = temp_schematic(
         "cli_netlist_stacked_pins",

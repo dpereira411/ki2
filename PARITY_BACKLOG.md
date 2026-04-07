@@ -574,7 +574,8 @@ Formats like OrCAD, CADSTAR, Allegro, and PADS depend mostly on:
 - hierarchy/load parity
 - symbol/unit/pin-list parity
 - resolved net names
-- stable pin ordering and duplicate-pin handling
+- stable pin ordering and remaining full-graph duplicate-pin handling beyond the now-live reduced XML
+  exporter path
 - format-specific text normalization/sorting
 
 These are downstream from the common exporter base plus net naming.
@@ -586,7 +587,8 @@ Do not treat exporter parity as complete until all of these have been audited ex
 1. common exporter base
 - symbol filtering
 - multi-unit collection
-- duplicate-pin erasure
+- duplicate-pin erasure is now live on the reduced XML exporter path; full common-exporter ownership
+  still remains
 
 2. XML / KiCad netlist exporter
 - symbols

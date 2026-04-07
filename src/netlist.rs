@@ -75,6 +75,15 @@ pub struct NetlistDesign {
     pub sheets: Vec<NetlistSheetDesign>,
 }
 
+#[derive(Debug, Clone)]
+struct NetNodeCandidate {
+    net_name: String,
+    net_class: String,
+    has_no_connect: bool,
+    node: NetlistNode,
+    base_pin_key: NetNodeBasePinKey,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct NetNodeBasePinKey {
     symbol_uuid: Option<String>,
@@ -258,6 +267,10 @@ fn str_num_cmp(a: &str, b: &str, ignore_case: bool) -> std::cmp::Ordering {
     }
 }
 
+fn is_auto_generated_net_name(net_name: &str) -> bool {
+    net_name.starts_with("unconnected-(") || net_name.starts_with("Net-(")
+}
+
 // Upstream parity: reduced local analogue for the symbol iteration portion of
 // `NETLIST_EXPORTER_XML::makeSymbols()`. This is not a 1:1 exporter-base walk because the Rust
 // tree still omits libparts and resolved nets, but it preserves the current occurrence-aware
@@ -334,21 +347,14 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
 // not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
 // shared connectivity carrier instead of full `CONNECTION_GRAPH` subgraphs, but it preserves the
-// exercised current-sheet node grouping, per-net net/class lookup, duplicate ref/pin erasure,
-// stacked-pin expansion, and single-node/all-stacked `+no_connect` marking needed by the first
-// live XML netlist slice. Remaining divergence is the fuller KiCad subgraph object model and
-// graph-owned netcode/name caches. Net ordering now follows the upstream `StrNumCmp` path instead
-// of the old lexical `BTreeMap` order.
+// exercised current-sheet node grouping, per-net net/class lookup, exporter-base duplicate
+// ref/pin erasure with user-net preference over auto-generated nets, stacked-pin expansion, and
+// single-node/all-stacked `+no_connect` marking needed by the first live XML netlist slice.
+// Remaining divergence is the fuller KiCad subgraph object model and graph-owned netcode/name
+// caches. Net ordering now follows the upstream `StrNumCmp` path instead of the old lexical
+// `BTreeMap` order.
 pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
-    let mut nets = BTreeMap::<
-        String,
-        (
-            String,
-            bool,
-            BTreeMap<(String, String), NetlistNode>,
-            Vec<NetNodeBasePinKey>,
-        ),
-    >::new();
+    let mut candidates = BTreeMap::<(String, String), NetNodeCandidate>::new();
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -382,17 +388,10 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
             )
             .unwrap_or_default();
 
-            let net_nodes = nets
-                .entry(net_name)
-                .or_insert_with(|| (net_class, false, BTreeMap::new(), Vec::new()));
-
-            if component
+            let has_no_connect = component
                 .members
                 .iter()
-                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker)
-            {
-                net_nodes.1 = true;
-            }
+                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker);
 
             for item in &schematic.screen.items {
                 let SchItem::Symbol(symbol) = item else {
@@ -426,28 +425,27 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                         continue;
                     }
 
-                    let pinfunction = pin.name.clone().and_then(|name| {
+                    let pinfunction_base = pin.name.clone().and_then(|name| {
                         let trimmed = name.trim();
                         (!trimmed.is_empty() && trimmed != "~").then_some(name)
                     });
-                    let (expanded_numbers, stacked_valid) =
-                        expand_stacked_pin_notation(&base_pin_number);
+                    let (expanded_numbers, _) = expand_stacked_pin_notation(&base_pin_number);
                     let base_pin_key = NetNodeBasePinKey {
                         symbol_uuid: symbol.uuid.clone(),
                         at: (pin.at[0].to_bits(), pin.at[1].to_bits()),
                         name: pin.name.clone(),
                     };
-                    net_nodes.3.push(base_pin_key);
+                    let emits_expanded_pinfunction =
+                        pinfunction_base.is_some() || expanded_numbers.len() > 1;
 
                     for pin_number in expanded_numbers {
-                        let pinfunction = if stacked_valid {
-                            match pinfunction.as_ref() {
+                        let pinfunction = if emits_expanded_pinfunction {
+                            match pinfunction_base.as_ref() {
                                 Some(base_name) => Some(format!("{base_name}_{pin_number}")),
-                                None if base_pin_number != pin_number => Some(pin_number.clone()),
-                                None => None,
+                                None => Some(pin_number.clone()),
                             }
                         } else {
-                            pinfunction.clone()
+                            None
                         };
 
                         let node = NetlistNode {
@@ -456,12 +454,55 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                             pinfunction,
                             pintype: pin.electrical_type.clone().unwrap_or_default(),
                         };
+                        let candidate = NetNodeCandidate {
+                            net_name: net_name.clone(),
+                            net_class: net_class.clone(),
+                            has_no_connect,
+                            node,
+                            base_pin_key: base_pin_key.clone(),
+                        };
+                        let key = (reference.clone(), pin_number);
 
-                        net_nodes.2.insert((reference.clone(), pin_number), node);
+                        match candidates.get(&key) {
+                            Some(existing)
+                                if is_auto_generated_net_name(&existing.net_name)
+                                    && !is_auto_generated_net_name(&candidate.net_name) =>
+                            {
+                                candidates.insert(key, candidate);
+                            }
+                            None => {
+                                candidates.insert(key, candidate);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
         }
+    }
+
+    let mut nets = BTreeMap::<
+        String,
+        (
+            String,
+            bool,
+            BTreeMap<(String, String), NetlistNode>,
+            Vec<NetNodeBasePinKey>,
+        ),
+    >::new();
+
+    for ((reference, pin_number), candidate) in candidates {
+        let net_nodes = nets.entry(candidate.net_name).or_insert_with(|| {
+            (
+                candidate.net_class.clone(),
+                false,
+                BTreeMap::new(),
+                Vec::new(),
+            )
+        });
+        net_nodes.1 |= candidate.has_no_connect;
+        net_nodes.2.insert((reference, pin_number), candidate.node);
+        net_nodes.3.push(candidate.base_pin_key);
     }
 
     let mut nets = nets.into_iter().collect::<Vec<_>>();
