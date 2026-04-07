@@ -2588,6 +2588,80 @@ fn erc_reports_connected_no_connect_pins() {
 }
 
 #[test]
+fn erc_reports_labels_connected_to_only_one_pin() {
+    let path = temp_schematic(
+        "erc_label_single_pin",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73925000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:IN"
+      (symbol "IN_1_1"
+        (pin input line
+          (at 0 0 0)
+          (length 2.54)
+          (name "IN")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:IN")
+    (at 0 0 0)
+    (uuid "73925000-0000-0000-0000-000000000002"))
+  (global_label "SIG" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].severity, ki2::diagnostic::Severity::Warning);
+    assert_eq!(
+        diagnostics[0].message,
+        "Label is connected to only one pin at 0, 0"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_local_labels_not_connected_to_pins() {
+    let path = temp_schematic(
+        "erc_label_not_connected",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73926000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (label "SIG" (at 0 0 0) (effects (font (size 1 1))))
+  (label "SIG" (at 10 0 0) (effects (font (size 1 1))))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-label-not-connected")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 2);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity == ki2::diagnostic::Severity::Error)
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_conflicting_pin_types_on_same_net() {
     let path = temp_schematic(
         "erc_pin_to_pin_conflict",

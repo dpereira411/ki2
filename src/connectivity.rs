@@ -40,6 +40,23 @@ pub(crate) struct ConnectionComponent {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct ReducedLabelComponentLabel {
+    pub(crate) at: [f64; 2],
+    pub(crate) kind: LabelKind,
+    pub(crate) dangling: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ReducedLabelComponentSnapshot {
+    pub(crate) anchor: [f64; 2],
+    pub(crate) net_name: Option<String>,
+    pub(crate) pin_count: usize,
+    pub(crate) has_no_connect: bool,
+    pub(crate) has_local_hierarchy: bool,
+    pub(crate) labels: Vec<ReducedLabelComponentLabel>,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct ProjectedSymbolPin {
     pub(crate) at: [f64; 2],
     pub(crate) name: Option<String>,
@@ -373,6 +390,102 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
     }
 
     groups.into_values().collect()
+}
+
+fn label_is_dangling_on_component(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+    at: [f64; 2],
+) -> bool {
+    if connected_component.members.iter().any(|member| {
+        points_equal(member.at, at)
+            && matches!(
+                member.kind,
+                ConnectionMemberKind::SymbolPin
+                    | ConnectionMemberKind::SheetPin
+                    | ConnectionMemberKind::NoConnectMarker
+            )
+    }) {
+        return false;
+    }
+
+    !collect_wire_segments(schematic)
+        .iter()
+        .any(|segment| point_on_wire_segment(at, segment[0], segment[1]))
+}
+
+// Upstream parity: reduced local analogue for the label-bearing subgraph facts consumed by
+// `CONNECTION_GRAPH::ercCheckLabels()`. This is not a 1:1 KiCad subgraph snapshot because the Rust
+// tree still lacks global net-name neighbors, bus parents, and live `SCH_TEXT::IsDangling()`
+// state. It exists so the shared reduced connectivity owner can provide label/pin/no-connect
+// component facts to ERC instead of rebuilding them inside another local label scan.
+pub(crate) fn collect_reduced_label_component_snapshots<F>(
+    schematic: &Schematic,
+    mut shown_label_text: F,
+) -> Vec<ReducedLabelComponentSnapshot>
+where
+    F: FnMut(&Label) -> String,
+{
+    collect_connection_components(schematic)
+        .into_iter()
+        .filter_map(|connected_component| {
+            let labels = schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Label(label)
+                        if label.kind != LabelKind::Directive
+                            && connected_component.members.iter().any(|member| {
+                                member.kind == ConnectionMemberKind::Label
+                                    && points_equal(member.at, label.at)
+                            }) =>
+                    {
+                        Some(ReducedLabelComponentLabel {
+                            at: label.at,
+                            kind: label.kind,
+                            dangling: label_is_dangling_on_component(
+                                schematic,
+                                &connected_component,
+                                label.at,
+                            ),
+                        })
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            if labels.is_empty() {
+                return None;
+            }
+
+            Some(ReducedLabelComponentSnapshot {
+                anchor: connected_component.anchor,
+                net_name: resolve_reduced_net_name_at(
+                    schematic,
+                    connected_component.anchor,
+                    |label| shown_label_text(label),
+                ),
+                pin_count: connected_component
+                    .members
+                    .iter()
+                    .filter(|member| member.kind == ConnectionMemberKind::SymbolPin)
+                    .count(),
+                has_no_connect: connected_component
+                    .members
+                    .iter()
+                    .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker),
+                has_local_hierarchy: connected_component
+                    .members
+                    .iter()
+                    .any(|member| member.kind == ConnectionMemberKind::SheetPin)
+                    || labels
+                        .iter()
+                        .any(|label| label.kind == LabelKind::Hierarchical),
+                labels,
+            })
+        })
+        .collect()
 }
 
 fn connected_wire_segment_indices(

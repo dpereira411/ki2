@@ -356,6 +356,12 @@ Current status:
 - reduced four-way junction coverage is done
 - reduced no-connect pin coverage is done
 - reduced same-net / connected-component ownership is now live for the exercised ERC slice
+- reduced `CONNECTION_GRAPH::ercCheckLabels()` coverage is now live through the shared reduced
+  label-component owner:
+  - `erc-label-not-connected`
+  - `erc-label-single-pin`
+  - current divergence is fuller cross-sheet subgraph/bus-parent neighbor ownership, not absence of
+    the graph-owned label rule
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
@@ -368,6 +374,11 @@ Current status:
 - the drawing-sheet text-vars slice is now functionally covered for the exercised ERC path
 - remaining drawing-sheet work is broader worksheet draw-item/painter parity, not missing
   `ERC_TESTER::TestTextVars()` text behavior
+- the next honest connection-graph ERC gaps are no longer label ownership itself; they are the
+  remaining graph-owned passes without local analogues:
+  - `ercCheckSingleGlobalLabel()`
+  - `ercCheckHierSheets()`
+  - fuller bus/floating-wire/dangling-endpoint ownership once the stricter graph model grows
 
 ## Net Naming / CLI Requirements
 
