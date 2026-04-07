@@ -1,3 +1,4 @@
+pub mod connectivity;
 pub mod core;
 pub mod diagnostic;
 pub mod erc;

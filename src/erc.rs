@@ -1,3 +1,7 @@
+use crate::connectivity::{
+    ConnectionMemberKind, collect_connection_components, collect_connection_points,
+    projected_symbol_pin_info,
+};
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
@@ -7,7 +11,7 @@ use crate::loader::{
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
     resolved_symbol_text_state,
 };
-use crate::model::{LabelKind, MirrorAxis, Property, PropertyKind, SchItem, Schematic, Symbol};
+use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
 
 // Upstream parity: local entrypoint for the implemented `ERC_TESTER` slice. This is not a 1:1
@@ -39,48 +43,6 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct PointKey(u64, u64);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ConnectionMemberKind {
-    SymbolPin,
-    SheetPin,
-    Wire,
-    Label,
-    Junction,
-    NoConnectMarker,
-}
-
-#[derive(Clone, Debug)]
-struct ConnectionMember {
-    kind: ConnectionMemberKind,
-    at: [f64; 2],
-    symbol_uuid: Option<String>,
-    visible: bool,
-    electrical_type: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-struct ConnectionPointSnapshot {
-    at: [f64; 2],
-    members: Vec<ConnectionMember>,
-}
-
-#[derive(Clone, Debug)]
-struct ConnectionComponent {
-    anchor: [f64; 2],
-    members: Vec<ConnectionMember>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ProjectedSymbolPin {
-    pub(crate) at: [f64; 2],
-    pub(crate) name: Option<String>,
-    pub(crate) number: Option<String>,
-    pub(crate) electrical_type: Option<String>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReducedPinType {
     Input = 0,
@@ -104,10 +66,6 @@ enum PinConflict {
     Error,
 }
 
-fn point_key(at: [f64; 2]) -> PointKey {
-    PointKey(at[0].to_bits(), at[1].to_bits())
-}
-
 // Upstream parity: reduced local helper for the modulus test inside
 // `ERC_TESTER::TestOffGridEndpoints()`. This is not a 1:1 KiCad IU check because the Rust tree
 // stores schematic geometry in millimeters, but it exists so the typed project connection-grid
@@ -123,15 +81,6 @@ fn point_is_on_grid(at: [f64; 2], grid_size_mm: f64) -> bool {
         let scaled = coordinate / grid_size_mm;
         (scaled - scaled.round()).abs() <= EPSILON
     })
-}
-
-fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
-    let radians = angle_degrees.to_radians();
-    let (sin, cos) = radians.sin_cos();
-    [
-        (point[0] * cos) - (point[1] * sin),
-        (point[0] * sin) + (point[1] * cos),
-    ]
 }
 
 fn parse_reduced_pin_type(electrical_type: &str) -> Option<ReducedPinType> {
@@ -192,63 +141,6 @@ fn is_normal_driver_pin_type(pin_type: ReducedPinType) -> bool {
 
 fn is_power_driver_pin_type(pin_type: ReducedPinType) -> bool {
     pin_type == ReducedPinType::PowerOut
-}
-
-// Upstream parity: reduced local helper for `SCH_SYMBOL::GetPins( &sheet )` point projection. This
-// is not a 1:1 KiCad pin object path because the Rust tree still lacks live `SCH_PIN` instances on
-// placed symbols. It exists so the reduced ERC connection snapshot can include placed symbol pins
-// from linked lib-pin draw items instead of falling back to wire-only geometry.
-fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
-    projected_symbol_pin_info(symbol)
-        .into_iter()
-        .map(|pin| ConnectionMember {
-            kind: ConnectionMemberKind::SymbolPin,
-            at: pin.at,
-            symbol_uuid: symbol.uuid.clone(),
-            visible: true,
-            electrical_type: pin.electrical_type,
-        })
-        .collect()
-}
-
-// Upstream parity: reduced local analogue for the placed-symbol `SCH_PIN` projection KiCad uses
-// across ERC and export code. This is not a 1:1 live-pin object path because the Rust tree still
-// stores pins only on linked lib draw items, but it preserves the exercised unit/body-style pin
-// projection and pin text payload needed by ERC checks that reason about pin syntax and duplicate
-// pin-net ownership.
-pub(crate) fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolPin> {
-    let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
-        return Vec::new();
-    };
-
-    let unit_number = symbol.unit.unwrap_or(1);
-    let body_style = symbol.body_style.unwrap_or(1);
-    lib_symbol
-        .units
-        .iter()
-        .filter(|unit| unit.unit_number == unit_number && unit.body_style == body_style)
-        .flat_map(|unit| unit.draw_items.iter())
-        .filter(|item| item.kind == "pin")
-        .map(|pin| {
-            let mut local_at = pin.at.unwrap_or([0.0, 0.0]);
-
-            match symbol.mirror {
-                Some(MirrorAxis::X) => local_at[1] = -local_at[1],
-                Some(MirrorAxis::Y) => local_at[0] = -local_at[0],
-                None => {}
-            }
-
-            let rotated = rotate_point(local_at, symbol.angle);
-            let at = [symbol.at[0] + rotated[0], symbol.at[1] + rotated[1]];
-
-            ProjectedSymbolPin {
-                at,
-                name: pin.name.clone(),
-                number: pin.number.clone(),
-                electrical_type: pin.electrical_type.clone(),
-            }
-        })
-        .collect()
 }
 
 fn parse_alphanumeric_pin_token(token: &str) -> (String, Option<i64>) {
@@ -313,255 +205,6 @@ fn stacked_pin_notation_is_valid(pin_name: &str) -> bool {
     }
 
     expanded_any
-}
-
-fn push_connection_member(
-    snapshot: &mut BTreeMap<PointKey, ConnectionPointSnapshot>,
-    member: ConnectionMember,
-) {
-    let key = point_key(member.at);
-    let entry = snapshot
-        .entry(key)
-        .or_insert_with(|| ConnectionPointSnapshot {
-            at: member.at,
-            members: Vec::new(),
-        });
-
-    if member.kind == ConnectionMemberKind::SymbolPin {
-        if let Some(existing) = entry.members.iter_mut().find(|existing| {
-            existing.kind == ConnectionMemberKind::SymbolPin
-                && existing.symbol_uuid == member.symbol_uuid
-        }) {
-            if member.visible && !existing.visible {
-                *existing = member;
-            }
-
-            return;
-        }
-    }
-
-    entry.members.push(member);
-}
-
-// Upstream parity: reduced local analogue for the connection-point map built inside
-// `ERC_TESTER::TestFourWayJunction()` / `TestNoConnectPins()`. This is not a 1:1
-// `CONNECTION_GRAPH` port because the Rust tree still lacks KiCad's full subgraph ownership, but
-// it is needed so the remaining connection-driven ERC rules can run on pins, wires, sheet pins,
-// labels, junctions, and no-connect markers together instead of repeating isolated geometry scans.
-// Remaining divergence is fuller graph/subgraph ownership and item-class coverage beyond the
-// current ERC slice.
-fn collect_connection_points(schematic: &Schematic) -> BTreeMap<PointKey, ConnectionPointSnapshot> {
-    let mut snapshot = BTreeMap::new();
-
-    for item in &schematic.screen.items {
-        match item {
-            SchItem::Symbol(symbol) => {
-                for pin in projected_symbol_pins(symbol) {
-                    push_connection_member(&mut snapshot, pin);
-                }
-            }
-            SchItem::Sheet(sheet) => {
-                for pin in &sheet.pins {
-                    push_connection_member(
-                        &mut snapshot,
-                        ConnectionMember {
-                            kind: ConnectionMemberKind::SheetPin,
-                            at: pin.at,
-                            symbol_uuid: None,
-                            visible: pin.visible,
-                            electrical_type: None,
-                        },
-                    );
-                }
-            }
-            SchItem::Wire(line) => {
-                for point in &line.points {
-                    push_connection_member(
-                        &mut snapshot,
-                        ConnectionMember {
-                            kind: ConnectionMemberKind::Wire,
-                            at: *point,
-                            symbol_uuid: None,
-                            visible: true,
-                            electrical_type: None,
-                        },
-                    );
-                }
-            }
-            SchItem::Label(label) => {
-                push_connection_member(
-                    &mut snapshot,
-                    ConnectionMember {
-                        kind: ConnectionMemberKind::Label,
-                        at: label.at,
-                        symbol_uuid: None,
-                        visible: true,
-                        electrical_type: None,
-                    },
-                );
-            }
-            SchItem::Junction(junction) => {
-                push_connection_member(
-                    &mut snapshot,
-                    ConnectionMember {
-                        kind: ConnectionMemberKind::Junction,
-                        at: junction.at,
-                        symbol_uuid: None,
-                        visible: true,
-                        electrical_type: None,
-                    },
-                );
-            }
-            SchItem::NoConnect(no_connect) => {
-                push_connection_member(
-                    &mut snapshot,
-                    ConnectionMember {
-                        kind: ConnectionMemberKind::NoConnectMarker,
-                        at: no_connect.at,
-                        symbol_uuid: None,
-                        visible: true,
-                        electrical_type: None,
-                    },
-                );
-            }
-            _ => {}
-        }
-    }
-
-    snapshot
-}
-
-fn segment_components(segments: &[[[f64; 2]; 2]], junctions: &[[f64; 2]]) -> Vec<Vec<usize>> {
-    let mut components = Vec::new();
-    let mut seen = vec![false; segments.len()];
-
-    for start in 0..segments.len() {
-        if seen[start] {
-            continue;
-        }
-
-        let mut stack = vec![start];
-        let mut component = Vec::new();
-        seen[start] = true;
-
-        while let Some(current) = stack.pop() {
-            component.push(current);
-            let current_segment = segments[current];
-
-            for (candidate, other) in segments.iter().enumerate() {
-                if seen[candidate] {
-                    continue;
-                }
-
-                let shares_endpoint = points_equal(current_segment[0], other[0])
-                    || points_equal(current_segment[0], other[1])
-                    || points_equal(current_segment[1], other[0])
-                    || points_equal(current_segment[1], other[1]);
-                let joined_by_junction = junctions.iter().copied().any(|junction| {
-                    point_on_wire_segment(junction, current_segment[0], current_segment[1])
-                        && point_on_wire_segment(junction, other[0], other[1])
-                });
-
-                if !shares_endpoint && !joined_by_junction {
-                    continue;
-                }
-
-                seen[candidate] = true;
-                stack.push(candidate);
-            }
-        }
-
-        components.push(component);
-    }
-
-    components
-}
-
-struct DisjointSet {
-    parent: Vec<usize>,
-}
-
-impl DisjointSet {
-    fn new(size: usize) -> Self {
-        Self {
-            parent: (0..size).collect(),
-        }
-    }
-
-    fn find(&mut self, index: usize) -> usize {
-        if self.parent[index] != index {
-            let root = self.find(self.parent[index]);
-            self.parent[index] = root;
-        }
-
-        self.parent[index]
-    }
-
-    fn union(&mut self, lhs: usize, rhs: usize) {
-        let lhs_root = self.find(lhs);
-        let rhs_root = self.find(rhs);
-
-        if lhs_root != rhs_root {
-            self.parent[rhs_root] = lhs_root;
-        }
-    }
-}
-
-// Upstream parity: reduced local analogue for the sheet-local connectivity grouping behind
-// `CONNECTION_GRAPH` subgraphs. This is not a 1:1 graph owner because the Rust tree still lacks
-// KiCad's full subgraph/netcode/driver objects. It exists so reduced ERC work can ask "which
-// points/items are on the same net-like component?" instead of repeatedly walking raw wire
-// geometry. Remaining divergence is fuller connection-driver ownership and bus/subgraph semantics.
-fn collect_connection_components(schematic: &Schematic) -> Vec<ConnectionComponent> {
-    let point_snapshot = collect_connection_points(schematic);
-    let points = point_snapshot.into_values().collect::<Vec<_>>();
-    let segments = collect_wire_segments(schematic);
-    let junctions = schematic
-        .screen
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            SchItem::Junction(junction) => Some(junction.at),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let segment_components = segment_components(&segments, &junctions);
-
-    let mut dsu = DisjointSet::new(points.len());
-    let mut component_points = BTreeMap::<usize, Vec<usize>>::new();
-
-    for (segment_component_index, segment_component) in segment_components.iter().enumerate() {
-        for (point_index, point) in points.iter().enumerate() {
-            if segment_component.iter().copied().any(|segment_index| {
-                let segment = segments[segment_index];
-                point_on_wire_segment(point.at, segment[0], segment[1])
-            }) {
-                component_points
-                    .entry(segment_component_index)
-                    .or_default()
-                    .push(point_index);
-            }
-        }
-    }
-
-    for point_indexes in component_points.values() {
-        for pair in point_indexes.windows(2) {
-            dsu.union(pair[0], pair[1]);
-        }
-    }
-
-    let mut groups = BTreeMap::<usize, ConnectionComponent>::new();
-
-    for (index, point) in points.into_iter().enumerate() {
-        let root = dsu.find(index);
-        let entry = groups.entry(root).or_insert_with(|| ConnectionComponent {
-            anchor: point.at,
-            members: Vec::new(),
-        });
-        entry.members.extend(point.members);
-    }
-
-    groups.into_values().collect()
 }
 
 #[derive(Clone)]

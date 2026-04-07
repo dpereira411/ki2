@@ -272,7 +272,7 @@ That reduced layer must provide:
 - directive/rule-area influence for connected items
 
 Current status:
-- the reduced connection-point snapshot is now live in `src/erc.rs`
+- the reduced connection-point snapshot is now live as a shared carrier in `src/connectivity.rs`
 - it currently includes:
   - projected placed-symbol pins from linked lib-pin draw items
   - sheet pins
@@ -284,6 +284,14 @@ Current status:
   - reduced `ERC_TESTER::TestFourWayJunction()`
   - reduced `ERC_TESTER::TestNoConnectPins()`
   - reduced `ERC_TESTER::TestPinToPin()`
+  - connection-backed shown-text / net-name resolution in `src/loader.rs`
+  - reduced XML net export pin/net ownership in `src/netlist.rs`
+- ownership is now materially closer to KiCad than before:
+  - ERC no longer owns the only connection-point/component builder
+  - loader, ERC, and net export now share one reduced connection owner
+- the next honest step is no longer "add another wire scan":
+  - move driver and name selection onto that shared owner
+  - then grow it toward real subgraph ownership
 
 Remaining divergence:
 - this is still not a full KiCad `CONNECTION_GRAPH`

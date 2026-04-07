@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::connectivity::{ConnectionMemberKind, collect_connection_components};
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
@@ -4223,9 +4224,9 @@ fn resolved_symbol_pin_in_unit<'a>(
 // `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 `SCH_PIN::Connection()` /
 // `GetEffectiveNetClass()` path because the Rust tree still lacks live `SCH_PIN` instances and the
 // full connection graph. It exists so the exercised pin net-name text vars, and now ERC's reduced
-// ground-pin check, can reuse the current reduced wire/label snapshot instead of diverging into a
-// second ad hoc resolver. Remaining divergence is fuller connection-graph ownership beyond the
-// current reduced point/directive/rule-area model.
+// ground-pin check, can reuse the shared reduced connection-component carrier instead of diverging
+// into a second ad hoc wire/label scan. Remaining divergence is fuller connection-graph ownership
+// beyond the current reduced component/directive/rule-area model.
 pub(crate) fn resolve_point_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4238,6 +4239,15 @@ pub(crate) fn resolve_point_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let connected_component =
+        collect_connection_components(schematic)
+            .into_iter()
+            .find(|component| {
+                component
+                    .members
+                    .iter()
+                    .any(|member| points_equal(member.at, at))
+            });
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
         .screen
@@ -4252,61 +4262,35 @@ pub(crate) fn resolve_point_connectivity_text_var(
 
     match token_kind {
         SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
-            let net_name = if connected_segments.is_empty() {
-                schematic
-                    .screen
-                    .items
-                    .iter()
-                    .filter_map(|item| match item {
-                        SchItem::Label(other)
-                            if other.kind != crate::model::LabelKind::Directive =>
-                        {
-                            points_equal(other.at, at).then_some(other)
-                        }
-                        _ => None,
-                    })
-                    .map(|other| {
-                        shown_label_text_without_connectivity(
-                            schematics,
-                            sheet_paths,
-                            loaded_path,
-                            project,
-                            current_variant,
-                            other,
-                        )
-                    })
-                    .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
-            } else {
-                schematic
-                    .screen
-                    .items
-                    .iter()
-                    .filter_map(|item| match item {
-                        SchItem::Label(other)
-                            if other.kind != crate::model::LabelKind::Directive =>
-                        {
-                            connected_segments
-                                .iter()
-                                .any(|segment_index| {
-                                    let segment = wire_segments[*segment_index];
-                                    point_on_wire_segment(other.at, segment[0], segment[1])
+            let net_name = schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
+                        connected_component
+                            .as_ref()
+                            .is_some_and(|component| {
+                                component.members.iter().any(|member| {
+                                    member.kind == ConnectionMemberKind::Label
+                                        && points_equal(member.at, other.at)
                                 })
-                                .then_some(other)
-                        }
-                        _ => None,
-                    })
-                    .map(|other| {
-                        shown_label_text_without_connectivity(
-                            schematics,
-                            sheet_paths,
-                            loaded_path,
-                            project,
-                            current_variant,
-                            other,
-                        )
-                    })
-                    .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
-            }?;
+                            })
+                            .then_some(other)
+                    }
+                    _ => None,
+                })
+                .map(|other| {
+                    shown_label_text_without_connectivity(
+                        schematics,
+                        sheet_paths,
+                        loaded_path,
+                        project,
+                        current_variant,
+                        other,
+                    )
+                })
+                .find(|text| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))?;
 
             match token_kind {
                 SymbolPinTextVarKind::NetName => Some(net_name),
@@ -5014,7 +4998,7 @@ fn shown_label_text_without_connectivity(
 // resolve simple wire-connected `NET_NAME` / `SHORT_NET_NAME` (and a narrow field-based
 // `NET_CLASS`) instead of leaving those tokens raw. Remaining divergence is fuller connection-graph
 // semantics, especially fuller cached connection-graph ownership beyond this reduced
-// wire/directive/rule-area snapshot.
+// component/directive/rule-area snapshot.
 pub(crate) fn resolve_label_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -5035,6 +5019,14 @@ pub(crate) fn resolve_label_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let connected_component =
+        collect_connection_components(schematic)
+            .into_iter()
+            .find(|component| {
+                component.members.iter().any(|member| {
+                    member.kind == ConnectionMemberKind::Label && points_equal(member.at, label.at)
+                })
+            });
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
         .screen
@@ -5056,7 +5048,7 @@ pub(crate) fn resolve_label_connectivity_text_var(
         label,
     );
 
-    let net_name = if connected_segments.is_empty() {
+    let net_name = if connected_component.is_none() {
         if own_text.contains("${") || own_text.starts_with('<') || own_text.is_empty() {
             None
         } else {
@@ -5069,11 +5061,13 @@ pub(crate) fn resolve_label_connectivity_text_var(
             .iter()
             .filter_map(|item| match item {
                 SchItem::Label(other) if other.kind != crate::model::LabelKind::Directive => {
-                    connected_segments
-                        .iter()
-                        .any(|segment_index| {
-                            let segment = wire_segments[*segment_index];
-                            point_on_wire_segment(other.at, segment[0], segment[1])
+                    connected_component
+                        .as_ref()
+                        .is_some_and(|component| {
+                            component.members.iter().any(|member| {
+                                member.kind == ConnectionMemberKind::Label
+                                    && points_equal(member.at, other.at)
+                            })
                         })
                         .then_some(other)
                 }

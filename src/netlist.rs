@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::connectivity::projected_symbol_pin_info;
 use crate::core::SchematicProject;
-use crate::erc::projected_symbol_pin_info;
 use crate::loader::{
     SymbolPinTextVarKind, resolve_point_connectivity_text_var, resolve_schematic_text_var,
     resolve_sheet_text_var, resolve_text_variables, resolved_symbol_text_state,
