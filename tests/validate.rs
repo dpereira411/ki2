@@ -394,6 +394,14 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     );
     assert!(report.contains("lib=\"Device\""), "{report}");
     assert!(report.contains("part=\"R\""), "{report}");
+    assert!(report.contains("<libparts>"), "{report}");
+    assert!(
+        report.contains("<libpart lib=\"Device\" part=\"R\">"),
+        "{report}"
+    );
+    assert!(report.contains("<pins>"), "{report}");
+    assert!(report.contains("<pin num=\"1\" name=\"~\" />"), "{report}");
+    assert!(report.contains("<pin num=\"2\" name=\"~\" />"), "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);

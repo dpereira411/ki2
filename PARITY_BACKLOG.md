@@ -533,6 +533,8 @@ What is already covered indirectly:
   - reduced `libsource`
   - reduced user-field export
   - reduced `sheetpath`
+  - reduced `libparts`
+  - reduced libpart pin lists from schematic-linked lib-symbol snapshots
 
 What is not yet explicitly tracked as complete:
 - KiCad/default `kicad` netlist CLI surface
