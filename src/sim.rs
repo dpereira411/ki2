@@ -301,7 +301,7 @@ fn resolve_relative_sim_library_source_from_embedded_files(
     base_source: &SimLibrarySource,
     relative_lib: &str,
 ) -> Option<SimLibrarySource> {
-    let relative_lib = relative_lib.trim_matches('"');
+    let relative_lib = normalize_sim_library_path_string(relative_lib.trim_matches('"'));
 
     if relative_lib.is_empty() {
         return None;
@@ -309,12 +309,12 @@ fn resolve_relative_sim_library_source_from_embedded_files(
 
     match base_source {
         SimLibrarySource::Filesystem(path) => {
-            let resolved = if Path::new(relative_lib).is_absolute() {
-                PathBuf::from(relative_lib)
+            let resolved = if Path::new(&relative_lib).is_absolute() {
+                PathBuf::from(&relative_lib)
             } else {
                 path.parent()
                     .unwrap_or_else(|| Path::new(""))
-                    .join(relative_lib)
+                    .join(&relative_lib)
             };
 
             if resolved.exists() {
@@ -324,7 +324,7 @@ fn resolve_relative_sim_library_source_from_embedded_files(
             }
         }
         SimLibrarySource::SchematicEmbedded { name } => {
-            let resolved_name = resolve_relative_embedded_library_name(name, relative_lib);
+            let resolved_name = resolve_relative_embedded_library_name(name, &relative_lib);
 
             if embedded_files.iter().any(|file| {
                 file.file_type == Some(EmbeddedFileType::Model)
@@ -341,7 +341,7 @@ fn resolve_relative_sim_library_source_from_embedded_files(
             }
         }
         SimLibrarySource::SymbolEmbedded { name } => {
-            let resolved_name = resolve_relative_embedded_library_name(name, relative_lib);
+            let resolved_name = resolve_relative_embedded_library_name(name, &relative_lib);
 
             if symbol.lib_symbol.as_ref().is_some_and(|lib_symbol| {
                 lib_symbol.embedded_files.iter().any(|file| {

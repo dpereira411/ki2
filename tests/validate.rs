@@ -6990,6 +6990,73 @@ fn load_tree_hydrates_resolved_spice_model_from_filesystem_include_chain() {
 }
 
 #[test]
+fn load_tree_hydrates_resolved_spice_model_from_backslash_include_chain() {
+    let dir = temp_dir_path("loader_spice_backslash_include_chain");
+    fs::create_dir_all(dir.join("models/child")).expect("create models dir");
+    fs::write(
+        dir.join("models/top.kicad_sim"),
+        ".include \"child\\\\child.lib\"\n",
+    )
+    .expect("write top sim lib");
+    fs::write(
+        dir.join("models/child/child.lib"),
+        ".model MODEL NPN (BF=100)\n",
+    )
+    .expect("write child sim lib");
+
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000323")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "models/top.kicad_sim")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = dir.join("backslash_include_chain.kicad_sch");
+    fs::write(&path, src).expect("write schematic");
+    let loaded = load_schematic_tree(&path).expect("must load");
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == path.canonicalize().unwrap_or(path.clone()))
+        .expect("loaded schematic");
+    let symbol = schematic
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("symbol");
+
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.resolved_model_type.as_deref()),
+        Some("NPN")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .map(|sim_model| sim_model.generated_param_pairs.clone()),
+        Some(vec![("BF".to_string(), Some("100".to_string()))])
+    );
+
+    let _ = fs::remove_file(dir.join("models/top.kicad_sim"));
+    let _ = fs::remove_file(dir.join("models/child/child.lib"));
+    let _ = fs::remove_file(&path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn load_tree_hydrates_resolved_ibis_component_pins_on_symbol() {
     let src = r#"(kicad_sch
   (version 20260306)
