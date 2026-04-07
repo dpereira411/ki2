@@ -381,6 +381,11 @@ Current status:
   - shared reduced wire/bus connected components
   - reduced bus-vs-net classification from line kind and shown text
 - current remaining bus graph gaps are the member-aware branches, not gross bus-vs-net conflicts
+- reduced `CONNECTION_GRAPH::ercCheckBusToBusConflicts()` coverage is now live through:
+  - reduced bus-member expansion from aliases and bracketed vectors
+  - shared reduced label/port connected components
+- current remaining bus graph gap is `ercCheckBusToBusEntryConflicts()`, not the label/port bus
+  conflict branch
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
@@ -397,7 +402,6 @@ Current status:
   remaining graph-owned passes without local analogues:
   - fuller bus conflict/subgraph ownership:
     - `ercCheckBusToBusEntryConflicts()`
-    - `ercCheckBusToBusConflicts()`
 
 ## Net Naming / CLI Requirements
 
