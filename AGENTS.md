@@ -14,6 +14,10 @@ This repository is not aiming for a "KiCad-inspired" parser. The target is a str
 6. When a current local representation is too reduced for upstream semantics, expand the model instead of normalizing away the difference.
 7. Treat current parser code as transitional unless it clearly mirrors an upstream routine.
 8. Parser compatibility is judged by control flow, accepted grammar, error cases, version gates, and object construction timing, not only by whether files parse.
+9. Every time you materially touch a function, update or add a short comment on that function covering:
+   - which upstream routine or branch it corresponds to
+   - whether it is at parity or what still diverges from upstream
+   - if it is not a 1:1 upstream routine, why the local helper exists and why it is still needed
 
 ## Strict Mode
 
