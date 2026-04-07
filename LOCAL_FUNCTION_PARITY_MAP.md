@@ -95,6 +95,8 @@ Current ERC blocker:
       carry KiCad's fuller polygon/knockout hatching state behind `shape->UpdateHatching()`
       - reduced hatch-line generation is now closer too: 45-degree hatch segments span the full
         current bounds instead of the earlier truncated half-box path
+      - reduced circle hatching now clips to real circle geometry instead of the earlier
+        bounding-box fallback
       - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
   - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked
     on that fuller model

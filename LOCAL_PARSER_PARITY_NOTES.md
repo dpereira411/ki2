@@ -348,10 +348,12 @@ What remains after that correction:
       cache on selected-screen schematic shapes instead of leaving `UpdateHatching()` as a no-op
       - the reduced line-cache path now also clips 45-degree hatch segments across the full current
         bounding box instead of the earlier truncated half-box coverage
+      - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
+        earlier bounding-box fallback
     - remaining shape drift is narrower:
       - the current Rust shape model still lacks KiCad's fuller polygon/knockout hatch cache
-      - hatch geometry is still reduced to cached line segments plus bbox clipping, not full
-        `SHAPE_POLY_SET` parity
+      - hatch geometry is still reduced to cached line segments plus partial analytic clipping, not
+        full `SHAPE_POLY_SET` parity
     - treat the remaining hatch gap as geometry/cache expansion work, not as another branch tweak
       in `loader.rs`
     - typed-settings unblock path completed for current-sheet intersheet refs:

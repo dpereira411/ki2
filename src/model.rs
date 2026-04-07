@@ -1114,6 +1114,10 @@ impl Shape {
         slope: f64,
         offset: f64,
     ) -> Option<[[f64; 2]; 2]> {
+        if matches!(self.kind, ShapeKind::Circle) {
+            return self.clipped_circle_hatch_segment(slope, offset);
+        }
+
         let min_x = bbox[0][0];
         let min_y = bbox[0][1];
         let max_x = bbox[1][0];
@@ -1147,6 +1151,62 @@ impl Shape {
         }
 
         Some([first, last])
+    }
+
+    // Upstream parity: reduced local helper for the circle subset of
+    // `EDA_SHAPE::UpdateHatching()`. This is not a full polygon-cache port, but it exists so
+    // circle hatch lines clip to the actual circle instead of the previous bounding-box fallback.
+    fn clipped_circle_hatch_segment(&self, slope: f64, offset: f64) -> Option<[[f64; 2]; 2]> {
+        let center = *self.points.first()?;
+        let radius = self.radius?;
+
+        if radius <= 0.0 {
+            return None;
+        }
+
+        let (midpoint, distance) = if slope < 0.0 {
+            let sum = (center[0] - radius) + (center[1] - radius) + offset;
+            let distance = (sum - (center[0] + center[1])) / std::f64::consts::SQRT_2;
+            (
+                [
+                    center[0] + (sum - center[0] - center[1]) / 2.0,
+                    center[1] + (sum - center[0] - center[1]) / 2.0,
+                ],
+                distance,
+            )
+        } else {
+            let diff = (center[1] - radius) - (center[0] + radius) + offset;
+            let distance = (diff - (center[1] - center[0])) / std::f64::consts::SQRT_2;
+            (
+                [
+                    (center[0] + center[1] - diff) / 2.0,
+                    (center[0] + center[1] + diff) / 2.0,
+                ],
+                distance,
+            )
+        };
+
+        if distance.abs() > radius {
+            return None;
+        }
+
+        let half_length = (radius.powi(2) - distance.powi(2)).sqrt();
+        let direction = if slope < 0.0 {
+            [1.0 / std::f64::consts::SQRT_2, -1.0 / std::f64::consts::SQRT_2]
+        } else {
+            [1.0 / std::f64::consts::SQRT_2, 1.0 / std::f64::consts::SQRT_2]
+        };
+
+        Some([
+            [
+                midpoint[0] - (half_length * direction[0]),
+                midpoint[1] - (half_length * direction[1]),
+            ],
+            [
+                midpoint[0] + (half_length * direction[0]),
+                midpoint[1] + (half_length * direction[1]),
+            ],
+        ])
     }
 
     fn push_hatch_intersection(
@@ -3383,6 +3443,33 @@ mod tests {
         assert!(shape.hatch_lines.iter().any(|segment| {
             (segment[0] == [0.0, 10.0] && segment[1] == [10.0, 0.0])
                 || (segment[0] == [10.0, 0.0] && segment[1] == [0.0, 10.0])
+        }));
+    }
+
+    #[test]
+    fn circle_hatching_clips_to_circle_bounds() {
+        let mut shape = Shape::new(ShapeKind::Circle);
+        shape.points = vec![[5.0, 5.0]];
+        shape.radius = Some(5.0);
+        shape.stroke.as_mut().expect("stroke").width = Some(1.0);
+        shape.fill.as_mut().expect("fill").fill_type = FillType::Hatch;
+
+        shape.update_hatching();
+
+        assert!(!shape.hatch_lines.is_empty());
+        assert!(shape.hatch_lines.iter().all(|segment| {
+            segment.iter().all(|point| {
+                let dx = point[0] - 5.0;
+                let dy = point[1] - 5.0;
+                (dx * dx) + (dy * dy) <= 25.0 + 1e-6
+            })
+        }));
+        assert!(shape.hatch_lines.iter().any(|segment| {
+            let midpoint = [
+                (segment[0][0] + segment[1][0]) / 2.0,
+                (segment[0][1] + segment[1][1]) / 2.0,
+            ];
+            (midpoint[0] - 5.0).abs() < 1e-6 && (midpoint[1] - 5.0).abs() < 1e-6
         }));
     }
 
