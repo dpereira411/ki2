@@ -31,6 +31,7 @@ pub struct NetlistComponent {
     pub excluded_from_board: bool,
     pub excluded_from_pos_files: bool,
     pub dnp: bool,
+    pub sheet_properties: Vec<(String, String)>,
     pub keywords: Option<String>,
     pub fp_filters: Vec<String>,
     pub duplicate_pin_numbers_are_jumpers: bool,
@@ -323,6 +324,69 @@ fn human_component_sheet_path(
     } else {
         format!("/{}", names.join("/"))
     }
+}
+
+fn resolved_sheet_property_name(property: &Property) -> String {
+    if property.kind.is_mandatory() {
+        property.kind.canonical_key().to_string()
+    } else {
+        property.key.clone()
+    }
+}
+
+// Upstream parity: reduced local analogue for the parent-sheet property loop inside
+// `NETLIST_EXPORTER_XML::makeSymbols()`. This is not a 1:1 KiCad field resolver because the Rust
+// tree still resolves from loaded sheet snapshots instead of live `SCH_SHEET_PATH` owners, but it
+// is needed so component export can carry parent-sheet fields through the same occurrence/variant
+// and sheet shown-text path instead of dropping them entirely.
+fn collect_parent_sheet_properties(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+) -> Vec<(String, String)> {
+    let Some(state) = resolved_sheet_text_state(
+        &project.schematics,
+        &project.sheet_paths,
+        sheet_path,
+        project.current_variant(),
+    ) else {
+        return Vec::new();
+    };
+
+    let mut properties = state
+        .properties
+        .iter()
+        .map(|property| {
+            (
+                resolved_sheet_property_name(property),
+                resolve_text_variables(
+                    &property.value,
+                    &|nested| {
+                        resolve_sheet_text_var(
+                            &project.schematics,
+                            &project.sheet_paths,
+                            sheet_path,
+                            project.project.as_ref(),
+                            project.current_variant(),
+                            nested,
+                            0,
+                        )
+                        .or_else(|| {
+                            resolve_schematic_text_var(
+                                &project.schematics,
+                                sheet_path,
+                                project.project.as_ref(),
+                                project.current_variant(),
+                                nested,
+                            )
+                        })
+                    },
+                    0,
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    properties.sort_by(|(lhs, _), (rhs, _)| lhs.cmp(rhs));
+    properties
 }
 
 fn parse_alphanumeric_pin(pin: &str) -> (String, Option<i64>) {
@@ -1006,6 +1070,7 @@ fn symbol_to_xml_component(
         excluded_from_board: !symbol.on_board,
         excluded_from_pos_files: !symbol.in_pos_files,
         dnp: symbol.dnp,
+        sheet_properties: collect_parent_sheet_properties(project, sheet_path),
         keywords: symbol
             .lib_symbol
             .as_ref()
@@ -1476,6 +1541,14 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
 
         if component.dnp {
             xml.push_str("      <property name=\"dnp\" />\n");
+        }
+
+        for (name, value) in component.sheet_properties {
+            xml.push_str(&format!(
+                "      <property name=\"{}\" value=\"{}\" />\n",
+                escape_xml(&name),
+                escape_xml(&value)
+            ));
         }
 
         if let Some(keywords) = component.keywords {
