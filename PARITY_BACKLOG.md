@@ -299,6 +299,7 @@ Current status:
     longer dropped from reduced export/current-sheet naming
   - reduced point-netclass ownership now also lives there instead of being rebuilt in loader
     geometry scans
+  - reduced driver-label `Netclass` fields now also feed the shared netclass owner
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match

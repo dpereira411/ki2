@@ -4778,9 +4778,9 @@ fn resolve_directive_netclass_value(
 // Upstream parity: reduced local wrapper over the shared connectivity-side netclass owner used by
 // `CONNECTION_SUBGRAPH::GetNetclassesForDriver()`. This is not a 1:1 KiCad graph query because the
 // Rust tree still lacks cached rule-area membership and full child-item traversal, but the loader
-// no longer owns directive/rule-area connectivity scans itself. The only local responsibility left
-// here is rendering directive `Netclass` fields through shown-text semantics before handing them to
-// the shared reduced connectivity owner.
+// no longer owns directive/rule-area or driver-label netclass scans itself. The only local
+// responsibility left here is rendering representable `Netclass` fields through shown-text
+// semantics before handing them to the shared reduced connectivity owner.
 fn resolve_point_netclass_value(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4790,20 +4790,40 @@ fn resolve_point_netclass_value(
     schematic: &Schematic,
     at: [f64; 2],
 ) -> Option<String> {
-    resolve_reduced_netclass_at(schematic, at, |directive| {
-        if directive.kind != crate::model::LabelKind::Directive {
-            return None;
-        }
+    resolve_reduced_netclass_at(
+        schematic,
+        at,
+        |directive: &crate::model::Label| {
+            if directive.kind != crate::model::LabelKind::Directive {
+                return None;
+            }
 
-        resolve_directive_netclass_value(
-            schematics,
-            sheet_paths,
-            loaded_path,
-            project,
-            current_variant,
-            directive,
-        )
-    })
+            resolve_directive_netclass_value(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                directive,
+            )
+        },
+        |label: &crate::model::Label| {
+            if label.kind == crate::model::LabelKind::Directive {
+                return None;
+            }
+
+            resolved_label_text_property_value_without_connectivity(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                label,
+                "Netclass",
+            )
+            .filter(|value| !value.is_empty())
+        },
+    )
 }
 
 // Upstream parity: reduced local helper for the non-connectivity subset of

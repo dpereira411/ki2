@@ -977,13 +977,15 @@ where
 // Rust tree still lacks cached rule-area ownership, child-item traversal, and full subgraph
 // drivers. It exists so loader shown-text and export paths query one shared reduced connectivity
 // owner for current-sheet `NET_CLASS` instead of rebuilding directive/rule-area scans locally.
-pub(crate) fn resolve_reduced_netclass_at<F>(
+pub(crate) fn resolve_reduced_netclass_at<F, G>(
     schematic: &Schematic,
     at: [f64; 2],
     mut directive_netclass: F,
+    mut label_netclass: G,
 ) -> Option<String>
 where
     F: FnMut(&Label) -> Option<String>,
+    G: FnMut(&Label) -> Option<String>,
 {
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
@@ -1052,5 +1054,33 @@ where
                         })
                         .find_map(&mut directive_netclass)
                 })
+        })
+        .or_else(|| {
+            let connected_component = connection_component_at(schematic, at)?;
+            let mut labels = schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Label(label)
+                        if label.kind != LabelKind::Directive
+                            && connected_component.members.iter().any(|member| {
+                                member.kind == ConnectionMemberKind::Label
+                                    && points_equal(member.at, label.at)
+                            }) =>
+                    {
+                        Some(label)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            labels.sort_by(|lhs, rhs| {
+                reduced_label_driver_priority(rhs)
+                    .cmp(&reduced_label_driver_priority(lhs))
+                    .then_with(|| lhs.text.cmp(&rhs.text))
+            });
+
+            labels.into_iter().find_map(&mut label_netclass)
         })
 }
