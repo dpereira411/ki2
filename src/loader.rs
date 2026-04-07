@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,8 +7,8 @@ use std::process::Command;
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    EmbeddedFile, ItemVariant, MirrorAxis, Property, PropertyKind, SchItem, Schematic, Shape,
-    ShapeKind, SheetReference, SimLibrarySource, Symbol,
+    EmbeddedFile, EmbeddedFileType, ItemVariant, MirrorAxis, Property, PropertyKind, SchItem,
+    Schematic, Shape, ShapeKind, SheetReference, SimLibrarySource, Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
@@ -48,8 +49,16 @@ pub struct LoadedProjectSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrawingSheetSource {
+    Default,
+    Filesystem(PathBuf),
+    SchematicEmbedded { name: String, text: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedSchematicSettings {
     pub intersheet_refs: LoadedIntersheetRefsSettings,
+    pub page_layout_descr_file: Option<String>,
     pub variant_descriptions: BTreeMap<String, String>,
     pub netclasses: BTreeSet<String>,
     pub default_netclass: String,
@@ -59,6 +68,7 @@ impl Default for LoadedSchematicSettings {
     fn default() -> Self {
         Self {
             intersheet_refs: LoadedIntersheetRefsSettings::default(),
+            page_layout_descr_file: None,
             variant_descriptions: BTreeMap::new(),
             netclasses: BTreeSet::from(["Default".to_string()]),
             default_netclass: "Default".to_string(),
@@ -100,8 +110,9 @@ impl LoadedProjectSettings {
     // Upstream parity: typed local analogue for the exercised companion-project settings slice.
     // This is not a 1:1 KiCad settings object because the current tree still preserves raw
     // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
-    // the exercised `SCHEMATIC_SETTINGS` intersheet subset, project text vars, schematic variant
-    // descriptions, and the reduced ERC-visible netclass-name set.
+    // the exercised `SCHEMATIC_SETTINGS` subset: intersheet refs, drawing-sheet source path,
+    // project text vars, schematic variant descriptions, and the reduced ERC-visible netclass-name
+    // set. Remaining divergence is the missing worksheet/page-layout object model behind that path.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
         let mut text_variables = BTreeMap::new();
@@ -141,6 +152,12 @@ impl LoadedProjectSettings {
         }
 
         if let Some(schematic_json) = json.get("schematic").and_then(Value::as_object) {
+            schematic.page_layout_descr_file = schematic_json
+                .get("page_layout_descr_file")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+
             if let Some(variants) = schematic_json.get("variants").and_then(Value::as_array) {
                 for variant in variants {
                     let Some(variant) = variant.as_object() else {
@@ -246,12 +263,14 @@ impl LoadedProjectSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveSchematicSettings {
     pub intersheet_refs: LoadedIntersheetRefsSettings,
+    pub page_layout_descr_file: Option<String>,
 }
 
 impl Default for ActiveSchematicSettings {
     fn default() -> Self {
         Self {
             intersheet_refs: LoadedIntersheetRefsSettings::default(),
+            page_layout_descr_file: None,
         }
     }
 }
@@ -259,11 +278,14 @@ impl Default for ActiveSchematicSettings {
 impl ActiveSchematicSettings {
     // Upstream parity: reduced typed settings carrier for loader/current-sheet refresh. This is
     // not KiCad's full `SCHEMATIC_SETTINGS`, but it carries the currently exercised ERC-visible
-    // intersheet-reference settings in one typed object instead of scattered scalar lookups.
+    // settings in one typed object instead of scattered scalar lookups. Remaining divergence is
+    // that the drawing-sheet file is only a typed source path here; there is still no worksheet
+    // object model or draw-item list equivalent behind it yet.
     pub(crate) fn from_project_settings(project: Option<&LoadedProjectSettings>) -> Self {
         project
             .map(|project| Self {
                 intersheet_refs: project.intersheet_refs().clone(),
+                page_layout_descr_file: project.schematic.page_layout_descr_file.clone(),
             })
             .unwrap_or_default()
     }
@@ -336,6 +358,23 @@ impl LoadResult {
 
     pub fn project_local_settings(&self) -> Option<&LoadedProjectSettings> {
         self.project_local_settings.as_ref()
+    }
+
+    // Upstream parity: reduced local analogue for KiCad's `LoadDrawingSheet()` source-selection
+    // step before `DS_DATA_MODEL::LoadDrawingSheet(...)` builds draw items. This is not 1:1 yet:
+    // the local tree still has no worksheet object model, and it falls back through the current
+    // loaded schematic's embedded files because there is no schematic-global embedded-file owner
+    // equivalent to `SCHEMATIC::GetEmbeddedFiles()`.
+    pub fn current_drawing_sheet_source(&self) -> DrawingSheetSource {
+        self.current_schematic()
+            .map(|schematic| {
+                resolve_drawing_sheet_source_from_embedded_files(
+                    &schematic.path,
+                    self.project.as_ref(),
+                    &schematic.screen.embedded_files,
+                )
+            })
+            .unwrap_or(DrawingSheetSource::Default)
     }
 
     // Upstream parity: current-sheet selection is the local entrypoint that exercises KiCad's
@@ -530,6 +569,99 @@ impl LoadResult {
             })
             .collect()
     }
+}
+
+fn expand_project_path_vars(path: &str, project: Option<&LoadedProjectSettings>) -> String {
+    let mut expanded = path.to_string();
+
+    if let Some(project) = project {
+        let project_dir = project
+            .path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_string_lossy()
+            .replace('\\', "/");
+        expanded = expanded.replace("${KIPRJMOD}", &project_dir);
+        expanded = expanded.replace("$KIPRJMOD", &project_dir);
+    }
+
+    let bytes = expanded.as_bytes();
+    let mut index = 0;
+    let mut resolved = String::new();
+
+    while index < bytes.len() {
+        if bytes[index] == b'$' && bytes.get(index + 1) == Some(&b'{') {
+            let start = index + 2;
+            if let Some(end) = expanded[start..].find('}') {
+                let end = start + end;
+                let name = &expanded[start..end];
+                if let Ok(value) = env::var(name) {
+                    resolved.push_str(&value);
+                } else {
+                    resolved.push_str(&expanded[index..=end]);
+                }
+                index = end + 1;
+                continue;
+            }
+        }
+
+        resolved.push(bytes[index] as char);
+        index += 1;
+    }
+
+    resolved
+}
+
+fn resolve_drawing_sheet_path(
+    schematic_path: &Path,
+    project: Option<&LoadedProjectSettings>,
+    worksheet: &str,
+) -> PathBuf {
+    let expanded = expand_project_path_vars(worksheet, project);
+    let path = PathBuf::from(expanded);
+
+    if path.is_absolute() {
+        return path;
+    }
+
+    project
+        .and_then(|project| project.path.parent())
+        .unwrap_or_else(|| schematic_path.parent().unwrap_or_else(|| Path::new(".")))
+        .join(path)
+}
+
+// Upstream parity: reduced local analogue for KiCad's `FILENAME_RESOLVER::ResolvePath(...)`
+// drawing-sheet source selection ahead of worksheet parsing. This is not 1:1 because the local
+// tree has no worksheet parser/model yet and no schematic-global embedded-file owner, so the
+// embedded-file fallback currently searches the active schematic screen's embedded files only.
+fn resolve_drawing_sheet_source_from_embedded_files(
+    schematic_path: &Path,
+    project: Option<&LoadedProjectSettings>,
+    embedded_files: &[EmbeddedFile],
+) -> DrawingSheetSource {
+    let Some(worksheet) = project
+        .and_then(|project| project.schematic.page_layout_descr_file.as_deref())
+        .filter(|worksheet| !worksheet.is_empty())
+    else {
+        return DrawingSheetSource::Default;
+    };
+
+    if let Some(file) = embedded_files.iter().find(|file| {
+        file.file_type == Some(EmbeddedFileType::Worksheet)
+            && file.name.as_deref() == Some(worksheet)
+            && file.data.is_some()
+    }) {
+        return DrawingSheetSource::SchematicEmbedded {
+            name: worksheet.to_string(),
+            text: file.data.clone().unwrap_or_default(),
+        };
+    }
+
+    DrawingSheetSource::Filesystem(resolve_drawing_sheet_path(
+        schematic_path,
+        project,
+        worksheet,
+    ))
 }
 
 pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {

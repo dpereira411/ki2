@@ -10,7 +10,7 @@ use ki2::core::SchematicProject;
 use ki2::diagnostic::DiagnosticKind;
 use ki2::erc;
 use ki2::error::Error;
-use ki2::loader::load_schematic_tree;
+use ki2::loader::{DrawingSheetSource, load_schematic_tree};
 use ki2::model::{
     EmbeddedFileType, FieldAutoplacement, FillType, Group, LabelKind, LabelShape, LabelSpin,
     LineKind, MirrorAxis, PropertyKind, ResolvedSimLibrary, ResolvedSimModelKind, SchItem,
@@ -3024,7 +3024,7 @@ fn load_tree_discovers_companion_project_settings() {
     .expect("write schematic");
     fs::write(
         &project_path,
-        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"drawing\": {\n    \"intersheets_ref_show\": true,\n    \"intersheets_ref_own_page\": false,\n    \"intersheets_ref_short\": true,\n    \"intersheets_ref_prefix\": \"@\",\n    \"intersheets_ref_suffix\": \"!\"\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
+        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"drawing\": {\n    \"intersheets_ref_show\": true,\n    \"intersheets_ref_own_page\": false,\n    \"intersheets_ref_short\": true,\n    \"intersheets_ref_prefix\": \"@\",\n    \"intersheets_ref_suffix\": \"!\"\n  },\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
     )
     .expect("write project");
 
@@ -3046,6 +3046,77 @@ fn load_tree_discovers_companion_project_settings() {
     assert!(project.intersheet_refs().short);
     assert_eq!(project.intersheet_refs().prefix, "@");
     assert_eq!(project.intersheet_refs().suffix, "!");
+    assert_eq!(
+        project.schematic.page_layout_descr_file.as_deref(),
+        Some("${KIPRJMOD}/custom.kicad_wks")
+    );
+    assert_eq!(
+        loaded.current_drawing_sheet_source(),
+        DrawingSheetSource::Filesystem(dir.join("custom.kicad_wks"))
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn current_drawing_sheet_source_prefers_matching_embedded_worksheet() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_embedded_drawing_sheet_source_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("demo.kicad_sch");
+    let project_path = dir.join("demo.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20250114)
+  (generator "ki2")
+  (uuid "60000000-0000-0000-0000-000000000099")
+  (paper "A4")
+  (embedded_files
+    (file
+      (name "custom.kicad_wks")
+      (checksum deadbeef)
+      (type worksheet)
+      (data |worksheet-body|))))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"schematic\": {\n    \"page_layout_descr_file\": \"custom.kicad_wks\"\n  }\n}\n",
+    )
+    .expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(loaded.schematics[0].screen.embedded_files.len(), 1);
+    assert_eq!(
+        loaded.schematics[0].screen.embedded_files[0]
+            .name
+            .as_deref(),
+        Some("custom.kicad_wks")
+    );
+    assert_eq!(
+        loaded.schematics[0].screen.embedded_files[0].file_type,
+        Some(EmbeddedFileType::Worksheet)
+    );
+    assert_eq!(
+        loaded.schematics[0].screen.embedded_files[0]
+            .data
+            .as_deref(),
+        Some("worksheet-body")
+    );
+    assert_eq!(
+        loaded.current_drawing_sheet_source(),
+        DrawingSheetSource::SchematicEmbedded {
+            name: "custom.kicad_wks".to_string(),
+            text: "worksheet-body".to_string(),
+        }
+    );
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(project_path);

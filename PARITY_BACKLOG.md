@@ -93,11 +93,14 @@ Still pending for ERC:
   - broader driver/no-connect/subgraph exactness
 
 Current drawing-sheet blocker:
-- the Rust tree has no drawing-sheet/page-layout model at all
+- the Rust tree still has no drawing-sheet/page-layout object model
 - there is no local equivalent of KiCad's `DS_PROXY_VIEW_ITEM` / `DS_DRAW_ITEM_LIST` path used by
   `ERC_TESTER::TestTextVars( aDrawingSheet )`
-- parser support for embedded-file type `worksheet` exists, but there is no loader-side worksheet
-  parsing or shown-text model to run ERC against
+- parser support for embedded-file type `worksheet` exists, and the typed project-settings carrier
+  now preserves `schematic.page_layout_descr_file`
+- the loader can now resolve the active drawing-sheet source through that path, including matching
+  schematic-embedded worksheet fallback
+- but there is still no loader-side worksheet parsing or shown-text model to run ERC against
 
 ### Simulation
 
@@ -113,6 +116,8 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 1. Remaining connection-backed shown-text exactness
    - `${REF:NET_CLASS(pin)}`
 2. Remaining drawing-sheet `TestTextVars()` coverage
+   - typed project source path is now modeled
+   - remaining work is the worksheet/page-layout object and shown-text path
 3. Hierarchy/loading 1:1 sign-off gaps
 4. Final parser diagnostic wording polish
 5. Simulation-model parity last
@@ -539,6 +544,7 @@ Unblock path:
 1. add a reduced worksheet/page-layout model on the load side
    - enough to represent the exercised text-bearing drawing-sheet items
 2. source the active worksheet/page-layout from project/schematic inputs
+   - done for typed project path + current schematic embedded-file fallback
 3. add a reduced shown-text resolver for those drawing-sheet text items
 4. port the remaining drawing-sheet branch of `ERC_TESTER::TestTextVars()`
 
