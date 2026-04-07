@@ -59,10 +59,11 @@ pub enum DrawingSheetSource {
     SchematicEmbedded { name: String, text: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LoadedSchematicSettings {
     pub intersheet_refs: LoadedIntersheetRefsSettings,
     pub page_layout_descr_file: Option<String>,
+    pub connection_grid_size_mm: f64,
     pub variant_descriptions: BTreeMap<String, String>,
     pub netclasses: BTreeSet<String>,
     pub default_netclass: String,
@@ -73,6 +74,7 @@ impl Default for LoadedSchematicSettings {
         Self {
             intersheet_refs: LoadedIntersheetRefsSettings::default(),
             page_layout_descr_file: None,
+            connection_grid_size_mm: 1.27,
             variant_descriptions: BTreeMap::new(),
             netclasses: BTreeSet::from(["Default".to_string()]),
             default_netclass: "Default".to_string(),
@@ -115,8 +117,9 @@ impl LoadedProjectSettings {
     // This is not a 1:1 KiCad settings object because the current tree still preserves raw
     // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
     // the exercised `SCHEMATIC_SETTINGS` subset: intersheet refs, drawing-sheet source path,
-    // project text vars, schematic variant descriptions, and the reduced ERC-visible netclass-name
-    // set. Remaining divergence is the missing worksheet/page-layout object model behind that path.
+    // connection grid size, project text vars, schematic variant descriptions, and the reduced
+    // ERC-visible netclass-name set. Remaining divergence is the missing worksheet/page-layout
+    // object model behind that path.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
         let mut text_variables = BTreeMap::new();
@@ -161,6 +164,14 @@ impl LoadedProjectSettings {
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string);
+
+            if let Some(grid_size_mils) = schematic_json
+                .get("connection_grid_size")
+                .and_then(Value::as_f64)
+                .filter(|value| *value > 0.0)
+            {
+                schematic.connection_grid_size_mm = grid_size_mils * 0.0254;
+            }
 
             if let Some(variants) = schematic_json.get("variants").and_then(Value::as_array) {
                 for variant in variants {
@@ -264,10 +275,11 @@ impl LoadedProjectSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActiveSchematicSettings {
     pub intersheet_refs: LoadedIntersheetRefsSettings,
     pub page_layout_descr_file: Option<String>,
+    pub connection_grid_size_mm: f64,
 }
 
 impl Default for ActiveSchematicSettings {
@@ -275,6 +287,7 @@ impl Default for ActiveSchematicSettings {
         Self {
             intersheet_refs: LoadedIntersheetRefsSettings::default(),
             page_layout_descr_file: None,
+            connection_grid_size_mm: 1.27,
         }
     }
 }
@@ -290,6 +303,7 @@ impl ActiveSchematicSettings {
             .map(|project| Self {
                 intersheet_refs: project.intersheet_refs().clone(),
                 page_layout_descr_file: project.schematic.page_layout_descr_file.clone(),
+                connection_grid_size_mm: project.schematic.connection_grid_size_mm,
             })
             .unwrap_or_default()
     }

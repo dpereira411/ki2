@@ -34,6 +34,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_footprint_filters(project));
     diagnostics.extend(check_stacked_pin_notation(project));
     diagnostics.extend(check_ground_pins(project));
+    diagnostics.extend(check_off_grid_endpoints(project));
     diagnostics.extend(check_field_name_whitespace(project));
     diagnostics
 }
@@ -105,6 +106,23 @@ enum PinConflict {
 
 fn point_key(at: [f64; 2]) -> PointKey {
     PointKey(at[0].to_bits(), at[1].to_bits())
+}
+
+// Upstream parity: reduced local helper for the modulus test inside
+// `ERC_TESTER::TestOffGridEndpoints()`. This is not a 1:1 KiCad IU check because the Rust tree
+// stores schematic geometry in millimeters, but it exists so the typed project connection-grid
+// setting can drive the same endpoint-on-grid rule without inventing an ad hoc tolerance per call.
+fn point_is_on_grid(at: [f64; 2], grid_size_mm: f64) -> bool {
+    const EPSILON: f64 = 1e-6;
+
+    if grid_size_mm <= 0.0 {
+        return true;
+    }
+
+    [at[0], at[1]].into_iter().all(|coordinate| {
+        let scaled = coordinate / grid_size_mm;
+        (scaled - scaled.round()).abs() <= EPSILON
+    })
 }
 
 fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
@@ -2339,6 +2357,111 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     line: None,
                     column: None,
                 });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `ERC_TESTER::TestOffGridEndpoints()`. This is not a
+// 1:1 KiCad marker pass because the Rust tree still checks reduced wire/bus-entry endpoints and
+// projected lib pins in millimeter coordinates instead of live schematic items in KiCad IU, but it
+// preserves the exercised rule: connectable wire endpoints, bus-entry endpoints, and non-NC symbol
+// pins must land on the typed schematic connection grid from companion project settings. Remaining
+// divergence is fuller item coverage and KiCad marker attachment.
+pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let grid_size_mm = project
+        .project
+        .as_ref()
+        .map(|project| project.schematic.connection_grid_size_mm)
+        .unwrap_or(1.27);
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            match item {
+                SchItem::Wire(line) => {
+                    if let Some(point) = line
+                        .points
+                        .first()
+                        .copied()
+                        .filter(|point| !point_is_on_grid(*point, grid_size_mm))
+                        .or_else(|| {
+                            line.points
+                                .last()
+                                .copied()
+                                .filter(|point| !point_is_on_grid(*point, grid_size_mm))
+                        })
+                    {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            code: "erc-endpoint-off-grid",
+                            kind: crate::diagnostic::DiagnosticKind::Validation,
+                            message: format!(
+                                "Endpoint off connection grid at {}, {}",
+                                point[0], point[1]
+                            ),
+                            path: Some(schematic.path.clone()),
+                            span: None,
+                            line: None,
+                            column: None,
+                        });
+                    }
+                }
+                SchItem::BusEntry(entry) => {
+                    for point in [
+                        entry.at,
+                        [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]],
+                    ] {
+                        if point_is_on_grid(point, grid_size_mm) {
+                            continue;
+                        }
+
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            code: "erc-endpoint-off-grid",
+                            kind: crate::diagnostic::DiagnosticKind::Validation,
+                            message: format!(
+                                "Endpoint off connection grid at {}, {}",
+                                point[0], point[1]
+                            ),
+                            path: Some(schematic.path.clone()),
+                            span: None,
+                            line: None,
+                            column: None,
+                        });
+                    }
+                }
+                SchItem::Symbol(symbol) => {
+                    if let Some(point) = projected_symbol_pin_info(symbol)
+                        .into_iter()
+                        .find(|pin| {
+                            pin.electrical_type.as_deref() != Some("no_connect")
+                                && !point_is_on_grid(pin.at, grid_size_mm)
+                        })
+                        .map(|pin| pin.at)
+                    {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            code: "erc-endpoint-off-grid",
+                            kind: crate::diagnostic::DiagnosticKind::Validation,
+                            message: format!(
+                                "Endpoint off connection grid at {}, {}",
+                                point[0], point[1]
+                            ),
+                            path: Some(schematic.path.clone()),
+                            span: None,
+                            line: None,
+                            column: None,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
     }

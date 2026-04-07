@@ -1013,6 +1013,128 @@ fn erc_allows_multiunit_pin_number_on_same_net() {
 }
 
 #[test]
+fn erc_reports_off_grid_endpoints_from_project_grid() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_erc_off_grid_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:OffGrid"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "OffGrid" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "OffGrid_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:OffGrid")
+    (at 1 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 1 0 0) (effects (font (size 1 1))))
+    (property "Value" "OffGrid" (at 1 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 1 0)))
+  (bus_entry (at 1 1) (size 0.5 0.5)))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"schematic\": {\n    \"connection_grid_size\": 50.0\n  }\n}\n",
+    )
+    .expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-endpoint-off-grid")
+            .count(),
+        4,
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn erc_allows_on_grid_endpoints_from_project_grid() {
+    let dir = std::env::temp_dir().join(format!(
+        "ki2_erc_on_grid_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    fs::write(
+        &root_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:OnGrid"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "OnGrid" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "OnGrid_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:OnGrid")
+    (at 1.27 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 1.27 0 0) (effects (font (size 1 1))))
+    (property "Value" "OnGrid" (at 1.27 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 1.27 0)))
+  (bus_entry (at 1.27 1.27) (size 1.27 1.27)))"#,
+    )
+    .expect("write schematic");
+    fs::write(
+        &project_path,
+        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"schematic\": {\n    \"connection_grid_size\": 50.0\n  }\n}\n",
+    )
+    .expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-endpoint-off-grid"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_unresolved_text_variables_on_exercised_items() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_unresolved_text_vars_{}",
@@ -4472,7 +4594,7 @@ fn load_tree_discovers_companion_project_settings() {
     .expect("write schematic");
     fs::write(
         &project_path,
-        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"drawing\": {\n    \"intersheets_ref_show\": true,\n    \"intersheets_ref_own_page\": false,\n    \"intersheets_ref_short\": true,\n    \"intersheets_ref_prefix\": \"@\",\n    \"intersheets_ref_suffix\": \"!\"\n  },\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\"\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
+        "{\n  \"meta\": {\n    \"version\": 2\n  },\n  \"drawing\": {\n    \"intersheets_ref_show\": true,\n    \"intersheets_ref_own_page\": false,\n    \"intersheets_ref_short\": true,\n    \"intersheets_ref_prefix\": \"@\",\n    \"intersheets_ref_suffix\": \"!\"\n  },\n  \"schematic\": {\n    \"page_layout_descr_file\": \"${KIPRJMOD}/custom.kicad_wks\",\n    \"connection_grid_size\": 50.0\n  },\n  \"erc\": {\n    \"rule_severities\": {}\n  }\n}\n",
     )
     .expect("write project");
 
@@ -4498,6 +4620,7 @@ fn load_tree_discovers_companion_project_settings() {
         project.schematic.page_layout_descr_file.as_deref(),
         Some("${KIPRJMOD}/custom.kicad_wks")
     );
+    assert_eq!(project.schematic.connection_grid_size_mm, 1.27);
     assert_eq!(
         loaded.current_drawing_sheet_source(),
         DrawingSheetSource::Filesystem(dir.join("custom.kicad_wks"))
