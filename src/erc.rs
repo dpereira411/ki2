@@ -36,6 +36,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_label_connectivity(project));
     diagnostics.extend(check_directive_labels(project));
     diagnostics.extend(check_hierarchical_sheets(project));
+    diagnostics.extend(check_bus_to_net_conflicts(project));
     diagnostics.extend(check_mult_unit_pin_conflicts(project));
     diagnostics.extend(check_pin_to_pin(project));
     diagnostics.extend(check_driver_conflicts(project));
@@ -336,6 +337,30 @@ fn unresolved_variable_diagnostic(path: &std::path::Path, message: String) -> Di
         line: None,
         column: None,
     }
+}
+
+fn reduced_text_is_bus(schematic: &crate::model::Schematic, text: &str) -> bool {
+    text.contains('[')
+        || text.contains(']')
+        || text.contains('{')
+        || text.contains('}')
+        || schematic
+            .screen
+            .bus_aliases
+            .iter()
+            .any(|alias| alias.name.eq_ignore_ascii_case(text))
+}
+
+fn component_contains_line_kind(
+    component: &crate::connectivity::ConnectionComponent,
+    line: &crate::model::Line,
+) -> bool {
+    line.points.windows(2).any(|segment| {
+        component
+            .members
+            .iter()
+            .any(|member| point_on_wire_segment(member.at, segment[0], segment[1]))
+    })
 }
 
 fn child_sheet_path_for_sheet<'a>(
@@ -1730,6 +1755,104 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
                         "Hierarchical label {name} has no matching sheet pin in the parent sheet"
                     ),
                     path: Some(child_sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToNetConflicts()`.
+// This is not a 1:1 KiCad subgraph/`SCH_CONNECTION` pass because the Rust tree still classifies
+// bus-vs-net ownership from line kinds and reduced shown-text instead of full bus-member
+// connections. It exists so the current graph-backed ERC runner now flags connected bus/net mixes
+// on the shared reduced component owner rather than leaving the branch entirely unported. Remaining
+// divergence is fuller member-aware bus semantics.
+pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for component in collect_connection_components(schematic) {
+            let mut has_bus_item = false;
+            let mut has_net_item = false;
+            let mut net_at = None;
+
+            for item in &schematic.screen.items {
+                match item {
+                    SchItem::Wire(line) | SchItem::Bus(line)
+                        if component_contains_line_kind(&component, line) =>
+                    {
+                        match line.kind {
+                            crate::model::LineKind::Bus => has_bus_item = true,
+                            crate::model::LineKind::Wire => {
+                                has_net_item = true;
+                                net_at.get_or_insert_with(|| {
+                                    line.points.first().copied().unwrap_or(component.anchor)
+                                });
+                            }
+                            crate::model::LineKind::Polyline => {}
+                        }
+                    }
+                    SchItem::Label(label)
+                        if component.members.iter().any(|member| {
+                            member.kind == ConnectionMemberKind::Label
+                                && points_equal(member.at, label.at)
+                        }) =>
+                    {
+                        if label.kind == LabelKind::Directive {
+                            continue;
+                        }
+
+                        if reduced_text_is_bus(
+                            schematic,
+                            &shown_label_text(project, sheet_path, label),
+                        ) {
+                            has_bus_item = true;
+                        } else {
+                            has_net_item = true;
+                            net_at.get_or_insert(label.at);
+                        }
+                    }
+                    SchItem::Sheet(sheet) => {
+                        for pin in &sheet.pins {
+                            if !component.members.iter().any(|member| {
+                                member.kind == ConnectionMemberKind::SheetPin
+                                    && points_equal(member.at, pin.at)
+                            }) {
+                                continue;
+                            }
+
+                            if reduced_text_is_bus(schematic, &pin.name) {
+                                has_bus_item = true;
+                            } else {
+                                has_net_item = true;
+                                net_at.get_or_insert(pin.at);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if has_bus_item && has_net_item {
+                let report_at = net_at.unwrap_or(component.anchor);
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-bus-to-net-conflict",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Bus and net items are graphically connected at {}, {}",
+                        report_at[0], report_at[1]
+                    ),
+                    path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,

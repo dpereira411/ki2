@@ -377,6 +377,10 @@ Current status:
 - reduced bus-entry participation is now also live for that cluster through the shared segment owner
 - current remaining gap in that cluster is fuller bus conflict/subgraph semantics, not absence of
   the wire/bus-entry floating-endpoint rules
+- reduced `CONNECTION_GRAPH::ercCheckBusToNetConflicts()` coverage is now live through:
+  - shared reduced wire/bus connected components
+  - reduced bus-vs-net classification from line kind and shown text
+- current remaining bus graph gaps are the member-aware branches, not gross bus-vs-net conflicts
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
@@ -392,7 +396,6 @@ Current status:
 - the next honest connection-graph ERC gaps are no longer label ownership itself; they are the
   remaining graph-owned passes without local analogues:
   - fuller bus conflict/subgraph ownership:
-    - `ercCheckBusToNetConflicts()`
     - `ercCheckBusToBusEntryConflicts()`
     - `ercCheckBusToBusConflicts()`
 

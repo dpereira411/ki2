@@ -1202,6 +1202,55 @@ fn erc_allows_bus_entry_endpoint_connected_to_wire() {
 }
 
 #[test]
+fn erc_reports_bus_to_net_conflicts_from_connected_lines() {
+    let path = temp_schematic(
+        "erc_bus_to_net_lines",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 10 0))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-bus-to-net-conflict"
+            && diagnostic.message == "Bus and net items are graphically connected at -10, 0"
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_bus_to_net_conflicts_from_bus_label_and_wire() {
+    let path = temp_schematic(
+        "erc_bus_to_net_label",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "DATA[0..7]" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "NET_A" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-bus-to-net-conflict"
+            && diagnostic.message == "Bus and net items are graphically connected at 0, 0"
+    }));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_connected_directive_labels() {
     let path = temp_schematic(
         "erc_connected_directive_label",

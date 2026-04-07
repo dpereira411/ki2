@@ -204,7 +204,7 @@ pub(crate) fn collect_connection_points(
                     );
                 }
             }
-            SchItem::Wire(line) => {
+            SchItem::Wire(line) | SchItem::Bus(line) => {
                 for point in &line.points {
                     push_connection_member(
                         &mut snapshot,
@@ -362,6 +362,24 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
     let point_snapshot = collect_connection_points(schematic);
     let points = point_snapshot.into_values().collect::<Vec<_>>();
     let mut segments = collect_wire_segments(schematic);
+    segments.extend(
+        schematic
+            .screen
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                SchItem::Bus(line) => Some(
+                    line.points
+                        .windows(2)
+                        .filter_map(|pair| {
+                            (!points_equal(pair[0], pair[1])).then_some([pair[0], pair[1]])
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten(),
+    );
     segments.extend(schematic.screen.items.iter().filter_map(|item| match item {
         SchItem::BusEntry(entry) => Some([
             entry.at,
