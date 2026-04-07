@@ -330,8 +330,16 @@ What remains after that correction:
         the reduced resolver
       - current coverage now also locks project-backed `${VARIANT_DESC}` grouping through typed
         `.kicad_pro` schematic variant descriptions
+      - current coverage now also locks global-label `${CONNECTION_TYPE}` grouping from label
+        shape without needing the blocked connectivity graph
       - remaining divergence is the broader unported text-variable resolver surface
         (`ResolveTextVar`, net/cross-reference variables), not this exercised intersheet-ref path
+      - unblock path for the remaining text-variable surface:
+        1. add a reduced current-sheet connectivity snapshot so labels can expose resolved
+           `NET_NAME`, `SHORT_NET_NAME`, and `NET_CLASS`
+        2. add a reduced cross-reference resolver for `ref:field`-style token lookup across loaded
+           sheet paths
+        3. thread that connectivity/cross-reference state into the shared shown-text resolver
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
     - the current Rust tree still lacks KiCad's fuller schematic-settings/config surface beyond

@@ -3759,6 +3759,25 @@ fn resolve_project_git_hash(project: &LoadedProjectSettings, short: bool) -> Opt
     (!hash.is_empty()).then(|| hash.to_string())
 }
 
+// Upstream parity: reduced local helper for the global-label `CONNECTION_TYPE` branch in
+// `SCH_LABEL_BASE::ResolveTextVar()`. This is not a full 1:1 label resolver because the current
+// intersheet path only exercises global labels, but it is still needed so shape-owned text vars do
+// not wait on the blocked connectivity/net-name model.
+fn global_label_connection_type(label: &crate::model::Label) -> Option<&'static str> {
+    use crate::model::LabelShape;
+
+    match label.shape {
+        LabelShape::Input => Some("Input"),
+        LabelShape::Output => Some("Output"),
+        LabelShape::Bidirectional => Some("Bidirectional"),
+        LabelShape::TriState => Some("Tri-State"),
+        LabelShape::Unspecified => Some("Passive"),
+        LabelShape::Dot | LabelShape::Round | LabelShape::Diamond | LabelShape::Rectangle => {
+            Some("???")
+        }
+    }
+}
+
 // Upstream parity: reduced local helper for the currently exercised `PROJECT::TextVarResolver()`
 // slice. This is not a 1:1 KiCad boundary because the Rust tree still lacks KiCad's fuller
 // project resolver stack, but it keeps project-owned token handling in one place for the
@@ -4101,6 +4120,10 @@ fn shown_global_label_text(
         &label.text,
         &|token| {
             let token_upper = token.to_ascii_uppercase();
+
+            if token_upper == "CONNECTION_TYPE" {
+                return global_label_connection_type(label).map(str::to_string);
+            }
 
             if let Some(property) = label
                 .properties

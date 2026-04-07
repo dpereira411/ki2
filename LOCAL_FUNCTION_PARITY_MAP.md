@@ -77,11 +77,12 @@ Current ERC blocker:
         variant-triggered page-ref-map recompute
       - the reduced resolver also now covers schematic `VARIANT` / `VARIANTNAME`, stable
         title-block tokens, `${PROJECTNAME}`, `${CURRENT_DATE}`, `${VCSHASH}`,
-        `${VCSSHORTHASH}`, `${FILENAME}`, `${FILEPATH}`, `${VARIANT_DESC}`, and companion
-        `.kicad_pro` `text_variables`
+        `${VCSSHORTHASH}`, `${FILENAME}`, `${FILEPATH}`, `${VARIANT_DESC}`,
+        `${CONNECTION_TYPE}`, and companion `.kicad_pro` `text_variables`
       - remaining divergence is the broader unported text-variable resolver surface
         (net/cross-reference variables), not this exercised intersheet-ref
         branch
+      - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet
