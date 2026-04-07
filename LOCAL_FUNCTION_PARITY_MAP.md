@@ -77,8 +77,10 @@ Current ERC blocker:
       refs; the no-project path now uses KiCad's current default schematic-settings values, and
       what remains is fuller typed user-config/settings override support beyond companion project
       JSON
+      - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
     - current Rust shapes do not yet have the hatch/update state KiCad mutates with
       `shape->UpdateHatching()`
+      - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
   - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked
     on that fuller model
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
