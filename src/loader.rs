@@ -76,6 +76,38 @@ impl LoadedProjectSettings {
             .and_then(|drawing| drawing.get("intersheets_ref_own_page"))
             .and_then(Value::as_bool)
     }
+
+    // Upstream parity: local settings lookup for KiCad's
+    // `SCHEMATIC_SETTINGS::m_IntersheetRefsFormatShort`.
+    pub fn intersheet_refs_short(&self) -> Option<bool> {
+        self.json
+            .get("drawing")
+            .and_then(Value::as_object)
+            .and_then(|drawing| drawing.get("intersheets_ref_short"))
+            .and_then(Value::as_bool)
+    }
+
+    // Upstream parity: local settings lookup for KiCad's
+    // `SCHEMATIC_SETTINGS::m_IntersheetRefsPrefix`.
+    pub fn intersheet_refs_prefix(&self) -> Option<String> {
+        self.json
+            .get("drawing")
+            .and_then(Value::as_object)
+            .and_then(|drawing| drawing.get("intersheets_ref_prefix"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
+
+    // Upstream parity: local settings lookup for KiCad's
+    // `SCHEMATIC_SETTINGS::m_IntersheetRefsSuffix`.
+    pub fn intersheet_refs_suffix(&self) -> Option<String> {
+        self.json
+            .get("drawing")
+            .and_then(Value::as_object)
+            .and_then(|drawing| drawing.get("intersheets_ref_suffix"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }
 }
 
 #[derive(Debug)]
@@ -104,6 +136,24 @@ impl LoadResult {
         self.project
             .as_ref()
             .and_then(LoadedProjectSettings::intersheet_refs_own_page)
+    }
+
+    fn intersheet_refs_short(&self) -> Option<bool> {
+        self.project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_short)
+    }
+
+    fn intersheet_refs_prefix(&self) -> Option<String> {
+        self.project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_prefix)
+    }
+
+    fn intersheet_refs_suffix(&self) -> Option<String> {
+        self.project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_suffix)
     }
 
     pub fn root_sheet_path(&self) -> Option<&LoadedSheetPath> {
@@ -180,6 +230,9 @@ impl LoadResult {
             );
             let intersheet_refs_show = self.intersheet_refs_show();
             let intersheet_refs_own_page = self.intersheet_refs_own_page();
+            let intersheet_refs_short = self.intersheet_refs_short();
+            let intersheet_refs_prefix = self.intersheet_refs_prefix();
+            let intersheet_refs_suffix = self.intersheet_refs_suffix();
             refresh_current_sheet_intersheet_refs(
                 &mut self.schematics,
                 &self.sheet_paths,
@@ -189,6 +242,9 @@ impl LoadResult {
                 &self.sheet_pages_by_virtual_page,
                 intersheet_refs_show,
                 intersheet_refs_own_page,
+                intersheet_refs_short,
+                intersheet_refs_prefix.as_deref(),
+                intersheet_refs_suffix.as_deref(),
             );
             if let Some(schematic) = self
                 .current_sheet_path()
@@ -346,6 +402,15 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
         project
             .as_ref()
             .and_then(LoadedProjectSettings::intersheet_refs_own_page),
+        project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_short),
+        project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_prefix),
+        project
+            .as_ref()
+            .and_then(LoadedProjectSettings::intersheet_refs_suffix),
     );
     snapshot_sheet_occurrence_bases(&mut loader.schematics);
     snapshot_symbol_occurrence_bases(&mut loader.schematics);
@@ -1613,6 +1678,9 @@ impl SchematicLoader {
         sheet_paths: &[LoadedSheetPath],
         intersheet_refs_show: Option<bool>,
         intersheet_refs_own_page: Option<bool>,
+        intersheet_refs_short: Option<bool>,
+        intersheet_refs_prefix: Option<String>,
+        intersheet_refs_suffix: Option<String>,
     ) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
@@ -1678,6 +1746,9 @@ impl SchematicLoader {
             &self.sheet_pages_by_virtual_page,
             intersheet_refs_show,
             intersheet_refs_own_page,
+            intersheet_refs_short,
+            intersheet_refs_prefix.as_deref(),
+            intersheet_refs_suffix.as_deref(),
         );
     }
 }
@@ -1699,6 +1770,9 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     sheet_pages_by_virtual_page: &HashMap<usize, String>,
     intersheet_refs_show: Option<bool>,
     intersheet_refs_own_page: Option<bool>,
+    intersheet_refs_short: Option<bool>,
+    intersheet_refs_prefix: Option<&str>,
+    intersheet_refs_suffix: Option<&str>,
 ) {
     for schematic in schematics.iter_mut() {
         for item in &mut schematic.screen.items {
@@ -1771,30 +1845,55 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
             }
         }
 
-        intersheet_refs.value = if intersheet_refs_own_page == Some(false) {
-            match intersheet_ref_pages_by_label.get(&label.text) {
-                Some(raw_pages) => {
-                    let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();
+        let prefix = intersheet_refs_prefix.unwrap_or_default();
+        let suffix = intersheet_refs_suffix.unwrap_or_default();
+        intersheet_refs.value = match intersheet_ref_pages_by_label.get(&label.text) {
+            Some(raw_pages) => {
+                let mut pages = raw_pages.iter().copied().collect::<Vec<_>>();
+                if intersheet_refs_own_page == Some(false) {
                     pages.retain(|page_number| *page_number != current_sheet_path.sheet_number);
-                    let refs = pages
+                }
+
+                let refs = if intersheet_refs_short == Some(true) && pages.len() > 2 {
+                    let first = pages
+                        .first()
+                        .and_then(|page_number| sheet_pages_by_virtual_page.get(page_number))
+                        .cloned()
+                        .unwrap_or_default();
+                    let last = pages
+                        .last()
+                        .and_then(|page_number| sheet_pages_by_virtual_page.get(page_number))
+                        .cloned()
+                        .unwrap_or_default();
+                    format!("{first}..{last}")
+                } else {
+                    pages
                         .into_iter()
                         .filter_map(|page_number| sheet_pages_by_virtual_page.get(&page_number))
                         .cloned()
                         .collect::<Vec<_>>()
-                        .join(",");
-                    if refs.is_empty() {
-                        String::new()
-                    } else {
-                        format!("[{refs}]")
-                    }
+                        .join(",")
+                };
+
+                if refs.is_empty() {
+                    format!("{prefix}{suffix}")
+                } else if prefix.is_empty() && suffix.is_empty() {
+                    format!("[{refs}]")
+                } else {
+                    format!("{prefix}{refs}{suffix}")
                 }
-                None => "[?]".to_string(),
             }
-        } else {
-            intersheet_ref_values
-                .get(&label.text)
-                .cloned()
-                .unwrap_or_else(|| "[?]".to_string())
+            None => {
+                let refs = intersheet_ref_values
+                    .get(&label.text)
+                    .cloned()
+                    .unwrap_or_else(|| "?".to_string());
+                if prefix.is_empty() && suffix.is_empty() {
+                    refs
+                } else {
+                    format!("{prefix}{refs}{suffix}")
+                }
+            }
         };
         intersheet_refs.id = PropertyKind::GlobalLabelIntersheetRefs.default_field_id();
         intersheet_refs.key = PropertyKind::GlobalLabelIntersheetRefs

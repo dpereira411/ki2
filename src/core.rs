@@ -109,6 +109,26 @@ impl SchematicProject {
                 instance_path,
             );
             self.current_sheet_instance_path = instance_path.to_string();
+            let intersheet_refs_show = self
+                .project
+                .as_ref()
+                .and_then(LoadedProjectSettings::intersheet_refs_show);
+            let intersheet_refs_own_page = self
+                .project
+                .as_ref()
+                .and_then(LoadedProjectSettings::intersheet_refs_own_page);
+            let intersheet_refs_short = self
+                .project
+                .as_ref()
+                .and_then(LoadedProjectSettings::intersheet_refs_short);
+            let intersheet_refs_prefix = self
+                .project
+                .as_ref()
+                .and_then(LoadedProjectSettings::intersheet_refs_prefix);
+            let intersheet_refs_suffix = self
+                .project
+                .as_ref()
+                .and_then(LoadedProjectSettings::intersheet_refs_suffix);
             refresh_current_sheet_intersheet_refs(
                 &mut self.schematics,
                 &self.sheet_paths,
@@ -116,12 +136,11 @@ impl SchematicProject {
                 &self.intersheet_ref_values,
                 &self.intersheet_ref_pages_by_label,
                 &self.sheet_pages_by_virtual_page,
-                self.project
-                    .as_ref()
-                    .and_then(LoadedProjectSettings::intersheet_refs_show),
-                self.project
-                    .as_ref()
-                    .and_then(LoadedProjectSettings::intersheet_refs_own_page),
+                intersheet_refs_show,
+                intersheet_refs_own_page,
+                intersheet_refs_short,
+                intersheet_refs_prefix.as_deref(),
+                intersheet_refs_suffix.as_deref(),
             );
             if let Some(schematic) = self
                 .current_sheet_path()

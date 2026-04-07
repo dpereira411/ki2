@@ -296,6 +296,9 @@ What remains after that correction:
   - done: current-sheet page-list text now also honors companion `.kicad_pro`
     `drawing.intersheets_ref_own_page`, so the selected page can be excluded from the displayed
     intersheet-ref list like upstream
+  - done: current-sheet intersheet-ref text now also honors companion `.kicad_pro`
+    `drawing.intersheets_ref_short`, `drawing.intersheets_ref_prefix`, and
+    `drawing.intersheets_ref_suffix`
   - remaining narrower drift under the same routine:
     - the current Rust tree still lacks KiCad's fuller typed schematic-settings/config layer, so
       the no-project fallback for intersheet-ref display settings is still reduced to the current
