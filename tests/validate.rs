@@ -4454,6 +4454,154 @@ fn intersheet_refs_group_global_labels_by_cross_referenced_symbol_field() {
 }
 
 #[test]
+fn intersheet_refs_group_global_labels_by_parent_symbol_reference() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_parent_symbol_ref_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71200000-0000-0000-0000-000000000333")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "71200000-0000-0000-0000-000000000336")
+    (instances
+      (project "demo"
+        (path "/71200000-0000-0000-0000-000000000331/71200000-0000-0000-0000-000000000332"
+          (reference "R1A")
+          (value "10k"))
+        (path "/71200000-0000-0000-0000-000000000331/71200000-0000-0000-0000-000000000334"
+          (reference "R1B")
+          (value "22k")))))
+  (global_label "${R1:VALUE}" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71200000-0000-0000-0000-000000000331")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71200000-0000-0000-0000-000000000332")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "71200000-0000-0000-0000-000000000334")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71200000-0000-0000-0000-000000000332" (page "2"))
+    (path "/71200000-0000-0000-0000-000000000334" (page "3")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get("10k"),
+        Some(&BTreeSet::from([2]))
+    );
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get("22k"),
+        Some(&BTreeSet::from([3]))
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${R1:VALUE}")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
+fn intersheet_refs_mark_unknown_cross_references() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_unknown_cross_ref_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71300000-0000-0000-0000-000000000333")
+  (paper "A4")
+  (global_label "${R9:VALUE}" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71300000-0000-0000-0000-000000000331")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71300000-0000-0000-0000-000000000332")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71300000-0000-0000-0000-000000000332" (page "2")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded
+            .intersheet_ref_pages_by_label
+            .get("<Unknown reference: R9>"),
+        Some(&BTreeSet::from([2]))
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${R9:VALUE}")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn intersheet_refs_group_global_labels_by_project_name() {
     let dir = env::temp_dir().join(format!(
         "ki2_intersheet_refs_project_name_{}",

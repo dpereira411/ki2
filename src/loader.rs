@@ -3859,6 +3859,17 @@ fn resolved_text_property_value(properties: &[Property], field_name: &str) -> Op
         .map(|property| property.value.clone())
 }
 
+fn is_parent_reference_match(reference: &str, resolved_reference: &str) -> bool {
+    resolved_reference.len() == reference.len() + 1
+        && resolved_reference
+            .get(..reference.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(reference))
+        && resolved_reference
+            .chars()
+            .last()
+            .is_some_and(|suffix| suffix.is_ascii_uppercase())
+}
+
 // Upstream parity: reduced local helper for the direct field-lookup subset of
 // `SCHEMATIC::ResolveCrossReference()` on the loader shown-text path. This is not a 1:1 KiCad
 // cross-reference resolver because the Rust tree still lacks connectivity-backed text vars and the
@@ -3879,6 +3890,8 @@ fn resolve_cross_reference_text_var(
             (field_name, Some(variant))
         });
     let effective_variant = explicit_variant.or(current_variant);
+    let mut parent_symbol_fallback: Option<(String, Vec<Property>)> = None;
+    let mut matched_sheet_reference = false;
 
     for candidate_path in ordered_sheet_paths(sheet_paths, loaded_path) {
         let Some(schematic) = schematics
@@ -3904,6 +3917,9 @@ fn resolve_cross_reference_text_var(
                         &state.properties,
                         PropertyKind::SymbolReference.canonical_key(),
                     );
+                    let resolved_reference = reference_text
+                        .clone()
+                        .unwrap_or_else(|| reference.to_string());
 
                     let matches = reference == full_path
                         || reference == symbol_uuid
@@ -3912,6 +3928,14 @@ fn resolve_cross_reference_text_var(
                             .is_some_and(|text| text.eq_ignore_ascii_case(reference));
 
                     if !matches {
+                        if reference_text
+                            .as_deref()
+                            .is_some_and(|text| is_parent_reference_match(reference, text))
+                            && parent_symbol_fallback.is_none()
+                        {
+                            parent_symbol_fallback =
+                                Some((resolved_reference, state.properties.clone()));
+                        }
                         continue;
                     }
 
@@ -3919,6 +3943,8 @@ fn resolve_cross_reference_text_var(
                     {
                         return Some(value);
                     }
+
+                    return Some(format!("<Unresolved: {resolved_reference}:{field_name}>"));
                 }
                 _ => {}
             }
@@ -3934,6 +3960,7 @@ fn resolve_cross_reference_text_var(
         if !matches {
             continue;
         }
+        matched_sheet_reference = true;
 
         let Some(state) =
             resolved_sheet_text_state(schematics, sheet_paths, candidate_path, effective_variant)
@@ -3946,7 +3973,19 @@ fn resolve_cross_reference_text_var(
         }
     }
 
-    None
+    if let Some((resolved_reference, properties)) = parent_symbol_fallback {
+        if let Some(value) = resolved_text_property_value(&properties, field_name) {
+            return Some(value);
+        }
+
+        return Some(format!("<Unresolved: {resolved_reference}:{field_name}>"));
+    }
+
+    if matched_sheet_reference {
+        return None;
+    }
+
+    Some(format!("<Unknown reference: {reference}>"))
 }
 
 fn current_iso_date() -> Option<String> {
