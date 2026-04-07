@@ -242,15 +242,28 @@ Concrete unblock path:
 
 1. expand `LoadResult` / loader-owned state to carry `current_variant: Option<String>` (or the
    closest upstream-shaped equivalent)
+   - done: the loaded project now carries current variant selection and refreshes live symbol
+     occurrence state through the same selection path as current-sheet switching
 2. define the resolution rule from that current variant to parsed `instance.variants`
+   - done for symbols: the loader now resolves the selected variant name against
+     `SymbolLocalInstance.variants`
 3. teach current-sheet refresh helpers to apply resolved variant attributes onto live symbol/sheet
    state in addition to the current reference/unit/value/footprint/page refresh
+   - done for symbols: symbol `dnp` / `exclude_from_sim` / `in_bom` / `on_board` /
+     `in_pos_files` and variant field overrides now apply on top of occurrence refresh, with base
+     state restoration when the current occurrence or current variant changes
+   - still blocked for sheets: the current loader model still has no honest live sheet-occurrence
+     refresh path analogous to the symbol-side selected-occurrence state
 4. add ERC-facing regressions for:
    - symbol variant `dnp` / `in_bom` / `on_board` / `in_pos_files`
    - sheet variant `exclude_from_sim`
    - variant field overrides on the selected occurrence
+   - done for symbol-side selected-occurrence refresh
 5. only after that, reopen `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, and
    `UpdateAllScreenReferences` for branch-level parity tightening
+   - remaining active gap is now narrower:
+     - sheet occurrence variants
+     - any broader ERC semantics that need variant-aware sheet state beyond the current model
 
 Until that model exists, the remaining loader drift should be treated as blocked rather than as an
 unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or

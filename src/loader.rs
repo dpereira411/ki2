@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
-    EmbeddedFile, Property, PropertyKind, SchItem, Schematic, SheetReference, SimLibrarySource,
-    Symbol,
+    EmbeddedFile, ItemVariant, Property, PropertyKind, SchItem, Schematic, SheetReference,
+    SimLibrarySource, Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
@@ -42,6 +42,7 @@ pub struct LoadResult {
     pub links: Vec<HierarchyLink>,
     pub sheet_paths: Vec<LoadedSheetPath>,
     pub current_sheet_instance_path: String,
+    pub current_variant: Option<String>,
 }
 
 impl LoadResult {
@@ -75,6 +76,10 @@ impl LoadResult {
             .find(|schematic| schematic.path == current_sheet_path.schematic_path)
     }
 
+    pub fn current_variant(&self) -> Option<&str> {
+        self.current_variant.as_deref()
+    }
+
     // Upstream parity: current-sheet selection is the local entrypoint that exercises KiCad's
     // reused-screen occurrence switching side effects after load. This helper is not a 1:1
     // upstream routine because the Rust loader exposes selection directly on `LoadResult`, but it
@@ -89,6 +94,7 @@ impl LoadResult {
                 &self.sheet_paths,
                 previous.as_ref(),
                 next.as_ref(),
+                self.current_variant.as_deref(),
             );
             refresh_current_screen_page_state(
                 &mut self.schematics,
@@ -106,12 +112,34 @@ impl LoadResult {
                         .find(|schematic| schematic.path == schematic_path)
                 })
             {
-                apply_symbol_instance_state(schematic, instance_path);
+                apply_symbol_instance_state(
+                    schematic,
+                    instance_path,
+                    self.current_variant.as_deref(),
+                );
             }
             true
         } else {
             false
         }
+    }
+
+    // Upstream parity: local project-selection analogue for KiCad's current schematic variant.
+    // This is not a 1:1 upstream routine because the current tree does not yet have KiCad's full
+    // project/settings layer, so the variant is selected directly on `LoadResult`. The current
+    // implementation intentionally limits itself to live symbol occurrence state; remaining sheet
+    // occurrence and broader ERC variant semantics still need richer model coverage.
+    pub fn set_current_variant(&mut self, variant: Option<&str>) {
+        self.current_variant = variant
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        refresh_live_symbol_occurrence_state(
+            &mut self.schematics,
+            &self.sheet_paths,
+            &self.current_sheet_instance_path,
+            self.current_variant.as_deref(),
+        );
     }
 
     pub fn children_of<'a>(
@@ -210,12 +238,14 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
     loader.set_sheet_number_and_count(&mut sheet_paths);
     loader.recompute_intersheet_refs(&sheet_paths);
     loader.update_all_screen_references(&sheet_paths);
+    snapshot_symbol_occurrence_bases(&mut loader.schematics);
     Ok(LoadResult {
         root_path,
         schematics: loader.schematics,
         links: loader.links,
         sheet_paths,
         current_sheet_instance_path: String::new(),
+        current_variant: None,
     })
 }
 
@@ -528,7 +558,7 @@ impl SchematicLoader {
                 > 1
                 && seeded_reused_schematics.insert(sheet_path.schematic_path.clone())
             {
-                seed_first_symbol_instance_state(&mut self.schematics[schematic_index]);
+                seed_first_symbol_instance_state(&mut self.schematics[schematic_index], None);
             }
         }
     }
@@ -1464,21 +1494,7 @@ impl SchematicLoader {
                         continue;
                     };
 
-                    if let Some(reference) = instance.reference {
-                        symbol.set_field_text(PropertyKind::SymbolReference, reference);
-                    }
-
-                    if let Some(unit) = instance.unit {
-                        symbol.unit = Some(unit);
-                    }
-
-                    if let Some(value) = instance.value {
-                        symbol.set_field_text(PropertyKind::SymbolValue, value);
-                    }
-
-                    if let Some(footprint) = instance.footprint {
-                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
-                    }
+                    apply_selected_symbol_instance(symbol, instance, None);
                 }
             } else if seeded_reused_schematics.insert(sheet_path.schematic_path.clone()) {
                 for item in &mut self.schematics[schematic_index].screen.items {
@@ -1490,21 +1506,7 @@ impl SchematicLoader {
                         continue;
                     };
 
-                    if let Some(reference) = instance.reference {
-                        symbol.set_field_text(PropertyKind::SymbolReference, reference);
-                    }
-
-                    if let Some(unit) = instance.unit {
-                        symbol.unit = Some(unit);
-                    }
-
-                    if let Some(value) = instance.value {
-                        symbol.set_field_text(PropertyKind::SymbolValue, value);
-                    }
-
-                    if let Some(footprint) = instance.footprint {
-                        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
-                    }
+                    apply_selected_symbol_instance(symbol, instance, None);
                 }
             }
 
@@ -1539,11 +1541,17 @@ impl SchematicLoader {
 // This helper exists because the Rust loader reuses the same symbol-instance application logic for
 // both initial load-time refresh and later current-sheet selection. Remaining divergence is blocked
 // on richer occurrence state, especially active-variant selection and variant field application.
-fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
+fn apply_symbol_instance_state(
+    schematic: &mut Schematic,
+    instance_path: &str,
+    current_variant: Option<&str>,
+) {
     for item in &mut schematic.screen.items {
         let SchItem::Symbol(symbol) = item else {
             continue;
         };
+
+        symbol.restore_occurrence_base();
 
         let Some(instance) = symbol
             .instances
@@ -1554,52 +1562,26 @@ fn apply_symbol_instance_state(schematic: &mut Schematic, instance_path: &str) {
             continue;
         };
 
-        if let Some(reference) = instance.reference {
-            symbol.set_field_text(PropertyKind::SymbolReference, reference);
-        }
-
-        if let Some(unit) = instance.unit {
-            symbol.unit = Some(unit);
-        }
-
-        if let Some(value) = instance.value {
-            symbol.set_field_text(PropertyKind::SymbolValue, value);
-        }
-
-        if let Some(footprint) = instance.footprint {
-            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
-        }
+        apply_selected_symbol_instance(symbol, instance, current_variant);
     }
 }
 
 // Upstream parity: local helper for reused-screen first-occurrence baseline refresh. This helper
 // exists because the Rust loader keeps reused-screen reset/apply transitions outside the owning C++
 // screen classes. Remaining divergence is blocked on richer occurrence state, especially variants.
-fn seed_first_symbol_instance_state(schematic: &mut Schematic) {
+fn seed_first_symbol_instance_state(schematic: &mut Schematic, current_variant: Option<&str>) {
     for item in &mut schematic.screen.items {
         let SchItem::Symbol(symbol) = item else {
             continue;
         };
 
+        symbol.restore_occurrence_base();
+
         let Some(instance) = symbol.instances.first().cloned() else {
             continue;
         };
 
-        if let Some(reference) = instance.reference {
-            symbol.set_field_text(PropertyKind::SymbolReference, reference);
-        }
-
-        if let Some(unit) = instance.unit {
-            symbol.unit = Some(unit);
-        }
-
-        if let Some(value) = instance.value {
-            symbol.set_field_text(PropertyKind::SymbolValue, value);
-        }
-
-        if let Some(footprint) = instance.footprint {
-            symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
-        }
+        apply_selected_symbol_instance(symbol, instance, current_variant);
     }
 }
 
@@ -1612,6 +1594,7 @@ fn reset_reused_screen_symbol_state(
     sheet_paths: &[LoadedSheetPath],
     previous: Option<&LoadedSheetPath>,
     next: Option<&LoadedSheetPath>,
+    current_variant: Option<&str>,
 ) {
     let Some(previous) = previous else {
         return;
@@ -1633,7 +1616,138 @@ fn reset_reused_screen_symbol_state(
         .iter_mut()
         .find(|schematic| schematic.path == previous.schematic_path)
     {
-        seed_first_symbol_instance_state(schematic);
+        seed_first_symbol_instance_state(schematic, current_variant);
+    }
+}
+
+// Upstream parity: local helper that applies the currently selected symbol occurrence and variant
+// after the loader has restored the symbol's non-occurrence baseline. This helper exists because
+// the Rust loader reuses the same occurrence refresh on initial load, reused-screen switching, and
+// current-variant switching. Remaining divergence is limited to sheet occurrence variants and any
+// richer per-occurrence state beyond the current symbol model.
+fn apply_selected_symbol_instance(
+    symbol: &mut Symbol,
+    instance: crate::model::SymbolLocalInstance,
+    current_variant: Option<&str>,
+) {
+    if let Some(reference) = instance.reference {
+        symbol.set_field_text(PropertyKind::SymbolReference, reference);
+    }
+
+    if let Some(unit) = instance.unit {
+        symbol.unit = Some(unit);
+    }
+
+    if let Some(value) = instance.value {
+        symbol.set_field_text(PropertyKind::SymbolValue, value);
+    }
+
+    if let Some(footprint) = instance.footprint {
+        symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
+    }
+
+    if let Some(variant_name) = current_variant {
+        if let Some(variant) = instance.variants.get(variant_name) {
+            apply_symbol_variant_state(symbol, variant);
+        }
+    }
+}
+
+// Upstream parity: local helper for the symbol subset of occurrence-variant application. This is
+// not a 1:1 upstream routine because the current tree still lacks KiCad's fuller current-variant
+// and sheet-occurrence model, so the variant is resolved directly against parsed symbol instances.
+// Remaining divergence is limited to sheet variants and any broader occurrence metadata not present
+// in `ItemVariant`.
+fn apply_symbol_variant_state(symbol: &mut Symbol, variant: &ItemVariant) {
+    symbol.dnp = variant.dnp;
+    symbol.excluded_from_sim = variant.excluded_from_sim;
+    symbol.in_bom = variant.in_bom;
+    symbol.on_board = variant.on_board;
+    symbol.in_pos_files = variant.in_pos_files;
+
+    for (name, value) in &variant.fields {
+        if let Some(property) = symbol
+            .properties
+            .iter_mut()
+            .find(|property| property.key == *name)
+        {
+            property.value = value.clone();
+        } else {
+            let mut property = Property::new_named(PropertyKind::User, name, value.clone(), false);
+            property.ordinal = symbol.next_field_ordinal();
+            symbol.properties.push(property);
+        }
+    }
+
+    if let Some(sim_model) = symbol.sim_model.as_mut() {
+        sim_model.enabled = !symbol.excluded_from_sim;
+    }
+}
+
+// Upstream parity: local helper for capturing the non-variant baseline that current-sheet and
+// current-variant selection restore before reapplying occurrence data. This helper exists because
+// the Rust loader mutates live symbol objects directly during load and later selection changes.
+// Remaining divergence is blocked on expanding the same baseline/variant model to sheets.
+fn snapshot_symbol_occurrence_bases(schematics: &mut [Schematic]) {
+    for schematic in schematics {
+        for item in &mut schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+            symbol.capture_occurrence_base();
+        }
+    }
+}
+
+// Upstream parity: local helper for project-wide live symbol refresh under current-sheet and
+// current-variant selection. This helper exists because the Rust loader exposes both selections on
+// `LoadResult` rather than the upstream project/schematic classes. Remaining divergence is blocked
+// on sheet occurrence variants and richer per-occurrence state.
+fn refresh_live_symbol_occurrence_state(
+    schematics: &mut [Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    current_sheet_instance_path: &str,
+    current_variant: Option<&str>,
+) {
+    let occurrence_counts: HashMap<PathBuf, usize> =
+        sheet_paths
+            .iter()
+            .fold(HashMap::new(), |mut counts, sheet_path| {
+                *counts.entry(sheet_path.schematic_path.clone()).or_insert(0) += 1;
+                counts
+            });
+    let selected_sheet_path = sheet_paths
+        .iter()
+        .find(|sheet_path| sheet_path.instance_path == current_sheet_instance_path);
+    let mut refreshed = BTreeSet::new();
+
+    for sheet_path in sheet_paths {
+        if !refreshed.insert(sheet_path.schematic_path.clone()) {
+            continue;
+        }
+
+        let Some(schematic) = schematics
+            .iter_mut()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        let occurrence_count = occurrence_counts
+            .get(&sheet_path.schematic_path)
+            .copied()
+            .unwrap_or(0);
+
+        let active_instance_path = if occurrence_count > 1 {
+            selected_sheet_path
+                .filter(|selected| selected.schematic_path == sheet_path.schematic_path)
+                .map(|selected| selected.instance_path.as_str())
+                .unwrap_or(sheet_path.instance_path.as_str())
+        } else {
+            sheet_path.instance_path.as_str()
+        };
+
+        apply_symbol_instance_state(schematic, active_instance_path, current_variant);
     }
 }
 

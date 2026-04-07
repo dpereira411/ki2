@@ -1280,6 +1280,197 @@ fn legacy_reused_screens_keep_first_instance_state_until_selected() {
 }
 
 #[test]
+fn current_variant_refreshes_reused_symbol_occurrence_state() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_current_variant_reused_symbol_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000101")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "72000000-0000-0000-0000-000000000102")
+    (property "Reference" "R?")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (property "MPN" "seed-mpn")
+    (instances
+      (project "demo"
+        (path "/72000000-0000-0000-0000-000000000111/72000000-0000-0000-0000-000000000112"
+          (reference "R1")
+          (unit 1)
+          (value "10k")
+          (footprint "Resistor_SMD:R_0603")
+          (variant
+            (name "ALT")
+            (dnp yes)
+            (exclude_from_sim yes)
+            (in_bom no)
+            (on_board no)
+            (in_pos_files no)
+            (field (name "MPN") (value "ALT-A"))))
+        (path "/72000000-0000-0000-0000-000000000111/72000000-0000-0000-0000-000000000113"
+          (reference "R2")
+          (unit 2)
+          (value "22k")
+          (footprint "Resistor_SMD:R_0402")
+          (variant
+            (name "ALT")
+            (dnp no)
+            (exclude_from_sim no)
+            (in_bom yes)
+            (on_board yes)
+            (in_pos_files yes)
+            (field (name "MPN") (value "ALT-B")))))))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000111")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000112")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000113")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "9"))
+    (path "/72000000-0000-0000-0000-000000000112" (page "1"))
+    (path "/72000000-0000-0000-0000-000000000113" (page "2")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load reused child");
+    let symbol = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .and_then(|schematic| {
+            schematic.screen.items.iter().find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+        })
+        .expect("child symbol");
+    assert!(!symbol.dnp);
+    assert!(!symbol.excluded_from_sim);
+    assert!(symbol.in_bom);
+    assert!(symbol.on_board);
+    assert!(symbol.in_pos_files);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "MPN")
+            .map(|property| property.value.as_str()),
+        Some("seed-mpn")
+    );
+
+    loaded.set_current_variant(Some("ALT"));
+    let symbol = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .and_then(|schematic| {
+            schematic.screen.items.iter().find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+        })
+        .expect("child symbol");
+    assert!(symbol.dnp);
+    assert!(symbol.excluded_from_sim);
+    assert!(!symbol.in_bom);
+    assert!(!symbol.on_board);
+    assert!(!symbol.in_pos_files);
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "MPN")
+            .map(|property| property.value.as_str()),
+        Some("ALT-A")
+    );
+
+    assert!(loaded.set_current_sheet_path(
+        "/72000000-0000-0000-0000-000000000111/72000000-0000-0000-0000-000000000113"
+    ));
+    let selected_symbol = loaded
+        .current_schematic()
+        .expect("selected child schematic")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("selected child symbol");
+    assert!(!selected_symbol.dnp);
+    assert!(!selected_symbol.excluded_from_sim);
+    assert!(selected_symbol.in_bom);
+    assert!(selected_symbol.on_board);
+    assert!(selected_symbol.in_pos_files);
+    assert_eq!(
+        selected_symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "MPN")
+            .map(|property| property.value.as_str()),
+        Some("ALT-B")
+    );
+
+    loaded.set_current_variant(None);
+    let reset_symbol = loaded
+        .current_schematic()
+        .expect("reset child schematic")
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("reset child symbol");
+    assert!(!reset_symbol.dnp);
+    assert!(!reset_symbol.excluded_from_sim);
+    assert!(reset_symbol.in_bom);
+    assert!(reset_symbol.on_board);
+    assert!(reset_symbol.in_pos_files);
+    assert_eq!(
+        reset_symbol
+            .properties
+            .iter()
+            .find(|property| property.key == "MPN")
+            .map(|property| property.value.as_str()),
+        Some("seed-mpn")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn legacy_symbol_instances_apply_explicit_empty_value_and_footprint() {
     let dir = env::temp_dir().join(format!(
         "ki2_legacy_empty_instances_{}",

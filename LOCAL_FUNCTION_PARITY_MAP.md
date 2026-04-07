@@ -55,8 +55,13 @@ Current ERC blocker:
 - the remaining executable gap is model-shaped: the loader has no notion of an active variant per
   loaded occurrence, so parsed symbol/sheet `instance.variants` data cannot be applied onto live
   selected-occurrence state
-- upstream-shaped target: add a `SCHEMATIC::GetCurrentVariant`-equivalent loaded-project concept,
-  then make occurrence refresh variant-aware before reopening those loader routines
+- partial unblock landed:
+  - the loaded project now carries `current_variant`
+  - live symbol occurrence refresh is variant-aware and restores baseline state when the selected
+    occurrence or selected variant changes
+- remaining blocker is narrower:
+  - sheet occurrence variants still lack an honest live-state application path
+  - broader ERC semantics that depend on variant-aware sheet state remain blocked on that model
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
   model is expanded
 

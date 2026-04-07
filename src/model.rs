@@ -1006,6 +1006,7 @@ pub struct Symbol {
     pub properties: Vec<Property>,
     pub instances: Vec<SymbolLocalInstance>,
     pub pins: Vec<SymbolPin>,
+    pub occurrence_base: Option<Box<SymbolOccurrenceBase>>,
 }
 
 impl Symbol {
@@ -1046,6 +1047,7 @@ impl Symbol {
             properties,
             instances: Vec::new(),
             pins: Vec::new(),
+            occurrence_base: None,
         }
     }
 
@@ -1104,6 +1106,34 @@ impl Symbol {
         self.properties.iter().fold(42, |ordinal, property| {
             ordinal.max(property.sort_ordinal() + 1)
         })
+    }
+
+    pub fn capture_occurrence_base(&mut self) {
+        self.occurrence_base = Some(Box::new(SymbolOccurrenceBase {
+            unit: self.unit,
+            excluded_from_sim: self.excluded_from_sim,
+            in_bom: self.in_bom,
+            on_board: self.on_board,
+            in_pos_files: self.in_pos_files,
+            dnp: self.dnp,
+            properties: self.properties.clone(),
+            sim_model: self.sim_model.clone(),
+        }));
+    }
+
+    pub fn restore_occurrence_base(&mut self) {
+        let Some(base) = self.occurrence_base.as_ref() else {
+            return;
+        };
+
+        self.unit = base.unit;
+        self.excluded_from_sim = base.excluded_from_sim;
+        self.in_bom = base.in_bom;
+        self.on_board = base.on_board;
+        self.in_pos_files = base.in_pos_files;
+        self.dnp = base.dnp;
+        self.properties = base.properties.clone();
+        self.sim_model = base.sim_model.clone();
     }
 
     pub fn sync_sim_model_from_properties(&mut self) {
@@ -1326,6 +1356,18 @@ pub enum SimValueBinding {
     Value,
     Params,
     Name,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SymbolOccurrenceBase {
+    pub unit: Option<i32>,
+    pub excluded_from_sim: bool,
+    pub in_bom: bool,
+    pub on_board: bool,
+    pub in_pos_files: bool,
+    pub dnp: bool,
+    pub properties: Vec<Property>,
+    pub sim_model: Option<SimModel>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
