@@ -3640,6 +3640,11 @@ struct ResolvedSheetTextState {
     dnp: bool,
 }
 
+#[derive(Clone)]
+struct ResolvedSymbolTextState {
+    properties: Vec<Property>,
+}
+
 fn find_sheet_for_loaded_path<'a>(
     schematics: &'a [Schematic],
     sheet_paths: &'a [LoadedSheetPath],
@@ -3729,6 +3734,219 @@ fn resolved_sheet_text_state(
     }
 
     Some(state)
+}
+
+fn ordered_sheet_paths<'a>(
+    sheet_paths: &'a [LoadedSheetPath],
+    current_path: &'a LoadedSheetPath,
+) -> Vec<&'a LoadedSheetPath> {
+    let mut ordered = Vec::with_capacity(sheet_paths.len());
+    ordered.push(current_path);
+    ordered.extend(
+        sheet_paths
+            .iter()
+            .filter(|sheet_path| sheet_path.instance_path != current_path.instance_path),
+    );
+    ordered
+}
+
+fn upsert_symbol_state_property(properties: &mut Vec<Property>, kind: PropertyKind, value: String) {
+    let canonical = kind.canonical_key().to_ascii_uppercase();
+
+    if let Some(property) = properties.iter_mut().find(|property| property.kind == kind) {
+        property.value = value;
+        return;
+    }
+
+    if let Some(property) = properties
+        .iter_mut()
+        .find(|property| canonical_text_var_name(property) == canonical)
+    {
+        property.value = value;
+        return;
+    }
+
+    properties.push(Property::new(kind, value));
+}
+
+// Upstream parity: reduced local helper for the symbol-field branch of `SCH_SYMBOL::ResolveTextVar`
+// on the loader shown-text path. This is not a 1:1 upstream routine because the Rust loader
+// resolves from loaded symbol instances instead of KiCad's live hierarchy objects, but it is
+// needed so cross-referenced symbol fields can follow the same occurrence/variant state as the
+// current loader. Remaining divergence is broader net/sim/cross-reference semantics outside this
+// direct field lookup slice.
+fn resolved_symbol_text_state(
+    symbol: &Symbol,
+    instance_path: &str,
+    current_variant: Option<&str>,
+) -> ResolvedSymbolTextState {
+    let mut state = ResolvedSymbolTextState {
+        properties: symbol
+            .occurrence_base
+            .as_ref()
+            .map(|base| base.properties.clone())
+            .unwrap_or_else(|| symbol.properties.clone()),
+    };
+
+    let Some(instance) = symbol
+        .instances
+        .iter()
+        .find(|instance| instance.path == instance_path)
+    else {
+        return state;
+    };
+
+    if let Some(reference) = instance.reference.as_ref() {
+        upsert_symbol_state_property(
+            &mut state.properties,
+            PropertyKind::SymbolReference,
+            reference.clone(),
+        );
+    }
+
+    if let Some(value) = instance.value.as_ref().filter(|value| *value != "~") {
+        upsert_symbol_state_property(
+            &mut state.properties,
+            PropertyKind::SymbolValue,
+            value.clone(),
+        );
+    }
+
+    if let Some(footprint) = instance
+        .footprint
+        .as_ref()
+        .filter(|footprint| *footprint != "~")
+    {
+        upsert_symbol_state_property(
+            &mut state.properties,
+            PropertyKind::SymbolFootprint,
+            footprint.clone(),
+        );
+    }
+
+    let Some(variant_name) = current_variant else {
+        return state;
+    };
+    let Some(variant) = instance.variants.get(variant_name) else {
+        return state;
+    };
+
+    for (name, value) in &variant.fields {
+        if let Some(existing) = state
+            .properties
+            .iter_mut()
+            .find(|property| canonical_text_var_name(property) == name.to_ascii_uppercase())
+        {
+            existing.value = value.clone();
+            continue;
+        }
+
+        let mut property = Property::new_named(PropertyKind::User, name, value.clone(), false);
+        property.ordinal = state.properties.iter().fold(42, |ordinal, property| {
+            ordinal.max(property.sort_ordinal() + 1)
+        });
+        state.properties.push(property);
+    }
+
+    state
+}
+
+fn resolved_text_property_value(properties: &[Property], field_name: &str) -> Option<String> {
+    let canonical = field_name.to_ascii_uppercase();
+    properties
+        .iter()
+        .find(|property| canonical_text_var_name(property) == canonical)
+        .map(|property| property.value.clone())
+}
+
+// Upstream parity: reduced local helper for the direct field-lookup subset of
+// `SCHEMATIC::ResolveCrossReference()` on the loader shown-text path. This is not a 1:1 KiCad
+// cross-reference resolver because the Rust tree still lacks connectivity-backed text vars and the
+// fuller hierarchy resolver stack, but it is needed so `${ref:FIELD[:VARIANT]}` can follow loaded
+// symbol/sheet occurrence state instead of staying stuck on the raw token. Remaining divergence is
+// the unported net-name and broader resolver surface, not this direct field lookup slice.
+fn resolve_cross_reference_text_var(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    current_variant: Option<&str>,
+    token: &str,
+) -> Option<String> {
+    let (reference, remainder) = token.split_once(':')?;
+    let (field_name, explicit_variant) = remainder
+        .split_once(':')
+        .map_or((remainder, None), |(field_name, variant)| {
+            (field_name, Some(variant))
+        });
+    let effective_variant = explicit_variant.or(current_variant);
+
+    for candidate_path in ordered_sheet_paths(sheet_paths, loaded_path) {
+        let Some(schematic) = schematics
+            .iter()
+            .find(|schematic| schematic.path == candidate_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            match item {
+                SchItem::Symbol(symbol) => {
+                    let Some(symbol_uuid) = symbol.uuid.as_deref() else {
+                        continue;
+                    };
+                    let full_path = format!("{}/{}", candidate_path.symbol_path, symbol_uuid);
+                    let state = resolved_symbol_text_state(
+                        symbol,
+                        &candidate_path.instance_path,
+                        effective_variant,
+                    );
+                    let reference_text = resolved_text_property_value(
+                        &state.properties,
+                        PropertyKind::SymbolReference.canonical_key(),
+                    );
+
+                    let matches = reference == full_path
+                        || reference == symbol_uuid
+                        || reference_text
+                            .as_deref()
+                            .is_some_and(|text| text.eq_ignore_ascii_case(reference));
+
+                    if !matches {
+                        continue;
+                    }
+
+                    if let Some(value) = resolved_text_property_value(&state.properties, field_name)
+                    {
+                        return Some(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let Some(sheet) = find_sheet_for_loaded_path(schematics, sheet_paths, candidate_path)
+        else {
+            continue;
+        };
+        let matches =
+            reference == candidate_path.instance_path || sheet.uuid.as_deref() == Some(reference);
+
+        if !matches {
+            continue;
+        }
+
+        let Some(state) =
+            resolved_sheet_text_state(schematics, sheet_paths, candidate_path, effective_variant)
+        else {
+            continue;
+        };
+
+        if let Some(value) = resolved_text_property_value(&state.properties, field_name) {
+            return Some(value);
+        }
+    }
+
+    None
 }
 
 fn current_iso_date() -> Option<String> {
@@ -4120,6 +4338,18 @@ fn shown_global_label_text(
         &label.text,
         &|token| {
             let token_upper = token.to_ascii_uppercase();
+
+            if token.contains(':') {
+                if let Some(value) = resolve_cross_reference_text_var(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    current_variant,
+                    token,
+                ) {
+                    return Some(value);
+                }
+            }
 
             if token_upper == "CONNECTION_TYPE" {
                 return global_label_connection_type(label).map(str::to_string);

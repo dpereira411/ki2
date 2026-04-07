@@ -78,9 +78,10 @@ Current ERC blocker:
       - the reduced resolver also now covers schematic `VARIANT` / `VARIANTNAME`, stable
         title-block tokens, `${PROJECTNAME}`, `${CURRENT_DATE}`, `${VCSHASH}`,
         `${VCSSHORTHASH}`, `${FILENAME}`, `${FILEPATH}`, `${VARIANT_DESC}`,
-        `${CONNECTION_TYPE}`, and companion `.kicad_pro` `text_variables`
+        `${CONNECTION_TYPE}`, direct `${ref:FIELD[:VARIANT]}` field lookup, and companion
+        `.kicad_pro` `text_variables`
       - remaining divergence is the broader unported text-variable resolver surface
-        (net/cross-reference variables), not this exercised intersheet-ref
+        (connectivity-backed net variables and fuller KiCad cross-reference semantics), not this exercised intersheet-ref
         branch
       - unblock path recorded in `LOCAL_PARSER_PARITY_NOTES.md`
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and

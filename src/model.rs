@@ -1052,7 +1052,7 @@ impl Shape {
         let mut offset = 0.0;
         while offset <= line_span {
             for slope in slopes {
-                if let Some(segment) = self.clipped_hatch_segment(bbox, *slope, offset) {
+                for segment in self.clipped_hatch_segments(bbox, *slope, offset) {
                     self.hatch_lines.push(segment);
                 }
             }
@@ -1108,14 +1108,21 @@ impl Shape {
     // `EDA_SHAPE::UpdateHatching()`. This is not a 1:1 port of KiCad's polygon clipping because
     // the current model still clips only against an axis-aligned bounding box, but it exists so
     // hatch lines span the full current bounds instead of the previous truncated half-box path.
-    fn clipped_hatch_segment(
+    fn clipped_hatch_segments(
         &self,
         bbox: [[f64; 2]; 2],
         slope: f64,
         offset: f64,
-    ) -> Option<[[f64; 2]; 2]> {
+    ) -> Vec<[[f64; 2]; 2]> {
         if matches!(self.kind, ShapeKind::Circle) {
-            return self.clipped_circle_hatch_segment(slope, offset);
+            return self
+                .clipped_circle_hatch_segment(slope, offset)
+                .into_iter()
+                .collect();
+        }
+
+        if matches!(self.kind, ShapeKind::Polyline | ShapeKind::RuleArea) {
+            return self.clipped_polygon_hatch_segments(slope, offset);
         }
 
         let min_x = bbox[0][0];
@@ -1127,27 +1134,83 @@ impl Shape {
 
         if slope < 0.0 {
             let sum = min_x + min_y + offset;
-            Self::push_hatch_intersection(&mut points, [min_x, sum - min_x], min_x, min_y, max_x, max_y);
-            Self::push_hatch_intersection(&mut points, [max_x, sum - max_x], min_x, min_y, max_x, max_y);
-            Self::push_hatch_intersection(&mut points, [sum - min_y, min_y], min_x, min_y, max_x, max_y);
-            Self::push_hatch_intersection(&mut points, [sum - max_y, max_y], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(
+                &mut points,
+                [min_x, sum - min_x],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
+            Self::push_hatch_intersection(
+                &mut points,
+                [max_x, sum - max_x],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
+            Self::push_hatch_intersection(
+                &mut points,
+                [sum - min_y, min_y],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
+            Self::push_hatch_intersection(
+                &mut points,
+                [sum - max_y, max_y],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
         } else {
             let diff = (min_y - max_x) + offset;
-            Self::push_hatch_intersection(&mut points, [min_x, diff + min_x], min_x, min_y, max_x, max_y);
-            Self::push_hatch_intersection(&mut points, [max_x, diff + max_x], min_x, min_y, max_x, max_y);
-            Self::push_hatch_intersection(&mut points, [min_y - diff, min_y], min_x, min_y, max_x, max_y);
-            Self::push_hatch_intersection(&mut points, [max_y - diff, max_y], min_x, min_y, max_x, max_y);
+            Self::push_hatch_intersection(
+                &mut points,
+                [min_x, diff + min_x],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
+            Self::push_hatch_intersection(
+                &mut points,
+                [max_x, diff + max_x],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
+            Self::push_hatch_intersection(
+                &mut points,
+                [min_y - diff, min_y],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
+            Self::push_hatch_intersection(
+                &mut points,
+                [max_y - diff, max_y],
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            );
         }
 
         if points.len() < 2 {
-            return None;
+            return Vec::new();
         }
 
-        let first = points.first().copied()?;
-        let last = points.last().copied()?;
+        let first = points[0];
+        let last = points[points.len() - 1];
 
         if (first[0] - last[0]).abs() < 1e-9 && (first[1] - last[1]).abs() < 1e-9 {
-            return None;
+            return Vec::new();
         }
 
         let mut segment = [first, last];
@@ -1159,10 +1222,10 @@ impl Shape {
         if (segment[0][0] - segment[1][0]).abs() < 1e-9
             && (segment[0][1] - segment[1][1]).abs() < 1e-9
         {
-            return None;
+            return Vec::new();
         }
 
-        Some(segment)
+        vec![segment]
     }
 
     // Upstream parity: reduced local helper for the circle subset of
@@ -1204,9 +1267,15 @@ impl Shape {
 
         let half_length = (radius.powi(2) - distance.powi(2)).sqrt();
         let direction = if slope < 0.0 {
-            [1.0 / std::f64::consts::SQRT_2, -1.0 / std::f64::consts::SQRT_2]
+            [
+                1.0 / std::f64::consts::SQRT_2,
+                -1.0 / std::f64::consts::SQRT_2,
+            ]
         } else {
-            [1.0 / std::f64::consts::SQRT_2, 1.0 / std::f64::consts::SQRT_2]
+            [
+                1.0 / std::f64::consts::SQRT_2,
+                1.0 / std::f64::consts::SQRT_2,
+            ]
         };
 
         Some([
@@ -1232,10 +1301,8 @@ impl Shape {
         let x = point[0];
         let y = point[1];
 
-        let within = x >= min_x - 1e-9
-            && x <= max_x + 1e-9
-            && y >= min_y - 1e-9
-            && y <= max_y + 1e-9;
+        let within =
+            x >= min_x - 1e-9 && x <= max_x + 1e-9 && y >= min_y - 1e-9 && y <= max_y + 1e-9;
 
         if !within {
             return;
@@ -1307,7 +1374,9 @@ impl Shape {
                 })
             };
 
-            if let Some(point) = replacement.filter(|point| Self::point_in_rounded_rect(*point, bbox, radius)) {
+            if let Some(point) =
+                replacement.filter(|point| Self::point_in_rounded_rect(*point, bbox, radius))
+            {
                 segment[endpoint_index] = point;
             }
         }
@@ -1327,10 +1396,8 @@ impl Shape {
             return false;
         }
 
-        if point[0] >= min_x + radius
-            && point[0] <= max_x - radius
-            || point[1] >= min_y + radius
-                && point[1] <= max_y - radius
+        if point[0] >= min_x + radius && point[0] <= max_x - radius
+            || point[1] >= min_y + radius && point[1] <= max_y - radius
         {
             return true;
         }
@@ -1396,6 +1463,92 @@ impl Shape {
         }
 
         points
+    }
+
+    // Upstream parity: reduced local helper for the filled-polyline/rule-area subset of
+    // `EDA_SHAPE::UpdateHatching()`. This is not a full `SHAPE_POLY_SET` port because it still
+    // ignores holes/knockouts, but it clips hatch lines against the actual outline instead of the
+    // previous bounding-box fallback and preserves multiple interior spans when they occur.
+    fn clipped_polygon_hatch_segments(&self, slope: f64, offset: f64) -> Vec<[[f64; 2]; 2]> {
+        if self.points.len() < 3 {
+            return Vec::new();
+        }
+
+        let mut intersections = Vec::new();
+
+        for index in 0..self.points.len() {
+            let start = self.points[index];
+            let end = self.points[(index + 1) % self.points.len()];
+            if let Some(point) = Self::line_segment_hatch_intersection(start, end, slope, offset) {
+                if intersections.iter().any(|existing: &[f64; 2]| {
+                    (existing[0] - point[0]).abs() < 1e-9 && (existing[1] - point[1]).abs() < 1e-9
+                }) {
+                    continue;
+                }
+                intersections.push(point);
+            }
+        }
+
+        if intersections.len() < 2 {
+            return Vec::new();
+        }
+
+        intersections.sort_by(|a, b| {
+            let key_a = if slope < 0.0 {
+                a[0] - a[1]
+            } else {
+                a[0] + a[1]
+            };
+            let key_b = if slope < 0.0 {
+                b[0] - b[1]
+            } else {
+                b[0] + b[1]
+            };
+            key_a
+                .partial_cmp(&key_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut segments = Vec::new();
+        for pair in intersections.chunks(2) {
+            if pair.len() < 2 {
+                continue;
+            }
+            if (pair[0][0] - pair[1][0]).abs() < 1e-9 && (pair[0][1] - pair[1][1]).abs() < 1e-9 {
+                continue;
+            }
+            segments.push([pair[0], pair[1]]);
+        }
+
+        segments
+    }
+
+    fn line_segment_hatch_intersection(
+        start: [f64; 2],
+        end: [f64; 2],
+        slope: f64,
+        offset: f64,
+    ) -> Option<[f64; 2]> {
+        let (start_value, end_value, target) = if slope < 0.0 {
+            (start[0] + start[1], end[0] + end[1], offset)
+        } else {
+            (start[1] - start[0], end[1] - end[0], offset)
+        };
+
+        let delta = end_value - start_value;
+        if delta.abs() < 1e-9 {
+            return None;
+        }
+
+        let t = (target - start_value) / delta;
+        if !(0.0 - 1e-9..=1.0 + 1e-9).contains(&t) {
+            return None;
+        }
+
+        Some([
+            start[0] + ((end[0] - start[0]) * t),
+            start[1] + ((end[1] - start[1]) * t),
+        ])
     }
 }
 

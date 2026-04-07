@@ -332,13 +332,16 @@ What remains after that correction:
         `.kicad_pro` schematic variant descriptions
       - current coverage now also locks global-label `${CONNECTION_TYPE}` grouping from label
         shape without needing the blocked connectivity graph
+      - current coverage now also locks direct `${ref:FIELD[:VARIANT]}` symbol/sheet field lookup
+        across loaded sheet paths through a reduced cross-reference resolver
       - remaining divergence is the broader unported text-variable resolver surface
-        (`ResolveTextVar`, net/cross-reference variables), not this exercised intersheet-ref path
+        (`ResolveTextVar`, connectivity-backed net variables, and fuller KiCad cross-reference
+        semantics), not this exercised intersheet-ref path
       - unblock path for the remaining text-variable surface:
         1. add a reduced current-sheet connectivity snapshot so labels can expose resolved
            `NET_NAME`, `SHORT_NET_NAME`, and `NET_CLASS`
-        2. add a reduced cross-reference resolver for `ref:field`-style token lookup across loaded
-           sheet paths
+        2. expand the reduced cross-reference resolver beyond direct field lookup where a future
+           ERC-visible gap proves it necessary
         3. thread that connectivity/cross-reference state into the shared shown-text resolver
     - done for the exercised intersheet-ref subset: loader/project refresh now read one typed
       `ActiveSchematicSettings` carrier instead of scattered raw `.kicad_pro` scalar lookups
