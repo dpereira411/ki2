@@ -17,6 +17,7 @@ use time::{OffsetDateTime, macros::format_description};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetlistComponent {
     pub reference: String,
+    pub unit_number: i32,
     pub value: String,
     pub footprint: String,
     pub datasheet: String,
@@ -620,6 +621,7 @@ pub fn collect_xml_components(
                 .eq_ignore_ascii_case(&component.reference)
         }) {
             let candidate_classes = component.component_classes.clone();
+            let candidate_unit = component.unit_number;
             let current_uuid = existing.tstamps.last().cloned();
             let candidate_uuid = component.tstamps.last().cloned();
             let mut combined_tstamps = existing.tstamps.clone();
@@ -629,11 +631,81 @@ pub fn collect_xml_components(
 
             match (&current_uuid, &candidate_uuid) {
                 (Some(current_uuid), Some(candidate_uuid)) if candidate_uuid < current_uuid => {
+                    let previous = existing.clone();
                     *existing = component;
                     existing.tstamps = combined_tstamps;
+                    if !previous.value.is_empty()
+                        && (existing.unit_number > previous.unit_number
+                            || existing.value.is_empty())
+                    {
+                        existing.value = previous.value;
+                    }
+                    if !previous.footprint.is_empty()
+                        && (existing.unit_number > previous.unit_number
+                            || existing.footprint.is_empty())
+                    {
+                        existing.footprint = previous.footprint;
+                    }
+                    if !previous.datasheet.is_empty()
+                        && (existing.unit_number > previous.unit_number
+                            || existing.datasheet.is_empty())
+                    {
+                        existing.datasheet = previous.datasheet;
+                    }
+                    if !previous.description.is_empty()
+                        && (existing.unit_number > previous.unit_number
+                            || existing.description.is_empty())
+                    {
+                        existing.description = previous.description;
+                    }
+
+                    let mut properties =
+                        previous.properties.into_iter().collect::<BTreeMap<_, _>>();
+                    for (name, value) in existing.properties.clone() {
+                        if candidate_unit <= previous.unit_number || !properties.contains_key(&name)
+                        {
+                            properties.insert(name, value);
+                        }
+                    }
+                    existing.properties = properties.into_iter().collect();
                 }
                 _ => {
                     existing.tstamps = combined_tstamps;
+                    if !component.value.is_empty()
+                        && (candidate_unit < existing.unit_number || existing.value.is_empty())
+                    {
+                        existing.value = component.value.clone();
+                    }
+                    if !component.footprint.is_empty()
+                        && (candidate_unit < existing.unit_number || existing.footprint.is_empty())
+                    {
+                        existing.footprint = component.footprint.clone();
+                    }
+                    if !component.datasheet.is_empty()
+                        && (candidate_unit < existing.unit_number || existing.datasheet.is_empty())
+                    {
+                        existing.datasheet = component.datasheet.clone();
+                    }
+                    if !component.description.is_empty()
+                        && (candidate_unit < existing.unit_number
+                            || existing.description.is_empty())
+                    {
+                        existing.description = component.description.clone();
+                    }
+
+                    let mut properties = existing
+                        .properties
+                        .clone()
+                        .into_iter()
+                        .collect::<BTreeMap<_, _>>();
+                    for (name, value) in component.properties.clone() {
+                        if candidate_unit < existing.unit_number || !properties.contains_key(&name)
+                        {
+                            properties.insert(name, value);
+                        }
+                    }
+                    existing.properties = properties.into_iter().collect();
+                    existing.unit_number = existing.unit_number.min(candidate_unit);
                 }
             }
 
@@ -1030,6 +1102,7 @@ fn symbol_to_xml_component(
 
     Some(NetlistComponent {
         reference,
+        unit_number: symbol.unit.unwrap_or(1),
         value,
         footprint,
         datasheet,

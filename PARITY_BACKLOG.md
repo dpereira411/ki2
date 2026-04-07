@@ -635,6 +635,7 @@ What is already covered indirectly:
   - reduced `<component_classes>` export from symbol fields and enclosing rule-area directives
   - reduced `GNL_OPT_KICAD` board-mode filtering for symbols and net nodes
   - reduced parent-sheet `<property>` export on components
+  - reduced multi-unit field/value merge by unit order
   - reduced user-field export
   - reduced `sheetpath names` / `tstamps` from loaded hierarchy paths
   - reduced `tstamps`
