@@ -8817,6 +8817,20 @@ fn load_tree_infers_passive_structured_sim_model_from_value() {
         symbol
             .sim_model
             .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.stored_value.as_deref()),
+        Some("10k")
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("r=\"10k\"")
     );
@@ -8956,6 +8970,20 @@ fn load_tree_infers_source_structured_sim_model_from_ac_value() {
             .and_then(|sim_model| sim_model.params.as_deref()),
         Some("ac=\"1\"")
     );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.stored_value.as_deref()),
+        Some("AC 1")
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -9024,6 +9052,20 @@ fn load_tree_infers_structured_sim_model_after_legacy_pin_only_migration() {
             ("2".to_string(), "1".to_string()),
             ("1".to_string(), "2".to_string()),
         ])
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.value_binding),
+        Some(SimValueBinding::Value)
+    );
+    assert_eq!(
+        symbol
+            .sim_model
+            .as_ref()
+            .and_then(|sim_model| sim_model.stored_value.as_deref()),
+        Some("22k")
     );
 
     let _ = fs::remove_file(path);
