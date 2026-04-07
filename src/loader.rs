@@ -9,7 +9,7 @@ use crate::model::{
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
-    load_symbol_sim_library_content_from_embedded_files,
+    expected_missing_sim_library_locations, load_symbol_sim_library_content_from_embedded_files,
     resolve_symbol_sim_library_from_embedded_files, resolve_symbol_sim_model_from_embedded_files,
 };
 
@@ -2173,9 +2173,23 @@ fn unresolved_sim_model_warning(
     if load_symbol_sim_library_content_from_embedded_files(schematic_path, embedded_files, symbol)
         .is_none()
     {
-        let location = resolved_library
-            .map(|library| display_sim_library_source(&library.source))
-            .unwrap_or_else(|| library_name.to_string());
+        let fallback_location = || {
+            let locations = expected_missing_sim_library_locations(schematic_path, library_name);
+
+            match locations.as_slice() {
+                [only] => only.display().to_string(),
+                [first, second] => format!("{}' or '{}'", first.display(), second.display()),
+                _ => library_name.to_string(),
+            }
+        };
+        let location = match resolved_library {
+            Some(crate::model::ResolvedSimLibrary {
+                source: SimLibrarySource::Filesystem(path),
+                ..
+            }) if !path.exists() => fallback_location(),
+            Some(library) => display_sim_library_source(&library.source),
+            None => fallback_location(),
+        };
         return Some(format!(
             "Simulation model library not found at '{location}'"
         ));

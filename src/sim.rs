@@ -224,6 +224,34 @@ pub fn load_symbol_sim_library_content_from_embedded_files(
     })
 }
 
+pub fn expected_missing_sim_library_locations(
+    schematic_path: &Path,
+    library: &str,
+) -> Vec<PathBuf> {
+    let expanded_library = expand_sim_library_env_vars(library);
+    let library_path = PathBuf::from(&expanded_library);
+
+    if library_path.is_absolute() {
+        return vec![library_path];
+    }
+
+    let project_path = schematic_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&library_path);
+    let mut locations = vec![project_path.clone()];
+
+    if let Some(spice_lib_dir) = env::var_os("SPICE_LIB_DIR") {
+        let spice_path = PathBuf::from(spice_lib_dir).join(&library_path);
+
+        if spice_path != project_path {
+            locations.push(spice_path);
+        }
+    }
+
+    locations
+}
+
 fn load_sim_library_content_by_source_from_embedded_files(
     embedded_files: &[EmbeddedFile],
     symbol: &Symbol,

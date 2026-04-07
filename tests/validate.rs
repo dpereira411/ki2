@@ -7909,6 +7909,69 @@ fn load_tree_records_warning_for_missing_sim_library() {
 }
 
 #[test]
+fn load_tree_records_warning_for_missing_sim_library_in_project_and_spice_lib_dir() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_missing_sim_library_warning_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    let spice_dir = dir.join("spice");
+    fs::create_dir_all(&spice_dir).expect("mkdir");
+
+    let src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "40000000-0000-0000-0000-000000000910")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (property "Reference" "R?")
+    (property "Sim.Device" "SPICE")
+    (property "Sim.Library" "missing.lib")
+    (property "Sim.Name" "MODEL")
+    (at 1 2 0))
+)"#;
+    let path = dir.join("root.kicad_sch");
+    fs::write(&path, src).expect("write schematic");
+
+    let old_spice_lib_dir = env::var_os("SPICE_LIB_DIR");
+
+    unsafe { env::set_var("SPICE_LIB_DIR", &spice_dir) };
+
+    let loaded = load_schematic_tree(Path::new(&path)).expect("must load");
+    let canonical = path.canonicalize().unwrap_or(path.clone());
+    let schematic = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path == canonical)
+        .expect("loaded schematic");
+    let project_location = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("missing.lib")
+        .display()
+        .to_string();
+    let spice_location = spice_dir.join("missing.lib").display().to_string();
+
+    assert!(schematic.screen.parse_warnings.iter().any(|warning| {
+        warning.contains("Simulation model library not found at")
+            && warning.contains(project_location.as_str())
+            && warning.contains(spice_location.as_str())
+            && warning.contains("' or '")
+    }));
+
+    match old_spice_lib_dir {
+        Some(value) => unsafe { env::set_var("SPICE_LIB_DIR", value) },
+        None => unsafe { env::remove_var("SPICE_LIB_DIR") },
+    }
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn load_tree_records_warning_for_missing_library_base_model() {
     let src = r#"(kicad_sch
   (version 20260306)
