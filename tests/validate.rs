@@ -1923,6 +1923,97 @@ fn current_sheet_switch_refreshes_reused_child_sheet_variants() {
 }
 
 #[test]
+fn modern_symbol_instances_ignore_empty_value_and_footprint() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_modern_symbol_instances_empty_payloads_{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-000000000101")
+  (symbol
+    (lib_id "Device:R")
+    (uuid "74000000-0000-0000-0000-000000000102")
+    (property "Reference" "R?")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (instances
+      (project "demo"
+        (path "/74000000-0000-0000-0000-000000000111/74000000-0000-0000-0000-000000000112"
+          (reference "R1")
+          (unit 2)
+          (value "~")
+          (footprint "~")))))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-000000000111")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "74000000-0000-0000-0000-000000000112")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/74000000-0000-0000-0000-000000000112" (page "2")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let symbol = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .and_then(|schematic| {
+            schematic.screen.items.iter().find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+        })
+        .expect("child symbol");
+
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolReference)
+            .map(|property| property.value.as_str()),
+        Some("R1")
+    );
+    assert_eq!(symbol.unit, Some(2));
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolValue)
+            .map(|property| property.value.as_str()),
+        Some("seed")
+    );
+    assert_eq!(
+        symbol
+            .properties
+            .iter()
+            .find(|property| property.kind == PropertyKind::SymbolFootprint)
+            .map(|property| property.value.as_str()),
+        Some("seed-footprint")
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn legacy_symbol_instances_apply_explicit_empty_value_and_footprint() {
     let dir = env::temp_dir().join(format!(
         "ki2_legacy_empty_instances_{}",
@@ -19304,7 +19395,7 @@ fn parses_nested_sheet_and_symbol_instances_and_polyline_conversion() {
 }
 
 #[test]
-fn symbol_instance_value_and_footprint_update_symbol_fields() {
+fn symbol_instance_value_and_footprint_stay_local_during_parse() {
     let src = r#"(kicad_sch
   (version 20260306)
   (generator "eeschema")
@@ -19337,13 +19428,18 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
 
     assert_eq!(symbol.instances[0].reference, None);
     assert_eq!(symbol.instances[0].unit, Some(1));
+    assert_eq!(symbol.instances[0].value.as_deref(), Some("instance-value"));
+    assert_eq!(
+        symbol.instances[0].footprint.as_deref(),
+        Some("instance-footprint")
+    );
     assert_eq!(
         symbol
             .properties
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolValue)
             .map(|property| property.value.as_str()),
-        Some("instance-value")
+        Some("default-value")
     );
     assert_eq!(
         symbol
@@ -19351,7 +19447,7 @@ fn symbol_instance_value_and_footprint_update_symbol_fields() {
             .iter()
             .find(|property| property.kind == PropertyKind::SymbolFootprint)
             .map(|property| property.value.as_str()),
-        Some("instance-footprint")
+        Some("default-footprint")
     );
 
     let _ = fs::remove_file(path);

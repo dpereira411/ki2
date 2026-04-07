@@ -1745,11 +1745,17 @@ fn apply_selected_symbol_instance(
         symbol.unit = Some(unit);
     }
 
-    if let Some(value) = instance.value {
+    if let Some(value) = instance
+        .value
+        .filter(|value| !value.is_empty() && value != "~")
+    {
         symbol.set_field_text(PropertyKind::SymbolValue, value);
     }
 
-    if let Some(footprint) = instance.footprint {
+    if let Some(footprint) = instance
+        .footprint
+        .filter(|footprint| !footprint.is_empty() && footprint != "~")
+    {
         symbol.set_field_text(PropertyKind::SymbolFootprint, footprint);
     }
 

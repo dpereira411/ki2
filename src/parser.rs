@@ -3610,6 +3610,11 @@ impl KiCadSchematicParser {
         Ok(shape)
     }
 
+    // Upstream parity: local owner for KiCad's `parseSchematicSymbol()`. This routine is now close
+    // to upstream on control flow and child ownership; remaining divergence is narrower loader-side
+    // occurrence/state refresh, not parser-time local-instance application. Modern nested
+    // `instances` therefore store `value` / `footprint` payloads without mutating the live symbol
+    // fields during parse.
     fn parse_schematic_symbol(&mut self) -> Result<Symbol, Error> {
         let _ = self.need_unquoted_symbol_atom("symbol")?;
         let mut symbol = Symbol::new();
@@ -3890,20 +3895,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        instance.value = Some(parsed.clone());
-                                        let existing = symbol
-                                            .properties
-                                            .iter_mut()
-                                            .find(|property| {
-                                                property.kind == PropertyKind::SymbolValue
-                                            })
-                                            .expect("placed symbols start with mandatory fields");
-                                        existing.id = PropertyKind::SymbolValue
-                                            .default_field_id()
-                                            .or(existing.id);
-                                        existing.key =
-                                            PropertyKind::SymbolValue.canonical_key().to_string();
-                                        existing.value = parsed;
+                                        instance.value = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "footprint" => {
@@ -3921,21 +3913,7 @@ impl KiCadSchematicParser {
                                                 value
                                             }
                                         };
-                                        instance.footprint = Some(parsed.clone());
-                                        let existing = symbol
-                                            .properties
-                                            .iter_mut()
-                                            .find(|property| {
-                                                property.kind == PropertyKind::SymbolFootprint
-                                            })
-                                            .expect("placed symbols start with mandatory fields");
-                                        existing.id = PropertyKind::SymbolFootprint
-                                            .default_field_id()
-                                            .or(existing.id);
-                                        existing.key = PropertyKind::SymbolFootprint
-                                            .canonical_key()
-                                            .to_string();
-                                        existing.value = parsed;
+                                        instance.footprint = Some(parsed);
                                         self.need_right()?;
                                     }
                                     "variant" => {
