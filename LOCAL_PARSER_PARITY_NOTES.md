@@ -230,9 +230,27 @@ The remaining ERC-critical loader drift is now concentrated in one model boundar
 That means the next real ERC parity step is not another small branch fix in `loader.rs`.
 It is a model expansion that can represent:
 
-1. which variant, if any, is active for a given loaded occurrence
-2. how that active variant is selected during load/current-sheet switching
-3. how variant-owned attributes and field overrides are applied onto live symbol/sheet state
+1. current schematic variant as an explicit loaded-project concept
+   - upstream clue: sibling ERC parity work already records `SCHEMATIC::GetCurrentVariant`
+     as an input to ERC simulation checks
+2. which variant, if any, is active for a given loaded occurrence under that current schematic
+   variant
+3. how that active variant is selected during load/current-sheet switching
+4. how variant-owned attributes and field overrides are applied onto live symbol/sheet state
+
+Concrete unblock path:
+
+1. expand `LoadResult` / loader-owned state to carry `current_variant: Option<String>` (or the
+   closest upstream-shaped equivalent)
+2. define the resolution rule from that current variant to parsed `instance.variants`
+3. teach current-sheet refresh helpers to apply resolved variant attributes onto live symbol/sheet
+   state in addition to the current reference/unit/value/footprint/page refresh
+4. add ERC-facing regressions for:
+   - symbol variant `dnp` / `in_bom` / `on_board` / `in_pos_files`
+   - sheet variant `exclude_from_sim`
+   - variant field overrides on the selected occurrence
+5. only after that, reopen `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, and
+   `UpdateAllScreenReferences` for branch-level parity tightening
 
 Until that model exists, the remaining loader drift should be treated as blocked rather than as an
 unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or
