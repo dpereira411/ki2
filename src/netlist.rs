@@ -8,8 +8,8 @@ use crate::core::SchematicProject;
 use crate::loader::{
     SymbolPinTextVarKind, points_equal, resolve_point_connectivity_text_var,
     resolve_schematic_text_var, resolve_sheet_text_var, resolve_text_variables,
-    resolved_label_text_property_value_without_connectivity, resolved_symbol_text_property_value,
-    resolved_symbol_text_state,
+    resolved_label_text_property_value_without_connectivity, resolved_sheet_text_state,
+    resolved_symbol_text_property_value, resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, SchItem, ShapeKind, Symbol};
 use time::{OffsetDateTime, macros::format_description};
@@ -463,12 +463,30 @@ fn is_auto_generated_net_name(net_name: &str) -> bool {
 // component filtering, reference/value/footprint exposure, and `LIB_ID` split needed by the first
 // live netlist CLI slice. Remaining divergence is the fuller KiCad duplicate-unit / variant /
 // libpart walk, but reference ordering now follows the upstream `StrNumCmp` path instead of plain
-// lexical sorting and the current component metadata carrier now includes the exercised lib/jumper
-// and placement flags KiCad emits on `<comp>`.
-pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponent> {
+// lexical sorting, the current component metadata carrier now includes the exercised
+// lib/jumper/placement flags KiCad emits on `<comp>`, and the `for_board` flag now mirrors the
+// `GNL_OPT_KICAD` exclusion path for symbol/sheet `on_board` state. Remaining divergence is the
+// still-missing fuller sheet exclusion ownership outside the current loaded sheet-state carrier.
+pub fn collect_xml_components(
+    project: &SchematicProject,
+    for_board: bool,
+) -> Vec<NetlistComponent> {
     let mut components = Vec::new();
 
     for sheet_path in &project.sheet_paths {
+        if for_board
+            && !resolved_sheet_text_state(
+                &project.schematics,
+                &project.sheet_paths,
+                sheet_path,
+                project.current_variant(),
+            )
+            .map(|state| state.on_board)
+            .unwrap_or(true)
+        {
+            continue;
+        }
+
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
@@ -479,6 +497,10 @@ pub fn collect_xml_components(project: &SchematicProject) -> Vec<NetlistComponen
             };
 
             if !symbol.in_netlist {
+                continue;
+            }
+
+            if for_board && !symbol.on_board {
                 continue;
             }
 
@@ -574,15 +596,28 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 // not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
 // shared connectivity carrier instead of full `CONNECTION_GRAPH` subgraphs, but it preserves the
 // exercised current-sheet node grouping, per-net net/class lookup, exporter-base duplicate
-// ref/pin erasure with user-net preference over auto-generated nets, stacked-pin expansion, and
-// single-node/all-stacked `+no_connect` marking needed by the first live XML netlist slice.
-// Remaining divergence is the fuller KiCad subgraph object model and graph-owned netcode/name
-// caches. Net ordering now follows the upstream `StrNumCmp` path instead of the old lexical
-// `BTreeMap` order.
-pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
+// ref/pin erasure with user-net preference over auto-generated nets, stacked-pin expansion,
+// single-node/all-stacked `+no_connect` marking, and the `GNL_OPT_KICAD` `on_board` filter path
+// needed by the first live XML/KiCad netlist slices. Remaining divergence is the fuller KiCad
+// subgraph object model and graph-owned netcode/name caches. Net ordering now follows the
+// upstream `StrNumCmp` path instead of the old lexical `BTreeMap` order.
+pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<NetlistNet> {
     let mut candidates = BTreeMap::<(String, String), NetNodeCandidate>::new();
 
     for sheet_path in &project.sheet_paths {
+        if for_board
+            && !resolved_sheet_text_state(
+                &project.schematics,
+                &project.sheet_paths,
+                sheet_path,
+                project.current_variant(),
+            )
+            .map(|state| state.on_board)
+            .unwrap_or(true)
+        {
+            continue;
+        }
+
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
@@ -625,6 +660,10 @@ pub fn collect_xml_nets(project: &SchematicProject) -> Vec<NetlistNet> {
                 };
 
                 if !symbol.in_netlist {
+                    continue;
+                }
+
+                if for_board && !symbol.on_board {
                     continue;
                 }
 
@@ -1298,7 +1337,7 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
     xml.push_str("  </design>\n");
     xml.push_str("  <components>\n");
 
-    for component in collect_xml_components(project) {
+    for component in collect_xml_components(project, include_kicad_sections) {
         xml.push_str(&format!(
             "    <comp ref=\"{}\">\n",
             escape_xml(&component.reference)
@@ -1619,7 +1658,7 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
     xml.push_str("  </libparts>\n");
     xml.push_str("  <nets>\n");
 
-    for net in collect_xml_nets(project) {
+    for net in collect_xml_nets(project, include_kicad_sections) {
         xml.push_str(&format!(
             "    <net code=\"{}\" name=\"{}\" class=\"{}\">\n",
             net.code,

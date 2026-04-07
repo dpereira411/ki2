@@ -1352,6 +1352,100 @@ fn cli_netlist_exports_component_classes() {
 }
 
 #[test]
+fn cli_kicad_netlist_filters_excluded_board_symbols() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_netlist_kicad_board_filter_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let schematic_path = dir.join("root.kicad_sch");
+    let xml_path = schematic_path.with_extension("xml");
+    let kicad_path = schematic_path.with_extension("net");
+
+    fs::write(
+        &schematic_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73000000-0000-0000-0000-000000000011")
+    (at 5 0 0)
+    (on_board no)
+    (property "Reference" "R2" (at 5 0 0) (effects (font (size 1 1))))
+    (property "Value" "22k" (at 5 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 5 0)) (stroke (width 0.2)) (uuid "73000000-0000-0000-0000-000000000020")))"#,
+    )
+    .expect("write schematic");
+
+    let xml_output = Command::new(ki2_binary())
+        .args(["netlist", schematic_path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 xml netlist");
+    assert!(
+        xml_output.status.success(),
+        "xml netlist must succeed: {}",
+        String::from_utf8_lossy(&xml_output.stderr)
+    );
+
+    let kicad_output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            schematic_path.to_str().expect("path string"),
+            "--format",
+            "kicad",
+        ])
+        .output()
+        .expect("run ki2 kicad netlist");
+    assert!(
+        kicad_output.status.success(),
+        "kicad netlist must succeed: {}",
+        String::from_utf8_lossy(&kicad_output.stderr)
+    );
+
+    let xml_report = fs::read_to_string(&xml_path).expect("read xml report");
+    let kicad_report = fs::read_to_string(&kicad_path).expect("read kicad report");
+
+    assert!(xml_report.contains("<comp ref=\"R2\">"), "{xml_report}");
+    assert!(
+        xml_report.contains("<node ref=\"R2\" pin=\"1\""),
+        "{xml_report}"
+    );
+    assert!(
+        !kicad_report.contains("<comp ref=\"R2\">"),
+        "{kicad_report}"
+    );
+    assert!(
+        !kicad_report.contains("<node ref=\"R2\" pin=\"1\""),
+        "{kicad_report}"
+    );
+
+    let _ = fs::remove_file(schematic_path);
+    let _ = fs::remove_file(xml_path);
+    let _ = fs::remove_file(kicad_path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",

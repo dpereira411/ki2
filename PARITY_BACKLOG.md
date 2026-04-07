@@ -633,6 +633,7 @@ What is already covered indirectly:
   - reduced KiCad-format root `<groups>` export
   - reduced KiCad-format root `<variants>` export
   - reduced `<component_classes>` export from symbol fields and enclosing rule-area directives
+  - reduced `GNL_OPT_KICAD` board-mode filtering for symbols and net nodes
   - reduced user-field export
   - reduced `sheetpath`
   - reduced `tstamps`
@@ -643,7 +644,7 @@ What is already covered indirectly:
   - reduced node lists from the current point-net resolver
 
 What is not yet explicitly tracked as complete:
-- KiCad/default `kicad` netlist CLI surface
+- fuller KiCad/default `kicad` netlist CLI surface
 - exporter-base symbol/pin collection parity
 - remaining XML/KiCad netlist structure parity is now narrower:
   - fuller graph-owned netcode/name ownership
