@@ -8,6 +8,7 @@ use std::{env, fs};
 
 use ki2::core::SchematicProject;
 use ki2::diagnostic::DiagnosticKind;
+use ki2::erc;
 use ki2::error::Error;
 use ki2::loader::load_schematic_tree;
 use ki2::model::{
@@ -109,6 +110,71 @@ fn temp_dir_path(name: &str) -> PathBuf {
         .expect("clock")
         .as_nanos();
     env::temp_dir().join(format!("{name}_{nanos}"))
+}
+
+#[test]
+fn erc_reports_symbol_and_sheet_field_name_whitespace() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_field_name_whitespace_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73000000-0000-0000-0000-000000000002")
+  (paper "A4")
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (property " trailing " "x")))
+"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "73000000-0000-0000-0000-000000000003")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch")
+    (property " leading " "y"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/73000000-0000-0000-0000-000000000003" (page "2")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let load = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(diagnostics.len(), 2);
+    assert!(diagnostics.iter().all(|diagnostic| {
+        diagnostic.code == "erc-field-name-whitespace"
+            && diagnostic.kind == DiagnosticKind::Validation
+            && diagnostic.severity == ki2::diagnostic::Severity::Warning
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Field name has leading or trailing whitespace: ' leading '"
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.message == "Field name has leading or trailing whitespace: ' trailing '"
+    }));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
 }
 
 #[test]

@@ -1,5 +1,6 @@
 pub mod core;
 pub mod diagnostic;
+pub mod erc;
 pub mod error;
 pub mod loader;
 pub mod model;

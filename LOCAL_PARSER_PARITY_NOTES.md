@@ -363,6 +363,14 @@ What remains after that correction:
       cache on selected-screen schematic shapes instead of leaving `UpdateHatching()` as a no-op
       - the reduced line-cache path now also clips 45-degree hatch segments across the full current
         bounding box instead of the earlier truncated half-box coverage
+    - ERC work is now started in-tree:
+      - reduced local `ERC_TESTER::TestFieldNameWhitespace()` analogue is implemented and tested
+        for symbol and sheet fields
+      - next active ERC routine is `ERC_TESTER::TestTextVars()`
+      - unblock path there is narrower than before because the reduced shown-text path now covers
+        the exercised sheet/project/cross-reference/current-sheet connectivity tokens
+      - remaining likely blockers for full `TestTextVars()` parity are symbol/lib-text shown-text
+        coverage and drawing-sheet text coverage, not the already-ported global-label path
       - the reduced cache now also clips circle hatch lines to real circle geometry instead of the
         earlier bounding-box fallback
       - the reduced cache now also respects parsed rectangle corner radius instead of running

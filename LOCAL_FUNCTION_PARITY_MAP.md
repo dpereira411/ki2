@@ -50,6 +50,10 @@ Reason:
   ERC behavior
 
 Current ERC blocker:
+- first local ERC routine is now implemented:
+  - reduced `ERC_TESTER::TestFieldNameWhitespace()` analogue is live and tested for symbol/sheet
+    fields
+- next active upstream ERC target is `ERC_TESTER::TestTextVars()`
 - direct re-audit did not find another honest branch-level mismatch in
   `UpdateAllScreenReferences`, `UpdateSymbolInstanceData`, or `UpdateSheetInstanceData`
 - the remaining executable gap is model-shaped: the loader has no notion of an active variant per
