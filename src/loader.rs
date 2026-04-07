@@ -1480,6 +1480,13 @@ impl SchematicLoader {
         }
     }
 
+    // Upstream parity: local analogue of `SCHEMATIC::RecomputeIntersheetRefs()`. It currently
+    // matches KiCad's whole-hierarchy page-ref collection, but still diverges afterward by baking
+    // resolved intersheet-ref text onto every loaded global label property. Native KiCad rebuilds
+    // the page-ref map here, then only refreshes visible intersheet-ref field state on the current
+    // sheet during `SCH_SHEET_PATH::UpdateAllScreenReferences()`. Honest 1:1 parity is therefore
+    // blocked on adding current-sheet-scoped intersheet-ref refresh state instead of widening this
+    // eager materialization model further.
     fn recompute_intersheet_refs(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
         let mut virtual_page_to_sheet_page = HashMap::new();
@@ -1556,12 +1563,15 @@ impl SchematicLoader {
         }
     }
 
-    // Upstream parity: loader-side `UpdateAllScreenReferences` analogue. This local routine keeps
-    // reused-screen refresh on the loaded-sheet-path list plus symbol-instance helpers instead of
-    // KiCad's exact screen/instance object boundaries. In the current model it is structurally
-    // close enough for ERC-visible state: it refreshes reference/unit/value/footprint from local
-    // instances, restores reused screens to their first-instance baseline, and refreshes default
-    // global-label intersheet-ref placement. Remaining drift is blocked on richer per-screen state.
+    // Upstream parity: loader-side `SCH_SHEET_PATH::UpdateAllScreenReferences()` analogue. This
+    // local routine keeps reused-screen refresh on the loaded-sheet-path list plus symbol-instance
+    // helpers instead of KiCad's exact screen/instance object boundaries. In the current model it
+    // is structurally close enough for ERC-visible symbol occurrence state: it refreshes
+    // reference/unit/value/footprint from local instances, restores reused screens to their
+    // first-instance baseline, and fixes default global-label intersheet-ref placement. Remaining
+    // divergence is real: KiCad also refreshes current-sheet-only intersheet-ref visibility/text
+    // and shape hatching here, which the current Rust model cannot represent without a
+    // current-sheet-scoped intersheet-ref state layer and richer schematic-shape hatch state.
     fn update_all_screen_references(&mut self, sheet_paths: &[LoadedSheetPath]) {
         let occurrence_counts: HashMap<PathBuf, usize> =
             sheet_paths
