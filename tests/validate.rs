@@ -1171,7 +1171,7 @@ fn cli_netlist_rejects_unknown_formats() {
             "netlist",
             path.to_str().expect("path string"),
             "--format",
-            "kicad",
+            "bogus",
         ])
         .output()
         .expect("run ki2 netlist");
@@ -1184,6 +1184,104 @@ fn cli_netlist_rejects_unknown_formats() {
     assert!(stderr.contains("invalid netlist format"), "{stderr}");
 
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn cli_netlist_supports_reduced_kicad_format() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_netlist_kicad_format_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let schematic_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+    let report_path = schematic_path.with_extension("net");
+
+    fs::write(
+        &project_path,
+        r#"{
+  "meta": { "filename": "root.kicad_pro", "version": 1 },
+  "schematic": {
+    "variants": [
+      { "name": "ALT", "description": "Alt build" }
+    ]
+  }
+}"#,
+    )
+    .expect("write project");
+
+    fs::write(
+        &schematic_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (group "DesignBlock" (uuid "74000000-0000-0000-0000-000000000020")
+    (members "73000000-0000-0000-0000-000000000010")))"#,
+    )
+    .expect("write schematic");
+
+    let output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            schematic_path.to_str().expect("path string"),
+            "--format",
+            "kicad",
+        ])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    let components = report.find("<components>").expect("components");
+    let groups = report.find("<groups>").expect("groups");
+    let variants = report.find("<variants>").expect("variants");
+    let libparts = report.find("<libparts>").expect("libparts");
+    assert!(
+        components < groups && groups < variants && variants < libparts,
+        "{report}"
+    );
+    assert!(
+        report.contains(
+            "<group name=\"DesignBlock\" uuid=\"74000000-0000-0000-0000-000000000020\" lib_id=\"\">"
+        ),
+        "{report}"
+    );
+    assert!(
+        report.contains("<member uuid=\"73000000-0000-0000-0000-000000000010\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<variant name=\"ALT\" description=\"Alt build\" />"),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(schematic_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_file(report_path);
+    let _ = fs::remove_dir_all(dir);
 }
 
 #[test]

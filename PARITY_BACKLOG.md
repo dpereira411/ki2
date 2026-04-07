@@ -538,10 +538,10 @@ The XML / KiCad-style exporters need:
 - per-net node membership
 - stable effective net names
 
-4. groups / variants / component class parity
+4. component class parity
 - upstream XML exporter includes:
-  - groups
-  - variants
+  - reduced KiCad-format root `groups` export is live
+  - reduced KiCad-format root `variants` export is live
   - component class aggregation
 
 ### SPICE Export Requirements
@@ -594,7 +594,7 @@ Do not treat exporter parity as complete until all of these have been audited ex
 - symbols
 - libraries/libparts
 - nets
-- variants/groups/component classes
+- component classes
 
 3. net naming parity
 - exporter-visible net names are only as good as the connection model
@@ -629,6 +629,8 @@ What is already covered indirectly:
     - `duplicate_pin_numbers_are_jumpers`
     - `jumper_pin_groups`
   - reduced component-local variant diffs on `<comp><variants>`
+  - reduced KiCad-format root `<groups>` export
+  - reduced KiCad-format root `<variants>` export
   - reduced user-field export
   - reduced `sheetpath`
   - reduced `tstamps`

@@ -99,6 +99,20 @@ pub struct NetlistDesign {
     pub sheets: Vec<NetlistSheetDesign>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistGroup {
+    pub name: String,
+    pub uuid: String,
+    pub lib_id: String,
+    pub members: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistVariant {
+    pub name: String,
+    pub description: String,
+}
+
 #[derive(Debug, Clone)]
 struct NetNodeCandidate {
     net_name: String,
@@ -976,12 +990,94 @@ pub fn collect_xml_design(project: &SchematicProject) -> NetlistDesign {
     }
 }
 
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeGroups()` under KiCad's
+// `GNL_OPT_KICAD` path. This is not a 1:1 design-block/group owner because the Rust tree still
+// lacks KiCad's live `SCH_GROUP` item graph, but it preserves the exercised group name/uuid/lib_id
+// payload and the symbol-member-only filtering used by the KiCad-format netlist root.
+pub fn collect_kicad_groups(project: &SchematicProject) -> Vec<NetlistGroup> {
+    let symbol_uuids = project
+        .schematics
+        .iter()
+        .flat_map(|schematic| schematic.screen.items.iter())
+        .filter_map(|item| match item {
+            SchItem::Symbol(symbol) => symbol.uuid.clone(),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut groups = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Group(group) = item else {
+                continue;
+            };
+
+            let Some(uuid) = group.uuid.clone() else {
+                continue;
+            };
+
+            groups.push(NetlistGroup {
+                name: group.name.clone().unwrap_or_default(),
+                uuid,
+                lib_id: group.lib_id.clone().unwrap_or_default(),
+                members: group
+                    .members
+                    .iter()
+                    .filter(|member| symbol_uuids.contains(*member))
+                    .cloned()
+                    .collect(),
+            });
+        }
+    }
+
+    groups
+}
+
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeVariants()` under
+// KiCad's `GNL_OPT_KICAD` path. This is not a 1:1 schematic/controller path because the current
+// tree still sources variant descriptions only from the companion project JSON, but it preserves
+// the exercised variant-name/description root section needed by the first live KiCad-format
+// netlist slice.
+pub fn collect_kicad_variants(project: &SchematicProject) -> Vec<NetlistVariant> {
+    project
+        .project
+        .as_ref()
+        .map(|project| {
+            project
+                .schematic
+                .variant_descriptions
+                .iter()
+                .map(|(name, description)| NetlistVariant {
+                    name: name.clone(),
+                    description: description.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeRoot()`. This is not a
 // 1:1 KiCad netlist exporter because the Rust tree still omits the full exporter base, libraries,
 // variants/groups, and non-XML formats, but it preserves the same outer XML root ownership and the
 // live reduced `design` / `components` / `libparts` / `nets` sections instead of inventing a
 // repo-local export schema.
 pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
+    render_reduced_netlist(project, false)
+}
+
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeRoot()` with
+// `GNL_OPT_KICAD`. This is not a 1:1 KiCad serializer because the Rust tree still lacks the full
+// exporter base and custom KiCad formatter, but it preserves the owning root-section order and the
+// extra `groups` / top-level `variants` sections used by KiCad's native netlist flavor.
+pub fn render_reduced_kicad_netlist(project: &SchematicProject) -> String {
+    render_reduced_netlist(project, true)
+}
+
+fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bool) -> String {
     let design = collect_xml_design(project);
     let mut xml = String::from("<export version=\"E\">\n");
     xml.push_str("  <design>\n");
@@ -1241,6 +1337,52 @@ pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
     }
 
     xml.push_str("  </components>\n");
+
+    if include_kicad_sections {
+        xml.push_str("  <groups>\n");
+
+        for group in collect_kicad_groups(project) {
+            xml.push_str(&format!(
+                "    <group name=\"{}\" uuid=\"{}\" lib_id=\"{}\">\n",
+                escape_xml(&group.name),
+                escape_xml(&group.uuid),
+                escape_xml(&group.lib_id)
+            ));
+            xml.push_str("      <members>\n");
+
+            for member in group.members {
+                xml.push_str(&format!(
+                    "        <member uuid=\"{}\" />\n",
+                    escape_xml(&member)
+                ));
+            }
+
+            xml.push_str("      </members>\n");
+            xml.push_str("    </group>\n");
+        }
+
+        xml.push_str("  </groups>\n");
+        xml.push_str("  <variants>\n");
+
+        for variant in collect_kicad_variants(project) {
+            xml.push_str(&format!(
+                "    <variant name=\"{}\"",
+                escape_xml(&variant.name)
+            ));
+
+            if !variant.description.is_empty() {
+                xml.push_str(&format!(
+                    " description=\"{}\"",
+                    escape_xml(&variant.description)
+                ));
+            }
+
+            xml.push_str(" />\n");
+        }
+
+        xml.push_str("  </variants>\n");
+    }
+
     xml.push_str("  <libparts>\n");
 
     for libpart in collect_xml_libparts(project) {

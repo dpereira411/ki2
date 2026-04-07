@@ -7,7 +7,7 @@ use ki2::diagnostic::Diagnostic;
 use ki2::diagnostic::Severity;
 use ki2::erc;
 use ki2::loader::load_schematic_tree;
-use ki2::netlist::render_reduced_xml_netlist;
+use ki2::netlist::{render_reduced_kicad_netlist, render_reduced_xml_netlist};
 use ki2::parser::parse_schematic_file;
 use serde_json::json;
 
@@ -46,6 +46,7 @@ enum ErcReportUnits {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NetlistOutputFormat {
     Xml,
+    Kicad,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,7 +145,7 @@ fn print_usage_and_exit() -> ! {
         "               [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions]"
     );
     eprintln!("               [--exit-code-violations]");
-    eprintln!("       ki2 netlist <path> [--output <path>] [--format <xml>]");
+    eprintln!("       ki2 netlist <path> [--output <path>] [--format <xml|kicad>]");
     std::process::exit(2);
 }
 
@@ -326,10 +327,10 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 }
 
 // Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobExportNetlist()`. This
-// is not a 1:1 KiCad jobs/exporter path because the local CLI currently exposes only the first
-// live XML component export slice instead of the full common exporter base and all netlist
-// formats, but it keeps command-owned path/output/format handling on a real netlist subcommand
-// instead of burying early exporter work in test-only helpers.
+// is not a 1:1 KiCad jobs/exporter path because the local CLI still exposes only reduced XML and
+// reduced KiCad-format netlist slices instead of the full common exporter base and all exporter
+// backends, but it keeps command-owned path/output/format handling on a real netlist subcommand
+// instead of burying exporter work in test-only helpers.
 fn run_netlist_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
@@ -348,6 +349,7 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
             };
             format = match value.as_str() {
                 "xml" => NetlistOutputFormat::Xml,
+                "kicad" => NetlistOutputFormat::Kicad,
                 _ => {
                     eprintln!("invalid netlist format");
                     return 2;
@@ -366,9 +368,10 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
     };
 
     let path = PathBuf::from(path);
-    let output_path = output
-        .map(PathBuf::from)
-        .unwrap_or_else(|| path.with_extension("xml"));
+    let output_path = output.map(PathBuf::from).unwrap_or_else(|| match format {
+        NetlistOutputFormat::Xml => path.with_extension("xml"),
+        NetlistOutputFormat::Kicad => path.with_extension("net"),
+    });
     let loaded = match load_schematic_tree(&path) {
         Ok(loaded) => loaded,
         Err(err) => {
@@ -379,6 +382,7 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
     let project = SchematicProject::from_load_result(loaded);
     let content = match format {
         NetlistOutputFormat::Xml => render_reduced_xml_netlist(&project),
+        NetlistOutputFormat::Kicad => render_reduced_kicad_netlist(&project),
     };
 
     if let Err(err) = fs::write(&output_path, content) {
