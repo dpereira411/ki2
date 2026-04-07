@@ -3817,6 +3817,142 @@ fn project_settings_format_current_sheet_intersheet_refs() {
 }
 
 #[test]
+fn intersheet_refs_group_global_labels_by_shown_sheet_text() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_shown_text_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000333")
+  (paper "A4")
+  (global_label "${SHEETNAME}" (shape input) (at 10 10 0))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71000000-0000-0000-0000-000000000331")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000332")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "71000000-0000-0000-0000-000000000334")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/71000000-0000-0000-0000-000000000332" (page "2"))
+    (path "/71000000-0000-0000-0000-000000000334" (page "3")))
+)"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let mut loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get("A"),
+        Some(&BTreeSet::from([2]))
+    );
+    assert_eq!(
+        loaded.intersheet_ref_pages_by_label.get("B"),
+        Some(&BTreeSet::from([3]))
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${SHEETNAME}")
+    );
+
+    let child_a_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && sheet_path.sheet_name.as_deref() == Some("A")
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child A instance path");
+    let child_b_instance_path = loaded
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| {
+            sheet_path.schematic_path.ends_with("child.kicad_sch")
+                && sheet_path.sheet_name.as_deref() == Some("B")
+        })
+        .map(|sheet_path| sheet_path.instance_path.clone())
+        .expect("child B instance path");
+    assert!(loaded.set_current_sheet_path(&child_a_instance_path));
+
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "[1]");
+
+    assert!(loaded.set_current_sheet_path(&child_b_instance_path));
+    let child = loaded
+        .schematics
+        .iter()
+        .find(|schematic| schematic.path.ends_with("child.kicad_sch"))
+        .expect("child schematic");
+    let child_global = child
+        .screen
+        .items
+        .iter()
+        .find_map(|item| match item {
+            SchItem::Label(label) if label.kind == LabelKind::Global => Some(label),
+            _ => None,
+        })
+        .expect("child global label");
+    let child_property = child_global
+        .properties
+        .iter()
+        .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
+        .expect("child intersheet refs");
+    assert_eq!(child_property.value, "[2]");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn current_sheet_refresh_materializes_shape_hatching() {
     let dir = env::temp_dir().join(format!(
         "ki2_shape_hatching_refresh_{}",
