@@ -126,9 +126,9 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 3. Netlist/export connectivity parity
    - first local `erc` command is live
    - reduced text-report output, default report-path behavior, JSON output, severity filters,
-     report-unit metadata, and `--exit-code-violations` behavior are live
+     report-unit metadata, `--exit-code-violations` behavior, and reduced sheet-grouped report
+     structure are live
    - remaining CLI/report parity is fuller schema/config fidelity:
-     - per-sheet report grouping
      - ignored-check sections / exclusions
      - fuller JSON schema fields
      - KiCad job/config plumbing beyond direct CLI flags

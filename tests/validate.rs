@@ -148,6 +148,10 @@ fn cli_erc_reports_clean_schematic() {
         "{stdout}"
     );
     let report = fs::read_to_string(&report_path).expect("read report");
+    assert!(
+        report.contains("** ERC messages: 0  Errors 0  Warnings 0"),
+        "{report}"
+    );
     assert!(report.contains("found 0 violations"), "{report}");
 
     let _ = fs::remove_file(path);
@@ -193,6 +197,11 @@ fn cli_erc_reports_violations() {
         "{report}"
     );
     assert!(report.contains("Coordinate units: mm"), "{report}");
+    assert!(report.contains("***** Sheet"), "{report}");
+    assert!(
+        report.contains("** ERC messages: 2  Errors 2  Warnings 0"),
+        "{report}"
+    );
     assert!(report.contains("worksheet-like failure"), "{report}");
     assert!(report.contains("found 2 violations"), "{report}");
 
@@ -241,8 +250,15 @@ fn cli_erc_writes_json_report() {
         json["included_severities"],
         serde_json::json!(["error", "warning"])
     );
+    assert_eq!(json["error_count"], 2);
+    assert_eq!(json["warning_count"], 0);
+    assert_eq!(json["ignored_checks"], serde_json::json!([]));
     assert_eq!(json["violation_count"], 2);
     assert_eq!(json["violations"][0]["code"], "erc-generic-error");
+    assert_eq!(
+        json["sheets"][0]["violations"][0]["code"],
+        "erc-generic-error"
+    );
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
@@ -317,6 +333,11 @@ fn cli_erc_filters_reported_severities() {
     let report = fs::read_to_string(&report_path).expect("read report");
     assert!(report.contains("Report includes: warning"), "{report}");
     assert!(report.contains("Coordinate units: in"), "{report}");
+    assert!(report.contains("***** Sheet"), "{report}");
+    assert!(
+        report.contains("** ERC messages: 1  Errors 0  Warnings 1"),
+        "{report}"
+    );
     assert!(report.contains("warning only"), "{report}");
     assert!(!report.contains("error only"), "{report}");
 

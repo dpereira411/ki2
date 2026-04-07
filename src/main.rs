@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -353,10 +354,31 @@ fn erc_units_label(units: ErcReportUnits) -> &'static str {
     }
 }
 
+// Upstream parity: reduced local analogue for `ERC_REPORT` sheet-path ordering. This is not 1:1
+// because the local report still groups by diagnostic source path instead of KiCad sheet objects,
+// but it preserves the exercised report-owned sheet bucketing instead of leaving all violations in
+// one flat unordered stream.
+fn group_diagnostics_by_path<'a>(
+    diagnostics: &'a [Diagnostic],
+) -> Vec<(String, Vec<&'a Diagnostic>)> {
+    let mut groups: BTreeMap<String, Vec<&Diagnostic>> = BTreeMap::new();
+
+    for diagnostic in diagnostics {
+        let key = diagnostic
+            .path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        groups.entry(key).or_default().push(diagnostic);
+    }
+
+    groups.into_iter().collect()
+}
+
 // Upstream parity: reduced local analogue for KiCad's ERC text-report writer. This is not 1:1
-// with `ERC_REPORT` because the local command still lacks KiCad's per-sheet grouping and ignored
-// checks section, but it now records included severities and report units in the artifact instead
-// of leaving them implicit.
+// with `ERC_REPORT` because the local command still lacks KiCad's ignored-check section and true
+// sheet-object ordering, but it now groups violations by sheet path and reports severity totals
+// instead of emitting one flat reduced list.
 fn render_erc_text_report(
     input_path: &Path,
     diagnostics: &[Diagnostic],
@@ -364,6 +386,16 @@ fn render_erc_text_report(
     severity_mask: ErcSeverityMask,
 ) -> String {
     let mut out = String::new();
+    let grouped = group_diagnostics_by_path(diagnostics);
+    let error_count = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Error)
+        .count();
+    let warning_count = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Warning)
+        .count();
+
     out.push_str(&format!(
         "ERC report ({}, Encoding UTF8)\n",
         input_path
@@ -377,37 +409,74 @@ fn render_erc_text_report(
     ));
     out.push_str(&format!("Coordinate units: {}\n", erc_units_label(units)));
 
-    for diagnostic in diagnostics {
-        let path = diagnostic
-            .path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "<unknown>".to_string());
-        let line = diagnostic.line.unwrap_or(0);
-        let column = diagnostic.column.unwrap_or(0);
-        out.push_str(&format!(
-            "{path}:{line}:{column}: {} [{}]\n",
-            diagnostic.message, diagnostic.code
-        ));
+    for (sheet_path, items) in grouped {
+        out.push_str(&format!("\n***** Sheet {sheet_path}\n"));
+
+        for diagnostic in items {
+            let path = diagnostic
+                .path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            let line = diagnostic.line.unwrap_or(0);
+            let column = diagnostic.column.unwrap_or(0);
+            out.push_str(&format!(
+                "{path}:{line}:{column}: {} [{}]\n",
+                diagnostic.message, diagnostic.code
+            ));
+        }
     }
 
+    out.push_str(&format!(
+        "\n ** ERC messages: {}  Errors {}  Warnings {}\n",
+        diagnostics.len(),
+        error_count,
+        warning_count
+    ));
     out.push_str(&format!("found {} violations\n", diagnostics.len()));
     out
 }
 
 // Upstream parity: reduced local analogue for KiCad's JSON ERC report path. This is not 1:1 with
-// KiCad's JSON schema because the local command still emits only the exercised diagnostic fields,
-// but it now records source, included severities, and report units like the upstream ERC job.
+// KiCad's JSON schema because the local command still lacks UUID sheet paths and ignored-check
+// detail, but it now emits sheet-grouped violations and severity totals like the upstream report
+// path instead of only a flat reduced list.
 fn render_erc_json_report(
     input_path: &Path,
     diagnostics: &[Diagnostic],
     units: ErcReportUnits,
     severity_mask: ErcSeverityMask,
 ) -> String {
+    let grouped = group_diagnostics_by_path(diagnostics);
+    let error_count = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Error)
+        .count();
+    let warning_count = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Warning)
+        .count();
+
     serde_json::to_string_pretty(&json!({
         "source": input_path.file_name().and_then(|name| name.to_str()),
         "coordinate_units": erc_units_label(units),
         "included_severities": severity_mask.included_labels(),
+        "sheets": grouped.iter().map(|(sheet_path, items)| {
+            json!({
+                "path": sheet_path,
+                "violations": items.iter().map(|diagnostic| {
+                    json!({
+                        "path": diagnostic.path.as_ref().map(|path| path.display().to_string()),
+                        "line": diagnostic.line,
+                        "column": diagnostic.column,
+                        "message": diagnostic.message,
+                        "code": diagnostic.code,
+                        "kind": format!("{:?}", diagnostic.kind),
+                        "severity": format!("{:?}", diagnostic.severity),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
         "violations": diagnostics.iter().map(|diagnostic| {
             json!({
                 "path": diagnostic.path.as_ref().map(|path| path.display().to_string()),
@@ -419,6 +488,9 @@ fn render_erc_json_report(
                 "severity": format!("{:?}", diagnostic.severity),
             })
         }).collect::<Vec<_>>(),
+        "error_count": error_count,
+        "warning_count": warning_count,
+        "ignored_checks": Vec::<serde_json::Value>::new(),
         "violation_count": diagnostics.len(),
     }))
     .expect("erc diagnostics json")
