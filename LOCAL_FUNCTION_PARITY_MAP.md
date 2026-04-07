@@ -64,6 +64,10 @@ Current ERC blocker:
 - remaining blocker is narrower:
   - multiple local sheet occurrences still lack an honest active-occurrence selection path
   - broader ERC semantics that depend on variant-aware sheet state remain blocked on that model
+- separate source blocker:
+  - the current tree still has no project/settings loader or `.kicad_pro` parsing, so
+    `current_variant` can only be driven manually on `LoadResult`
+  - do not pretend `SCHEMATIC::GetCurrentVariant` parity is complete until that source layer exists
 - do not keep reopening those three routines for blind branch chasing until that occurrence/variant
   model is expanded
 

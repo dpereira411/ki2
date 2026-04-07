@@ -267,6 +267,19 @@ Concrete unblock path:
      - active selection across multiple local sheet occurrences
      - any broader ERC semantics that need variant-aware sheet state beyond the current model
 
+There is also a second unblock requirement now:
+
+- the current tree has no project/settings loader and no `.kicad_pro` parsing at all
+- so `current_variant` can only be set programmatically on `LoadResult`, not sourced the way KiCad
+  project state would source `SCHEMATIC::GetCurrentVariant()`
+
+Concrete unblock path for that source gap:
+
+1. add a minimal project/settings representation that can carry current variant selection
+2. teach the loader entrypoint to ingest that project-side variant source
+3. route that source into `LoadResult.current_variant`
+4. only then tighten ERC behavior that depends on project-selected variants instead of a manual API
+
 Until that model exists, the remaining loader drift should be treated as blocked rather than as an
 unfound branch mismatch in `UpdateSymbolInstanceData`, `UpdateSheetInstanceData`, or
 `UpdateAllScreenReferences`.
