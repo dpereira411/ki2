@@ -299,10 +299,16 @@ What remains after that correction:
   - done: current-sheet intersheet-ref text now also honors companion `.kicad_pro`
     `drawing.intersheets_ref_short`, `drawing.intersheets_ref_prefix`, and
     `drawing.intersheets_ref_suffix`
+  - done: the no-project fallback now uses KiCad's current default schematic-settings values for
+    intersheet refs too:
+    - `show = false`
+    - `own_page = true`
+    - `short = false`
+    - `prefix = "["`
+    - `suffix = "]"`
   - remaining narrower drift under the same routine:
     - the current Rust tree still lacks KiCad's fuller typed schematic-settings/config layer, so
-      the no-project fallback for intersheet-ref display settings is still reduced to the current
-      local property state/default formatting
+      user-config-driven overrides beyond companion project JSON still are not modeled
     - KiCad also calls `shape->UpdateHatching()` during current-sheet refresh
     - the current Rust shape model does not carry hatch geometry/update state beyond fill type/color
     - treat both as model/settings expansion work, not as another branch tweak in `loader.rs`

@@ -112,7 +112,8 @@ impl SchematicProject {
             let intersheet_refs_show = self
                 .project
                 .as_ref()
-                .and_then(LoadedProjectSettings::intersheet_refs_show);
+                .and_then(LoadedProjectSettings::intersheet_refs_show)
+                .unwrap_or(false);
             let intersheet_refs_own_page = self
                 .project
                 .as_ref()

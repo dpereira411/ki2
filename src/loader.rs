@@ -126,10 +126,11 @@ pub struct LoadResult {
 }
 
 impl LoadResult {
-    fn intersheet_refs_show(&self) -> Option<bool> {
+    fn intersheet_refs_show(&self) -> bool {
         self.project
             .as_ref()
             .and_then(LoadedProjectSettings::intersheet_refs_show)
+            .unwrap_or(false)
     }
 
     fn intersheet_refs_own_page(&self) -> Option<bool> {
@@ -398,7 +399,8 @@ pub fn load_schematic_tree(root: &Path) -> Result<LoadResult, Error> {
         &sheet_paths,
         project
             .as_ref()
-            .and_then(LoadedProjectSettings::intersheet_refs_show),
+            .and_then(LoadedProjectSettings::intersheet_refs_show)
+            .unwrap_or(false),
         project
             .as_ref()
             .and_then(LoadedProjectSettings::intersheet_refs_own_page),
@@ -1676,7 +1678,7 @@ impl SchematicLoader {
     fn update_all_screen_references(
         &mut self,
         sheet_paths: &[LoadedSheetPath],
-        intersheet_refs_show: Option<bool>,
+        intersheet_refs_show: bool,
         intersheet_refs_own_page: Option<bool>,
         intersheet_refs_short: Option<bool>,
         intersheet_refs_prefix: Option<String>,
@@ -1768,7 +1770,7 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
     intersheet_ref_values: &HashMap<String, String>,
     intersheet_ref_pages_by_label: &HashMap<String, BTreeSet<usize>>,
     sheet_pages_by_virtual_page: &HashMap<usize, String>,
-    intersheet_refs_show: Option<bool>,
+    intersheet_refs_show: bool,
     intersheet_refs_own_page: Option<bool>,
     intersheet_refs_short: Option<bool>,
     intersheet_refs_prefix: Option<&str>,
@@ -1837,12 +1839,10 @@ pub(crate) fn refresh_current_sheet_intersheet_refs(
             intersheet_refs.at = Some(label.at);
         }
 
-        if let Some(show) = intersheet_refs_show {
-            intersheet_refs.visible = show;
+        intersheet_refs.visible = intersheet_refs_show;
 
-            if !show {
-                continue;
-            }
+        if !intersheet_refs_show {
+            continue;
         }
 
         let prefix = intersheet_refs_prefix.unwrap_or_default();

@@ -2617,6 +2617,11 @@ impl KiCadSchematicParser {
         Ok(line)
     }
 
+    // Upstream parity: local `parseSchText()` analogue. This routine now keeps the shared text
+    // family on one owning loop and preserves explicit global-label intersheet-ref field payloads
+    // on the mandatory field itself instead of losing them during property replacement. Remaining
+    // divergence is down to narrower shared-effects/current-sheet exactness rather than the main
+    // text/label/property control flow.
     fn parse_sch_text(&mut self) -> Result<SchItem, Error> {
         let target = match self
             .need_unquoted_symbol_atom(
@@ -2783,9 +2788,12 @@ impl KiCadSchematicParser {
                     let ParsedSchText::Label(label) = &mut item else {
                         return Err(self.unexpected("property"));
                     };
-                    let property = self.parse_sch_field(FieldParent::Label(label))?;
+                    let mut property = self.parse_sch_field(FieldParent::Label(label))?;
 
                     if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+                        if property.base_value.is_none() {
+                            property.base_value = Some(property.value.clone());
+                        }
                         let existing = label
                             .properties
                             .iter_mut()

@@ -72,8 +72,9 @@ Current ERC blocker:
     - companion `.kicad_pro` `drawing.intersheets_ref_show` and
       `drawing.intersheets_ref_own_page` are now honored when present, and the current tree also
       honors project-backed `short` / `prefix` / `suffix` formatting on current-sheet intersheet
-      refs; what remains is KiCad's fuller typed schematic-settings/config fallback when no project
-      setting is available
+      refs; the no-project path now uses KiCad's current default schematic-settings values, and
+      what remains is fuller typed user-config/settings override support beyond companion project
+      JSON
     - current Rust shapes do not yet have the hatch/update state KiCad mutates with
       `shape->UpdateHatching()`
   - broader ERC semantics that depend on richer occurrence-aware symbol/sheet state remain blocked

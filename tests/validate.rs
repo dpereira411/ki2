@@ -2924,9 +2924,10 @@ fn recomputes_intersheet_refs_from_loaded_sheet_paths() {
         .iter()
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("root intersheet refs");
-    assert_eq!(root_property.value, "[1,2]");
+    assert_eq!(root_property.value, "");
     assert_eq!(root_property.id, Some(6));
     assert_eq!(root_property.key, "Intersheet References");
+    assert!(!root_property.visible);
 
     let child = loaded
         .schematics
@@ -3020,8 +3021,8 @@ fn recomputing_intersheet_refs_preserves_explicit_visible_property_state() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("intersheet refs");
 
-    assert_eq!(property.value, "[1,2]");
-    assert!(property.visible);
+    assert_eq!(property.value, "");
+    assert!(!property.visible);
     assert_eq!(property.at, Some([8.0, 9.0]));
 
     let _ = fs::remove_file(root_path);
@@ -3129,7 +3130,7 @@ fn recomputes_intersheet_refs_across_reused_screens() {
         .find(|property| property.kind == PropertyKind::GlobalLabelIntersheetRefs)
         .expect("intersheet refs");
 
-    assert_eq!(property.value, "[1,2]");
+    assert_eq!(property.value, "${INTERSHEET_REFS}");
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
