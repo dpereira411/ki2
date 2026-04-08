@@ -576,17 +576,23 @@ Current status:
     instead of the older point-only label/sheet-pin side snapshots
   - the remaining point-only label/sheet-pin snapshots are now bookkeeping for item lookup and
     graph indexing, not the active ERC owner for those exercised rules
-  - current concrete blocker for the next strict graph step is no longer missing parent links; it
-    is the still-reduced connection object model behind those links:
-    - no reduced analogue yet for fuller `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` parent-neighbor
-      state beyond current member/name snapshots
-    - missing still are shared reduced connection objects with at least:
+  - current concrete blocker for the next strict graph step is now narrower:
+    - the shared reduced graph does carry reduced connection objects with:
       - connection type
-      - local/full-local/resolved name
-      - member tree on the chosen connection object, not only aggregate subgraph members
-      - connected-bus-item / parent-neighbor ownership
-    - remaining bus-entry and neighbor exactness now depends on that richer reduced connection
-      object layer, not another local schematic scan or another point-list cleanup
+      - local/full-local/resolved names
+      - member trees
+      - link-owned label/sheet-pin/hier-port connections
+      - member-keyed reduced bus parent/neighbor links
+    - the remaining gap is that these are still static reduced snapshots, not live
+      `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
+      - no reduced equivalent yet for upstream clone/update behavior when parent-bus propagation
+        changes the effective member connection
+      - no reduced `matchBusMember()`-style remap after hierarchy propagation
+      - no live cached driver connection object that can be refreshed in place
+      - connected-bus-item ownership is still keyed by reduced member snapshots, not live item /
+        connection pointers
+    - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
+      object behavior, not another local schematic scan or another point-list cleanup
 
 ## Net Naming / CLI Requirements
 
