@@ -665,6 +665,44 @@ fn clone_reduced_connection_into_subgraph(
     }
 }
 
+fn reduced_sheet_path_depth(sheet_instance_path: &str) -> usize {
+    if sheet_instance_path.is_empty() {
+        0
+    } else {
+        sheet_instance_path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .count()
+    }
+}
+
+fn reduced_strong_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> Option<i32> {
+    subgraph.drivers.first().map(|driver| driver.priority)
+}
+
+fn reduced_subgraph_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> i32 {
+    reduced_strong_driver_priority(subgraph)
+        .or_else(|| subgraph.driver_connection.as_ref().map(|_| 1))
+        .unwrap_or(0)
+}
+
+fn reduced_subgraph_driver_name(subgraph: &ReducedProjectSubgraphEntry) -> String {
+    subgraph
+        .driver_connection
+        .as_ref()
+        .map(|connection| connection.name.clone())
+        .unwrap_or_else(|| subgraph.resolved_connection.name.clone())
+}
+
+fn reduced_subgraph_driver_connection(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> ReducedProjectConnection {
+    subgraph
+        .driver_connection
+        .clone()
+        .unwrap_or_else(|| subgraph.resolved_connection.clone())
+}
+
 // Upstream parity: reduced local analogue for the `matchBusMember()`-driven member refresh KiCad
 // performs after parent-bus propagation. This is not a 1:1 live graph update because the Rust tree
 // still stores static reduced link snapshots instead of mutating live `SCH_CONNECTION` objects, but
@@ -895,6 +933,113 @@ fn refresh_reduced_bus_propagation_fixpoint(reduced_subgraphs: &mut [ReducedProj
 
         if *reduced_subgraphs == before {
             break;
+        }
+    }
+}
+
+// Upstream parity: reduced local analogue for the visited-chain best-driver selection inside
+// `CONNECTION_GRAPH::propagateToNeighbors()`. This is not a 1:1 live hierarchy walk because the
+// Rust tree still settles cloned reduced subgraphs instead of mutating live dirty
+// `CONNECTION_SUBGRAPH` objects as they are visited, but it preserves the exercised static
+// best-driver ranking over one hierarchy-connected chain:
+// - stronger drivers outrank weaker ones
+// - global power outranks lower classes
+// - equal-priority strong drivers prefer shorter sheet paths
+// - equal-strength/equal-priority drivers fall back to alphabetical connection name
+// The reduced pass is currently limited to net chains; bus chains still rely on the dedicated
+// reduced bus propagation path because the Rust tree lacks the live bus-neighbor mutation KiCad
+// applies during the same visited walk. Remaining divergence is the still-missing live recursive
+// visit order and in-place dirty updates.
+fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
+    let mut seen = vec![false; reduced_subgraphs.len()];
+
+    for start in 0..reduced_subgraphs.len() {
+        if seen[start] {
+            continue;
+        }
+
+        let has_hierarchy_links = reduced_subgraphs[start].hier_parent_index.is_some()
+            || !reduced_subgraphs[start].hier_child_indexes.is_empty();
+
+        if !has_hierarchy_links {
+            seen[start] = true;
+            continue;
+        }
+
+        let mut stack = vec![start];
+        let mut visited = Vec::<usize>::new();
+
+        while let Some(index) = stack.pop() {
+            if seen[index] {
+                continue;
+            }
+
+            seen[index] = true;
+            visited.push(index);
+
+            if let Some(parent_index) = reduced_subgraphs[index].hier_parent_index {
+                if !seen[parent_index] {
+                    stack.push(parent_index);
+                }
+            }
+
+            for child_index in reduced_subgraphs[index].hier_child_indexes.clone() {
+                if !seen[child_index] {
+                    stack.push(child_index);
+                }
+            }
+        }
+
+        if visited.is_empty() {
+            continue;
+        }
+
+        let mut best_index = visited[0];
+        let mut highest = reduced_subgraph_driver_priority(&reduced_subgraphs[best_index]);
+        let mut best_is_strong = highest >= 3;
+        let mut best_name = reduced_subgraph_driver_name(&reduced_subgraphs[best_index]);
+
+        if highest < 6 {
+            for &index in visited.iter().skip(1) {
+                let priority = reduced_subgraph_driver_priority(&reduced_subgraphs[index]);
+                let candidate_strong = priority >= 3;
+                let candidate_name = reduced_subgraph_driver_name(&reduced_subgraphs[index]);
+                let shorter_path =
+                    reduced_sheet_path_depth(&reduced_subgraphs[index].sheet_instance_path)
+                        < reduced_sheet_path_depth(
+                            &reduced_subgraphs[best_index].sheet_instance_path,
+                        );
+                let as_good_path =
+                    reduced_sheet_path_depth(&reduced_subgraphs[index].sheet_instance_path)
+                        <= reduced_sheet_path_depth(
+                            &reduced_subgraphs[best_index].sheet_instance_path,
+                        );
+
+                if (priority >= 6)
+                    || (!best_is_strong && candidate_strong)
+                    || (priority > highest && candidate_strong)
+                    || (priority == highest && candidate_strong && shorter_path)
+                    || ((best_is_strong == candidate_strong)
+                        && as_good_path
+                        && (priority == highest)
+                        && (candidate_name < best_name))
+                {
+                    best_index = index;
+                    highest = priority;
+                    best_is_strong = candidate_strong;
+                    best_name = candidate_name;
+                }
+            }
+        }
+
+        let connection = reduced_subgraph_driver_connection(&reduced_subgraphs[best_index]);
+
+        if connection.connection_type != ReducedProjectConnectionType::Net {
+            continue;
+        }
+
+        for index in visited {
+            clone_reduced_connection_into_subgraph(&mut reduced_subgraphs[index], &connection);
         }
     }
 }
@@ -2579,6 +2724,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
+    refresh_reduced_hierarchy_driver_chains(&mut reduced_subgraphs);
     refresh_reduced_bus_propagation_fixpoint(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
@@ -4350,13 +4496,13 @@ mod tests {
     use super::{
         PointKey, ReducedBusMember, ReducedBusMemberKind, ReducedLabelLink,
         ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
-        ReducedProjectSubgraphEntry, find_first_reduced_project_subgraph_by_name,
-        find_reduced_project_subgraph_by_name, rebuild_reduced_project_graph_name_caches,
-        reduced_bus_member_objects, refresh_reduced_bus_link_members,
-        refresh_reduced_bus_members_from_neighbor_connections,
-        refresh_reduced_multiple_bus_parent_names, resolve_reduced_net_name_at,
-        resolve_reduced_project_net_at, resolve_reduced_project_subgraph_at,
-        resolve_reduced_project_subgraph_for_label,
+        ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
+        find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
+        rebuild_reduced_project_graph_name_caches, reduced_bus_member_objects,
+        refresh_reduced_bus_link_members, refresh_reduced_bus_members_from_neighbor_connections,
+        refresh_reduced_hierarchy_driver_chains, refresh_reduced_multiple_bus_parent_names,
+        resolve_reduced_net_name_at, resolve_reduced_project_net_at,
+        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
         resolve_reduced_project_subgraph_for_symbol_pin,
     };
@@ -5972,5 +6118,120 @@ mod tests {
 
         assert_eq!(graph[0].resolved_connection.members[0].name, "OLD1");
         assert_eq!(graph[1].bus_parent_links[0].member.full_local_name, "/OLD1");
+    }
+
+    #[test]
+    fn reduced_hierarchy_driver_chain_uses_best_driver() {
+        let mut graph = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/ROOT_SIG".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/ROOT_SIG".to_string(),
+                    local_name: "ROOT_SIG".to_string(),
+                    full_local_name: "/ROOT_SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/ROOT_SIG".to_string(),
+                    local_name: "ROOT_SIG".to_string(),
+                    full_local_name: "/ROOT_SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: 4,
+                    name: "ROOT_SIG".to_string(),
+                    full_name: "/ROOT_SIG".to_string(),
+                }],
+                non_bus_driver_priority: Some(4),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: vec![1],
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/Child/GLOBAL_SIG".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/Child/GLOBAL_SIG".to_string(),
+                    local_name: "GLOBAL_SIG".to_string(),
+                    full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/Child/GLOBAL_SIG".to_string(),
+                    local_name: "GLOBAL_SIG".to_string(),
+                    full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: 6,
+                    name: "GLOBAL_SIG".to_string(),
+                    full_name: "/Child/GLOBAL_SIG".to_string(),
+                }],
+                non_bus_driver_priority: Some(6),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/child".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: Some(0),
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        refresh_reduced_hierarchy_driver_chains(&mut graph);
+
+        assert_eq!(graph[0].name, "/Child/GLOBAL_SIG");
+        assert_eq!(graph[1].name, "/Child/GLOBAL_SIG");
+        assert_eq!(
+            graph[0]
+                .driver_connection
+                .as_ref()
+                .expect("root driver")
+                .full_local_name,
+            "/Child/GLOBAL_SIG"
+        );
     }
 }
