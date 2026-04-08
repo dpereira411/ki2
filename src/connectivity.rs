@@ -1419,6 +1419,24 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                             label,
                         )
                     },
+                    |sheet, pin| {
+                        let Some(child_sheet_path) =
+                            child_sheet_path_for_sheet(inputs.sheet_paths, sheet_path, sheet)
+                        else {
+                            return pin.name.clone();
+                        };
+
+                        shown_sheet_pin_text(
+                            inputs.schematics,
+                            inputs.sheet_paths,
+                            sheet_path,
+                            child_sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            None,
+                            pin,
+                        )
+                    },
                 );
                 let driver_name = driver_candidate
                     .as_ref()
@@ -1442,6 +1460,24 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                             inputs.project,
                             inputs.current_variant,
                             label,
+                        )
+                    },
+                    |sheet, pin| {
+                        let Some(child_sheet_path) =
+                            child_sheet_path_for_sheet(inputs.sheet_paths, sheet_path, sheet)
+                        else {
+                            return pin.name.clone();
+                        };
+
+                        shown_sheet_pin_text(
+                            inputs.schematics,
+                            inputs.sheet_paths,
+                            sheet_path,
+                            child_sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            None,
+                            pin,
                         )
                     },
                 );
@@ -2949,14 +2985,22 @@ struct ReducedDriverNameCandidate {
     identity: Option<ReducedLocalDriverIdentity>,
 }
 
-fn collect_reduced_strong_drivers<F>(
+// Upstream parity: reduced local analogue for the strong-driver collection inside
+// `CONNECTION_SUBGRAPH::ResolveDrivers()`. This is not a 1:1 KiCad driver cache because the Rust
+// tree still lacks live `SCH_CONNECTION` objects and full subgraph ownership, but it now keeps
+// the shared graph's strong-driver names on the same shown-text owner KiCad uses for labels and
+// sheet pins instead of leaving sheet-pin drivers on raw parser text. Remaining divergence is the
+// still-missing live connection object plus fuller power/bus-parent driver ownership.
+fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
     sheet_path_prefix: &str,
-    mut shown_label_text: F,
+    mut shown_label_text: FLabel,
+    mut shown_sheet_pin_text: FSheet,
 ) -> Vec<ReducedStrongDriver>
 where
-    F: FnMut(&Label) -> String,
+    FLabel: FnMut(&Label) -> String,
+    FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
     let mut drivers = schematic
         .screen
@@ -2994,10 +3038,14 @@ where
                             && points_equal(member.at, pin.at)
                     })
                 })
-                .map(|pin| ReducedStrongDriver {
-                    priority: reduced_sheet_pin_driver_rank(pin.shape),
-                    name: pin.name.clone(),
-                    full_name: format!("{sheet_path_prefix}{}", pin.name),
+                .map(|pin| {
+                    let shown = shown_sheet_pin_text(sheet, pin);
+
+                    ReducedStrongDriver {
+                        priority: reduced_sheet_pin_driver_rank(pin.shape),
+                        name: shown.clone(),
+                        full_name: format!("{sheet_path_prefix}{shown}"),
+                    }
                 })
                 .max_by(|lhs, rhs| {
                     lhs.priority
@@ -3060,7 +3108,8 @@ where
 // - global power pins outrank local power pins
 // - local power pins outrank local labels
 // - local labels outrank hierarchical labels
-// - sheet pins participate below labels, with output pins preferred over non-output pins
+// - sheet pins now participate through a caller-provided reduced `SCH_SHEET_PIN::GetShownText()`
+//   analogue instead of raw parser pin names, with output pins preferred over non-output pins
 // - ordinary symbol pins participate last through reduced `SCH_PIN::GetDefaultNetName()`-style
 //   fallback names so unlabeled nets still get deterministic export/CLI names
 // - equal-priority bus labels first prefer supersets over subsets to keep the widest connection
@@ -3069,13 +3118,17 @@ where
 //   current reduced driver path does not recurse back into itself
 // - the winning reduced driver now also carries enough stable local identity for the shared
 //   project graph to mimic `RunERC()` driver-instance de-duplication across reused screens
-fn resolve_reduced_driver_name_candidate_on_component<F>(
+// Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
+// driver ownership.
+fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
-    mut shown_label_text: F,
+    mut shown_label_text: FLabel,
+    mut shown_sheet_pin_text: FSheet,
 ) -> Option<ReducedDriverNameCandidate>
 where
-    F: FnMut(&Label) -> String,
+    FLabel: FnMut(&Label) -> String,
+    FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
     let mut candidates = schematic
         .screen
@@ -3120,7 +3173,7 @@ where
                 .map(|pin| ReducedDriverNameCandidate {
                     priority: 0,
                     sheet_pin_rank: reduced_sheet_pin_driver_rank(pin.shape),
-                    text: pin.name.clone(),
+                    text: shown_sheet_pin_text(sheet, pin),
                     source: ReducedNetNameSource::SheetPin,
                     identity: Some(ReducedLocalDriverIdentity::SheetPin {
                         at: point_key(pin.at),
@@ -3214,6 +3267,12 @@ where
     candidates.into_iter().next()
 }
 
+// Upstream parity: reduced local analogue for the driver-owned naming side of
+// `CONNECTION_SUBGRAPH::driverName()` / `SCH_CONNECTION::Name(false)`. This is not a 1:1 KiCad
+// current-sheet name resolver because callers without hierarchy context still fall back to raw
+// sheet-pin names, but it now routes the reduced driver choice through the same shared owner used
+// by the project graph instead of re-deriving the first visible label locally. Remaining
+// divergence is fuller sheet-pin shown-text context plus the still-missing live connection object.
 fn resolve_reduced_net_name_on_component<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
@@ -3227,6 +3286,7 @@ where
         schematic,
         connected_component,
         shown_label_text,
+        |_sheet, pin| pin.name.clone(),
     )
     .map(|candidate| {
         let prepend_path = matches!(
@@ -3966,6 +4026,88 @@ mod tests {
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.driver_name, "SIG");
         assert!(by_point.driver_names.iter().any(|name| name == "SIG"));
+
+        let _ = fs::remove_file(root_path);
+        let _ = fs::remove_file(child_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn reduced_project_subgraph_driver_names_use_sheet_pin_shown_text() {
+        let dir = env::temp_dir().join(format!(
+            "ki2_connectivity_sheet_pin_shown_text_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("mkdir");
+        let root_path = dir.join("root.kicad_sch");
+        let child_path = dir.join("child.kicad_sch");
+
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4"))"#,
+        )
+        .expect("write child");
+
+        fs::write(
+            &root_path,
+            format!(
+                r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (uuid "73050000-0000-0000-0000-000000000311")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "${{SHEETPATH}}" input (at 0 5 180) (uuid "73050000-0000-0000-0000-000000000312")))
+  (wire (pts (xy 0 5) (xy 10 5)))
+  (label "SIG" (at 10 5 0) (effects (font (size 1 1)))))"#,
+                child_path.display()
+            ),
+        )
+        .expect("write root");
+
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let root_schematic = project
+            .schematic(&root_sheet.schematic_path)
+            .expect("root schematic");
+        let root_sheet_item = root_schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Sheet(sheet) => Some(sheet),
+                _ => None,
+            })
+            .expect("root sheet item");
+        let child_sheet =
+            super::child_sheet_path_for_sheet(&project.sheet_paths, root_sheet, root_sheet_item)
+                .expect("child sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let by_point =
+            resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
+        assert_eq!(by_point.driver_name, "SIG");
+        assert!(
+            by_point
+                .driver_names
+                .iter()
+                .any(|name| name == &child_sheet.instance_path)
+        );
 
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
