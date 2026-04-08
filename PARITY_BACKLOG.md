@@ -533,7 +533,8 @@ Current status:
   - fuller shared connection/subgraph ownership for strict 1:1 net naming and export:
     - fuller item-owned connection naming beyond the now-shared `Name()`-style
       full-vs-short/path-qualified reduced net naming split
-    - netcode-style ownership
+    - netcode-style ownership beyond the now-live shared graph code preservation on the reduced
+      whole-net map
     - richer bus-member objects beyond the now-live nested text expansion
   - shared connection points now keep bus segments distinct from wire segments, so wire-only ERC
     branches no longer count buses through the old collapsed `Wire` member kind

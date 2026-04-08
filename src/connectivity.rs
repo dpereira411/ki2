@@ -1552,7 +1552,10 @@ pub(crate) fn collect_reduced_project_net_graph(
 // tree still lacks real `CONNECTION_SUBGRAPH` objects and graph-owned item identity, but it now
 // derives whole-net entries from the shared reduced subgraph owner instead of storing a second
 // flattened net vector beside it. Remaining divergence is the missing full subgraph object model
-// and graph-owned resolved-name caches beyond this reduced project net map.
+// and graph-owned resolved-name caches beyond this reduced project net map. It now also preserves
+// the shared graph's reduced net codes for non-export callers instead of renumbering them a second
+// time at the flattened whole-net layer; write-time exporters still do their own emitted-code
+// assignment like KiCad `makeListOfNets()`.
 pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
@@ -1670,15 +1673,14 @@ pub(crate) fn collect_reduced_project_net_map(
     grouped
         .into_iter()
         .filter_map(
-            |((_code, name), (class, has_no_connect, nodes, base_pins))| {
+            |((code, name), (class, has_no_connect, nodes, base_pins))| {
                 let nodes = nodes.into_values().collect::<Vec<_>>();
-                (!nodes.is_empty()).then_some((name, class, has_no_connect, nodes, base_pins))
+                (!nodes.is_empty()).then_some((code, name, class, has_no_connect, nodes, base_pins))
             },
         )
-        .enumerate()
         .map(
-            |(index, (name, class, has_no_connect, nodes, base_pins))| ReducedProjectNetEntry {
-                code: index + 1,
+            |(code, name, class, has_no_connect, nodes, base_pins)| ReducedProjectNetEntry {
+                code,
                 name,
                 class,
                 has_no_connect,
