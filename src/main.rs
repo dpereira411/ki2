@@ -7,6 +7,8 @@ use ki2::diagnostic::Diagnostic;
 use ki2::diagnostic::Severity;
 use ki2::erc;
 use ki2::loader::load_schematic_tree;
+use ki2::model::Property;
+use ki2::model::SchItem;
 use ki2::netlist::{render_reduced_kicad_netlist, render_reduced_xml_netlist};
 use ki2::parser::parse_schematic_file;
 use serde_json::json;
@@ -334,7 +336,8 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 // backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch, accepts
 // KiCad job-format aliases (`kicadsexpr`, `kicadxml`), applies one selected current variant
 // before export through the existing `SchematicProject` owner, and emits the exercised duplicate-
-// sheet-name warning branch before writing the netlist instead of keeping the command path silent.
+// sheet-name and annotation-warning branches before writing the netlist instead of keeping the
+// command path silent.
 fn run_netlist_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
@@ -396,6 +399,12 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
         .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("all"));
     project.set_current_variant(selected_variant);
 
+    if has_netlist_annotation_errors(&project) {
+        eprintln!(
+            "Warning: schematic has annotation errors, please use the schematic editor to fix them"
+        );
+    }
+
     if !erc::check_duplicate_sheet_names(&project).is_empty() {
         eprintln!("Warning: duplicate sheet names.");
     }
@@ -416,6 +425,110 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
 
     println!("wrote netlist {}", output_path.display());
     0
+}
+
+// Upstream parity: reduced local analogue for the `SCH_REFERENCE_LIST::CheckAnnotation()` warning
+// branch used by KiCad's netlist jobs handler. This is not a 1:1 reference-list owner because the
+// Rust tree still lacks `SCH_REFERENCE_LIST` and its exact split/sort semantics, but it preserves
+// the exercised export-time warning trigger for unannotated references, invalid selected units,
+// duplicate same-unit references, differing unit-count references, and same-reference
+// different-value mismatches across the loaded hierarchy instead of leaving the netlist command
+// permanently silent before export.
+fn has_netlist_annotation_errors(project: &SchematicProject) -> bool {
+    #[derive(Clone)]
+    struct AnnotationEntry {
+        reference: String,
+        unit: i32,
+        value: String,
+        unit_count: usize,
+    }
+
+    let mut by_reference = BTreeMap::<String, Vec<AnnotationEntry>>::new();
+    let current_property_value = |properties: &[Property], field_name: &str| {
+        properties
+            .iter()
+            .find(|property| {
+                let property_key = if property.kind.is_mandatory() {
+                    property.kind.canonical_key()
+                } else {
+                    property.key.as_str()
+                };
+
+                property_key.eq_ignore_ascii_case(field_name)
+            })
+            .map(|property| property.value.clone())
+    };
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            if !symbol.in_netlist {
+                continue;
+            }
+
+            let Some(reference) = current_property_value(&symbol.properties, "Reference") else {
+                continue;
+            };
+
+            if reference.contains('?') {
+                return true;
+            }
+
+            let unit = symbol.unit.unwrap_or(1);
+            let unit_count = symbol
+                .lib_symbol
+                .as_ref()
+                .map(|lib_symbol| lib_symbol.units.len().max(1))
+                .unwrap_or(1);
+
+            if unit as usize > unit_count {
+                return true;
+            }
+
+            let value = current_property_value(&symbol.properties, "Value").unwrap_or_default();
+
+            by_reference
+                .entry(reference.to_ascii_uppercase())
+                .or_default()
+                .push(AnnotationEntry {
+                    reference,
+                    unit,
+                    value,
+                    unit_count,
+                });
+        }
+    }
+
+    for entries in by_reference.into_values() {
+        for (index, first) in entries.iter().enumerate() {
+            for second in entries.iter().skip(index + 1) {
+                if !first.reference.eq_ignore_ascii_case(&second.reference) {
+                    continue;
+                }
+
+                if first.unit == second.unit {
+                    return true;
+                }
+
+                if first.unit_count != second.unit_count {
+                    return true;
+                }
+
+                if first.value != second.value {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 // Upstream parity: reduced local analogue for `JOB_SCH_ERC` default output-path handling. This is

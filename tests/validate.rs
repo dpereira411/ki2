@@ -638,6 +638,53 @@ fn cli_netlist_warns_on_duplicate_sheet_names() {
 }
 
 #[test]
+fn cli_netlist_warns_on_annotation_errors() {
+    let path = temp_schematic(
+        "cli_netlist_annotation_warning",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (at 0 0 0)
+    (property "Reference" "R?" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("net");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(
+        stderr.contains(
+            "Warning: schematic has annotation errors, please use the schematic editor to fix them"
+        ),
+        "{stderr}"
+    );
+    assert!(report_path.exists(), "expected netlist output");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_writes_reduced_xml_when_requested() {
     let path = temp_schematic(
         "cli_netlist_xml",

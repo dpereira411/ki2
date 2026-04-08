@@ -770,6 +770,7 @@ What is not yet explicitly tracked as complete:
   - exercised KiCad CLI format aliases now accept both `kicadsexpr` and `kicadxml`
   - exercised `--variant <name>` now applies the selected current variant before export
   - exercised duplicate-sheet-name warning now fires on the netlist command path before export
+  - exercised annotation warning now fires on the netlist command path before export
 - exporter-base symbol/pin collection parity
 - remaining XML/KiCad netlist structure parity is now narrower:
   - fuller graph-owned netcode/name ownership
