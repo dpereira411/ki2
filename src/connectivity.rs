@@ -179,8 +179,6 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) code: usize,
     pub(crate) name: String,
     pub(crate) resolved_connection: ReducedProjectConnection,
-    pub(crate) driver_name: String,
-    pub(crate) driver_full_name: String,
     pub(crate) driver_connection: Option<ReducedProjectConnection>,
     pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
@@ -1912,8 +1910,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
-            driver_name: pending.driver_name.clone(),
-            driver_full_name: pending.driver_full_name.clone(),
             driver_connection,
             driver_identity: pending.driver_identity.clone(),
             drivers: pending.drivers.clone(),
@@ -4359,7 +4355,6 @@ mod tests {
             .expect("sheet-local subgraph");
         assert_eq!(by_sheet.subgraph_code, 1);
         assert_eq!(by_sheet.code, 1);
-        assert_eq!(by_sheet.driver_name, "SIG");
         assert_eq!(by_sheet.name, "/Child/SIG");
         assert_eq!(by_sheet.resolved_connection.name, "/Child/SIG");
         assert_eq!(by_sheet.resolved_connection.local_name, "SIG");
@@ -4404,7 +4399,7 @@ mod tests {
             .expect("full-name subgraph");
         assert_eq!(by_full_name.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_full_name.sheet_instance_path, child_sheet.instance_path);
-        assert_eq!(by_full_name.driver_name, "SIG");
+        assert_eq!(by_full_name.resolved_connection.local_name, "SIG");
 
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
@@ -4513,7 +4508,6 @@ mod tests {
 
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
-        assert_eq!(by_point.driver_name, "SIG");
         assert_eq!(by_point.resolved_connection.local_name, "SIG");
         assert!(by_point.drivers.iter().any(|driver| driver.name == "SIG"));
 
@@ -4590,8 +4584,6 @@ mod tests {
 
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
-        assert_eq!(by_point.driver_name, child_sheet.instance_path);
-        assert_eq!(by_point.driver_full_name, child_sheet.instance_path);
         assert_eq!(
             by_point.resolved_connection.local_name,
             child_sheet.instance_path
