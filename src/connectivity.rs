@@ -135,6 +135,9 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) points: Vec<PointKey>,
     pub(crate) nodes: Vec<ReducedNetNode>,
     pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+    pub(crate) label_points: Vec<(PointKey, LabelKind)>,
+    pub(crate) sheet_pin_points: Vec<PointKey>,
+    pub(crate) no_connect_points: Vec<PointKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -962,10 +965,11 @@ where
 // object model and graph-owned resolved-name caches beyond this reduced project graph; candidate
 // ownership is now widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
 // identity is not collapsed before pin net/class ownership is assigned, item-to-net facts now
-// derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps, and
+// derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps,
 // whole-net views are derived from the shared subgraph owner instead of a second stored flattened
-// carrier. The outward reduced node carrier is still narrower than a real `CONNECTION_SUBGRAPH`
-// item owner.
+// carrier, and reduced label/sheet-pin/no-connect membership now rides on the shared subgraph
+// owner for graph-side ERC rules instead of per-sheet component rescans. The outward reduced node
+// carrier is still narrower than a real `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
@@ -980,6 +984,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         points: Vec<PointKey>,
         nodes: Vec<ReducedNetNode>,
         base_pins: Vec<ReducedNetBasePinKey>,
+        label_points: Vec<(PointKey, LabelKind)>,
+        sheet_pin_points: Vec<PointKey>,
+        no_connect_points: Vec<PointKey>,
     }
 
     let mut all_base_pins_by_net = BTreeMap::<String, Vec<ReducedNetBasePinKey>>::new();
@@ -1106,6 +1113,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     names.dedup();
                     names
                 };
+                let (label_points, sheet_pin_points, no_connect_points) =
+                    collect_reduced_subgraph_local_membership(schematic, &connected_component);
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
@@ -1117,6 +1126,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     points: points.clone(),
                     nodes: nodes.clone(),
                     base_pins: base_pins.clone(),
+                    label_points,
+                    sheet_pin_points,
+                    no_connect_points,
                 });
 
                 nets.entry(entry.name.clone()).or_insert_with(|| {
@@ -1184,6 +1196,55 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 }
             }
         }
+
+        for connected_component in collect_connection_components(schematic) {
+            if !connected_component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker)
+            {
+                continue;
+            }
+
+            let net_name = resolve_point_connectivity_text_var(
+                inputs.schematics,
+                inputs.sheet_paths,
+                sheet_path,
+                inputs.project,
+                inputs.current_variant,
+                connected_component.anchor,
+                SymbolPinTextVarKind::NetName,
+            )
+            .unwrap_or_default();
+
+            if !net_name.is_empty() {
+                continue;
+            }
+
+            let (label_points, sheet_pin_points, no_connect_points) =
+                collect_reduced_subgraph_local_membership(schematic, &connected_component);
+
+            pending_subgraphs.push(PendingProjectSubgraph {
+                name: String::new(),
+                driver_name: String::new(),
+                driver_names: Vec::new(),
+                class: String::new(),
+                has_no_connect: true,
+                sheet_instance_path: sheet_path.instance_path.clone(),
+                points: connected_component
+                    .members
+                    .iter()
+                    .map(|member| point_key(member.at))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_points,
+                sheet_pin_points,
+                no_connect_points,
+            });
+        }
     }
 
     for (
@@ -1234,28 +1295,30 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     }
 
     for (subgraph_index, pending) in pending_subgraphs.into_iter().enumerate() {
-        let Some(net_identity) =
-            net_identities_by_name
-                .get(&pending.name)
-                .map(|net| ReducedProjectSubgraphEntry {
-                    subgraph_code: subgraph_index + 1,
-                    code: net.code,
-                    name: net.name.clone(),
-                    driver_name: pending.driver_name.clone(),
-                    driver_names: pending.driver_names.clone(),
-                    class: if pending.class.is_empty() {
-                        net.class.clone()
-                    } else {
-                        pending.class.clone()
-                    },
-                    has_no_connect: pending.has_no_connect,
-                    sheet_instance_path: pending.sheet_instance_path.clone(),
-                    points: pending.points.clone(),
-                    nodes: pending.nodes.clone(),
-                    base_pins: pending.base_pins.clone(),
-                })
-        else {
-            continue;
+        let net_identity = net_identities_by_name.get(&pending.name);
+        let net_identity = ReducedProjectSubgraphEntry {
+            subgraph_code: subgraph_index + 1,
+            code: net_identity.map(|net| net.code).unwrap_or_default(),
+            name: net_identity
+                .map(|net| net.name.clone())
+                .unwrap_or_else(|| pending.name.clone()),
+            driver_name: pending.driver_name.clone(),
+            driver_names: pending.driver_names.clone(),
+            class: if pending.class.is_empty() {
+                net_identity
+                    .map(|net| net.class.clone())
+                    .unwrap_or_default()
+            } else {
+                pending.class.clone()
+            },
+            has_no_connect: pending.has_no_connect,
+            sheet_instance_path: pending.sheet_instance_path.clone(),
+            points: pending.points.clone(),
+            nodes: pending.nodes.clone(),
+            base_pins: pending.base_pins.clone(),
+            label_points: pending.label_points.clone(),
+            sheet_pin_points: pending.sheet_pin_points.clone(),
+            no_connect_points: pending.no_connect_points.clone(),
         };
 
         let index = reduced_subgraphs.len();
@@ -1571,6 +1634,69 @@ fn reduced_project_point_identity_key(
         sheet_instance_path: sheet_path.instance_path.clone(),
         at: point_key(at),
     }
+}
+
+// Upstream parity: local helper for deterministic reduced subgraph snapshot ordering. KiCad keeps
+// live item sets on `CONNECTION_SUBGRAPH`, so it does not need this tuple-sort helper. The Rust
+// reduced graph still stores cloned label-point snapshots, and this helper keeps that carrier
+// stable without broadening `LabelKind` itself just for ordering.
+fn reduced_label_kind_sort_key(kind: LabelKind) -> u8 {
+    match kind {
+        LabelKind::Local => 0,
+        LabelKind::Global => 1,
+        LabelKind::Hierarchical => 2,
+        LabelKind::Directive => 3,
+    }
+}
+
+// Upstream parity: local helper for the reduced per-subgraph item membership KiCad keeps directly
+// on `CONNECTION_SUBGRAPH`. This is not a 1:1 upstream routine because the Rust tree still starts
+// from cloned connected-component members, but it exists so project-graph ERC paths can share one
+// reduced local label/sheet-pin/no-connect membership snapshot instead of rebuilding those facts
+// differently per rule.
+fn collect_reduced_subgraph_local_membership(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+) -> (Vec<(PointKey, LabelKind)>, Vec<PointKey>, Vec<PointKey>) {
+    let mut label_points = connected_component
+        .members
+        .iter()
+        .filter_map(|member| {
+            if member.kind != ConnectionMemberKind::Label {
+                return None;
+            }
+
+            schematic.screen.items.iter().find_map(|item| match item {
+                SchItem::Label(label) if points_equal(label.at, member.at) => {
+                    Some((point_key(label.at), label.kind))
+                }
+                _ => None,
+            })
+        })
+        .collect::<Vec<_>>();
+    label_points
+        .sort_by_key(|(point, kind)| (point.0, point.1, reduced_label_kind_sort_key(*kind)));
+    label_points.dedup();
+
+    let mut sheet_pin_points = connected_component
+        .members
+        .iter()
+        .filter(|member| member.kind == ConnectionMemberKind::SheetPin)
+        .map(|member| point_key(member.at))
+        .collect::<Vec<_>>();
+    sheet_pin_points.sort();
+    sheet_pin_points.dedup();
+
+    let mut no_connect_points = connected_component
+        .members
+        .iter()
+        .filter(|member| member.kind == ConnectionMemberKind::NoConnectMarker)
+        .map(|member| point_key(member.at))
+        .collect::<Vec<_>>();
+    no_connect_points.sort();
+    no_connect_points.dedup();
+
+    (label_points, sheet_pin_points, no_connect_points)
 }
 
 fn reduced_project_base_pin_key(

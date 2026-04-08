@@ -446,6 +446,8 @@ Current status:
   - dangling no-connect markers with no pins or labels
   - hier-pin / hierarchical-label special-case exemption when the local subgraph is only the
     no-connect plus that hierarchy boundary item
+  - unnamed marker-only local subgraphs now survive into the shared reduced project graph instead
+    of disappearing before the graph-owned no-connect pass runs
   - current divergence is the fuller marker attachment path, not
     absence of the graph-owned no-connect rule
 - reduced wire-only coverage is now live for:
@@ -804,6 +806,8 @@ What is already covered indirectly:
   instead of deriving them by stripping the full resolved net name
 - reduced project subgraphs now also keep strong-driver name sets for graph-owned ERC conflict
   consumers instead of forcing those callers back through per-sheet component scans
+- reduced project graph now also keeps unnamed no-connect-only subgraphs instead of requiring a
+  resolved net-map entry before a local subgraph can exist
 - XML/KiCad net export now aggregates `nets` from the shared reduced subgraph owner instead of
   consuming only the already-flattened whole-net carrier
 - shared whole-net map canonicalization now prefers user-named `(ref,pin)` ownership before final

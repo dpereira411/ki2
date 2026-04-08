@@ -3,8 +3,7 @@ use crate::connectivity::{
     collect_connection_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_map, collect_reduced_project_subgraphs, projected_symbol_pin_info,
     reduced_bus_members, reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
-    resolve_reduced_non_bus_driver_priority_at, resolve_reduced_project_net_at,
-    resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_non_bus_driver_priority_at, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -497,21 +496,6 @@ fn resolved_pin_net_name(
 }
 
 // Upstream parity: reduced local helper for the generic connection-point net lookup that the
-// graph-owned ERC marker passes use through `CONNECTION_GRAPH::GetResolvedSubgraphName()`. This is
-// not a 1:1 KiCad subgraph owner because the Rust tree still lacks live item-owned
-// `CONNECTION_SUBGRAPH`s, but ERC now reads current point-net identity from the shared
-// project-level reduced graph owner instead of carrying a second current-sheet fallback resolver.
-// Remaining divergence is the still-missing fuller item/subgraph object model, not duplicate
-// point-net ownership inside ERC.
-fn resolved_point_net_name(
-    project: &SchematicProject,
-    sheet_path: &crate::loader::LoadedSheetPath,
-    at: [f64; 2],
-) -> Option<String> {
-    let graph = project.reduced_project_net_graph(false);
-    resolve_reduced_project_net_at(&graph, sheet_path, at).map(|net| net.name)
-}
-
 fn is_driven_pin_type(pin_type: ReducedPinType) -> bool {
     matches!(pin_type, ReducedPinType::Input | ReducedPinType::PowerIn)
 }
@@ -1684,154 +1668,133 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckNoConnects()`. This is
 // not a 1:1 KiCad subgraph/item-marker pass because the Rust tree still lacks full
 // `CONNECTION_SUBGRAPH` objects, hier-port child-subgraph traversal, and live item identity. It
-// now prefers the shared project-level reduced graph owner for connection-point net identity, and
-// it covers both exercised upstream branches:
+// now consumes shared reduced project subgraphs plus graph-owned same-name grouping instead of
+// rebuilding the rule from per-sheet connection components, and it covers both exercised upstream
+// branches:
 // - connected no-connect markers on same-name nets
 // - dangling no-connect markers with no pins or labels
 // instead of leaving the reduced ERC path on the older connected-only point-local check.
 // Remaining divergence is the fuller hier-pin and marker attachment path.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let subgraphs = collect_reduced_project_subgraphs(project, false);
     let mut unique_pins_by_net =
-        BTreeMap::<String, std::collections::BTreeSet<(String, (u64, u64))>>::new();
-    let mut unique_labels_by_net =
-        BTreeMap::<String, std::collections::BTreeSet<(std::path::PathBuf, (u64, u64))>>::new();
+        BTreeMap::<String, std::collections::BTreeSet<ReducedNetBasePinKey>>::new();
+    let mut unique_labels_by_net = BTreeMap::<
+        String,
+        std::collections::BTreeSet<(String, crate::connectivity::PointKey)>,
+    >::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for component in collect_connection_components(schematic) {
-            let Some(net_name) = resolved_point_net_name(project, sheet_path, component.anchor)
-            else {
-                continue;
-            };
-
-            let pins = unique_pins_by_net.entry(net_name.clone()).or_default();
-
-            for member in &component.members {
-                if member.kind != ConnectionMemberKind::SymbolPin {
-                    if member.kind == ConnectionMemberKind::Label {
-                        unique_labels_by_net
-                            .entry(net_name.clone())
-                            .or_default()
-                            .insert((
-                                sheet_path.schematic_path.clone(),
-                                (member.at[0].to_bits(), member.at[1].to_bits()),
-                            ));
-                    }
-
-                    continue;
-                }
-
-                pins.insert((
-                    member.symbol_uuid.clone().unwrap_or_default(),
-                    (member.at[0].to_bits(), member.at[1].to_bits()),
-                ));
-            }
-        }
+    for subgraph in &subgraphs {
+        unique_pins_by_net
+            .entry(subgraph.name.clone())
+            .or_default()
+            .extend(subgraph.base_pins.iter().cloned());
+        unique_labels_by_net
+            .entry(subgraph.name.clone())
+            .or_default()
+            .extend(
+                subgraph
+                    .label_points
+                    .iter()
+                    .map(|(point, _kind)| (subgraph.sheet_instance_path.clone(), *point)),
+            );
     }
 
-    for sheet_path in &project.sheet_paths {
+    for subgraph in subgraphs
+        .iter()
+        .filter(|subgraph| !subgraph.no_connect_points.is_empty())
+    {
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
+            continue;
+        };
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        for component in collect_connection_components(schematic) {
-            if !component
-                .members
-                .iter()
-                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker)
-            {
-                continue;
-            }
 
-            let local_unique_pins = component
-                .members
+        let local_unique_pins = subgraph
+            .base_pins
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let local_unique_labels = subgraph
+            .label_points
+            .iter()
+            .map(|(point, _kind)| (subgraph.sheet_instance_path.clone(), *point))
+            .collect::<std::collections::BTreeSet<_>>();
+        let has_sheet_pin = subgraph.no_connect_points.iter().any(|point| {
+            subgraph
+                .sheet_pin_points
                 .iter()
-                .filter(|member| member.kind == ConnectionMemberKind::SymbolPin)
-                .map(|member| {
-                    (
-                        member.symbol_uuid.clone().unwrap_or_default(),
-                        (member.at[0].to_bits(), member.at[1].to_bits()),
-                    )
-                })
-                .collect::<std::collections::BTreeSet<_>>();
-
-            let has_sheet_pin = component
-                .members
+                .any(|sheet_pin_point| sheet_pin_point == point)
+        });
+        let has_hierarchical_label = subgraph.no_connect_points.iter().any(|point| {
+            subgraph
+                .label_points
                 .iter()
-                .any(|member| member.kind == ConnectionMemberKind::SheetPin);
-            let local_unique_labels = component
-                .members
-                .iter()
-                .filter(|member| member.kind == ConnectionMemberKind::Label)
-                .map(|member| {
-                    (
-                        sheet_path.schematic_path.clone(),
-                        (member.at[0].to_bits(), member.at[1].to_bits()),
-                    )
-                })
-                .collect::<std::collections::BTreeSet<_>>();
-            let has_hierarchical_label = schematic.screen.items.iter().any(|item| match item {
-                SchItem::Label(label) if label.kind == LabelKind::Hierarchical => {
-                    component.members.iter().any(|member| {
-                        member.kind == ConnectionMemberKind::Label
-                            && points_equal(member.at, label.at)
+                .any(|(label_point, kind)| label_point == point && *kind == LabelKind::Hierarchical)
+        });
+        let has_nc_pin = subgraph.no_connect_points.iter().any(|point| {
+            schematic.screen.items.iter().any(|item| match item {
+                SchItem::Symbol(symbol) => {
+                    projected_symbol_pin_info(symbol).into_iter().any(|pin| {
+                        pin.electrical_type.as_deref() == Some("no_connect")
+                            && points_equal(
+                                pin.at,
+                                [f64::from_bits(point.0), f64::from_bits(point.1)],
+                            )
                     })
                 }
                 _ => false,
-            });
-            let has_nc_pin = component.members.iter().any(|member| {
-                member.kind == ConnectionMemberKind::SymbolPin
-                    && member.electrical_type.as_deref() == Some("no_connect")
-            });
+            })
+        });
 
-            if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
-                || (has_nc_pin && local_unique_pins.len() <= 1)
-            {
-                continue;
-            }
-
-            let net_name = resolved_point_net_name(project, sheet_path, component.anchor);
-            let unique_pin_count = net_name
-                .as_ref()
-                .and_then(|name| unique_pins_by_net.get(name))
-                .map(|pins| pins.len())
-                .unwrap_or(local_unique_pins.len());
-            let unique_label_count = net_name
-                .as_ref()
-                .and_then(|name| unique_labels_by_net.get(name))
-                .map(|labels| labels.len())
-                .unwrap_or(local_unique_labels.len());
-
-            if unique_pin_count <= 1 {
-                if unique_pin_count == 0 && unique_label_count == 0 {
-                    diagnostics.push(Diagnostic {
-                        severity: Severity::Warning,
-                        code: "erc-no-connect-dangling",
-                        kind: crate::diagnostic::DiagnosticKind::Validation,
-                        message: "Unconnected \"no connection\" flag".to_string(),
-                        path: Some(sheet_path.schematic_path.clone()),
-                        span: None,
-                        line: None,
-                        column: None,
-                    });
-                }
-
-                continue;
-            }
-
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-no-connect-connected",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: "No-connect marker is attached to a connected net".to_string(),
-                path: Some(sheet_path.schematic_path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
+        if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
+            || (has_nc_pin && local_unique_pins.len() <= 1)
+        {
+            continue;
         }
+
+        let unique_pin_count = unique_pins_by_net
+            .get(&subgraph.name)
+            .map(|pins| pins.len())
+            .unwrap_or(local_unique_pins.len());
+        let unique_label_count = unique_labels_by_net
+            .get(&subgraph.name)
+            .map(|labels| labels.len())
+            .unwrap_or(local_unique_labels.len());
+
+        if unique_pin_count <= 1 {
+            if unique_pin_count == 0 && unique_label_count == 0 {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "erc-no-connect-dangling",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: "Unconnected \"no connection\" flag".to_string(),
+                    path: Some(sheet_path.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-no-connect-connected",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: "No-connect marker is attached to a connected net".to_string(),
+            path: Some(sheet_path.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
