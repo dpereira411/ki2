@@ -535,14 +535,14 @@ Current status:
     - richer bus-member objects beyond reduced expansion
   - shared connection points now keep bus segments distinct from wire segments, so wire-only ERC
     branches no longer count buses through the old collapsed `Wire` member kind
-  - hierarchy-side sheet-pin shown-text is still raw-name based:
-    - direct sheet-pin shown-text port attempts exposed that the current reduced sheet token
-      resolver is not yet an honest `SCH_SHEET_PIN` shown-text owner
-    - unblock path:
-      1. identify the upstream sheet-pin shown-text path and required child-occurrence context
-      2. add a real reduced sheet-pin shown-text owner instead of reusing raw pin names or generic
-         sheet-property fallback
-      3. then move `ercCheckHierSheets()` / bus-pin name comparisons onto that owner
+  - hierarchy-side sheet-pin shown-text now uses a reduced `SCH_SHEET_PIN::GetShownText()` owner:
+    - connection-backed tokens resolve from the parent sheet-pin connection point
+    - remaining sheet/project text vars recurse through the child sheet path like the upstream
+      parent-sheet branch
+    - `ercCheckHierSheets()` now compares parent sheet pins through that owner instead of raw
+      names
+  - remaining gap is broader sheet-pin item ownership beyond the now-live shown-text path, not the
+    old raw-name comparison branch
 
 ## Net Naming / CLI Requirements
 

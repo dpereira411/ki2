@@ -13,6 +13,7 @@ use crate::loader::{
     resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
     resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
     resolved_sheet_text_state, resolved_symbol_text_property_value, resolved_symbol_text_state,
+    shown_sheet_pin_text,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -2203,12 +2204,12 @@ fn sheet_pin_is_dangling(
 }
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckHierSheets()`. This is
-// not a 1:1 KiCad marker/`GetShownText()` path because the Rust tree still compares raw sheet-pin
-// names, not full pin shown-text with all project text expansion, and it still uses reduced sheet-
-// path helpers instead of KiCad sheet/screen owners. It now also asks the shared reduced project
-// graph whether parent sheet pins belong to a broader subgraph instead of rebuilding that query
-// from a local connected-component scan. Remaining divergence is fuller pin shown-text and marker
-// attachment parity.
+// not a 1:1 KiCad marker/`GetShownText()` path because the Rust tree still uses reduced sheet-path
+// helpers and lacks full sheet-pin / marker owners, but it now compares parent sheet pins through
+// a reduced `SCH_SHEET_PIN::GetShownText()` analogue instead of raw pin names. It also asks the
+// shared reduced project graph whether parent sheet pins belong to a broader subgraph instead of
+// rebuilding that query from a local connected-component scan. Remaining divergence is fuller
+// marker attachment and item ownership parity.
 pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2280,7 +2281,17 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
 
             let mut pins = BTreeMap::new();
             for pin in &sheet.pins {
-                pins.insert(pin.name.clone(), pin);
+                let shown = shown_sheet_pin_text(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    &child_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    Some(&graph),
+                    pin,
+                );
+                pins.insert(shown, pin);
             }
 
             let mut child_labels = BTreeMap::new();

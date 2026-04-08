@@ -5365,6 +5365,114 @@ fn global_label_connection_type(label: &crate::model::Label) -> Option<&'static 
     }
 }
 
+// Upstream parity: reduced local helper for the `SCH_LABEL_BASE::GetShownText()` /
+// `ResolveTextVar()` path when the owning item is a `SCH_SHEET_PIN`. This is not a 1:1 KiCad
+// sheet-pin text owner because the Rust tree still lacks live `SCH_SHEET_PIN` / `SCH_CONNECTION`
+// objects and sheet-pin fields, but it preserves the exercised owner split:
+// connection-backed tokens resolve from the parent-sheet pin connection point, while remaining
+// tokens recurse through the child sheet path via `SCH_SHEET::ResolveTextVar()`. The helper exists
+// because ERC hierarchical-sheet checks need a real sheet-pin shown-text owner instead of raw pin
+// names. Remaining divergence is fuller sheet-pin field and connection-object coverage.
+pub(crate) fn shown_sheet_pin_text(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    parent_sheet_path: &LoadedSheetPath,
+    child_sheet_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
+    pin: &crate::model::SheetPin,
+) -> String {
+    resolve_text_variables(
+        &pin.name,
+        &|token| {
+            let token_upper = token.to_ascii_uppercase();
+
+            match token_upper.as_str() {
+                "NET_NAME" => {
+                    return resolve_point_connectivity_text_var(
+                        schematics,
+                        sheet_paths,
+                        parent_sheet_path,
+                        project,
+                        current_variant,
+                        reduced_graph,
+                        pin.at,
+                        SymbolPinTextVarKind::NetName,
+                    )
+                    .or_else(|| Some(String::new()));
+                }
+                "SHORT_NET_NAME" => {
+                    return resolve_point_connectivity_text_var(
+                        schematics,
+                        sheet_paths,
+                        parent_sheet_path,
+                        project,
+                        current_variant,
+                        reduced_graph,
+                        pin.at,
+                        SymbolPinTextVarKind::ShortNetName,
+                    )
+                    .or_else(|| Some(String::new()));
+                }
+                "NET_CLASS" => {
+                    return resolve_point_connectivity_text_var(
+                        schematics,
+                        sheet_paths,
+                        parent_sheet_path,
+                        project,
+                        current_variant,
+                        reduced_graph,
+                        pin.at,
+                        SymbolPinTextVarKind::NetClass,
+                    )
+                    .or_else(|| Some(String::new()));
+                }
+                "CONNECTION_TYPE" => {
+                    use crate::model::SheetPinShape;
+
+                    return Some(
+                        match pin.shape {
+                            SheetPinShape::Input => "Input",
+                            SheetPinShape::Output => "Output",
+                            SheetPinShape::Bidirectional => "Bidirectional",
+                            SheetPinShape::TriState => "Tri-State",
+                            SheetPinShape::Unspecified => "Passive",
+                        }
+                        .to_string(),
+                    );
+                }
+                _ => {}
+            }
+
+            if token.contains(':') {
+                if let Some(value) = resolve_cross_reference_text_var_with_graph(
+                    schematics,
+                    sheet_paths,
+                    child_sheet_path,
+                    project,
+                    current_variant,
+                    reduced_graph,
+                    token,
+                ) {
+                    return Some(value);
+                }
+            }
+
+            resolve_sheet_text_var(
+                schematics,
+                sheet_paths,
+                child_sheet_path,
+                project,
+                current_variant,
+                token,
+                1,
+            )
+        },
+        0,
+    )
+}
+
 // Upstream parity: reduced local helper for the currently exercised `PROJECT::TextVarResolver()`
 // slice. This is not a 1:1 KiCad boundary because the Rust tree still lacks KiCad's fuller
 // project resolver stack, but it keeps project-owned token handling in one place for the

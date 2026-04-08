@@ -3324,6 +3324,54 @@ fn erc_reports_dangling_sheet_pins() {
 }
 
 #[test]
+fn erc_matches_hierarchical_sheet_pins_by_shown_text() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_hier_sheet_shown_text_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "Child" (shape input) (at 0 5 0) (effects (font (size 1 1)))))"#;
+    let root_src = format!(
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet (at 0 0) (size 20 10)
+    (uuid "91111111-1111-1111-1111-111111111111")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "${{SHEETNAME}}" input (at 0 5 180) (uuid "92222222-2222-2222-2222-222222222222"))))"#,
+        child_path.display()
+    );
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-hierarchical-label-mismatch")
+        .collect::<Vec<_>>();
+
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_dangling_directive_labels() {
     let path = temp_schematic(
         "erc_dangling_directive_label",
