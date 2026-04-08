@@ -28,6 +28,14 @@ Primary product goal now:
 - strict netlist/export parity
 - simulation-model parity last
 
+Active phase order:
+1. parser parity
+2. loader/hierarchy baseline
+3. connection-graph parity as the primary owning subsystem
+4. ERC and net naming on top of that graph ownership
+5. netlist/export on top of that graph ownership
+6. simulation parity last
+
 Secondary product goal:
 - expose a CLI-facing API surface that behaves like `kicad-cli` for the exercised schematic paths
 
@@ -36,6 +44,14 @@ Feature completion standard:
 - "close enough" output is not sufficient for sign-off
 - reduced local slices are acceptable only as temporary unblock steps and must stay marked as
   transitional until the owning upstream code path is either matched or explicitly blocked
+
+Ownership rule:
+- "ownership" means the same subsystem that owns a fact in upstream KiCad must own it locally too
+- parser-owned facts should not be reconstructed later
+- loader-owned occurrence/page/current-sheet state should not be rebuilt inside ERC or export
+- connection-graph-owned connectivity, net naming, and subgraph facts should not be re-derived by
+  ERC, export, or shown-text helpers once a shared graph owner exists
+- exporter code should format graph-owned/export-base-owned state, not rebuild connectivity locally
 
 ## Current State
 
@@ -146,7 +162,7 @@ Current ERC unblock paths:
 - fuller pin-to-pin exactness:
   1. type the exercised ERC settings slice from project JSON
   2. apply severity/pin-map overrides on top of the current default matrix
-  3. then decide whether the remaining gap is still graph-owned pin context
+  3. then decide whether the remaining gap is still graph-owned pin context and marker ranking
 
 Current local reality after audit:
 - there is no symbol-library subsystem in this tree today:
@@ -180,6 +196,8 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
      - item-to-subgraph lookup
      - resolved full/short net names
      - exporter-visible net ownership
+   - once a shared graph owner exists for an exercised fact, keep moving callers onto that owner
+     instead of adding more local one-off scans in ERC/export helpers
 2. Remaining connection-backed shown-text exactness
    - reduced connection-backed shown-text is live for the exercised ERC slice
    - remaining work is fuller KiCad settings/subgraph exactness, not missing variable support
@@ -203,6 +221,17 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
 
 The remaining ERC and net-naming work is blocked not on parser work, but on missing connectivity
 state.
+
+This backlog is intentionally not ordered as "finish every subsystem to 100% in isolation". The
+strict ordering is by owning subsystem boundary:
+- parser first
+- then broad loader/hierarchy support
+- then connection graph as the active primary owner
+- then ERC/net naming/export consumers on top of that owner
+
+That means later ERC/export work is only valid when it either:
+- ports a consumer directly against the graph/settings owner KiCad uses, or
+- exposes a real blocker in that owning subsystem and records the unblock path here
 
 Upstream KiCad uses `CONNECTION_GRAPH` as the canonical electrical model. It is used for:
 - electrical connectivity ownership

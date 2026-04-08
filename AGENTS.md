@@ -33,6 +33,9 @@ and failure behavior.
     "done" when its local owning code flow is intentionally aligned with the upstream KiCad owning
     code path, or when the remaining gap is explicitly documented as blocked in
     `PARITY_BACKLOG.md`.
+11. "Ownership" means the same subsystem that owns a fact in upstream KiCad must own it locally
+    too. Do not let ERC, export, or loader re-derive connectivity, net naming, occurrence state,
+    or other graph-owned facts when upstream consumes them from a different owning layer.
 
 ## Strict Mode
 
@@ -75,6 +78,12 @@ Strict mode is the default for parity work in this repository.
     parity is a primary workstream, not a side task. Do not keep extending reduced geometry-only
     checks once the backlog shows the remaining gaps depend on KiCad's fuller connection ownership
     model.
+19. Once parser parity and the broad loader/hierarchy baseline are sufficient to support the next
+    owning subsystem, move priority to that owning subsystem instead of trying to finish every
+    lower layer to cosmetic 100% first.
+20. When strict ERC/net naming/export parity is the active goal, ERC and export patches should
+    primarily remove connection-graph or settings ownership mismatches. Do not let feature-count
+    growth replace the graph-owned work that still blocks strict parity.
 
 ## Parser-Only Parity Strategy
 
