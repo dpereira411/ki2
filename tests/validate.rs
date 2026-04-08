@@ -2542,6 +2542,36 @@ fn erc_allows_prefixed_bus_group_member_entries() {
 }
 
 #[test]
+fn erc_allows_bus_alias_member_entries() {
+    let path = temp_schematic(
+        "erc_bus_entry_alias_member",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (bus_alias "DATA" (members D[0..3]))
+  (wire (pts (xy -5 5) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (bus_entry (at 0 0) (size -5 5))
+  (global_label "D0" (shape input) (at -5 5 0) (effects (font (size 1 1))))
+  (global_label "DATA" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-bus-entry-conflict"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_allows_connected_directive_labels() {
     let path = temp_schematic(
         "erc_connected_directive_label",
