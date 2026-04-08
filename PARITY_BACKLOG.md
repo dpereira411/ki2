@@ -631,6 +631,10 @@ Current status:
           connection updates
         - live bus parent/neighbor links now rebuild from stable bus-parent topology plus the
           current parent member tree instead of depending on stale mutable link snapshots
+        - live subgraphs now also own reduced live label/sheet-pin/hier-port connection carriers
+          during propagation, and the final reduced projection writes those per-link owners back
+          instead of blasting every item-side connection from the chosen driver snapshot only at
+          the end
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - the recursive walk still operates on reduced wrapper snapshots, not real live
@@ -641,8 +645,9 @@ Current status:
         scopes stale replay to the active recursive root, but it still clones reduced connection
         snapshots rather than replaying live connection objects through recursive revisits
       - no live cached driver connection object that can be cloned and recached in place across
-        labels, pins, sheet pins, and connected items via a shared `recacheSubgraphName()`-style
-        owner
+        labels, pins, sheet pins, and connected items by shared identity via a
+        `recacheSubgraphName()`-style owner; the per-link live wrappers now exist, but they still
+        have to be synchronized explicitly instead of sharing one mutable live connection object
       - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
         live item / connection pointers
     - concrete next unblock path:
