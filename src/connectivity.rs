@@ -676,6 +676,7 @@ fn match_live_bus_member_live<'a>(
 // mutates the active live connection-member payload directly instead of reduced member snapshots.
 // Remaining divergence is fuller pointer-shared member identity across every attached item and
 // subgraph relationship.
+#[cfg_attr(not(test), allow(dead_code))]
 fn match_live_bus_member_mut<'a>(
     bus_members: &'a mut [LiveProjectBusMember],
     search: &ReducedBusMember,
@@ -3936,10 +3937,9 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             let old_name = {
                 let parent = parent_handle.borrow();
                 let mut parent_connection = parent.driver_connection.borrow_mut();
-                let Some(member) = match_live_bus_member_mut(
-                    &mut parent_connection.members,
-                    &link.member.snapshot(),
-                ) else {
+                let Some(member) =
+                    match_live_bus_member_mut_live(&mut parent_connection.members, &link.member)
+                else {
                     continue;
                 };
 
