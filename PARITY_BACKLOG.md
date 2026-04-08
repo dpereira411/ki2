@@ -346,6 +346,8 @@ Current status:
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match
+  - reduced driver tie-breaking now also prefers bus supersets over subsets on equal-priority bus
+    labels through the shared connectivity owner instead of leaving bus-width choice exporter-local
 - reduced XML single-node `+no_connect` marking is now live in `src/netlist.rs`
 - reduced XML conditional `pinfunction` emission for single unnamed pins is now live in
   `src/netlist.rs`

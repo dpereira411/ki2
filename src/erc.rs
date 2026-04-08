@@ -1,7 +1,7 @@
 use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
-    collect_reduced_label_component_snapshots, projected_symbol_pin_info,
-    resolve_reduced_driver_conflict_at, resolve_reduced_net_name_at,
+    collect_reduced_label_component_snapshots, projected_symbol_pin_info, reduced_bus_members,
+    reduced_text_is_bus, resolve_reduced_driver_conflict_at, resolve_reduced_net_name_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_at,
     resolve_reduced_project_net_for_symbol_pin,
 };
@@ -579,94 +579,6 @@ fn unresolved_variable_diagnostic(path: &std::path::Path, message: String) -> Di
         line: None,
         column: None,
     }
-}
-
-fn reduced_text_is_bus(schematic: &crate::model::Schematic, text: &str) -> bool {
-    text.contains('[')
-        || text.contains(']')
-        || text.contains('{')
-        || text.contains('}')
-        || schematic
-            .screen
-            .bus_aliases
-            .iter()
-            .any(|alias| alias.name.eq_ignore_ascii_case(text))
-}
-
-// Upstream parity: reduced local analogue for the member expansion KiCad does through
-// `SCH_CONNECTION::Members()` on the bus-conflict path. This is not a 1:1 connection-object walk
-// because the Rust tree still expands from raw label text and bus aliases instead of live
-// `SCH_CONNECTION` members, but it now covers aliases, bracketed vectors, anonymous groups, and
-// prefixed bus groups like `USB{DP DM}`. Remaining divergence is fuller nested/member object
-// ownership beyond reduced string expansion.
-fn reduced_bus_members(schematic: &crate::model::Schematic, text: &str) -> Vec<String> {
-    if let Some(alias) = schematic
-        .screen
-        .bus_aliases
-        .iter()
-        .find(|alias| alias.name.eq_ignore_ascii_case(text))
-    {
-        return alias.members.clone();
-    }
-
-    if let Some(inner) = text
-        .strip_prefix('{')
-        .and_then(|value| value.strip_suffix('}'))
-    {
-        return inner
-            .split_whitespace()
-            .filter(|member| !member.is_empty())
-            .map(|member| member.to_string())
-            .collect();
-    }
-
-    if let Some((prefix, suffix)) = text.split_once('{') {
-        if let Some(inner) = suffix.strip_suffix('}') {
-            return inner
-                .split_whitespace()
-                .filter(|member| !member.is_empty())
-                .map(|member| {
-                    if prefix.is_empty() {
-                        member.to_string()
-                    } else {
-                        format!("{prefix}.{member}")
-                    }
-                })
-                .collect();
-        }
-    }
-
-    let Some((prefix, suffix)) = text.split_once('[') else {
-        return Vec::new();
-    };
-    let Some(range) = suffix.strip_suffix(']') else {
-        return Vec::new();
-    };
-    let Some((start, end)) = range.split_once("..") else {
-        return Vec::new();
-    };
-    let Ok(start) = start.parse::<i32>() else {
-        return Vec::new();
-    };
-    let Ok(end) = end.parse::<i32>() else {
-        return Vec::new();
-    };
-
-    let step = if start <= end { 1 } else { -1 };
-    let mut members = Vec::new();
-    let mut current = start;
-
-    loop {
-        members.push(format!("{prefix}{current}"));
-
-        if current == end {
-            break;
-        }
-
-        current += step;
-    }
-
-    members
 }
 
 fn component_contains_line_kind(

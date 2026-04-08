@@ -206,6 +206,139 @@ fn is_auto_generated_net_name(net_name: &str) -> bool {
     net_name.starts_with("unconnected-(") || net_name.starts_with("Net-(")
 }
 
+// Upstream parity: reduced local analogue for the bus-kind discrimination KiCad gets from
+// `SCH_CONNECTION::Type()` after `ConfigureFromLabel()`. This is not a 1:1 connection-object
+// query because the Rust tree still infers bus-ness from raw label text plus parsed aliases
+// instead of cached `SCH_CONNECTION` state, but it lets the shared connectivity owner make one
+// consistent bus-vs-net decision for ERC, naming, and export paths.
+pub(crate) fn reduced_text_is_bus(schematic: &Schematic, text: &str) -> bool {
+    text.contains('[')
+        || text.contains(']')
+        || text.contains('{')
+        || text.contains('}')
+        || schematic
+            .screen
+            .bus_aliases
+            .iter()
+            .any(|alias| alias.name.eq_ignore_ascii_case(text))
+}
+
+// Upstream parity: reduced local analogue for the member expansion KiCad exposes through
+// `SCH_CONNECTION::Members()` after `ConfigureFromLabel()`. This is not a 1:1 member-object walk
+// because the Rust tree still expands from raw text and bus aliases instead of live
+// `SCH_CONNECTION` members, but the shared connectivity owner now reuses the same expansion for
+// ERC, driver naming, and export tie-breaking. Remaining divergence is fuller nested/member object
+// ownership beyond reduced string expansion.
+pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<String> {
+    if let Some(alias) = schematic
+        .screen
+        .bus_aliases
+        .iter()
+        .find(|alias| alias.name.eq_ignore_ascii_case(text))
+    {
+        return alias.members.clone();
+    }
+
+    if let Some(inner) = text
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+    {
+        return inner
+            .split_whitespace()
+            .filter(|member| !member.is_empty())
+            .map(|member| member.to_string())
+            .collect();
+    }
+
+    if let Some((prefix, suffix)) = text.split_once('{') {
+        if let Some(inner) = suffix.strip_suffix('}') {
+            return inner
+                .split_whitespace()
+                .filter(|member| !member.is_empty())
+                .flat_map(|member| {
+                    let expanded = reduced_bus_members(schematic, member);
+
+                    if expanded.is_empty() {
+                        let name = if prefix.is_empty() {
+                            member.to_string()
+                        } else {
+                            format!("{prefix}.{member}")
+                        };
+                        vec![name]
+                    } else if prefix.is_empty() {
+                        expanded
+                    } else {
+                        expanded
+                            .into_iter()
+                            .map(|expanded_member| format!("{prefix}.{expanded_member}"))
+                            .collect::<Vec<_>>()
+                    }
+                })
+                .collect();
+        }
+    }
+
+    let Some((prefix, suffix)) = text.split_once('[') else {
+        return Vec::new();
+    };
+    let Some(range) = suffix.strip_suffix(']') else {
+        return Vec::new();
+    };
+    let Some((start, end)) = range.split_once("..") else {
+        return Vec::new();
+    };
+    let Ok(start) = start.parse::<i32>() else {
+        return Vec::new();
+    };
+    let Ok(end) = end.parse::<i32>() else {
+        return Vec::new();
+    };
+
+    let step = if start <= end { 1 } else { -1 };
+    let mut members = Vec::new();
+    let mut current = start;
+
+    loop {
+        members.push(format!("{prefix}{current}"));
+
+        if current == end {
+            break;
+        }
+
+        current += step;
+    }
+
+    members
+}
+
+fn reduced_bus_subset_cmp(schematic: &Schematic, lhs: &str, rhs: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    if !reduced_text_is_bus(schematic, lhs) || !reduced_text_is_bus(schematic, rhs) {
+        return Ordering::Equal;
+    }
+
+    let lhs_members = reduced_bus_members(schematic, lhs);
+    let rhs_members = reduced_bus_members(schematic, rhs);
+
+    if lhs_members.is_empty() || rhs_members.is_empty() {
+        return Ordering::Equal;
+    }
+
+    let lhs_is_subset = lhs_members
+        .iter()
+        .all(|member| rhs_members.contains(member));
+    let rhs_is_subset = rhs_members
+        .iter()
+        .all(|member| lhs_members.contains(member));
+
+    match (lhs_is_subset, rhs_is_subset) {
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
+        _ => Ordering::Equal,
+    }
+}
+
 fn reduced_str_num_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
 
@@ -1472,8 +1605,8 @@ where
 // - sheet pins participate below labels, with output pins preferred over non-output pins
 // - ordinary symbol pins participate last through reduced `SCH_PIN::GetDefaultNetName()`-style
 //   fallback names so unlabeled nets still get deterministic export/CLI names
-// - equal-priority drivers fall back to alphabetical shown text for deterministic parity instead
-//   of file order
+// - equal-priority bus labels first prefer supersets over subsets to keep the widest connection
+//   before falling back to sheet-pin rank / name quality / alphabetical order
 // - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
 //   current reduced driver path does not recurse back into itself
 fn resolve_reduced_net_name_on_component<F>(
@@ -1581,6 +1714,7 @@ where
 
             rhs_priority
                 .cmp(lhs_priority)
+                .then_with(|| reduced_bus_subset_cmp(schematic, lhs_text, rhs_text))
                 .then_with(|| rhs_sheet_pin_rank.cmp(lhs_sheet_pin_rank))
                 .then_with(|| lhs_low_quality_name.cmp(&rhs_low_quality_name))
                 .then_with(|| lhs_text.cmp(rhs_text))
@@ -1795,4 +1929,45 @@ where
 
             labels.into_iter().find_map(&mut label_netclass)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_reduced_net_name_at;
+    use crate::parser::parse_schematic_file;
+    use std::env;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn reduced_net_name_prefers_wider_bus_driver() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_driver_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 20 0)))
+  (global_label "DATA[0..3]" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+  (global_label "DATA[0..7]" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let resolved =
+            resolve_reduced_net_name_at(&schematic, [0.0, 0.0], None, |label| label.text.clone());
+
+        assert_eq!(resolved.as_deref(), Some("DATA[0..7]"));
+
+        let _ = fs::remove_file(path);
+    }
 }
