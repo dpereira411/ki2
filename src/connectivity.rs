@@ -882,7 +882,15 @@ where
             .or_default()
             .push(ReducedNetSubgraph {
                 anchor: component.anchor,
-                class: resolve_net_class(component.anchor).unwrap_or_default(),
+                class: {
+                    let mut seen_points = BTreeSet::new();
+                    component
+                        .members
+                        .iter()
+                        .filter(|member| seen_points.insert(point_key(member.at)))
+                        .find_map(|member| resolve_net_class(member.at))
+                        .unwrap_or_default()
+                },
                 has_no_connect: component
                     .members
                     .iter()
