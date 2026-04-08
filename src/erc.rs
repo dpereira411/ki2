@@ -126,6 +126,23 @@ fn parse_reduced_pin_type(electrical_type: &str) -> Option<ReducedPinType> {
     })
 }
 
+fn reduced_pin_type_weight(pin_type: ReducedPinType) -> usize {
+    match pin_type {
+        ReducedPinType::NoConnect => 0,
+        ReducedPinType::PowerOut => 1,
+        ReducedPinType::PowerIn => 2,
+        ReducedPinType::Output => 3,
+        ReducedPinType::Bidirectional => 4,
+        ReducedPinType::TriState => 5,
+        ReducedPinType::Input => 6,
+        ReducedPinType::OpenEmitter => 7,
+        ReducedPinType::OpenCollector => 8,
+        ReducedPinType::Passive => 9,
+        ReducedPinType::Unspecified => 10,
+        ReducedPinType::Free => 11,
+    }
+}
+
 fn resolve_base_pin_type(
     project: &SchematicProject,
     base_pin: &ReducedNetBasePinKey,
@@ -2547,6 +2564,12 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     for net in collect_reduced_project_net_map(project, false) {
+        struct PinMismatch {
+            lhs: usize,
+            rhs: usize,
+            conflict: PinConflict,
+        }
+
         let mut pins = net
             .base_pins
             .iter()
@@ -2584,44 +2607,106 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                 is_normal_driver_pin_type(pin.pin_type)
             }
         });
+        let needs_driver = pins
+            .iter()
+            .find(|pin| {
+                is_driven_pin_type(pin.pin_type)
+                    && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn)
+            })
+            .or_else(|| pins.iter().find(|pin| is_driven_pin_type(pin.pin_type)));
+        let mut mismatches = Vec::<PinMismatch>::new();
+        let mut mismatch_weights = BTreeMap::<usize, usize>::new();
 
         for (index, lhs_pin) in pins.iter().enumerate() {
-            for rhs_pin in pins.iter().skip(index + 1) {
+            for (rhs_index, rhs_pin) in pins.iter().enumerate().skip(index + 1) {
                 let conflict = configured_pin_conflict(project, lhs_pin.pin_type, rhs_pin.pin_type);
                 if conflict == PinConflict::Ok {
                     continue;
                 }
 
-                diagnostics.push(Diagnostic {
-                    severity: match conflict {
-                        PinConflict::Warning => Severity::Warning,
-                        PinConflict::Error => Severity::Error,
-                        PinConflict::Ok => continue,
-                    },
-                    code: match conflict {
-                        PinConflict::Warning => "erc-pin-to-pin-warning",
-                        PinConflict::Error => "erc-pin-to-pin-error",
-                        PinConflict::Ok => continue,
-                    },
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Conflicting pins connected at {}, {}",
-                        lhs_pin.at[0], lhs_pin.at[1]
-                    ),
-                    path: Some(lhs_pin.path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
+                mismatches.push(PinMismatch {
+                    lhs: index,
+                    rhs: rhs_index,
+                    conflict,
                 });
+                mismatch_weights.insert(index, reduced_pin_type_weight(lhs_pin.pin_type));
+                mismatch_weights.insert(rhs_index, reduced_pin_type_weight(rhs_pin.pin_type));
+            }
+        }
+
+        let mut ranked_pins = mismatch_weights.into_iter().collect::<Vec<_>>();
+        ranked_pins.sort_by(|(lhs_index, lhs_weight), (rhs_index, rhs_weight)| {
+            rhs_weight.cmp(lhs_weight).then(lhs_index.cmp(rhs_index))
+        });
+
+        for (pin_index, _) in ranked_pins {
+            if mismatches.is_empty() {
                 break;
             }
+
+            let pin = &pins[pin_index];
+            let mut nearest_conflict: Option<(PinConflict, bool, f64)> = None;
+
+            mismatches.retain(|mismatch| {
+                let other_index = if mismatch.lhs == pin_index {
+                    mismatch.rhs
+                } else if mismatch.rhs == pin_index {
+                    mismatch.lhs
+                } else {
+                    return true;
+                };
+
+                let other = &pins[other_index];
+                let same_path = pin.path == other.path;
+                let distance = if same_path {
+                    let dx = pin.at[0] - other.at[0];
+                    let dy = pin.at[1] - other.at[1];
+                    (dx * dx + dy * dy).sqrt()
+                } else {
+                    f64::INFINITY
+                };
+
+                match &nearest_conflict {
+                    Some((_, best_same_path, _)) if *best_same_path && !same_path => {}
+                    Some((_, best_same_path, best_distance))
+                        if *best_same_path == same_path && *best_distance <= distance => {}
+                    _ => {
+                        nearest_conflict = Some((mismatch.conflict, same_path, distance));
+                    }
+                }
+
+                false
+            });
+
+            let Some((conflict, _, _)) = nearest_conflict else {
+                continue;
+            };
+
+            diagnostics.push(Diagnostic {
+                severity: match conflict {
+                    PinConflict::Warning => Severity::Warning,
+                    PinConflict::Error => Severity::Error,
+                    PinConflict::Ok => continue,
+                },
+                code: match conflict {
+                    PinConflict::Warning => "erc-pin-to-pin-warning",
+                    PinConflict::Error => "erc-pin-to-pin-error",
+                    PinConflict::Ok => continue,
+                },
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!("Conflicting pins connected at {}, {}", pin.at[0], pin.at[1]),
+                path: Some(pin.path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
 
         if has_driver || net.has_no_connect {
             continue;
         }
 
-        if let Some(pin) = pins.iter().find(|pin| is_driven_pin_type(pin.pin_type)) {
+        if let Some(pin) = needs_driver {
             let article = if pin.pin_type == ReducedPinType::PowerIn {
                 "Power input pin is not driven"
             } else {

@@ -477,6 +477,12 @@ Current status:
 - reduced `TestPinToPin()` now also builds deterministic reduced pin contexts from shared
   `base_pins` (sheet path, reference, pin number, pin type, point) instead of treating each net as
   an unordered bag of bare pin types
+- reduced `TestPinToPin()` now also follows the upstream weighted conflict-selection shape more
+  closely:
+  - gathers all mismatching pin pairs on one net
+  - ranks pins by KiCad-style pin-type weights
+  - chooses the nearest conflicting partner on the same sheet when possible before emitting
+    diagnostics
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
   - `${REF:NET_NAME(pin)}`
   - `${REF:SHORT_NET_NAME(pin)}`
