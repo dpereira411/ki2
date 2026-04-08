@@ -2339,6 +2339,7 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn reduced_connection_from_bus_member(
     member: &ReducedBusMember,
     sheet_instance_path: &str,
@@ -3369,7 +3370,7 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
 fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     component: &[LiveReducedSubgraphHandle],
-    stale_members: &mut Vec<ReducedBusMember>,
+    stale_members: &mut Vec<LiveProjectBusMember>,
 ) {
     // Upstream parity: local live-handle analogue for the bus-neighbor driver/member propagation
     // KiCad runs through connected `CONNECTION_SUBGRAPH` neighbors. This still keeps reduced
@@ -3491,7 +3492,6 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     parent.dirty = true;
                 }
 
-                let refreshed_member = refreshed_member.snapshot();
                 if !stale_members.contains(&refreshed_member) {
                     stale_members.push(refreshed_member);
                 }
@@ -3516,7 +3516,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
 fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     indexes: &[usize],
-    stale_members: &mut Vec<ReducedBusMember>,
+    stale_members: &mut Vec<LiveProjectBusMember>,
 ) {
     let component = indexes
         .iter()
@@ -3602,7 +3602,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
 
 fn replay_reduced_live_stale_bus_members_on_handles_for_component(
     component: &[LiveReducedSubgraphHandle],
-    stale_members: &[ReducedBusMember],
+    stale_members: &[LiveProjectBusMember],
 ) {
     for stale_member in stale_members {
         for handle in component {
@@ -3621,14 +3621,16 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
             let changed = {
                 let subgraph = handle.borrow();
                 let mut connection = subgraph.driver_connection.borrow_mut();
-                let Some(member) = match_live_bus_member_mut(&mut connection.members, stale_member)
+                let stale_search = stale_member.snapshot();
+                let Some(member) =
+                    match_live_bus_member_mut(&mut connection.members, &stale_search)
                 else {
                     continue;
                 };
                 let old_member = member.clone();
                 clone_reduced_connection_into_live_bus_member(
                     member,
-                    &reduced_connection_from_bus_member(
+                    &reduced_connection_from_live_bus_member(
                         stale_member,
                         &subgraph.sheet_instance_path,
                     ),
@@ -3647,7 +3649,7 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
 fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     indexes: &[usize],
-    stale_members: &[ReducedBusMember],
+    stale_members: &[LiveProjectBusMember],
 ) {
     let component = indexes
         .iter()
@@ -3959,7 +3961,7 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     force: bool,
     visiting: &mut BTreeSet<usize>,
-    stale_members: &mut Vec<ReducedBusMember>,
+    stale_members: &mut Vec<LiveProjectBusMember>,
 ) {
     if !live_subgraphs[start].borrow().dirty || !visiting.insert(start) {
         return;
@@ -11017,7 +11019,7 @@ mod tests {
         replay_reduced_live_stale_bus_members_on_handles_for_indexes(
             &handles,
             &[0, 1],
-            &[ReducedBusMember {
+            &[super::LiveProjectBusMember::from(ReducedBusMember {
                 net_code: 0,
                 name: "PWR".to_string(),
                 local_name: "PWR".to_string(),
@@ -11025,7 +11027,7 @@ mod tests {
                 vector_index: Some(1),
                 kind: ReducedBusMemberKind::Net,
                 members: Vec::new(),
-            }],
+            })],
         );
 
         assert_eq!(

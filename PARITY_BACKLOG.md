@@ -662,10 +662,10 @@ Current status:
       - the recursive walk now has local shared live connection owners, but it still does not have
         a full live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph with pointer identity
         shared across all items, subgraphs, and attached bus items
-      - no full live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be
-        replayed across all visited bus subgraphs after hierarchy propagation; the local graph now
-        scopes stale replay to the active recursive root, but it still clones reduced connection
-        snapshots rather than replaying live connection objects through recursive revisits
+      - the active stale-member bag now uses the live local member payload, but replay still
+        rematches those members by reduced search keys and still does not replay one fuller shared
+        live connection/member object graph across all visited bus subgraphs after hierarchy
+        propagation
       - no full live cached driver/item connection topology that can be recached in place across
         labels, pins, sheet pins, bus entries, and connected items by pointer identity via a
         `recacheSubgraphName()`-style owner; the local live connection owners now exist, but item
@@ -678,20 +678,20 @@ Current status:
       - connected-bus-item ownership now reaches the shared live subgraph graph for bus entries,
         but still not all the way to fuller live item / connection pointer topology across every
         attached item kind
-      - live connection member trees now use a dedicated live local member payload, but stale bus
-        replay and stored bus link/member ownership still collapse those members back to reduced
-        snapshots instead of keeping one fuller live member/pointer graph through propagation and
-        final projection
+      - live connection member trees and the active stale-member bag now use a dedicated live local
+        member payload, but stored bus link/member ownership still collapses those members back to
+        reduced snapshots instead of keeping one fuller live member/pointer graph through
+        propagation and final projection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
-      2. move live name recache and bus-member replay onto that same connection owner instead of
-         cloning reduced snapshots through recursive revisits
+      2. move live name recache and the remaining bus-link/member ownership onto that same
+         connection/member owner instead of cloning reduced snapshots through recursive revisits
       3. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time
-      4. move stale-member bags and stored bus link/member payloads onto the new live member
-         payload instead of `ReducedBusMember` snapshots
+      4. move stored bus link/member payloads onto the new live member payload instead of
+         `ReducedBusMember` snapshots
       5. replace the current reduced live subgraph handle payload with a fuller local
          `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
          live item owners stay on one shared object graph instead of reduced wrapper structs
