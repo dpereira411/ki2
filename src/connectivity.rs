@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::core::SchematicProject;
 use crate::loader::{
@@ -1287,6 +1287,46 @@ fn propagate_reduced_live_hierarchy_chain(
     }
 }
 
+fn collect_live_reduced_propagation_component(
+    start: usize,
+    live_subgraphs: &[LiveReducedSubgraph],
+) -> Vec<usize> {
+    let mut queue = VecDeque::from([start]);
+    let mut visited = BTreeSet::from([start]);
+    let mut component = Vec::new();
+
+    while let Some(index) = queue.pop_front() {
+        component.push(index);
+
+        if let Some(parent_index) = live_subgraphs[index].hier_parent_index {
+            if visited.insert(parent_index) {
+                queue.push_back(parent_index);
+            }
+        }
+
+        for &child_index in &live_subgraphs[index].hier_child_indexes {
+            if visited.insert(child_index) {
+                queue.push_back(child_index);
+            }
+        }
+
+        for link in &live_subgraphs[index].bus_neighbor_links {
+            if visited.insert(link.subgraph_index) {
+                queue.push_back(link.subgraph_index);
+            }
+        }
+
+        for link in &live_subgraphs[index].bus_parent_links {
+            if visited.insert(link.subgraph_index) {
+                queue.push_back(link.subgraph_index);
+            }
+        }
+    }
+
+    component.sort_unstable();
+    component
+}
+
 fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
@@ -1313,6 +1353,33 @@ fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(
     }
 }
 
+fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+    indexes: &[usize],
+) {
+    for &start in indexes {
+        if !live_subgraphs[start].dirty {
+            continue;
+        }
+
+        let has_hierarchy_links = live_subgraphs[start].hier_parent_index.is_some()
+            || !live_subgraphs[start].hier_child_indexes.is_empty();
+
+        if !has_hierarchy_links {
+            live_subgraphs[start].dirty = false;
+            continue;
+        }
+
+        propagate_reduced_live_hierarchy_chain(start, live_subgraphs, false);
+    }
+
+    for &start in indexes {
+        if live_subgraphs[start].dirty {
+            propagate_reduced_live_hierarchy_chain(start, live_subgraphs, true);
+        }
+    }
+}
+
 fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
@@ -1330,6 +1397,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
     stale_members: &mut Vec<ReducedBusMember>,
 ) {
     for parent_index in 0..live_subgraphs.len() {
+        if !live_subgraphs[parent_index].dirty {
+            continue;
+        }
         if !matches!(
             live_subgraphs[parent_index]
                 .driver_connection
@@ -1487,6 +1557,177 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
     }
 }
 
+fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+    indexes: &[usize],
+    stale_members: &mut Vec<ReducedBusMember>,
+) {
+    let active = indexes.iter().copied().collect::<BTreeSet<_>>();
+
+    for &parent_index in indexes {
+        if !live_subgraphs[parent_index].dirty {
+            continue;
+        }
+        if !matches!(
+            live_subgraphs[parent_index]
+                .driver_connection
+                .connection
+                .connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) {
+            continue;
+        }
+
+        let mut sorted_links = live_subgraphs[parent_index].bus_neighbor_links.clone();
+        sorted_links.sort_by(|left, right| {
+            left.member
+                .name
+                .cmp(&right.member.name)
+                .then(left.subgraph_index.cmp(&right.subgraph_index))
+        });
+
+        for link_index in 0..sorted_links.len() {
+            let link = sorted_links[link_index].clone();
+            let Some(parent_member) = match_reduced_bus_member(
+                &live_subgraphs[parent_index]
+                    .driver_connection
+                    .connection
+                    .members,
+                &link.member,
+            )
+            .cloned() else {
+                continue;
+            };
+
+            let neighbor_index = link.subgraph_index;
+            if !active.contains(&neighbor_index) {
+                continue;
+            }
+            let neighbor_name = live_subgraphs[neighbor_index]
+                .driver_connection
+                .connection
+                .name
+                .clone();
+
+            if neighbor_name == parent_member.full_local_name {
+                continue;
+            }
+
+            let parent_sheet_instance_path =
+                live_subgraphs[parent_index].sheet_instance_path.clone();
+            let neighbor_sheet_instance_path =
+                live_subgraphs[neighbor_index].sheet_instance_path.clone();
+            let neighbor_connection_sheet = live_subgraphs[neighbor_index]
+                .driver_connection
+                .connection
+                .sheet_instance_path
+                .clone();
+
+            if neighbor_connection_sheet != neighbor_sheet_instance_path {
+                if neighbor_connection_sheet != parent_sheet_instance_path {
+                    continue;
+                }
+
+                let search = ReducedBusMember {
+                    net_code: 0,
+                    name: live_subgraphs[neighbor_index]
+                        .driver_connection
+                        .connection
+                        .local_name
+                        .clone(),
+                    local_name: live_subgraphs[neighbor_index]
+                        .driver_connection
+                        .connection
+                        .local_name
+                        .clone(),
+                    full_local_name: live_subgraphs[neighbor_index]
+                        .driver_connection
+                        .connection
+                        .full_local_name
+                        .clone(),
+                    vector_index: None,
+                    kind: match live_subgraphs[neighbor_index]
+                        .driver_connection
+                        .connection
+                        .connection_type
+                    {
+                        ReducedProjectConnectionType::Bus
+                        | ReducedProjectConnectionType::BusGroup => ReducedBusMemberKind::Bus,
+                        _ => ReducedBusMemberKind::Net,
+                    },
+                    members: live_subgraphs[neighbor_index]
+                        .driver_connection
+                        .connection
+                        .members
+                        .clone(),
+                };
+
+                if match_reduced_bus_member(
+                    &live_subgraphs[parent_index]
+                        .driver_connection
+                        .connection
+                        .members,
+                    &search,
+                )
+                .is_some()
+                {
+                    continue;
+                }
+            }
+
+            if live_subgraphs[neighbor_index].driver_priority >= 6 {
+                let promoted = live_subgraphs[neighbor_index]
+                    .driver_connection
+                    .connection
+                    .clone();
+                let old_member = link.member.clone();
+                if let Some(member) = match_reduced_bus_member_mut(
+                    &mut live_subgraphs[parent_index]
+                        .driver_connection
+                        .connection
+                        .members,
+                    &link.member,
+                ) {
+                    clone_reduced_connection_into_bus_member(member, &promoted);
+                    let refreshed_member = member.clone();
+
+                    for candidate_link in &mut sorted_links {
+                        if candidate_link.member == old_member {
+                            candidate_link.member = refreshed_member.clone();
+                        }
+                    }
+
+                    for candidate_link in &mut live_subgraphs[parent_index].bus_neighbor_links {
+                        if candidate_link.member == old_member {
+                            candidate_link.member = refreshed_member.clone();
+                        }
+                    }
+
+                    for candidate_link in &mut live_subgraphs[parent_index].bus_parent_links {
+                        if candidate_link.member == old_member {
+                            candidate_link.member = refreshed_member.clone();
+                        }
+                    }
+
+                    if !stale_members.contains(&refreshed_member) {
+                        stale_members.push(refreshed_member);
+                    }
+
+                    live_subgraphs[parent_index].dirty = true;
+                }
+                continue;
+            }
+
+            live_subgraphs[neighbor_index].driver_connection =
+                LiveReducedConnection::new(reduced_connection_from_bus_member(
+                    &parent_member,
+                    &live_subgraphs[neighbor_index].sheet_instance_path,
+                ));
+            live_subgraphs[neighbor_index].dirty = true;
+        }
+    }
+}
+
 fn refresh_reduced_live_bus_neighbor_drivers(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -1509,6 +1750,9 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
     for child_index in 0..live_subgraphs.len() {
+        if !live_subgraphs[child_index].dirty {
+            continue;
+        }
         let child_connection = live_subgraphs[child_index]
             .driver_connection
             .connection
@@ -1523,6 +1767,81 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
 
         for link in parent_links {
             let parent_index = link.subgraph_index;
+            let parent_sheet_instance_path =
+                live_subgraphs[parent_index].sheet_instance_path.clone();
+
+            if child_connection.sheet_instance_path != child_sheet_instance_path
+                && child_connection.sheet_instance_path != parent_sheet_instance_path
+            {
+                continue;
+            }
+
+            let search = ReducedBusMember {
+                net_code: 0,
+                name: child_connection.local_name.clone(),
+                local_name: child_connection.local_name.clone(),
+                full_local_name: child_connection.full_local_name.clone(),
+                vector_index: None,
+                kind: ReducedBusMemberKind::Net,
+                members: child_connection.members.clone(),
+            };
+
+            if match_reduced_bus_member(
+                &live_subgraphs[parent_index]
+                    .driver_connection
+                    .connection
+                    .members,
+                &search,
+            )
+            .is_some()
+            {
+                continue;
+            }
+
+            if let Some(member) = match_reduced_bus_member_mut(
+                &mut live_subgraphs[parent_index]
+                    .driver_connection
+                    .connection
+                    .members,
+                &link.member,
+            ) {
+                let old_member = member.clone();
+                clone_reduced_connection_into_bus_member(member, &child_connection);
+                if *member != old_member {
+                    live_subgraphs[parent_index].dirty = true;
+                }
+            }
+        }
+    }
+}
+
+fn refresh_reduced_live_bus_parent_members_on_live_subgraphs_for_indexes(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+    indexes: &[usize],
+) {
+    let active = indexes.iter().copied().collect::<BTreeSet<_>>();
+
+    for &child_index in indexes {
+        if !live_subgraphs[child_index].dirty {
+            continue;
+        }
+        let child_connection = live_subgraphs[child_index]
+            .driver_connection
+            .connection
+            .clone();
+
+        if child_connection.connection_type != ReducedProjectConnectionType::Net {
+            continue;
+        }
+
+        let child_sheet_instance_path = live_subgraphs[child_index].sheet_instance_path.clone();
+        let parent_links = live_subgraphs[child_index].bus_parent_links.clone();
+
+        for link in parent_links {
+            let parent_index = link.subgraph_index;
+            if !active.contains(&parent_index) {
+                continue;
+            }
             let parent_sheet_instance_path =
                 live_subgraphs[parent_index].sheet_instance_path.clone();
 
@@ -1713,6 +2032,60 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
     }
 }
 
+fn refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+    indexes: &[usize],
+) {
+    let active = indexes.iter().copied().collect::<BTreeSet<_>>();
+    let mut refreshed_parent_links =
+        vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
+
+    for &child_index in indexes {
+        let parent_links = live_subgraphs[child_index].bus_parent_links.clone();
+
+        for link in parent_links {
+            if !active.contains(&link.subgraph_index) {
+                continue;
+            }
+            let refreshed_member = match_reduced_bus_member(
+                &live_subgraphs[link.subgraph_index]
+                    .driver_connection
+                    .connection
+                    .members,
+                &link.member,
+            )
+            .cloned()
+            .unwrap_or(link.member);
+
+            refreshed_parent_links[child_index].push(ReducedProjectBusNeighborLink {
+                member: refreshed_member,
+                subgraph_index: link.subgraph_index,
+            });
+        }
+    }
+
+    let mut refreshed_neighbor_links =
+        vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
+
+    for &child_index in indexes {
+        for link in &refreshed_parent_links[child_index] {
+            refreshed_neighbor_links[link.subgraph_index].push(ReducedProjectBusNeighborLink {
+                member: link.member.clone(),
+                subgraph_index: child_index,
+            });
+        }
+    }
+
+    for &index in indexes {
+        live_subgraphs[index].bus_parent_links = refreshed_parent_links[index].clone();
+        live_subgraphs[index].bus_parent_links.sort();
+        live_subgraphs[index].bus_parent_links.dedup();
+        live_subgraphs[index].bus_neighbor_links = refreshed_neighbor_links[index].clone();
+        live_subgraphs[index].bus_neighbor_links.sort();
+        live_subgraphs[index].bus_neighbor_links.dedup();
+    }
+}
+
 fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
@@ -1755,34 +2128,66 @@ fn refresh_reduced_live_bus_propagation_fixpoint(
 }
 
 // Upstream parity: reduced local bridge toward one live `propagateToNeighbors()` owner during
-// graph build. This is still not the full KiCad visited-set recursion because it keeps the
-// hierarchy-chain walk and bus follow-up as separate local steps, but those steps now mutate one
-// shared live subgraph set together with post-propagation item updates before the reduced graph is
-// projected back. Remaining divergence is the still-missing single visited/stale-member walk.
+// graph build. This now runs from a dirty worklist over connected hierarchy/bus components instead
+// of whole-graph repeat sweeps, so bus and hierarchy propagation mutate one shared live subgraph
+// set closer to KiCad's visited-object flow before item connections are updated. Remaining
+// divergence is the still-missing single visited/stale-member recursion on live connection objects.
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    let mut queued = vec![true; live_subgraphs.len()];
+    let mut worklist = live_subgraphs
+        .iter()
+        .enumerate()
+        .map(|(index, _)| index)
+        .collect::<VecDeque<_>>();
+    let max_waves = live_subgraphs
+        .len()
+        .saturating_mul(live_subgraphs.len().max(1));
+    let mut waves = 0;
 
-    let max_passes = reduced_subgraphs.len().saturating_add(1).max(1);
+    while let Some(start) = worklist.pop_front() {
+        queued[start] = false;
 
-    for _ in 0..max_passes {
-        let before = live_subgraphs.clone();
+        if !live_subgraphs[start].dirty {
+            continue;
+        }
+
+        waves += 1;
+        if waves > max_waves {
+            break;
+        }
+
+        let active = collect_live_reduced_propagation_component(start, &live_subgraphs);
         let mut stale_members = Vec::new();
 
-        refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
-        refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
+        refresh_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
             &mut live_subgraphs,
+            &active,
+        );
+        refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
+            &mut live_subgraphs,
+            &active,
             &mut stale_members,
         );
-        refresh_reduced_live_bus_parent_members_on_live_subgraphs(&mut live_subgraphs);
+        refresh_reduced_live_bus_parent_members_on_live_subgraphs_for_indexes(
+            &mut live_subgraphs,
+            &active,
+        );
         refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
         replay_reduced_live_stale_bus_members_on_live_subgraphs(
             &mut live_subgraphs,
             &stale_members,
         );
-        refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
+        refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(
+            &mut live_subgraphs,
+            &active,
+        );
 
-        if live_subgraphs == before {
-            break;
+        for (index, subgraph) in live_subgraphs.iter().enumerate() {
+            if subgraph.dirty && !queued[index] {
+                queued[index] = true;
+                worklist.push_back(index);
+            }
         }
     }
 
