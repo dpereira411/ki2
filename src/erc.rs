@@ -2613,6 +2613,7 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // still diverges on fuller resolved bus-object ownership plus cached live driver connections.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
 
     for subgraph in graph_run_erc_subgraphs(project)
         .into_iter()
@@ -2625,17 +2626,18 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         else {
             continue;
         };
-        let entry_at = subgraph
-            .wire_items
-            .iter()
-            .find(|item| item.is_bus_entry)
-            .map(|item| [f64::from_bits(item.start.0), f64::from_bits(item.start.1)])
-            .unwrap_or([
-                f64::from_bits(subgraph.anchor.0),
-                f64::from_bits(subgraph.anchor.1),
-            ]);
-
-        let bus_connection = &subgraph.resolved_connection;
+        let Some(bus_entry) = subgraph.wire_items.iter().find(|item| item.is_bus_entry) else {
+            continue;
+        };
+        let entry_at = [
+            f64::from_bits(bus_entry.start.0),
+            f64::from_bits(bus_entry.start.1),
+        ];
+        let bus_connection = bus_entry
+            .connected_bus_subgraph_index
+            .and_then(|index| reduced_project_subgraph_by_index(&graph, index))
+            .map(|bus_subgraph| &bus_subgraph.resolved_connection)
+            .unwrap_or(&subgraph.resolved_connection);
         if !matches!(
             bus_connection.connection_type,
             crate::connectivity::ReducedProjectConnectionType::Bus

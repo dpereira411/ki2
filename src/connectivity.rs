@@ -273,6 +273,7 @@ pub(crate) struct ReducedSubgraphWireItem {
     pub(crate) start: PointKey,
     pub(crate) end: PointKey,
     pub(crate) is_bus_entry: bool,
+    pub(crate) connected_bus_subgraph_index: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1040,6 +1041,66 @@ fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProje
 
         for index in visited {
             clone_reduced_connection_into_subgraph(&mut reduced_subgraphs[index], &connection);
+        }
+    }
+}
+
+// Upstream parity: reduced local analogue for the bus-entry connected-bus item ownership KiCad
+// records during `updateItemConnectivity()`. This is not a 1:1 item-pointer owner because the Rust
+// tree still resolves bus-entry attachment onto reduced subgraph indexes instead of live
+// `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*` pointers, but it preserves the shared graph boundary where a
+// bus entry knows which bus item it is graphically attached to instead of making ERC infer that
+// from the containing subgraph alone. Remaining divergence is the still-missing live item pointer
+// ownership and connection-map updates on schematic items.
+fn attach_reduced_connected_bus_items(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
+    let bus_subgraphs = reduced_subgraphs
+        .iter()
+        .enumerate()
+        .filter(|(_, subgraph)| !subgraph.bus_items.is_empty())
+        .map(|(index, subgraph)| {
+            (
+                index,
+                subgraph.sheet_instance_path.clone(),
+                subgraph.bus_items.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for subgraph in reduced_subgraphs.iter_mut() {
+        for item in &mut subgraph.wire_items {
+            if !item.is_bus_entry {
+                continue;
+            }
+
+            item.connected_bus_subgraph_index = bus_subgraphs
+                .iter()
+                .find(|(_, sheet_instance_path, bus_items)| {
+                    *sheet_instance_path == subgraph.sheet_instance_path
+                        && bus_items.iter().any(|bus_item| {
+                            point_on_wire_segment(
+                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            ) || point_on_wire_segment(
+                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            )
+                        })
+                })
+                .map(|(index, _, _)| *index);
         }
     }
 }
@@ -2726,6 +2787,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 
     refresh_reduced_hierarchy_driver_chains(&mut reduced_subgraphs);
     refresh_reduced_bus_propagation_fixpoint(&mut reduced_subgraphs);
+    attach_reduced_connected_bus_items(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
 
@@ -3260,6 +3322,7 @@ fn collect_reduced_subgraph_local_membership(
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: false,
+                    connected_bus_subgraph_index: None,
                 })
             }
             _ => None,
@@ -3290,6 +3353,7 @@ fn collect_reduced_subgraph_local_membership(
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: false,
+                    connected_bus_subgraph_index: None,
                 })
             }
             SchItem::BusEntry(entry) => {
@@ -3301,6 +3365,7 @@ fn collect_reduced_subgraph_local_membership(
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: true,
+                    connected_bus_subgraph_index: None,
                 })
             }
             _ => None,
