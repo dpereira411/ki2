@@ -773,6 +773,7 @@ What is not yet explicitly tracked as complete:
   - exercised annotation warning now fires on the netlist command path before export
 - exporter-base symbol/pin collection parity
 - remaining XML/KiCad netlist structure parity is now narrower:
+  - exercised blank component `<value>` now follows KiCad `addSymbolFields()` by emitting `~`
   - fuller graph-owned netcode/name ownership
 - exporter-visible net naming parity
 - format-specific text normalization parity beyond the now-live XML `StrNumCmp` component/net

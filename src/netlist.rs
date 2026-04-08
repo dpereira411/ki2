@@ -1434,10 +1434,10 @@ pub fn collect_xml_libraries(_project: &SchematicProject) -> Vec<NetlistLibrary>
 }
 
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeRoot()`. This is not a
-// 1:1 KiCad netlist exporter because the Rust tree still omits the full exporter base, libraries,
-// variants/groups, and non-XML formats, but it preserves the same outer XML root ownership and the
-// live reduced `design` / `components` / `libparts` / `nets` sections instead of inventing a
-// repo-local export schema.
+// 1:1 KiCad netlist exporter because the Rust tree still lacks the full exporter base, populated
+// `<libraries>` adapter stack, and non-XML format backends, but it preserves the same outer XML
+// root ownership and the live reduced `design` / `components` / `libparts` / `nets` sections
+// instead of inventing a repo-local export schema.
 pub fn render_reduced_xml_netlist(project: &SchematicProject) -> String {
     render_reduced_netlist(project, false)
 }
@@ -1518,10 +1518,12 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             "    <comp ref=\"{}\">\n",
             escape_xml(&component.reference)
         ));
-        xml.push_str(&format!(
-            "      <value>{}</value>\n",
-            escape_xml(&component.value)
-        ));
+        let value = if component.value.is_empty() {
+            "~"
+        } else {
+            component.value.as_str()
+        };
+        xml.push_str(&format!("      <value>{}</value>\n", escape_xml(value)));
 
         if !component.footprint.is_empty() {
             xml.push_str(&format!(
