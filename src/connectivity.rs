@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core::SchematicProject;
 use crate::loader::{
@@ -223,20 +223,39 @@ pub(crate) fn reduced_text_is_bus(schematic: &Schematic, text: &str) -> bool {
             .any(|alias| alias.name.eq_ignore_ascii_case(text))
 }
 
-// Upstream parity: reduced local analogue for the member expansion KiCad exposes through
-// `SCH_CONNECTION::Members()` after `ConfigureFromLabel()`. This is not a 1:1 member-object walk
-// because the Rust tree still expands from raw text and bus aliases instead of live
-// `SCH_CONNECTION` members, but the shared connectivity owner now reuses the same expansion for
-// ERC, driver naming, and export tie-breaking. Remaining divergence is fuller nested/member object
-// ownership beyond reduced string expansion.
-pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<String> {
+fn reduced_bus_members_inner(
+    schematic: &Schematic,
+    text: &str,
+    active_aliases: &mut BTreeSet<String>,
+) -> Vec<String> {
     if let Some(alias) = schematic
         .screen
         .bus_aliases
         .iter()
         .find(|alias| alias.name.eq_ignore_ascii_case(text))
     {
-        return alias.members.clone();
+        let alias_key = alias.name.to_ascii_uppercase();
+
+        if !active_aliases.insert(alias_key.clone()) {
+            return Vec::new();
+        }
+
+        let members = alias
+            .members
+            .iter()
+            .flat_map(|member| {
+                let expanded = reduced_bus_members_inner(schematic, member, active_aliases);
+
+                if expanded.is_empty() {
+                    vec![member.clone()]
+                } else {
+                    expanded
+                }
+            })
+            .collect::<Vec<_>>();
+
+        active_aliases.remove(&alias_key);
+        return members;
     }
 
     if let Some(inner) = text
@@ -256,7 +275,7 @@ pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<Stri
                 .split_whitespace()
                 .filter(|member| !member.is_empty())
                 .flat_map(|member| {
-                    let expanded = reduced_bus_members(schematic, member);
+                    let expanded = reduced_bus_members_inner(schematic, member, active_aliases);
 
                     if expanded.is_empty() {
                         let name = if prefix.is_empty() {
@@ -309,6 +328,16 @@ pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<Stri
     }
 
     members
+}
+
+// Upstream parity: reduced local analogue for the member expansion KiCad exposes through
+// `SCH_CONNECTION::Members()` after `ConfigureFromLabel()`. This is not a 1:1 member-object walk
+// because the Rust tree still expands from raw text and bus aliases instead of live
+// `SCH_CONNECTION` members, but the shared connectivity owner now reuses the same recursive alias,
+// vector, and group expansion for ERC, driver naming, and export tie-breaking. Remaining
+// divergence is fuller nested/member object ownership beyond reduced string expansion.
+pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<String> {
+    reduced_bus_members_inner(schematic, text, &mut BTreeSet::new())
 }
 
 fn reduced_bus_subset_cmp(schematic: &Schematic, lhs: &str, rhs: &str) -> std::cmp::Ordering {
@@ -1967,6 +1996,44 @@ mod tests {
             resolve_reduced_net_name_at(&schematic, [0.0, 0.0], None, |label| label.text.clone());
 
         assert_eq!(resolved.as_deref(), Some("DATA[0..7]"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_members_expand_top_level_alias_vectors() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_alias_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000002")
+  (paper "A4")
+  (bus_alias "DATA" (members D[0..3]))
+  (bus_alias "PAIR" (members DP DM))
+  (bus_alias "USBPAIR" (members PAIR))
+)"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+
+        assert_eq!(
+            super::reduced_bus_members(&schematic, "DATA"),
+            vec!["D0", "D1", "D2", "D3"]
+        );
+        assert_eq!(
+            super::reduced_bus_members(&schematic, "USBPAIR"),
+            vec!["DP", "DM"]
+        );
 
         let _ = fs::remove_file(path);
     }
