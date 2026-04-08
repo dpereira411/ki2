@@ -950,6 +950,41 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
     }
 }
 
+fn replay_reduced_live_stale_bus_members_on_live_subgraphs_for_indexes(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+    indexes: &[usize],
+    stale_members: &[ReducedBusMember],
+) {
+    for stale_member in stale_members {
+        for &index in indexes {
+            let subgraph = &mut live_subgraphs[index];
+            if !matches!(
+                subgraph.driver_connection.connection.connection_type,
+                ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+            ) {
+                continue;
+            }
+
+            if let Some(member) = match_reduced_bus_member_mut(
+                &mut subgraph.driver_connection.connection.members,
+                stale_member,
+            ) {
+                let old_member = member.clone();
+                clone_reduced_connection_into_bus_member(
+                    member,
+                    &reduced_connection_from_bus_member(
+                        stale_member,
+                        &subgraph.sheet_instance_path,
+                    ),
+                );
+                if *member != old_member {
+                    subgraph.dirty = true;
+                }
+            }
+        }
+    }
+}
+
 fn reduced_connection_from_bus_member(
     member: &ReducedBusMember,
     sheet_instance_path: &str,
@@ -2183,8 +2218,9 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
             &active,
         );
         refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
-        replay_reduced_live_stale_bus_members_on_live_subgraphs(
+        replay_reduced_live_stale_bus_members_on_live_subgraphs_for_indexes(
             &mut live_subgraphs,
+            &active,
             &stale_members,
         );
         refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(
