@@ -3710,8 +3710,9 @@ fn collect_live_reduced_propagation_component_from_handles(
 }
 
 // Upstream parity: local bridge for the global-secondary-driver promotion branch on the shared
-// live subgraph owner. This still promotes reduced live connections, but the active recursion now
-// mutates and revisits shared subgraph handles by handle identity instead of reduced indexes.
+// live subgraph owner. The active recursion now promotes the shared live connection owner itself
+// instead of snapshotting the chosen connection through reduced carriers, while still revisiting
+// shared subgraph handles by handle identity instead of reduced indexes.
 fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
     start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -3723,13 +3724,13 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
         return Vec::new();
     }
 
-    let chosen_connection = start_snapshot.driver_connection.snapshot();
+    let chosen_connection = start_snapshot.driver_connection.clone();
     let start_sheet = start_snapshot.sheet_instance_path;
     let secondary_drivers = start_snapshot.drivers;
     let mut promoted = Vec::new();
 
     for secondary_driver in secondary_drivers {
-        if secondary_driver.full_name == chosen_connection.name {
+        if secondary_driver.full_name == chosen_connection.name() {
             continue;
         }
 
@@ -3753,11 +3754,19 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
                 continue;
             }
 
-            if candidate_snapshot.driver_connection.snapshot() == chosen_connection {
+            let same_connection = {
+                let chosen = chosen_connection.borrow();
+                let candidate = candidate_snapshot.driver_connection.borrow();
+                *candidate == *chosen
+            };
+            if same_connection {
                 continue;
             }
 
-            *handle.borrow().driver_connection.borrow_mut() = chosen_connection.clone().into();
+            handle
+                .borrow()
+                .driver_connection
+                .clone_from(&chosen_connection);
             sync_live_reduced_item_connections_from_driver_handle(handle);
             handle.borrow_mut().dirty = true;
             promoted.push(handle.clone());

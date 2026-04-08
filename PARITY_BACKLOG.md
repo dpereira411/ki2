@@ -733,6 +733,9 @@ Current status:
         snapshots just to derive member-search keys for child-net and neighbor-driver cases; those
         branches now read the shared live connection owner directly and only snapshot when a
         reduced projection/update is still genuinely required
+      - the exercised global secondary-driver promotion path now also carries the shared live
+        connection owner itself instead of snapshotting the chosen connection through a reduced
+        carrier before cloning it across candidate subgraphs
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
