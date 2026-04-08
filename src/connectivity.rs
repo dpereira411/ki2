@@ -580,6 +580,87 @@ fn match_reduced_bus_member<'a>(
     None
 }
 
+// Upstream parity: reduced local analogue for the mutable half of
+// `CONNECTION_GRAPH::matchBusMember()` during graph propagation updates. This is not a 1:1 live
+// `SCH_CONNECTION*` matcher because the Rust tree still mutates reduced member snapshots instead of
+// real connection objects, but it preserves the same exercised vector-index vs local-name matching
+// split before later reduced recache passes consume the updated member. Remaining divergence is the
+// still-missing in-place mutation of live connection objects and their cached parent pointers.
+fn match_reduced_bus_member_mut<'a>(
+    bus_members: &'a mut [ReducedBusMember],
+    search: &ReducedBusMember,
+) -> Option<&'a mut ReducedBusMember> {
+    for member in bus_members {
+        if let Some(search_index) = search.vector_index {
+            if member.vector_index == Some(search_index) {
+                return Some(member);
+            }
+        }
+
+        if member.kind == ReducedBusMemberKind::Bus {
+            if let Some(found) = match_reduced_bus_member_mut(&mut member.members, search) {
+                return Some(found);
+            }
+        } else if member.local_name == search.local_name {
+            return Some(member);
+        }
+    }
+
+    None
+}
+
+// Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()` when a propagated member
+// net replaces an older bus member name. This is not a 1:1 live clone because the Rust tree still
+// copies reduced connection snapshots into `ReducedBusMember`, but it preserves the exercised name
+// and type refresh while keeping the reduced vector index metadata needed by later member remap
+// passes. Remaining divergence is the still-missing live pointer/cache mutation on real connection
+// objects.
+fn clone_reduced_connection_into_bus_member(
+    member: &mut ReducedBusMember,
+    connection: &ReducedProjectConnection,
+) {
+    member.name = connection.local_name.clone();
+    member.local_name = connection.local_name.clone();
+    member.full_local_name = connection.full_local_name.clone();
+    member.kind = match connection.connection_type {
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
+            ReducedBusMemberKind::Bus
+        }
+        _ => ReducedBusMemberKind::Net,
+    };
+    member.members = connection.members.clone();
+}
+
+// Upstream parity: reduced local analogue for the `UpdateItemConnections()`-visible name refresh
+// KiCad applies after `m_driver_connection->Clone()` / `recacheSubgraphName()`. This is not a 1:1
+// item update because the Rust tree still mutates reduced link snapshots instead of live
+// `SCH_ITEM`-owned connections, but it keeps the exercised subgraph-resolved connection names and
+// text-link connection owners aligned once the shared graph renames a net subgraph. Remaining
+// divergence is the still-missing live item connection cache on real subgraph objects.
+fn clone_reduced_connection_into_subgraph(
+    subgraph: &mut ReducedProjectSubgraphEntry,
+    connection: &ReducedProjectConnection,
+) {
+    subgraph.name = connection.name.clone();
+    subgraph.resolved_connection = connection.clone();
+
+    if let Some(driver_connection) = &mut subgraph.driver_connection {
+        *driver_connection = connection.clone();
+    }
+
+    for link in &mut subgraph.label_links {
+        link.connection = connection.clone();
+    }
+
+    for pin in &mut subgraph.hier_sheet_pins {
+        pin.connection = connection.clone();
+    }
+
+    for port in &mut subgraph.hier_ports {
+        port.connection = connection.clone();
+    }
+}
+
 // Upstream parity: reduced local analogue for the `matchBusMember()`-driven member refresh KiCad
 // performs after parent-bus propagation. This is not a 1:1 live graph update because the Rust tree
 // still stores static reduced link snapshots instead of mutating live `SCH_CONNECTION` objects, but
@@ -630,6 +711,117 @@ fn refresh_reduced_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgr
         subgraph.bus_neighbor_links.sort();
         subgraph.bus_neighbor_links.dedup();
     }
+}
+
+// Upstream parity: reduced local analogue for the "multiple bus parents" rename/recache pass in
+// `CONNECTION_GRAPH::Recalculate()`. This is not a 1:1 live graph mutation because the Rust tree
+// still rewrites reduced subgraph snapshots instead of mutating real `SCH_CONNECTION` /
+// `CONNECTION_SUBGRAPH` objects in place, but it now preserves the exercised static behavior:
+// when a net subgraph with multiple bus parents wins a final name, parent bus members and any
+// same-name subgraphs are updated to that propagated name before the final graph caches are built.
+// Remaining divergence is the still-missing live stale-member refresh and pointer-based recache
+// cycle on real connection objects.
+fn refresh_reduced_multiple_bus_parent_names(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) {
+    for subgraph_index in 0..reduced_subgraphs.len() {
+        if reduced_subgraphs[subgraph_index].bus_parent_links.len() < 2 {
+            continue;
+        }
+
+        let connection = reduced_subgraphs[subgraph_index]
+            .driver_connection
+            .clone()
+            .unwrap_or_else(|| {
+                reduced_subgraphs[subgraph_index]
+                    .resolved_connection
+                    .clone()
+            });
+
+        if connection.connection_type != ReducedProjectConnectionType::Net {
+            continue;
+        }
+
+        let parent_links = reduced_subgraphs[subgraph_index].bus_parent_links.clone();
+
+        for link in parent_links {
+            let Some(parent) = reduced_subgraphs.get_mut(link.subgraph_index) else {
+                continue;
+            };
+
+            let old_name = if let Some(member) =
+                match_reduced_bus_member_mut(&mut parent.resolved_connection.members, &link.member)
+            {
+                if member.full_local_name == connection.full_local_name {
+                    continue;
+                }
+
+                let old_name = member.full_local_name.clone();
+                clone_reduced_connection_into_bus_member(member, &connection);
+                old_name
+            } else {
+                continue;
+            };
+
+            if let Some(driver_connection) = &mut parent.driver_connection {
+                if let Some(member) =
+                    match_reduced_bus_member_mut(&mut driver_connection.members, &link.member)
+                {
+                    clone_reduced_connection_into_bus_member(member, &connection);
+                }
+            }
+
+            for candidate in reduced_subgraphs.iter_mut() {
+                if candidate.name == old_name {
+                    clone_reduced_connection_into_subgraph(candidate, &connection);
+                }
+            }
+        }
+    }
+}
+
+// Upstream parity: reduced local analogue for the shared graph-name recache KiCad performs through
+// `recacheSubgraphName()` plus later netcode assignment. This is not a 1:1 cache owner because
+// the Rust tree still rebuilds reduced lookup maps from snapshots instead of mutating live graph
+// maps as names change, but it keeps the final shared `(name, sheet+name)` indexes and first-seen
+// net codes aligned with the post-propagation reduced subgraph names instead of stale pre-rename
+// values. Remaining divergence is the still-missing live cache mutation on real subgraph objects.
+fn rebuild_reduced_project_graph_name_caches(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) -> (
+    BTreeMap<String, Vec<usize>>,
+    BTreeMap<(String, String), Vec<usize>>,
+) {
+    let mut net_codes = BTreeMap::<String, usize>::new();
+    let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
+    let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
+
+    for (index, subgraph) in reduced_subgraphs.iter_mut().enumerate() {
+        if !subgraph.name.is_empty() {
+            let next_code = net_codes.len() + 1;
+            let code = *net_codes.entry(subgraph.name.clone()).or_insert(next_code);
+            subgraph.code = code;
+            subgraphs_by_name
+                .entry(subgraph.name.clone())
+                .or_default()
+                .push(index);
+            if subgraph.name.contains('[') {
+                let prefix_only = format!("{}[]", subgraph.name.split('[').next().unwrap_or(""));
+                subgraphs_by_name
+                    .entry(prefix_only)
+                    .or_default()
+                    .push(index);
+            }
+            subgraphs_by_sheet_and_name
+                .entry((subgraph.sheet_instance_path.clone(), subgraph.name.clone()))
+                .or_default()
+                .push(index);
+        } else {
+            subgraph.code = 0;
+        }
+    }
+
+    (subgraphs_by_name, subgraphs_by_sheet_and_name)
 }
 
 fn make_reduced_bus_member(
@@ -2267,6 +2459,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     }
 
     refresh_reduced_bus_link_members(&mut reduced_subgraphs);
+    refresh_reduced_multiple_bus_parent_names(&mut reduced_subgraphs);
+    refresh_reduced_bus_link_members(&mut reduced_subgraphs);
+    let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
+        rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
 
     ReducedProjectNetGraph {
         subgraphs: reduced_subgraphs,
@@ -4030,10 +4226,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        PointKey, ReducedBusMember, ReducedBusMemberKind, ReducedProjectBusNeighborLink,
-        ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectSubgraphEntry,
-        find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
-        reduced_bus_member_objects, refresh_reduced_bus_link_members, resolve_reduced_net_name_at,
+        PointKey, ReducedBusMember, ReducedBusMemberKind, ReducedLabelLink,
+        ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
+        ReducedProjectSubgraphEntry, find_first_reduced_project_subgraph_by_name,
+        find_reduced_project_subgraph_by_name, rebuild_reduced_project_graph_name_caches,
+        reduced_bus_member_objects, refresh_reduced_bus_link_members,
+        refresh_reduced_multiple_bus_parent_names, resolve_reduced_net_name_at,
         resolve_reduced_project_net_at, resolve_reduced_project_subgraph_at,
         resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
@@ -4041,7 +4239,7 @@ mod tests {
     };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
-    use crate::model::SchItem;
+    use crate::model::{LabelKind, SchItem};
     use crate::parser::parse_schematic_file;
     use std::env;
     use std::fs;
@@ -5136,5 +5334,258 @@ mod tests {
 
         assert_eq!(parent.bus_neighbor_links[0].member.name, "RENAMED1");
         assert_eq!(parent.bus_neighbor_links[0].member.vector_index, Some(1));
+    }
+
+    #[test]
+    fn reduced_multiple_bus_parents_refresh_subgraph_names() {
+        let connection = ReducedProjectConnection {
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "/RENAMED1".to_string(),
+            local_name: "RENAMED1".to_string(),
+            full_local_name: "/RENAMED1".to_string(),
+            members: Vec::new(),
+        };
+        let mut graph = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/BUS_A".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS_A".to_string(),
+                    local_name: "BUS_A".to_string(),
+                    full_local_name: "/BUS_A".to_string(),
+                    members: vec![ReducedBusMember {
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS_A".to_string(),
+                    local_name: "BUS_A".to_string(),
+                    full_local_name: "/BUS_A".to_string(),
+                    members: vec![ReducedBusMember {
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/BUS_B".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS_B".to_string(),
+                    local_name: "BUS_B".to_string(),
+                    full_local_name: "/BUS_B".to_string(),
+                    members: vec![ReducedBusMember {
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS_B".to_string(),
+                    local_name: "BUS_B".to_string(),
+                    full_local_name: "/BUS_B".to_string(),
+                    members: vec![ReducedBusMember {
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 3,
+                code: 3,
+                name: "/RENAMED1".to_string(),
+                resolved_connection: connection.clone(),
+                driver_connection: Some(connection.clone()),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: vec![
+                    ReducedProjectBusNeighborLink {
+                        member: ReducedBusMember {
+                            name: "OLD1".to_string(),
+                            local_name: "OLD1".to_string(),
+                            full_local_name: "/OLD1".to_string(),
+                            vector_index: Some(1),
+                            kind: ReducedBusMemberKind::Net,
+                            members: Vec::new(),
+                        },
+                        subgraph_index: 0,
+                    },
+                    ReducedProjectBusNeighborLink {
+                        member: ReducedBusMember {
+                            name: "OLD1".to_string(),
+                            local_name: "OLD1".to_string(),
+                            full_local_name: "/OLD1".to_string(),
+                            vector_index: Some(1),
+                            kind: ReducedBusMemberKind::Net,
+                            members: Vec::new(),
+                        },
+                        subgraph_index: 1,
+                    },
+                ],
+                bus_parent_indexes: vec![0, 1],
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 4,
+                code: 4,
+                name: "/OLD1".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: vec![ReducedLabelLink {
+                    at: PointKey(0, 0),
+                    kind: LabelKind::Local,
+                    connection: ReducedProjectConnection {
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        refresh_reduced_multiple_bus_parent_names(&mut graph);
+
+        assert_eq!(graph[0].resolved_connection.members[0].name, "RENAMED1");
+        assert_eq!(
+            graph[0].resolved_connection.members[0].full_local_name,
+            "/RENAMED1"
+        );
+        assert_eq!(graph[1].resolved_connection.members[0].name, "RENAMED1");
+        assert_eq!(
+            graph[1].resolved_connection.members[0].full_local_name,
+            "/RENAMED1"
+        );
+        assert_eq!(graph[3].name, "/RENAMED1");
+        assert_eq!(graph[3].resolved_connection.name, "/RENAMED1");
+        assert_eq!(
+            graph[3].label_links[0].connection.full_local_name,
+            "/RENAMED1"
+        );
+
+        let (by_name, by_sheet_and_name) = rebuild_reduced_project_graph_name_caches(&mut graph);
+        assert_eq!(graph[2].code, graph[3].code);
+        assert_eq!(by_name["/RENAMED1"], vec![2, 3]);
+        assert_eq!(
+            by_sheet_and_name[&(String::new(), "/RENAMED1".to_string())],
+            vec![2, 3]
+        );
     }
 }
