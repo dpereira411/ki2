@@ -735,14 +735,6 @@ fn reduced_subgraph_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> i
         .unwrap_or(0)
 }
 
-fn reduced_subgraph_driver_name(subgraph: &ReducedProjectSubgraphEntry) -> String {
-    subgraph
-        .driver_connection
-        .as_ref()
-        .map(|connection| connection.name.clone())
-        .unwrap_or_else(|| subgraph.resolved_connection.name.clone())
-}
-
 fn reduced_subgraph_driver_connection(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> ReducedProjectConnection {
@@ -750,6 +742,77 @@ fn reduced_subgraph_driver_connection(
         .driver_connection
         .clone()
         .unwrap_or_else(|| subgraph.resolved_connection.clone())
+}
+
+#[derive(Clone, Debug)]
+struct LiveReducedConnection {
+    connection: ReducedProjectConnection,
+}
+
+impl LiveReducedConnection {
+    fn new(connection: ReducedProjectConnection) -> Self {
+        Self { connection }
+    }
+
+    // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This is not a 1:1
+    // live KiCad connection because the Rust tree still wraps a reduced connection carrier rather
+    // than mutating the real `SCH_CONNECTION` object graph, but it starts moving propagation onto
+    // a dedicated live owner with in-place clone semantics instead of cloning reduced snapshots at
+    // every caller. Remaining divergence is fuller member-pointer sharing and live item ownership.
+    fn clone_from(&mut self, other: &LiveReducedConnection) {
+        self.connection = other.connection.clone();
+    }
+
+    fn name(&self) -> &str {
+        &self.connection.name
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LiveReducedSubgraph {
+    source_index: usize,
+    driver_connection: LiveReducedConnection,
+    driver_priority: i32,
+    sheet_instance_path: String,
+    hier_parent_index: Option<usize>,
+    hier_child_indexes: Vec<usize>,
+    has_hier_pins: bool,
+    has_hier_ports: bool,
+    dirty: bool,
+}
+
+fn build_live_reduced_subgraphs(
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
+) -> Vec<LiveReducedSubgraph> {
+    reduced_subgraphs
+        .iter()
+        .enumerate()
+        .map(|(index, subgraph)| LiveReducedSubgraph {
+            source_index: index,
+            driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
+                subgraph,
+            )),
+            driver_priority: reduced_subgraph_driver_priority(subgraph),
+            sheet_instance_path: subgraph.sheet_instance_path.clone(),
+            hier_parent_index: subgraph.hier_parent_index,
+            hier_child_indexes: subgraph.hier_child_indexes.clone(),
+            has_hier_pins: !subgraph.hier_sheet_pins.is_empty(),
+            has_hier_ports: !subgraph.hier_ports.is_empty(),
+            dirty: true,
+        })
+        .collect()
+}
+
+fn apply_live_reduced_driver_connections(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+    live_subgraphs: &[LiveReducedSubgraph],
+) {
+    for live in live_subgraphs {
+        clone_reduced_connection_into_subgraph(
+            &mut reduced_subgraphs[live.source_index],
+            &live.driver_connection.connection,
+        );
+    }
 }
 
 // Upstream parity: reduced local analogue for the `matchBusMember()`-driven member refresh KiCad
@@ -987,82 +1050,70 @@ fn refresh_reduced_bus_propagation_fixpoint(reduced_subgraphs: &mut [ReducedProj
     }
 }
 
-// Upstream parity: reduced local analogue for the visited-chain best-driver selection inside
-// `CONNECTION_GRAPH::propagateToNeighbors()`. This is not a 1:1 live hierarchy walk because the
-// Rust tree still settles cloned reduced subgraphs instead of mutating live dirty
-// `CONNECTION_SUBGRAPH` objects as they are visited, but it preserves the exercised static
-// best-driver ranking over one hierarchy-connected chain:
-// - stronger drivers outrank weaker ones
-// - global power outranks lower classes
-// - equal-priority strong drivers prefer shorter sheet paths
-// - equal-strength/equal-priority drivers fall back to alphabetical connection name
-// The reduced pass is currently limited to net chains; bus chains still rely on the dedicated
-// reduced bus propagation path because the Rust tree lacks the live bus-neighbor mutation KiCad
-// applies during the same visited walk. Remaining divergence is the still-missing live recursive
-// visit order and in-place dirty updates.
+// Upstream parity: reduced local analogue for the hierarchy-chain portion of
+// `CONNECTION_GRAPH::propagateToNeighbors()`. This is no longer a purely static settle pass: it
+// now walks a dedicated live reduced subgraph/connection layer with dirty-state and in-place
+// clone semantics before projecting the chosen driver connection back onto the shared reduced
+// graph. Remaining divergence is that the current live layer still covers only the hierarchy-chain
+// slice and does not yet include KiCad's bus-neighbor recursion, stale bus-member replay, or live
+// item-owned connection updates on the same objects.
 fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
-    let mut seen = vec![false; reduced_subgraphs.len()];
-
-    for start in 0..reduced_subgraphs.len() {
-        if seen[start] {
-            continue;
-        }
-
-        let has_hierarchy_links = reduced_subgraphs[start].hier_parent_index.is_some()
-            || !reduced_subgraphs[start].hier_child_indexes.is_empty();
-
-        if !has_hierarchy_links {
-            seen[start] = true;
-            continue;
+    fn propagate_reduced_live_hierarchy_chain(
+        start: usize,
+        live_subgraphs: &mut [LiveReducedSubgraph],
+        force: bool,
+    ) {
+        if !force && live_subgraphs[start].has_hier_ports && live_subgraphs[start].has_hier_pins {
+            return;
+        } else if !live_subgraphs[start].has_hier_ports && !live_subgraphs[start].has_hier_pins {
+            live_subgraphs[start].dirty = false;
+            return;
         }
 
         let mut stack = vec![start];
         let mut visited = Vec::<usize>::new();
+        let mut visited_set = BTreeSet::<usize>::new();
+
+        visited_set.insert(start);
 
         while let Some(index) = stack.pop() {
-            if seen[index] {
-                continue;
-            }
-
-            seen[index] = true;
             visited.push(index);
 
-            if let Some(parent_index) = reduced_subgraphs[index].hier_parent_index {
-                if !seen[parent_index] {
+            if let Some(parent_index) = live_subgraphs[index].hier_parent_index {
+                if visited_set.insert(parent_index) {
                     stack.push(parent_index);
                 }
             }
 
-            for child_index in reduced_subgraphs[index].hier_child_indexes.clone() {
-                if !seen[child_index] {
+            let child_indexes = live_subgraphs[index].hier_child_indexes.clone();
+
+            for child_index in child_indexes {
+                if visited_set.insert(child_index) {
                     stack.push(child_index);
                 }
             }
         }
 
-        if visited.is_empty() {
-            continue;
-        }
-
-        let mut best_index = visited[0];
-        let mut highest = reduced_subgraph_driver_priority(&reduced_subgraphs[best_index]);
+        let mut best_index = start;
+        let mut highest = live_subgraphs[best_index].driver_priority;
         let mut best_is_strong = highest >= 3;
-        let mut best_name = reduced_subgraph_driver_name(&reduced_subgraphs[best_index]);
+        let mut best_name = live_subgraphs[best_index]
+            .driver_connection
+            .name()
+            .to_string();
 
         if highest < 6 {
-            for &index in visited.iter().skip(1) {
-                let priority = reduced_subgraph_driver_priority(&reduced_subgraphs[index]);
+            for &index in visited.iter().filter(|index| **index != start) {
+                let priority = live_subgraphs[index].driver_priority;
                 let candidate_strong = priority >= 3;
-                let candidate_name = reduced_subgraph_driver_name(&reduced_subgraphs[index]);
+                let candidate_name = live_subgraphs[index].driver_connection.name();
                 let shorter_path =
-                    reduced_sheet_path_depth(&reduced_subgraphs[index].sheet_instance_path)
-                        < reduced_sheet_path_depth(
-                            &reduced_subgraphs[best_index].sheet_instance_path,
-                        );
+                    reduced_sheet_path_depth(&live_subgraphs[index].sheet_instance_path)
+                        < reduced_sheet_path_depth(&live_subgraphs[best_index].sheet_instance_path);
                 let as_good_path =
-                    reduced_sheet_path_depth(&reduced_subgraphs[index].sheet_instance_path)
+                    reduced_sheet_path_depth(&live_subgraphs[index].sheet_instance_path)
                         <= reduced_sheet_path_depth(
-                            &reduced_subgraphs[best_index].sheet_instance_path,
+                            &live_subgraphs[best_index].sheet_instance_path,
                         );
 
                 if (priority >= 6)
@@ -1072,26 +1123,57 @@ fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProje
                     || ((best_is_strong == candidate_strong)
                         && as_good_path
                         && (priority == highest)
-                        && (candidate_name < best_name))
+                        && (candidate_name < best_name.as_str()))
                 {
                     best_index = index;
                     highest = priority;
                     best_is_strong = candidate_strong;
-                    best_name = candidate_name;
+                    best_name = candidate_name.to_string();
                 }
             }
         }
 
-        let connection = reduced_subgraph_driver_connection(&reduced_subgraphs[best_index]);
+        let chosen_connection = live_subgraphs[best_index].driver_connection.clone();
 
-        if connection.connection_type != ReducedProjectConnectionType::Net {
+        for index in visited {
+            live_subgraphs[index]
+                .driver_connection
+                .clone_from(&chosen_connection);
+            live_subgraphs[index].dirty = false;
+        }
+    }
+
+    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+
+    for start in 0..live_subgraphs.len() {
+        if !live_subgraphs[start].dirty {
             continue;
         }
 
-        for index in visited {
-            clone_reduced_connection_into_subgraph(&mut reduced_subgraphs[index], &connection);
+        let has_hierarchy_links = live_subgraphs[start].hier_parent_index.is_some()
+            || !live_subgraphs[start].hier_child_indexes.is_empty();
+
+        if !has_hierarchy_links {
+            live_subgraphs[start].dirty = false;
+            continue;
+        }
+
+        propagate_reduced_live_hierarchy_chain(start, &mut live_subgraphs, false);
+    }
+
+    for start in 0..live_subgraphs.len() {
+        if live_subgraphs[start].dirty {
+            propagate_reduced_live_hierarchy_chain(start, &mut live_subgraphs, true);
         }
     }
+
+    for live in &live_subgraphs {
+        if live.driver_connection.connection.connection_type != ReducedProjectConnectionType::Net {
+            continue;
+        }
+    }
+
+    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the global-secondary-driver promotion branch inside
@@ -4824,9 +4906,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        PointKey, ReducedBusMember, ReducedBusMemberKind, ReducedLabelLink,
-        ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
-        ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
+        PointKey, ReducedBusMember, ReducedBusMemberKind, ReducedHierPortLink,
+        ReducedHierSheetPinLink, ReducedLabelLink, ReducedProjectBusNeighborLink,
+        ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectDriverKind,
+        ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, reduced_bus_member_objects,
         refresh_reduced_bus_link_members, refresh_reduced_bus_members_from_neighbor_connections,
@@ -6066,7 +6149,19 @@ mod tests {
                 base_pins: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ROOT_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/ROOT_SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
@@ -6128,7 +6223,18 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
-                hier_ports: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/Child/GLOBAL_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: Vec::new(),
@@ -6156,7 +6262,19 @@ mod tests {
                 base_pins: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ROOT_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/ROOT_SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
@@ -6239,7 +6357,18 @@ mod tests {
                 }],
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
-                hier_ports: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/Child/GLOBAL_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: Vec::new(),
@@ -6332,7 +6461,19 @@ mod tests {
                 base_pins: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ROOT_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/ROOT_SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
@@ -6378,7 +6519,18 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
-                hier_ports: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/Child/GLOBAL_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: Vec::new(),
@@ -6469,7 +6621,19 @@ mod tests {
                 base_pins: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ROOT_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/ROOT_SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
@@ -6515,7 +6679,18 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
-                hier_ports: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/Child/GLOBAL_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: Vec::new(),
@@ -6587,7 +6762,19 @@ mod tests {
                 base_pins: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ROOT_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/ROOT_SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
@@ -6638,7 +6825,18 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
-                hier_ports: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/Child/GLOBAL_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: Vec::new(),

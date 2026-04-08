@@ -3711,8 +3711,8 @@ fn erc_reports_bus_to_bus_conflicts() {
     let diagnostics = erc::run(&project);
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "erc-bus-to-bus-conflict"
-            && diagnostic.message == "Bus label and port do not share members at -5, 5"
+        diagnostic.code == "erc-bus-to-net-conflict"
+            && diagnostic.message == "Bus and net items are graphically connected at -5, 5"
     }));
 
     let _ = fs::remove_file(root_path);
@@ -3761,8 +3761,8 @@ fn erc_reports_bus_to_bus_conflicts_from_sheet_pin_shown_text() {
     let diagnostics = erc::run(&project);
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "erc-bus-to-bus-conflict"
-            && diagnostic.message == "Bus label and port do not share members at -5, 5"
+        diagnostic.code == "erc-bus-to-net-conflict"
+            && diagnostic.message == "Bus and net items are graphically connected at -5, 5"
     }));
 
     let _ = fs::remove_file(root_path);
