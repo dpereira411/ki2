@@ -343,6 +343,9 @@ Current status:
     of rebuilding the project net map and rescanning schematics per ERC query
   - reduced project net map plus pin/point lookup now live on `SchematicProject` instead of only
     in free connectivity helpers, with variant changes invalidating that reduced graph owner
+  - reduced project point identity now covers all reduced subgraph member points, not only the
+    chosen anchor, so label/marker point lookups no longer fall back just because they are not the
+    anchor point
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match

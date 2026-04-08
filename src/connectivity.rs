@@ -91,6 +91,7 @@ pub(crate) struct ReducedNetSubgraph {
     pub(crate) anchor: [f64; 2],
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
+    pub(crate) points: Vec<PointKey>,
     pub(crate) nodes: Vec<ReducedNetNode>,
     pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
 }
@@ -879,6 +880,13 @@ where
                     .members
                     .iter()
                     .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker),
+                points: component
+                    .members
+                    .iter()
+                    .map(|member| point_key(member.at))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 nodes: nodes.into_values().collect(),
                 base_pins,
             });
@@ -972,20 +980,23 @@ pub(crate) fn collect_reduced_project_net_graph(
             },
         ) {
             for subgraph in entry.subgraphs {
+                let ReducedNetSubgraph {
+                    class,
+                    has_no_connect,
+                    points,
+                    nodes,
+                    base_pins,
+                    ..
+                } = subgraph;
+
                 all_base_pins_by_net
                     .entry(entry.name.clone())
                     .or_default()
-                    .extend(subgraph.base_pins.iter().cloned());
+                    .extend(base_pins.iter().cloned());
 
-                let point_identity = ReducedProjectPointIdentityKey {
-                    sheet_instance_path: sheet_path.instance_path.clone(),
-                    at: point_key(subgraph.anchor),
-                };
-
-                for node in subgraph.nodes {
+                for node in nodes {
                     let key = (node.reference.clone(), node.pin.clone());
-                    let base_pin_key = subgraph
-                        .base_pins
+                    let base_pin_key = base_pins
                         .iter()
                         .find(|base_pin| {
                             base_pin.symbol_uuid.is_some()
@@ -1001,13 +1012,13 @@ pub(crate) fn collect_reduced_project_net_graph(
                                     .unwrap_or(base_pin.name.is_none())
                         })
                         .cloned()
-                        .or_else(|| subgraph.base_pins.first().cloned())
+                        .or_else(|| base_pins.first().cloned())
                         .expect("shared reduced net map must keep base pin identity");
 
                     let candidate = (
                         entry.name.clone(),
-                        subgraph.class.clone(),
-                        subgraph.has_no_connect,
+                        class.clone(),
+                        has_no_connect,
                         node,
                         base_pin_key,
                     );
@@ -1026,10 +1037,15 @@ pub(crate) fn collect_reduced_project_net_graph(
                     }
                 }
 
-                point_keys_by_net
-                    .entry(entry.name.clone())
-                    .or_default()
-                    .push(point_identity);
+                for point in points {
+                    point_keys_by_net
+                        .entry(entry.name.clone())
+                        .or_default()
+                        .push(ReducedProjectPointIdentityKey {
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            at: point,
+                        });
+                }
             }
         }
     }
@@ -1999,7 +2015,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_reduced_net_name_at;
+    use super::{resolve_reduced_net_name_at, resolve_reduced_project_net_at};
+    use crate::core::SchematicProject;
+    use crate::loader::load_schematic_tree;
     use crate::parser::parse_schematic_file;
     use std::env;
     use std::fs;
@@ -2071,6 +2089,59 @@ mod tests {
             super::reduced_bus_members(&schematic, "USBPAIR"),
             vec!["DP", "DM"]
         );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_net_identity_covers_non_anchor_label_points() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_project_points_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000003")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73050000-0000-0000-0000-000000000004")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "NET_A" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+
+        let net = resolve_reduced_project_net_at(&project, &sheet_path, [10.0, 0.0], false)
+            .expect("project net at label point");
+
+        assert_eq!(net.name, "NET_A");
 
         let _ = fs::remove_file(path);
     }
