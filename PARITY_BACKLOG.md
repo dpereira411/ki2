@@ -429,6 +429,8 @@ Current status:
   label-component owner:
   - `erc-label-not-connected`
   - `erc-label-single-pin`
+  - label iteration now starts from shared graph-owned label-item identity instead of per-subgraph
+    point-list recovery
   - same-name label grouping, pin counts, and no-connect aggregation now also derive from shared
     reduced project subgraphs plus a shared `GetAllSubgraphs()`-style lookup instead of regrouping
     local component `net_name` strings inside ERC
@@ -447,6 +449,8 @@ Current status:
   - no-connect markers on connected local nets
   - no-connect markers on same-name disconnected subgraphs that KiCad merges into one net
   - dangling no-connect markers with no pins or labels
+  - no-connect iteration now starts from shared graph-owned marker identity instead of per-subgraph
+    point-list recovery
   - hier-pin / hierarchical-label special-case exemption when the local subgraph is only the
     no-connect plus that hierarchy boundary item
   - unnamed marker-only local subgraphs now survive into the shared reduced project graph instead
@@ -512,7 +516,6 @@ Current status:
 - the next honest connection-graph ERC gaps are no longer label ownership itself; they are the
   remaining graph-owned passes without local analogues:
   - fuller shared connection/subgraph ownership for strict 1:1 net naming and export:
-    - item-to-subgraph identity
     - fuller item-owned connection naming beyond the now-shared `Name()`-style
       full-vs-short/path-qualified reduced net naming split
     - netcode-style ownership
@@ -803,7 +806,10 @@ What is already covered indirectly:
   ERC/export callers instead of forcing each caller to rebuild per-net neighbor maps
 - reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
   symbol pins instead of flattening those lookups straight to whole-net identity
-- point/pin net identity now also derives back through that shared subgraph owner instead of
+- reduced project graph now also keeps reduced item-to-subgraph identity for labels and no-connect
+  markers, so graph-owned ERC passes can start from shared item lookup instead of per-subgraph
+  point membership recovery
+- point/pin/label/no-connect net identity now also derives back through that shared subgraph owner instead of
   keeping duplicate item-to-whole-net side maps beside the shared subgraph indexes
 - whole-net map views now also derive from the shared reduced subgraph owner instead of storing a
   second flattened project-net vector beside the same graph

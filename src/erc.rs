@@ -5,6 +5,7 @@ use crate::connectivity::{
     collect_reduced_project_subgraphs_by_name, projected_symbol_pin_info, reduced_bus_members,
     reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
     resolve_reduced_non_bus_driver_priority_at, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -1681,10 +1682,9 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckNoConnects()`. This is
 // not a 1:1 KiCad subgraph/item-marker pass because the Rust tree still lacks full
-// `CONNECTION_SUBGRAPH` objects, hier-port child-subgraph traversal, and live item identity. It
-// now consumes shared reduced project subgraphs plus graph-owned same-name grouping instead of
-// rebuilding the rule from per-sheet connection components, and it covers both exercised upstream
-// branches:
+// `CONNECTION_SUBGRAPH` objects and hier-port child-subgraph traversal. It now starts from shared
+// graph-owned no-connect-item identity plus same-name grouping instead of rebuilding the rule from
+// per-sheet connection components, and it covers both exercised upstream branches:
 // - connected no-connect markers on same-name nets
 // - dangling no-connect markers with no pins or labels
 // instead of leaving the reduced ERC path on the older connected-only point-local check.
@@ -1692,115 +1692,122 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
-    let subgraphs = collect_reduced_project_subgraphs(project, false);
+    let mut seen = std::collections::BTreeSet::new();
 
-    for subgraph in subgraphs
-        .iter()
-        .filter(|subgraph| !subgraph.no_connect_points.is_empty())
-    {
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-        else {
-            continue;
-        };
+    for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
 
-        let local_unique_pins = subgraph
-            .base_pins
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>();
-        let local_unique_labels = subgraph
-            .label_points
-            .iter()
-            .map(|(point, _kind)| (subgraph.sheet_instance_path.clone(), *point))
-            .collect::<std::collections::BTreeSet<_>>();
-        let has_sheet_pin = subgraph.no_connect_points.iter().any(|point| {
-            subgraph
-                .sheet_pin_points
+        for no_connect in schematic.screen.items.iter().filter_map(|item| match item {
+            SchItem::NoConnect(no_connect) => Some(no_connect),
+            _ => None,
+        }) {
+            let Some(subgraph) =
+                resolve_reduced_project_subgraph_for_no_connect(&graph, sheet_path, no_connect.at)
+            else {
+                continue;
+            };
+
+            if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
+                continue;
+            }
+
+            let local_unique_pins = subgraph
+                .base_pins
                 .iter()
-                .any(|sheet_pin_point| sheet_pin_point == point)
-        });
-        let has_hierarchical_label = subgraph.no_connect_points.iter().any(|point| {
-            subgraph
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>();
+            let local_unique_labels = subgraph
                 .label_points
                 .iter()
-                .any(|(label_point, kind)| label_point == point && *kind == LabelKind::Hierarchical)
-        });
-        let has_nc_pin = subgraph.no_connect_points.iter().any(|point| {
-            schematic.screen.items.iter().any(|item| match item {
+                .map(|(point, _kind)| (subgraph.sheet_instance_path.clone(), *point))
+                .collect::<std::collections::BTreeSet<_>>();
+            let has_sheet_pin = subgraph
+                .sheet_pin_points
+                .contains(&crate::connectivity::PointKey(
+                    no_connect.at[0].to_bits(),
+                    no_connect.at[1].to_bits(),
+                ));
+            let has_hierarchical_label = schematic.screen.items.iter().any(|item| match item {
+                SchItem::Label(label)
+                    if label.kind == LabelKind::Hierarchical
+                        && points_equal(label.at, no_connect.at) =>
+                {
+                    resolve_reduced_project_subgraph_for_label(&graph, sheet_path, label)
+                        .is_some_and(|label_subgraph| {
+                            label_subgraph.sheet_instance_path == subgraph.sheet_instance_path
+                                && label_subgraph.subgraph_code == subgraph.subgraph_code
+                        })
+                }
+                _ => false,
+            });
+            let has_nc_pin = schematic.screen.items.iter().any(|item| match item {
                 SchItem::Symbol(symbol) => {
                     projected_symbol_pin_info(symbol).into_iter().any(|pin| {
                         pin.electrical_type.as_deref() == Some("no_connect")
-                            && points_equal(
-                                pin.at,
-                                [f64::from_bits(point.0), f64::from_bits(point.1)],
-                            )
+                            && points_equal(pin.at, no_connect.at)
                     })
                 }
                 _ => false,
-            })
-        });
+            });
 
-        if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
-            || (has_nc_pin && local_unique_pins.len() <= 1)
-        {
-            continue;
-        }
-
-        let (unique_pin_count, unique_label_count) = if subgraph.name.is_empty() {
-            (local_unique_pins.len(), local_unique_labels.len())
-        } else {
-            let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph.name);
-            let unique_pin_count = neighbors
-                .iter()
-                .flat_map(|neighbor| neighbor.base_pins.iter().cloned())
-                .collect::<std::collections::BTreeSet<ReducedNetBasePinKey>>()
-                .len();
-            let unique_label_count = neighbors
-                .iter()
-                .flat_map(|neighbor| {
-                    neighbor
-                        .label_points
-                        .iter()
-                        .map(|(point, _kind)| (neighbor.sheet_instance_path.clone(), *point))
-                })
-                .collect::<std::collections::BTreeSet<_>>()
-                .len();
-            (unique_pin_count, unique_label_count)
-        };
-
-        if unique_pin_count <= 1 {
-            if unique_pin_count == 0 && unique_label_count == 0 {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    code: "erc-no-connect-dangling",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: "Unconnected \"no connection\" flag".to_string(),
-                    path: Some(sheet_path.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
+            if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
+                || (has_nc_pin && local_unique_pins.len() <= 1)
+            {
+                continue;
             }
 
-            continue;
-        }
+            let (unique_pin_count, unique_label_count) = if subgraph.name.is_empty() {
+                (local_unique_pins.len(), local_unique_labels.len())
+            } else {
+                let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph.name);
+                let unique_pin_count = neighbors
+                    .iter()
+                    .flat_map(|neighbor| neighbor.base_pins.iter().cloned())
+                    .collect::<std::collections::BTreeSet<ReducedNetBasePinKey>>()
+                    .len();
+                let unique_label_count = neighbors
+                    .iter()
+                    .flat_map(|neighbor| {
+                        neighbor
+                            .label_points
+                            .iter()
+                            .map(|(point, _kind)| (neighbor.sheet_instance_path.clone(), *point))
+                    })
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                (unique_pin_count, unique_label_count)
+            };
 
-        diagnostics.push(Diagnostic {
-            severity: Severity::Error,
-            code: "erc-no-connect-connected",
-            kind: crate::diagnostic::DiagnosticKind::Validation,
-            message: "No-connect marker is attached to a connected net".to_string(),
-            path: Some(sheet_path.schematic_path.clone()),
-            span: None,
-            line: None,
-            column: None,
-        });
+            if unique_pin_count <= 1 {
+                if unique_pin_count == 0 && unique_label_count == 0 {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Warning,
+                        code: "erc-no-connect-dangling",
+                        kind: crate::diagnostic::DiagnosticKind::Validation,
+                        message: "Unconnected \"no connection\" flag".to_string(),
+                        path: Some(sheet_path.schematic_path.clone()),
+                        span: None,
+                        line: None,
+                        column: None,
+                    });
+                }
+
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-no-connect-connected",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: "No-connect marker is attached to a connected net".to_string(),
+                path: Some(sheet_path.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
+        }
     }
 
     diagnostics
@@ -1808,10 +1815,11 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckLabels()`. This is not a
 // 1:1 KiCad graph pass because the Rust tree still lacks full cross-sheet subgraphs, bus-parent
-// neighbor walks, and live `SCH_TEXT::IsDangling()` state. It now consumes shared reduced project
-// subgraphs for label grouping, pin counts, and same-name neighbor aggregation instead of grouping
-// local component snapshots by ad-hoc `net_name` strings inside ERC. The remaining divergence is
-// the still-missing fuller bus-parent ownership plus the local dangling-label probe.
+// neighbor walks, and live `SCH_TEXT::IsDangling()` state. It now consumes shared graph-owned
+// label-item identity plus shared reduced project subgraphs for pin counts and same-name neighbor
+// aggregation instead of grouping local component snapshots by ad-hoc `net_name` strings inside
+// ERC. The remaining divergence is the still-missing fuller bus-parent ownership plus the local
+// dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut dangling_labels = BTreeMap::<(String, crate::connectivity::PointKey, u8), bool>::new();
@@ -1836,26 +1844,41 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         }
     }
 
-    for subgraph in collect_reduced_project_subgraphs(project, false)
-        .into_iter()
-        .filter(|subgraph| !subgraph.label_points.is_empty())
-    {
-        let pin_count = subgraph.base_pins.len();
-        let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
-            || subgraph
-                .label_points
-                .iter()
-                .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
 
-        label_subgraphs.push((
-            subgraph.sheet_instance_path.clone(),
-            subgraph.subgraph_code,
-            subgraph.name.clone(),
-            pin_count,
-            subgraph.has_no_connect,
-            has_local_hierarchy,
-            subgraph.label_points,
-        ));
+        for label in schematic.screen.items.iter().filter_map(|item| match item {
+            SchItem::Label(label) => Some(label),
+            _ => None,
+        }) {
+            let Some(subgraph) =
+                resolve_reduced_project_subgraph_for_label(&graph, sheet_path, label)
+            else {
+                continue;
+            };
+
+            let pin_count = subgraph.base_pins.len();
+            let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
+                || subgraph
+                    .label_points
+                    .iter()
+                    .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
+
+            label_subgraphs.push((
+                subgraph.sheet_instance_path.clone(),
+                subgraph.subgraph_code,
+                subgraph.name.clone(),
+                pin_count,
+                subgraph.has_no_connect,
+                has_local_hierarchy,
+                vec![(
+                    crate::connectivity::PointKey(label.at[0].to_bits(), label.at[1].to_bits()),
+                    label.kind,
+                )],
+            ));
+        }
     }
 
     for (

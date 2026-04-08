@@ -148,6 +148,19 @@ struct ReducedProjectPointIdentityKey {
     at: PointKey,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ReducedProjectLabelIdentityKey {
+    sheet_instance_path: String,
+    at: PointKey,
+    kind: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ReducedProjectNoConnectIdentityKey {
+    sheet_instance_path: String,
+    at: PointKey,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
@@ -156,6 +169,8 @@ pub(crate) struct ReducedProjectNetGraph {
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
+    label_subgraph_identities: BTreeMap<ReducedProjectLabelIdentityKey, usize>,
+    no_connect_subgraph_identities: BTreeMap<ReducedProjectNoConnectIdentityKey, usize>,
 }
 
 pub(crate) struct ReducedProjectGraphInputs<'a> {
@@ -1274,6 +1289,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut pin_subgraph_identities = BTreeMap::new();
     let mut pin_subgraph_identities_by_location = BTreeMap::new();
     let mut point_subgraph_identities = BTreeMap::new();
+    let mut label_subgraph_identities = BTreeMap::new();
+    let mut no_connect_subgraph_identities = BTreeMap::new();
     let mut net_identities_by_name = BTreeMap::<String, ReducedProjectNetIdentity>::new();
 
     for (index, (name, (class, has_no_connect, _nodes, _base_pins))) in nets.into_iter().enumerate()
@@ -1348,6 +1365,25 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 index,
             );
         }
+        for (point, kind) in &net_identity.label_points {
+            label_subgraph_identities.insert(
+                ReducedProjectLabelIdentityKey {
+                    sheet_instance_path: net_identity.sheet_instance_path.clone(),
+                    at: *point,
+                    kind: reduced_label_kind_sort_key(*kind),
+                },
+                index,
+            );
+        }
+        for point in &net_identity.no_connect_points {
+            no_connect_subgraph_identities.insert(
+                ReducedProjectNoConnectIdentityKey {
+                    sheet_instance_path: net_identity.sheet_instance_path.clone(),
+                    at: *point,
+                },
+                index,
+            );
+        }
         reduced_subgraphs.push(net_identity);
     }
 
@@ -1358,6 +1394,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
         point_subgraph_identities,
+        label_subgraph_identities,
+        no_connect_subgraph_identities,
     }
 }
 
@@ -1614,6 +1652,43 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
         .and_then(|index| graph.subgraphs.get(*index))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the label-item half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
+// item map because the Rust tree still keys labels by `(sheet instance path, point, kind)`
+// instead of live `SCH_LABEL_BASE*`, but it preserves shared label-to-subgraph identity instead
+// of making ERC recover label membership from per-subgraph point lists. Remaining divergence is
+// fuller item identity for overlapping same-kind labels plus the still-missing live
+// `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    label: &Label,
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .label_subgraph_identities
+        .get(&reduced_project_label_identity_key(sheet_path, label))
+        .and_then(|index| graph.subgraphs.get(*index))
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the no-connect marker half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
+// item map because the Rust tree still keys markers by `(sheet instance path, point)` instead of
+// live `SCH_NO_CONNECT*`, but it preserves shared marker-to-subgraph identity instead of making
+// ERC infer marker ownership from subgraph point sets. Remaining divergence is fuller marker item
+// identity for overlapping markers plus the still-missing live `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .no_connect_subgraph_identities
+        .get(&reduced_project_no_connect_identity_key(sheet_path, at))
+        .and_then(|index| graph.subgraphs.get(*index))
+}
+
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` objects, but it preserves shared local driver-name
@@ -1645,6 +1720,27 @@ fn reduced_project_point_identity_key(
     at: [f64; 2],
 ) -> ReducedProjectPointIdentityKey {
     ReducedProjectPointIdentityKey {
+        sheet_instance_path: sheet_path.instance_path.clone(),
+        at: point_key(at),
+    }
+}
+
+fn reduced_project_label_identity_key(
+    sheet_path: &LoadedSheetPath,
+    label: &Label,
+) -> ReducedProjectLabelIdentityKey {
+    ReducedProjectLabelIdentityKey {
+        sheet_instance_path: sheet_path.instance_path.clone(),
+        at: point_key(label.at),
+        kind: reduced_label_kind_sort_key(label.kind),
+    }
+}
+
+fn reduced_project_no_connect_identity_key(
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> ReducedProjectNoConnectIdentityKey {
+    ReducedProjectNoConnectIdentityKey {
         sheet_instance_path: sheet_path.instance_path.clone(),
         at: point_key(at),
     }
@@ -2637,7 +2733,9 @@ mod tests {
     use super::{
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         resolve_reduced_net_name_at, resolve_reduced_project_net_at,
-        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_symbol_pin,
+        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
+        resolve_reduced_project_subgraph_for_no_connect,
+        resolve_reduced_project_subgraph_for_symbol_pin,
     };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
@@ -2767,6 +2865,89 @@ mod tests {
             .expect("project net at label point");
 
         assert_eq!(net.name, "NET_A");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_item_identity_covers_labels_and_no_connects() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_project_items_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000103")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73050000-0000-0000-0000-000000000104")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "NET_A" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (no_connect (at 10 0)))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+
+        let label = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Label(label) => Some(label),
+                _ => None,
+            })
+            .expect("label");
+        let no_connect = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::NoConnect(no_connect) => Some(no_connect),
+                _ => None,
+            })
+            .expect("no-connect");
+
+        let by_label = resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, label)
+            .expect("label subgraph");
+        let by_no_connect =
+            resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, no_connect.at)
+                .expect("no-connect subgraph");
+        let by_point = resolve_reduced_project_subgraph_at(&graph, &sheet_path, [10.0, 0.0])
+            .expect("point subgraph");
+
+        assert_eq!(by_label.subgraph_code, by_point.subgraph_code);
+        assert_eq!(by_no_connect.subgraph_code, by_point.subgraph_code);
 
         let _ = fs::remove_file(path);
     }
