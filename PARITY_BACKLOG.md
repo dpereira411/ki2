@@ -723,7 +723,8 @@ What is already covered indirectly:
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
     - exercised pin `type` emission is now live
     - exercised libpart pin ordering now follows `StrNumCmp`
-  - reduced `nets`
+  - reduced root `<libraries>` section is now live after `<libparts>`
+- reduced `nets`
 - reduced node lists from the current point-net resolver
 - reduced graph-side net grouping now flows through one shared `GetNetMap()` analogue before XML /
   KiCad export formatting
@@ -755,6 +756,8 @@ What is not yet explicitly tracked as complete:
 
 4. Library/libpart export parity is blocked on the same missing symbol-library subsystem that
    blocks `ERC_TESTER::TestLibSymbolIssues()`
+   - exercised root `<libraries>` section now exists, but URI-backed `<library>` child population
+     remains blocked on that missing symbol-library subsystem
 
 Current export unblock path:
 1. add the CLI `netlist` command surface in upstream format order

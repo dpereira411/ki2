@@ -449,6 +449,7 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     assert!(report.contains("lib=\"Device\""), "{report}");
     assert!(report.contains("part=\"R\""), "{report}");
     assert!(report.contains("<libparts>"), "{report}");
+    assert!(report.contains("<libraries>"), "{report}");
     assert!(
         report.contains("<libpart lib=\"Device\" part=\"R\">"),
         "{report}"
@@ -1369,8 +1370,9 @@ fn cli_netlist_supports_reduced_kicad_format() {
     let groups = report.find("<groups>").expect("groups");
     let variants = report.find("<variants>").expect("variants");
     let libparts = report.find("<libparts>").expect("libparts");
+    let libraries = report.find("<libraries>").expect("libraries");
     assert!(
-        components < groups && groups < variants && variants < libparts,
+        components < groups && groups < variants && variants < libparts && libparts < libraries,
         "{report}"
     );
     assert!(

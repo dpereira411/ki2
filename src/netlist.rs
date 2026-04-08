@@ -122,6 +122,12 @@ pub struct NetlistVariant {
     pub description: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistLibrary {
+    pub logical: String,
+    pub uri: Option<String>,
+}
+
 struct OrderedNetlistSymbol<'a> {
     sheet_path: &'a crate::loader::LoadedSheetPath,
     symbol: &'a Symbol,
@@ -1352,6 +1358,16 @@ pub fn collect_kicad_variants(project: &SchematicProject) -> Vec<NetlistVariant>
         .unwrap_or_default()
 }
 
+// Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeLibraries()`. This is
+// not a 1:1 KiCad library-manager walk because the Rust tree still lacks the symbol-library
+// adapter stack and URI resolver behind `GetFullURI()`, but it restores the owning `<libraries>`
+// section boundary after `makeLibParts()` instead of omitting that root section entirely.
+// Remaining divergence is child population: without the symbol-library subsystem, the reduced
+// exporter can only keep the section live while URI-backed `<library>` items remain blocked.
+pub fn collect_xml_libraries(_project: &SchematicProject) -> Vec<NetlistLibrary> {
+    Vec::new()
+}
+
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeRoot()`. This is not a
 // 1:1 KiCad netlist exporter because the Rust tree still omits the full exporter base, libraries,
 // variants/groups, and non-XML formats, but it preserves the same outer XML root ownership and the
@@ -1761,6 +1777,20 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
     }
 
     xml.push_str("  </libparts>\n");
+    xml.push_str("  <libraries>\n");
+
+    for library in collect_xml_libraries(project) {
+        if let Some(uri) = library.uri {
+            xml.push_str(&format!(
+                "    <library logical=\"{}\">\n",
+                escape_xml(&library.logical)
+            ));
+            xml.push_str(&format!("      <uri>{}</uri>\n", escape_xml(&uri)));
+            xml.push_str("    </library>\n");
+        }
+    }
+
+    xml.push_str("  </libraries>\n");
     xml.push_str("  <nets>\n");
 
     for net in collect_xml_nets(project, include_kicad_sections) {
