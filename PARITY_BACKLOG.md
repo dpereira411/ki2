@@ -702,6 +702,10 @@ Current status:
       - active label links, sheet pins, and hierarchy ports are now also shared live item owners,
         so the main remaining item-wrapper gap is the fuller shared item/pointer topology and the
         `source_index`-style projection boundary rather than more copied active item wrappers
+      - active recursive propagation, connected-component collection, and secondary-driver
+        promotion now use shared live-handle identity instead of reduced subgraph indexes as their
+        traversal identity; `source_index` remains mainly as projection identity and test
+        scaffolding
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

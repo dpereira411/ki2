@@ -1651,6 +1651,10 @@ impl Eq for LiveReducedSubgraph {}
 
 type LiveReducedSubgraphHandle = Rc<RefCell<LiveReducedSubgraph>>;
 
+fn live_subgraph_handle_id(handle: &LiveReducedSubgraphHandle) -> usize {
+    Rc::as_ptr(handle) as usize
+}
+
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
 // graph propagation. This still wraps the existing reduced live subgraph carrier instead of a full
 // local `CONNECTION_SUBGRAPH` analogue, but it moves the active recursive graph build off whole
@@ -3402,54 +3406,52 @@ fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProject
 // Upstream parity: local bridge for the hierarchy-chain portion of live graph propagation on the
 // shared live subgraph owner. This still mutates reduced live carriers instead of full local
 // `CONNECTION_SUBGRAPH` objects, but the active recursive graph build now walks shared subgraph
-// handles instead of whole value-owned subgraphs.
+// handles and uses handle identity instead of reduced subgraph indexes for traversal.
 fn propagate_reduced_live_hierarchy_chain_on_handles(
-    start: usize,
+    start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
     force: bool,
 ) {
-    let start_snapshot = live_subgraphs[start].borrow().clone();
+    let start_snapshot = start.borrow().clone();
     if !force && start_snapshot.has_hier_ports && start_snapshot.has_hier_pins {
         return;
     } else if !start_snapshot.has_hier_ports && !start_snapshot.has_hier_pins {
-        live_subgraphs[start].borrow_mut().dirty = false;
+        start.borrow_mut().dirty = false;
         return;
     }
 
-    let mut stack = vec![start];
-    let mut visited = Vec::<usize>::new();
+    let mut stack = vec![start.clone()];
+    let mut visited = Vec::<LiveReducedSubgraphHandle>::new();
     let mut visited_set = BTreeSet::<usize>::new();
 
-    visited_set.insert(start);
+    visited_set.insert(live_subgraph_handle_id(start));
 
-    while let Some(index) = stack.pop() {
-        visited.push(index);
-        let snapshot = live_subgraphs[index].borrow().clone();
+    while let Some(handle) = stack.pop() {
+        visited.push(handle.clone());
+        let snapshot = handle.borrow().clone();
 
         if let Some(parent_handle) = live_subgraph_parent_handle(live_subgraphs, &snapshot) {
-            let parent_index = parent_handle.borrow().source_index;
-            if visited_set.insert(parent_index) {
-                stack.push(parent_index);
+            if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
+                stack.push(parent_handle);
             }
         }
 
         for child_handle in live_subgraph_child_handles(live_subgraphs, &snapshot) {
-            let child_index = child_handle.borrow().source_index;
-            if visited_set.insert(child_index) {
-                stack.push(child_index);
+            if visited_set.insert(live_subgraph_handle_id(&child_handle)) {
+                stack.push(child_handle);
             }
         }
     }
 
-    let mut best_index = start;
+    let mut best_handle = start.clone();
     let mut highest = start_snapshot.driver_priority;
     let mut best_is_strong = highest >= 3;
     let mut best_name = start_snapshot.driver_connection.name().to_string();
 
     if highest < 6 {
-        for &index in visited.iter().filter(|index| **index != start) {
-            let snapshot = live_subgraphs[index].borrow().clone();
-            let best_snapshot = live_subgraphs[best_index].borrow().clone();
+        for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
+            let snapshot = handle.borrow().clone();
+            let best_snapshot = best_handle.borrow().clone();
             let priority = snapshot.driver_priority;
             let candidate_strong = priority >= 3;
             let candidate_name = snapshot.driver_connection.name();
@@ -3467,7 +3469,7 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
                     && (priority == highest)
                     && (candidate_name < best_name))
             {
-                best_index = index;
+                best_handle = handle.clone();
                 highest = priority;
                 best_is_strong = candidate_strong;
                 best_name = candidate_name;
@@ -3475,67 +3477,54 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
         }
     }
 
-    let chosen_connection = live_subgraphs[best_index]
-        .borrow()
-        .driver_connection
-        .clone();
+    let chosen_connection = best_handle.borrow().driver_connection.clone();
 
-    for index in visited {
-        let mut subgraph = live_subgraphs[index].borrow_mut();
+    for handle in visited {
+        let mut subgraph = handle.borrow_mut();
         subgraph.driver_connection.clone_from(&chosen_connection);
         subgraph.dirty = false;
     }
 }
 
 // Upstream parity: local bridge for the connected live propagation slice on the shared subgraph
-// owner. This still falls back to reduced indexes where live handle attachment is not present, but
-// the active recursion now prefers the same live handle graph across both hierarchy and bus-linked
-// subgraphs instead of limiting stale replay to hierarchy-only slices.
+// owner. Active component discovery now follows live handle identity across hierarchy and bus
+// links instead of using reduced subgraph indexes as traversal identity.
 fn collect_live_reduced_propagation_component_handles_from_handles(
-    start: usize,
+    start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) -> Vec<LiveReducedSubgraphHandle> {
-    let mut queue = VecDeque::from([start]);
-    let mut visited = BTreeSet::from([start]);
+    let mut queue = VecDeque::from([start.clone()]);
+    let mut visited = BTreeSet::from([live_subgraph_handle_id(start)]);
     let mut component = Vec::new();
 
-    while let Some(index) = queue.pop_front() {
-        component.push(live_subgraphs[index].clone());
-        let snapshot = live_subgraphs[index].borrow().clone();
+    while let Some(handle) = queue.pop_front() {
+        component.push(handle.clone());
+        let snapshot = handle.borrow().clone();
 
         if let Some(parent_handle) = live_subgraph_parent_handle(live_subgraphs, &snapshot) {
-            let parent_index = parent_handle.borrow().source_index;
-            if visited.insert(parent_index) {
-                queue.push_back(parent_index);
+            if visited.insert(live_subgraph_handle_id(&parent_handle)) {
+                queue.push_back(parent_handle);
             }
         }
 
         for child_handle in live_subgraph_child_handles(live_subgraphs, &snapshot) {
-            let child_index = child_handle.borrow().source_index;
-            if visited.insert(child_index) {
-                queue.push_back(child_index);
+            if visited.insert(live_subgraph_handle_id(&child_handle)) {
+                queue.push_back(child_handle);
             }
         }
 
-        for parent_index in live_subgraph_bus_parent_handles(live_subgraphs, &snapshot)
-            .into_iter()
-            .map(|handle| handle.borrow().source_index)
-            .chain(
-                snapshot
-                    .bus_parent_links
-                    .iter()
-                    .map(live_subgraph_link_index),
-            )
-        {
-            if visited.insert(parent_index) {
-                queue.push_back(parent_index);
+        for parent_handle in live_subgraph_bus_parent_handles(live_subgraphs, &snapshot) {
+            if visited.insert(live_subgraph_handle_id(&parent_handle)) {
+                queue.push_back(parent_handle);
             }
         }
 
         for link in snapshot.bus_neighbor_links {
-            let neighbor_index = live_subgraph_link_index(&link);
-            if visited.insert(neighbor_index) {
-                queue.push_back(neighbor_index);
+            let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, &link) else {
+                continue;
+            };
+            if visited.insert(live_subgraph_handle_id(&neighbor_handle)) {
+                queue.push_back(neighbor_handle);
             }
         }
     }
@@ -3549,20 +3538,23 @@ fn collect_live_reduced_propagation_component_from_handles(
     start: usize,
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) -> Vec<usize> {
-    collect_live_reduced_propagation_component_handles_from_handles(start, live_subgraphs)
-        .into_iter()
-        .map(|handle| handle.borrow().source_index)
-        .collect()
+    collect_live_reduced_propagation_component_handles_from_handles(
+        &live_subgraphs[start],
+        live_subgraphs,
+    )
+    .into_iter()
+    .map(|handle| handle.borrow().source_index)
+    .collect()
 }
 
 // Upstream parity: local bridge for the global-secondary-driver promotion branch on the shared
 // live subgraph owner. This still promotes reduced live connections, but the active recursion now
-// mutates shared subgraph handles instead of value-owned subgraphs.
-fn refresh_reduced_live_global_secondary_driver_promotions_for_handle_index(
-    start: usize,
+// mutates and revisits shared subgraph handles by handle identity instead of reduced indexes.
+fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
+    start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> Vec<usize> {
-    let start_snapshot = live_subgraphs[start].borrow().clone();
+) -> Vec<LiveReducedSubgraphHandle> {
+    let start_snapshot = start.borrow().clone();
     if start_snapshot.local_driver || start_snapshot.strong_driver_count < 2 {
         return Vec::new();
     }
@@ -3579,8 +3571,8 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle_index(
 
         let secondary_is_global = secondary_driver.priority >= 6;
 
-        for (candidate_index, handle) in live_subgraphs.iter().enumerate() {
-            if candidate_index == start {
+        for handle in live_subgraphs.iter() {
+            if Rc::ptr_eq(handle, start) {
                 continue;
             }
 
@@ -3604,12 +3596,12 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle_index(
             *handle.borrow().driver_connection.borrow_mut() = chosen_connection.clone().into();
             sync_live_reduced_item_connections_from_driver_handle(handle);
             handle.borrow_mut().dirty = true;
-            promoted.push(candidate_index);
+            promoted.push(handle.clone());
         }
     }
 
-    promoted.sort_unstable();
-    promoted.dedup();
+    promoted.sort_by_key(live_subgraph_handle_id);
+    promoted.dedup_by(|left, right| Rc::ptr_eq(left, right));
     promoted
 }
 
@@ -3619,7 +3611,6 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
     force: bool,
 ) {
     for handle in component {
-        let start = handle.borrow().source_index;
         let snapshot = handle.borrow().clone();
         if !snapshot.dirty {
             continue;
@@ -3633,12 +3624,12 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
                 ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
             );
             if !is_bus {
-                live_subgraphs[start].borrow_mut().dirty = false;
+                handle.borrow_mut().dirty = false;
             }
             continue;
         }
 
-        propagate_reduced_live_hierarchy_chain_on_handles(start, live_subgraphs, force);
+        propagate_reduced_live_hierarchy_chain_on_handles(handle, live_subgraphs, force);
     }
 }
 
@@ -4094,8 +4085,8 @@ fn run_reduced_live_graph_roots_on_handles(
         .saturating_mul(live_subgraphs.len().max(1));
     let mut roots = 0;
 
-    for start in 0..live_subgraphs.len() {
-        if !live_subgraphs[start].borrow().dirty {
+    for start in live_subgraphs {
+        if !start.borrow().dirty {
             continue;
         }
 
@@ -4188,26 +4179,27 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
 // mutation can immediately requeue the same live subgraph for another recursive visit. Remaining
 // divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology.
 fn propagate_reduced_live_graph_neighbors_on_handles(
-    start: usize,
+    start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
     force: bool,
     visiting: &mut BTreeSet<usize>,
     stale_members: &mut Vec<LiveProjectBusMember>,
 ) {
-    if !live_subgraphs[start].borrow().dirty || !visiting.insert(start) {
+    let start_id = live_subgraph_handle_id(start);
+    if !start.borrow().dirty || !visiting.insert(start_id) {
         return;
     }
-    let start_before = live_subgraphs[start].borrow().clone();
+    let start_before = start.borrow().clone();
 
     if !force {
-        let promoted = refresh_reduced_live_global_secondary_driver_promotions_for_handle_index(
+        let promoted = refresh_reduced_live_global_secondary_driver_promotions_for_handle(
             start,
             live_subgraphs,
         );
 
-        for promoted_index in promoted {
+        for promoted_handle in promoted {
             propagate_reduced_live_graph_neighbors_on_handles(
-                promoted_index,
+                &promoted_handle,
                 live_subgraphs,
                 false,
                 visiting,
@@ -4234,23 +4226,23 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
     refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &active);
 
     let start_changed = {
-        let start_after = live_subgraphs[start].borrow().clone();
+        let start_after = start.borrow().clone();
         let mut start_before_without_dirty = start_before;
         start_before_without_dirty.dirty = start_after.dirty;
         start_after != start_before_without_dirty
     };
 
-    live_subgraphs[start].borrow_mut().dirty = false;
+    start.borrow_mut().dirty = false;
     let recurse_targets = live_subgraphs
         .iter()
-        .enumerate()
-        .filter_map(|(index, handle)| (index != start && handle.borrow().dirty).then_some(index))
+        .filter(|handle| !Rc::ptr_eq(handle, start) && handle.borrow().dirty)
+        .cloned()
         .collect::<Vec<_>>();
 
-    visiting.remove(&start);
-    for index in recurse_targets {
+    visiting.remove(&start_id);
+    for handle in recurse_targets {
         propagate_reduced_live_graph_neighbors_on_handles(
-            index,
+            &handle,
             live_subgraphs,
             force,
             visiting,
@@ -4259,7 +4251,7 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
     }
 
     if start_changed {
-        live_subgraphs[start].borrow_mut().dirty = true;
+        start.borrow_mut().dirty = true;
         propagate_reduced_live_graph_neighbors_on_handles(
             start,
             live_subgraphs,
