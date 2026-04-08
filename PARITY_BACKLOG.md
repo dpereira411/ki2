@@ -588,7 +588,8 @@ Current status:
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no reduced equivalent yet for upstream clone/update behavior when parent-bus propagation
         changes the effective member connection
-      - no reduced `matchBusMember()`-style remap after hierarchy propagation
+      - reduced `matchBusMember()`-style remap is now present, but only as a static link refresh,
+        not as a live connection-object mutation path
       - no live cached driver connection object that can be refreshed in place
       - connected-bus-item ownership is still keyed by reduced member snapshots, not live item /
         connection pointers
