@@ -2167,10 +2167,10 @@ fn refresh_reduced_live_bus_propagation_fixpoint(
 }
 
 // Upstream parity: reduced local bridge toward one live `propagateToNeighbors()` owner during
-// graph build. This now runs from a dirty worklist over connected hierarchy/bus components instead
-// of whole-graph repeat sweeps, so bus and hierarchy propagation mutate one shared live subgraph
-// set closer to KiCad's visited-object flow before item connections are updated. Remaining
-// divergence is the still-missing single visited/stale-member recursion on live connection objects.
+// graph build. This now runs from a dirty worklist over connected hierarchy/bus components and
+// leaves the multiple-bus-parent rename/recache step for the post-propagation phase, matching the
+// exercised KiCad ordering more closely before item connections are updated. Remaining divergence
+// is the still-missing single visited/stale-member recursion on live connection objects.
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     let mut queued = vec![true; live_subgraphs.len()];
@@ -2217,7 +2217,6 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
             &mut live_subgraphs,
             &active,
         );
-        refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
         replay_reduced_live_stale_bus_members_on_live_subgraphs_for_indexes(
             &mut live_subgraphs,
             &active,
@@ -2236,6 +2235,8 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
         }
     }
 
+    refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
+    refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
     refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(&mut live_subgraphs);
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
