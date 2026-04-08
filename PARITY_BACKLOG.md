@@ -768,6 +768,7 @@ What is not yet explicitly tracked as complete:
 - fuller KiCad/default `kicad` netlist CLI surface
   - exercised CLI default format/output path now follows KiCad's `KICADSEXPR` branch (`.net`)
   - exercised KiCad CLI format aliases now accept both `kicadsexpr` and `kicadxml`
+  - exercised `--variant <name>` now applies the selected current variant before export
 - exporter-base symbol/pin collection parity
 - remaining XML/KiCad netlist structure parity is now narrower:
   - fuller graph-owned netcode/name ownership

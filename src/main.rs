@@ -146,7 +146,7 @@ fn print_usage_and_exit() -> ! {
     );
     eprintln!("               [--exit-code-violations]");
     eprintln!(
-        "       ki2 netlist <path> [--output <path>] [--format <kicad|kicadsexpr|xml|kicadxml>]"
+        "       ki2 netlist <path> [--output <path>] [--format <kicad|kicadsexpr|xml|kicadxml>] [--variant <name>]"
     );
     std::process::exit(2);
 }
@@ -331,13 +331,15 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 // Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobExportNetlist()`. This
 // is not a 1:1 KiCad jobs/exporter path because the local CLI still exposes only reduced XML and
 // reduced KiCad-format netlist slices instead of the full common exporter base and all exporter
-// backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch and accepts
-// both the short local names and KiCad job-format aliases (`kicadsexpr`, `kicadxml`) instead of
-// narrowing the command to repo-local format spellings.
+// backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch, accepts
+// KiCad job-format aliases (`kicadsexpr`, `kicadxml`), and applies one selected current variant
+// before export through the existing `SchematicProject` owner instead of hard-coding one reduced
+// unparameterized export mode.
 fn run_netlist_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
     let mut format = NetlistOutputFormat::Kicad;
+    let mut variant = None;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
@@ -346,6 +348,11 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
                 print_usage_and_exit();
             };
             output = Some(value);
+        } else if arg == "--variant" {
+            let Some(value) = args.next() else {
+                print_usage_and_exit();
+            };
+            variant = Some(value);
         } else if arg == "--format" {
             let Some(value) = args.next() else {
                 print_usage_and_exit();
@@ -382,7 +389,12 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
             return 1;
         }
     };
-    let project = SchematicProject::from_load_result(loaded);
+    let mut project = SchematicProject::from_load_result(loaded);
+    let selected_variant = variant
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("all"));
+    project.set_current_variant(selected_variant);
     let content = match format {
         NetlistOutputFormat::Xml => render_reduced_xml_netlist(&project),
         NetlistOutputFormat::Kicad => render_reduced_kicad_netlist(&project),

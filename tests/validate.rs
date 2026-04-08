@@ -461,6 +461,114 @@ fn cli_netlist_accepts_kicad_format_aliases() {
 }
 
 #[test]
+fn cli_netlist_applies_selected_variant() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_netlist_variant_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let report_path = root_path.with_extension("xml");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000101")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "72000000-0000-0000-0000-000000000102")
+    (property "Reference" "R?")
+    (property "Value" "seed")
+    (property "Footprint" "seed-footprint")
+    (property "MPN" "seed-mpn")
+    (instances
+      (project "demo"
+        (path "/72000000-0000-0000-0000-000000000111/72000000-0000-0000-0000-000000000112"
+          (reference "R1")
+          (unit 1)
+          (value "10k")
+          (footprint "Resistor_SMD:R_0603")
+          (variant
+            (name "ALT")
+            (dnp yes)
+            (exclude_from_sim yes)
+            (in_bom no)
+            (on_board no)
+            (in_pos_files no)
+            (field (name "MPN") (value "ALT-MPN")))))))
+)"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "72000000-0000-0000-0000-000000000111")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "72000000-0000-0000-0000-000000000112")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/72000000-0000-0000-0000-000000000112" (page "1")))
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            root_path.to_str().expect("path string"),
+            "--format",
+            "xml",
+            "--variant",
+            "ALT",
+        ])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report = fs::read_to_string(&report_path).expect("read xml netlist");
+    assert!(
+        report.contains("<property name=\"exclude_from_bom\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<property name=\"exclude_from_board\" />"),
+        "{report}"
+    );
+    assert!(report.contains("<property name=\"dnp\" />"), "{report}");
+    assert!(
+        report.contains("<field name=\"MPN\">ALT-MPN</field>"),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(report_path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn cli_netlist_writes_reduced_xml_when_requested() {
     let path = temp_schematic(
         "cli_netlist_xml",
