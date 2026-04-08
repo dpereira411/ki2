@@ -1,14 +1,13 @@
 use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
     collect_reduced_label_component_snapshots, projected_symbol_pin_info,
-    resolve_reduced_driver_conflict_at,
+    resolve_reduced_driver_conflict_at, resolve_reduced_net_name_for_symbol_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    SymbolPinTextVarKind, collect_wire_segments, point_on_wire_segment, points_equal,
-    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
-    resolve_label_text_token_without_connectivity, resolve_point_connectivity_text_var,
+    collect_wire_segments, point_on_wire_segment, points_equal, resolve_cross_reference_text_var,
+    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
     resolved_symbol_text_state,
 };
@@ -2339,16 +2338,11 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                     continue;
                 };
 
-                let net_name = resolve_point_connectivity_text_var(
-                    &project.schematics,
-                    &project.sheet_paths,
-                    sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
-                    pin.at,
-                    SymbolPinTextVarKind::NetName,
-                )
-                .unwrap_or_default();
+                let net_name =
+                    resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin.at, |label| {
+                        shown_label_text(project, sheet_path, label)
+                    })
+                    .unwrap_or_default();
                 let key = format!("{reference}:{pin_number}");
 
                 if let Some(existing_net) = pin_to_net.get(&key) {
@@ -2419,16 +2413,11 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                     continue;
                 };
 
-                let net_name = resolve_point_connectivity_text_var(
-                    &project.schematics,
-                    &project.sheet_paths,
-                    sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
-                    pin.at,
-                    SymbolPinTextVarKind::NetName,
-                )
-                .unwrap_or_default();
+                let net_name =
+                    resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin.at, |label| {
+                        shown_label_text(project, sheet_path, label)
+                    })
+                    .unwrap_or_default();
 
                 pins_by_number
                     .entry(pin_number)
@@ -2912,16 +2901,11 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     continue;
                 }
 
-                let net_name = resolve_point_connectivity_text_var(
-                    &project.schematics,
-                    &project.sheet_paths,
-                    sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
-                    pin.at,
-                    SymbolPinTextVarKind::NetName,
-                )
-                .unwrap_or_default();
+                let net_name =
+                    resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin.at, |label| {
+                        shown_label_text(project, sheet_path, label)
+                    })
+                    .unwrap_or_default();
                 let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
 
                 if net_is_ground {

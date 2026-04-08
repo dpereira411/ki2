@@ -304,6 +304,8 @@ Current status:
     inside `src/netlist.rs`
   - reduced cross-sheet net grouping, duplicate-pin preference, and sorted netcode allocation now
     also live there instead of staying exporter-local
+  - reduced symbol-pin item lookup now also exists for pin-owned shown-text/ERC net-name queries
+    instead of routing those only through raw point lookups
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match

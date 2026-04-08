@@ -121,6 +121,22 @@ fn connection_component_at(schematic: &Schematic, at: [f64; 2]) -> Option<Connec
         })
 }
 
+fn connection_component_for_symbol_pin(
+    schematic: &Schematic,
+    symbol: &Symbol,
+    at: [f64; 2],
+) -> Option<ConnectionComponent> {
+    collect_connection_components(schematic)
+        .into_iter()
+        .find(|component| {
+            component.members.iter().any(|member| {
+                member.kind == ConnectionMemberKind::SymbolPin
+                    && member.symbol_uuid == symbol.uuid
+                    && points_equal(member.at, at)
+            })
+        })
+}
+
 fn point_key(at: [f64; 2]) -> PointKey {
     PointKey(at[0].to_bits(), at[1].to_bits())
 }
@@ -1259,15 +1275,14 @@ where
 //   of file order
 // - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
 //   current reduced driver path does not recurse back into itself
-pub(crate) fn resolve_reduced_net_name_at<F>(
+fn resolve_reduced_net_name_on_component<F>(
     schematic: &Schematic,
-    at: [f64; 2],
+    connected_component: &ConnectionComponent,
     mut shown_label_text: F,
 ) -> Option<String>
 where
     F: FnMut(&Label) -> String,
 {
-    let connected_component = connection_component_at(schematic, at)?;
     let mut candidates = schematic
         .screen
         .items
@@ -1349,6 +1364,36 @@ where
     );
 
     candidates.into_iter().map(|(_, _, text)| text).next()
+}
+
+pub(crate) fn resolve_reduced_net_name_at<F>(
+    schematic: &Schematic,
+    at: [f64; 2],
+    shown_label_text: F,
+) -> Option<String>
+where
+    F: FnMut(&Label) -> String,
+{
+    let connected_component = connection_component_at(schematic, at)?;
+    resolve_reduced_net_name_on_component(schematic, &connected_component, shown_label_text)
+}
+
+// Upstream parity: reduced local analogue for the symbol-pin item lookup half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the net-name path. This is not a 1:1 KiCad item map
+// because the Rust tree still identifies a placed pin by `(symbol uuid, projected pin at)` instead
+// of a live `SCH_PIN*`, but it lets pin-owned ERC/shown-text paths resolve against a symbol-pin
+// component owner instead of a raw point query.
+pub(crate) fn resolve_reduced_net_name_for_symbol_pin<F>(
+    schematic: &Schematic,
+    symbol: &Symbol,
+    at: [f64; 2],
+    shown_label_text: F,
+) -> Option<String>
+where
+    F: FnMut(&Label) -> String,
+{
+    let connected_component = connection_component_for_symbol_pin(schematic, symbol, at)?;
+    resolve_reduced_net_name_on_component(schematic, &connected_component, shown_label_text)
 }
 
 // Upstream parity: reduced local analogue for the strong-driver conflict part of
