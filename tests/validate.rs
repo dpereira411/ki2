@@ -569,6 +569,75 @@ fn cli_netlist_applies_selected_variant() {
 }
 
 #[test]
+fn cli_netlist_warns_on_duplicate_sheet_names() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_netlist_duplicate_sheet_names_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+    let report_path = root_path.with_extension("net");
+
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 10 10)
+    (uuid "74000000-0000-0000-0000-000000000010")
+    (property "Sheetname" "Child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet
+    (at 20 0)
+    (size 10 10)
+    (uuid "74000000-0000-0000-0000-000000000011")
+    (property "Sheetname" "child")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/74000000-0000-0000-0000-000000000010" (page "2"))
+    (path "/74000000-0000-0000-0000-000000000011" (page "3")))
+)"#;
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "74000000-0000-0000-0000-000000000101")
+  (paper "A4")
+)"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", root_path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(
+        output.status.success(),
+        "netlist must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(
+        stderr.contains("Warning: duplicate sheet names."),
+        "{stderr}"
+    );
+    assert!(report_path.exists(), "expected netlist output");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_file(report_path);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn cli_netlist_writes_reduced_xml_when_requested() {
     let path = temp_schematic(
         "cli_netlist_xml",

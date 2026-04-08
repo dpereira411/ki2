@@ -332,9 +332,9 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 // is not a 1:1 KiCad jobs/exporter path because the local CLI still exposes only reduced XML and
 // reduced KiCad-format netlist slices instead of the full common exporter base and all exporter
 // backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch, accepts
-// KiCad job-format aliases (`kicadsexpr`, `kicadxml`), and applies one selected current variant
-// before export through the existing `SchematicProject` owner instead of hard-coding one reduced
-// unparameterized export mode.
+// KiCad job-format aliases (`kicadsexpr`, `kicadxml`), applies one selected current variant
+// before export through the existing `SchematicProject` owner, and emits the exercised duplicate-
+// sheet-name warning branch before writing the netlist instead of keeping the command path silent.
 fn run_netlist_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
@@ -395,6 +395,11 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
         .map(str::trim)
         .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("all"));
     project.set_current_variant(selected_variant);
+
+    if !erc::check_duplicate_sheet_names(&project).is_empty() {
+        eprintln!("Warning: duplicate sheet names.");
+    }
+
     let content = match format {
         NetlistOutputFormat::Xml => render_reduced_xml_netlist(&project),
         NetlistOutputFormat::Kicad => render_reduced_kicad_netlist(&project),
