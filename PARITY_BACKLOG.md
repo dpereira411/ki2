@@ -713,6 +713,9 @@ Current status:
         ownership/control flow
       - active bus-neighbor propagation and bus-link parent/child matching no longer bounce
         through reduced subgraph indexes when the relevant live handles already exist
+      - the non-test live subgraph payload no longer stores `source_index`; reduced subgraph
+        position is now derived from the live handle graph only at projection sites, while test
+        scaffolding keeps explicit source indexes where it still needs them
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

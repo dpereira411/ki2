@@ -1574,6 +1574,7 @@ impl Ord for LiveReducedSubgraphLink {
 
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraph {
+    #[cfg(test)]
     source_index: usize,
     driver_connection: LiveReducedConnection,
     driver_priority: i32,
@@ -1609,7 +1610,8 @@ fn live_reduced_subgraph_extra_projection_eq(
     left: &LiveReducedSubgraph,
     right: &LiveReducedSubgraph,
 ) -> bool {
-    left.bus_parent_indexes == right.bus_parent_indexes
+    left.source_index == right.source_index
+        && left.bus_parent_indexes == right.bus_parent_indexes
         && left.hier_parent_index == right.hier_parent_index
         && left.hier_child_indexes == right.hier_child_indexes
 }
@@ -1624,8 +1626,7 @@ fn live_reduced_subgraph_extra_projection_eq(
 
 impl PartialEq for LiveReducedSubgraph {
     fn eq(&self, other: &Self) -> bool {
-        self.source_index == other.source_index
-            && self.driver_connection == other.driver_connection
+        self.driver_connection == other.driver_connection
             && self.driver_priority == other.driver_priority
             && self.driver_identity == other.driver_identity
             && self.drivers == other.drivers
@@ -1653,6 +1654,16 @@ type LiveReducedSubgraphHandle = Rc<RefCell<LiveReducedSubgraph>>;
 
 fn live_subgraph_handle_id(handle: &LiveReducedSubgraphHandle) -> usize {
     Rc::as_ptr(handle) as usize
+}
+
+fn live_subgraph_projection_index(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    target: &LiveReducedSubgraphHandle,
+) -> usize {
+    live_subgraphs
+        .iter()
+        .position(|handle| Rc::ptr_eq(handle, target))
+        .expect("live subgraph handle must belong to active graph")
 }
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
@@ -1772,8 +1783,9 @@ fn build_live_reduced_subgraphs(
     let mut live_subgraphs = reduced_subgraphs
         .iter()
         .enumerate()
-        .map(|(index, subgraph)| LiveReducedSubgraph {
-            source_index: index,
+        .map(|(_index, subgraph)| LiveReducedSubgraph {
+            #[cfg(test)]
+            source_index: _index,
             driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
                 subgraph,
             )),
@@ -2028,6 +2040,7 @@ fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
 }
 
 fn reduced_project_bus_link_from_live(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
     link: &LiveReducedSubgraphLink,
 ) -> ReducedProjectBusNeighborLink {
     ReducedProjectBusNeighborLink {
@@ -2036,7 +2049,7 @@ fn reduced_project_bus_link_from_live(
             .subgraph_handle
             .as_ref()
             .and_then(Weak::upgrade)
-            .map(|subgraph| subgraph.borrow().source_index)
+            .map(|subgraph| live_subgraph_projection_index(live_subgraphs, &subgraph))
             .unwrap_or_else(|| {
                 #[cfg(test)]
                 {
@@ -2051,11 +2064,14 @@ fn reduced_project_bus_link_from_live(
     }
 }
 
-fn live_subgraph_link_index(link: &LiveReducedSubgraphLink) -> usize {
+fn live_subgraph_link_index(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    link: &LiveReducedSubgraphLink,
+) -> usize {
     link.subgraph_handle
         .as_ref()
         .and_then(Weak::upgrade)
-        .map(|subgraph| subgraph.borrow().source_index)
+        .map(|subgraph| live_subgraph_projection_index(live_subgraphs, &subgraph))
         .unwrap_or_else(|| {
             #[cfg(test)]
             {
@@ -2132,7 +2148,7 @@ fn reduced_project_bus_parent_indexes_from_live_subgraph(
 ) -> Vec<usize> {
     let mut parent_indexes = live_subgraph_bus_parent_handles(live_subgraphs, subgraph)
         .into_iter()
-        .map(|handle| handle.borrow().source_index)
+        .map(|handle| live_subgraph_projection_index(live_subgraphs, &handle))
         .collect::<Vec<_>>();
     parent_indexes.sort_unstable();
     parent_indexes.dedup();
@@ -2144,10 +2160,10 @@ fn reduced_project_hierarchy_indexes_from_live_subgraph(
     subgraph: &LiveReducedSubgraph,
 ) -> (Option<usize>, Vec<usize>) {
     let parent_index = live_subgraph_parent_handle(live_subgraphs, subgraph)
-        .map(|handle| handle.borrow().source_index);
+        .map(|handle| live_subgraph_projection_index(live_subgraphs, &handle));
     let mut child_indexes = live_subgraph_child_handles(live_subgraphs, subgraph)
         .into_iter()
-        .map(|handle| handle.borrow().source_index)
+        .map(|handle| live_subgraph_projection_index(live_subgraphs, &handle))
         .collect::<Vec<_>>();
     child_indexes.sort_unstable();
     child_indexes.dedup();
@@ -2182,8 +2198,8 @@ fn apply_live_reduced_driver_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraph],
 ) {
-    for live in live_subgraphs {
-        let reduced = &mut reduced_subgraphs[live.source_index];
+    for (index, live) in live_subgraphs.iter().enumerate() {
+        let reduced = &mut reduced_subgraphs[index];
         let live_driver = live.driver_connection.snapshot();
         reduced.name = live_driver.name.clone();
         clone_reduced_connection_into_live_connection(
@@ -2226,12 +2242,12 @@ fn apply_live_reduced_driver_connections(
         reduced.bus_neighbor_links = live
             .bus_neighbor_links
             .iter()
-            .map(reduced_project_bus_link_from_live)
+            .map(|link| reduced_project_bus_link_from_live(&[], link))
             .collect();
         reduced.bus_parent_links = live
             .bus_parent_links
             .iter()
-            .map(reduced_project_bus_link_from_live)
+            .map(|link| reduced_project_bus_link_from_live(&[], link))
             .collect();
         reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
@@ -2257,9 +2273,9 @@ fn apply_live_reduced_driver_connections_from_handles(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) {
-    for handle in live_subgraphs {
+    for (index, handle) in live_subgraphs.iter().enumerate() {
         let live = handle.borrow();
-        let reduced = &mut reduced_subgraphs[live.source_index];
+        let reduced = &mut reduced_subgraphs[index];
         let live_driver = live.driver_connection.borrow();
         reduced.name = live_driver.name.clone();
         clone_live_connection_owner_into_reduced_connection(
@@ -2305,12 +2321,12 @@ fn apply_live_reduced_driver_connections_from_handles(
         reduced.bus_neighbor_links = live
             .bus_neighbor_links
             .iter()
-            .map(reduced_project_bus_link_from_live)
+            .map(|link| reduced_project_bus_link_from_live(live_subgraphs, link))
             .collect();
         reduced.bus_parent_links = live
             .bus_parent_links
             .iter()
-            .map(reduced_project_bus_link_from_live)
+            .map(|link| reduced_project_bus_link_from_live(live_subgraphs, link))
             .collect();
         let (hier_parent_index, hier_child_indexes) =
             reduced_project_hierarchy_indexes_from_live_subgraph(live_subgraphs, &live);
@@ -2324,7 +2340,7 @@ fn apply_live_reduced_driver_connections_from_handles(
                 .connected_bus_handle
                 .as_ref()
                 .and_then(Weak::upgrade)
-                .map(|bus| bus.borrow().source_index);
+                .map(|bus| live_subgraph_projection_index(live_subgraphs, &bus));
         }
     }
 }
@@ -3529,7 +3545,7 @@ fn collect_live_reduced_propagation_component_handles_from_handles(
         }
     }
 
-    component.sort_by_key(|handle| handle.borrow().source_index);
+    component.sort_by_key(live_subgraph_handle_id);
     component
 }
 
@@ -3657,10 +3673,10 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
 
         let mut sorted_links = parent_snapshot.bus_neighbor_links.clone();
         sorted_links.sort_by(|left, right| {
-            left.member
-                .name
-                .cmp(&right.member.name)
-                .then(live_subgraph_link_index(left).cmp(&live_subgraph_link_index(right)))
+            left.member.name.cmp(&right.member.name).then(
+                live_subgraph_link_index(live_subgraphs, left)
+                    .cmp(&live_subgraph_link_index(live_subgraphs, right)),
+            )
         });
 
         for link in sorted_links.clone() {
@@ -3673,7 +3689,8 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     .bus_neighbor_links
                     .iter()
                     .find(|candidate| {
-                        live_subgraph_link_index(candidate) == live_subgraph_link_index(&link)
+                        live_subgraph_link_index(live_subgraphs, candidate)
+                            == live_subgraph_link_index(live_subgraphs, &link)
                     })
                     .map(|candidate| candidate.member.clone())
                     .unwrap_or_else(|| link.member.clone())
@@ -3983,7 +4000,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
 
     for child_handle in component {
         let child_id = live_subgraph_handle_id(child_handle);
-        let child_index = child_handle.borrow().source_index;
+        let child_index = live_subgraph_projection_index(live_subgraphs, child_handle);
         for link in refreshed_parent_links.get(&child_id).into_iter().flatten() {
             let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, link) else {
                 continue;
