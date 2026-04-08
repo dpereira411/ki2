@@ -1189,6 +1189,7 @@ fn build_live_reduced_subgraph_handles(
     attach_live_subgraph_links_to_handles(&handles);
     attach_live_bus_parent_handles_to_handles(&handles);
     attach_live_hierarchy_links_to_handles(&handles);
+    clear_reduced_topology_indexes_from_live_handles(&handles);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
 }
@@ -1239,6 +1240,18 @@ fn attach_live_hierarchy_links_to_handles(live_subgraphs: &[LiveReducedSubgraphH
             .iter()
             .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
             .collect();
+    }
+}
+
+// Upstream parity: local bridge toward keeping active live topology on shared handles instead of
+// duplicated reduced indexes. After handle attachment, the active live graph no longer needs the
+// copied hierarchy/plain-parent indexes to drive propagation.
+fn clear_reduced_topology_indexes_from_live_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
+    for handle in live_subgraphs {
+        let mut subgraph = handle.borrow_mut();
+        subgraph.bus_parent_indexes.clear();
+        subgraph.hier_parent_index = None;
+        subgraph.hier_child_indexes.clear();
     }
 }
 
@@ -1602,6 +1615,15 @@ fn live_subgraph_bus_parent_handles(
     }
 
     parents
+}
+
+fn live_subgraph_has_hierarchy_handles(subgraph: &LiveReducedSubgraph) -> bool {
+    subgraph
+        .hier_parent_handle
+        .as_ref()
+        .and_then(Weak::upgrade)
+        .is_some()
+        || !subgraph.hier_child_handles.is_empty()
 }
 
 fn reduced_project_bus_parent_indexes_from_live_subgraph(
@@ -3076,8 +3098,7 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
             continue;
         }
 
-        let has_hierarchy_links =
-            snapshot.hier_parent_index.is_some() || !snapshot.hier_child_indexes.is_empty();
+        let has_hierarchy_links = live_subgraph_has_hierarchy_handles(&snapshot);
 
         if !has_hierarchy_links {
             let is_bus = matches!(
@@ -10401,6 +10422,7 @@ mod tests {
 
         assert!(Rc::ptr_eq(&bus_neighbor, &handles[1]));
         assert!(Rc::ptr_eq(&net_parent, &handles[0]));
+        assert!(net.bus_parent_indexes.is_empty());
     }
 
     #[test]
@@ -10520,6 +10542,8 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![0, 1]);
+        assert!(handles[0].borrow().hier_child_indexes.is_empty());
+        assert!(handles[1].borrow().hier_parent_index.is_none());
         let child_parent = handles[1]
             .borrow()
             .hier_parent_handle
@@ -10628,6 +10652,7 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![0, 1]);
+        assert!(handles[1].borrow().bus_parent_indexes.is_empty());
         let child_parent = handles[1]
             .borrow()
             .bus_parent_handles
