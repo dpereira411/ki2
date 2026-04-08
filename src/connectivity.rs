@@ -781,6 +781,7 @@ fn clone_reduced_connection_into_subgraph(
 // Upstream parity: local live-graph analogue for `SCH_CONNECTION::Clone()` when a propagated
 // member net replaces an older bus member name. This mutates the active live bus-member payload
 // directly instead of round-tripping through a reduced member vector inside the live graph.
+#[cfg(test)]
 fn clone_reduced_connection_into_live_bus_member(
     member: &mut LiveProjectBusMember,
     connection: &ReducedProjectConnection,
@@ -3873,7 +3874,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     neighbor_connection.name.clone(),
                     neighbor_connection.sheet_instance_path.clone(),
                     live_bus_member_search_from_live_connection(&neighbor_connection),
-                    neighbor_connection.snapshot(),
+                    neighbor_connection.clone(),
                 )
             };
             if neighbor_name == parent_member.full_local_name {
@@ -3910,7 +3911,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     ) else {
                         continue;
                     };
-                    clone_reduced_connection_into_live_bus_member(member, &promoted_connection);
+                    clone_live_connection_owner_into_live_bus_member(member, &promoted_connection);
                     member.clone()
                 };
 
@@ -4227,14 +4228,14 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             continue;
         }
 
-        let connection_snapshot = {
+        let connection = {
             let connection = subgraph_snapshot.driver_connection.borrow();
             if connection.connection_type != ReducedProjectConnectionType::Net {
                 continue;
             }
-            connection.snapshot()
+            connection.clone()
         };
-        if connection_snapshot.connection_type != ReducedProjectConnectionType::Net {
+        if connection.connection_type != ReducedProjectConnectionType::Net {
             continue;
         }
 
@@ -4252,12 +4253,12 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                     continue;
                 };
 
-                if member.full_local_name == connection_snapshot.full_local_name {
+                if member.full_local_name == connection.full_local_name {
                     continue;
                 }
 
                 let old_name = member.full_local_name.clone();
-                clone_reduced_connection_into_live_bus_member(member, &connection_snapshot);
+                clone_live_connection_owner_into_live_bus_member(member, &connection);
                 old_name
             };
             parent_handle.borrow_mut().dirty = true;
@@ -4270,8 +4271,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             for candidate_handle in candidate_handles {
                 let old_candidate_name = candidate_handle.borrow().driver_connection.name();
                 if old_candidate_name == old_name {
-                    *candidate_handle.borrow().driver_connection.borrow_mut() =
-                        connection_snapshot.clone().into();
+                    *candidate_handle.borrow().driver_connection.borrow_mut() = connection.clone();
                     sync_live_reduced_item_connections_from_driver_handle(&candidate_handle);
                     candidate_handle.borrow_mut().dirty = true;
                     recache_live_reduced_subgraph_name_handle_cache_from_handles(

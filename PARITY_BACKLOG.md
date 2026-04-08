@@ -736,6 +736,9 @@ Current status:
       - the exercised global secondary-driver promotion path now also carries the shared live
         connection owner itself instead of snapshotting the chosen connection through a reduced
         carrier before cloning it across candidate subgraphs
+      - the exercised live neighbor-promotion and multi-parent rename branches now also clone
+        live-to-live connection state on the active path instead of rebuilding full reduced
+        connection snapshots before mutating bus members or candidate driver connections
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
