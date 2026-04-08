@@ -5033,6 +5033,16 @@ fn resolve_point_netclass_value(
             )
         },
         |label: &crate::model::Label| {
+            shown_label_text_without_connectivity(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                label,
+            )
+        },
+        |label: &crate::model::Label| {
             if label.kind == crate::model::LabelKind::Directive {
                 return None;
             }

@@ -9717,6 +9717,59 @@ fn intersheet_refs_group_global_labels_by_driver_label_net_class() {
 }
 
 #[test]
+fn intersheet_refs_group_global_labels_by_bus_member_net_class() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_intersheet_refs_bus_member_net_class_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let project_path = dir.join("root.kicad_pro");
+
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "71615000-0000-0000-0000-000000000331")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (global_label "DATA[0..3]" (shape input) (at 10 0 0)
+    (property "Netclass" "FAST"))
+  (bus_entry (at 0 0) (size -5 5))
+  (wire (pts (xy -5 5) (xy -10 5)))
+  (global_label "${NET_CLASS}" (shape input) (at -10 5 0))
+  (sheet_instances
+    (path "" (page "1"))))"#;
+    let project_src = r#"{
+  "meta": { "version": 2 },
+  "drawing": { "intersheets_ref_show": true }
+}"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&project_path, project_src).expect("write project");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    assert!(
+        loaded.intersheet_ref_pages_by_label.contains_key("FAST"),
+        "{:?}",
+        loaded.intersheet_ref_pages_by_label
+    );
+    assert!(
+        !loaded
+            .intersheet_ref_pages_by_label
+            .contains_key("${NET_CLASS}"),
+        "{:?}",
+        loaded.intersheet_ref_pages_by_label
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn intersheet_refs_group_global_labels_by_rule_area_net_class() {
     let dir = env::temp_dir().join(format!(
         "ki2_intersheet_refs_rule_area_net_class_{}",

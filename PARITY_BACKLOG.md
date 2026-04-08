@@ -350,6 +350,8 @@ Current status:
     labels through the shared connectivity owner instead of leaving bus-width choice exporter-local
   - shared reduced bus-member expansion now recursively expands top-level aliases before ERC /
     naming / export consumers use those members for bus matching or driver tie-breaking
+  - shared reduced `NET_CLASS` ownership now also propagates bus-label netclass assignments to bus
+    members instead of leaving bus-entry/member netclass resolution to loader-local scans
 - reduced XML single-node `+no_connect` marking is now live in `src/netlist.rs`
 - reduced XML conditional `pinfunction` emission for single unnamed pins is now live in
   `src/netlist.rs`

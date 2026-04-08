@@ -1851,17 +1851,28 @@ where
 // `CONNECTION_SUBGRAPH::GetNetclassesForDriver()`. This is not a 1:1 KiCad graph query because the
 // Rust tree still lacks cached rule-area ownership, child-item traversal, and full subgraph
 // drivers. It exists so loader shown-text and export paths query one shared reduced connectivity
-// owner for current-sheet `NET_CLASS` instead of rebuilding directive/rule-area scans locally.
-pub(crate) fn resolve_reduced_netclass_at<F, G>(
+// owner for current-sheet `NET_CLASS` instead of rebuilding directive/rule-area scans locally. The
+// shared owner now also propagates bus-label netclass assignments down to included bus members
+// instead of leaving that expansion loader-local. Remaining divergence is fuller rule-area and
+// subgraph-owned netclass state.
+pub(crate) fn resolve_reduced_netclass_at<F, G, H>(
     schematic: &Schematic,
     at: [f64; 2],
     mut directive_netclass: F,
-    mut label_netclass: G,
+    mut shown_label_text: G,
+    mut label_netclass: H,
 ) -> Option<String>
 where
     F: FnMut(&Label) -> Option<String>,
-    G: FnMut(&Label) -> Option<String>,
+    G: FnMut(&Label) -> String,
+    H: FnMut(&Label) -> Option<String>,
 {
+    let connected_component = connection_component_at(schematic, at);
+    let component_net_name = connected_component.as_ref().and_then(|component| {
+        resolve_reduced_net_name_on_component(schematic, component, None, |label| {
+            shown_label_text(label)
+        })
+    });
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
         .screen
@@ -1931,7 +1942,7 @@ where
                 })
         })
         .or_else(|| {
-            let connected_component = connection_component_at(schematic, at)?;
+            let connected_component = connected_component.as_ref()?;
             let mut labels = schematic
                 .screen
                 .items
@@ -1954,6 +1965,32 @@ where
                 reduced_label_driver_priority(rhs)
                     .cmp(&reduced_label_driver_priority(lhs))
                     .then_with(|| lhs.text.cmp(&rhs.text))
+            });
+
+            labels.into_iter().find_map(&mut label_netclass)
+        })
+        .or_else(|| {
+            let net_name = component_net_name.as_ref()?;
+            let mut labels = schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Label(label) if label.kind != LabelKind::Directive => {
+                        let shown = shown_label_text(label);
+                        let members = reduced_bus_members(schematic, &shown);
+
+                        (!members.is_empty() && members.iter().any(|member| member == net_name))
+                            .then_some(label)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            labels.sort_by(|lhs, rhs| {
+                reduced_label_driver_priority(rhs)
+                    .cmp(&reduced_label_driver_priority(lhs))
+                    .then_with(|| shown_label_text(lhs).cmp(&shown_label_text(rhs)))
             });
 
             labels.into_iter().find_map(&mut label_netclass)
