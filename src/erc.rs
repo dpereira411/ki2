@@ -1463,12 +1463,21 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 .members
                 .iter()
                 .any(|member| member.kind == ConnectionMemberKind::SheetPin);
+            let has_hierarchical_label = schematic.screen.items.iter().any(|item| match item {
+                SchItem::Label(label) if label.kind == LabelKind::Hierarchical => {
+                    component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::Label
+                            && points_equal(member.at, label.at)
+                    })
+                }
+                _ => false,
+            });
             let has_nc_pin = component.members.iter().any(|member| {
                 member.kind == ConnectionMemberKind::SymbolPin
                     && member.electrical_type.as_deref() == Some("no_connect")
             });
 
-            if (has_sheet_pin && local_unique_pins.is_empty())
+            if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
                 || (has_nc_pin && local_unique_pins.len() <= 1)
             {
                 continue;
