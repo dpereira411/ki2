@@ -638,12 +638,25 @@ Current status:
         - live reduced connection carriers are now shared mutable local owners rather than copied
           wrapper values, and the recursive live graph mutates those owners through borrow/update
           paths instead of swapping plain reduced structs
+        - the active live graph now uses a dedicated local live connection payload instead of
+          reusing `ReducedProjectConnection` directly as its shared mutable owner
         - live bus-entry items now also keep an attached live bus connection owner during graph
           build, and only collapse back to `connected_bus_subgraph_index` when projecting to the
           reduced query surface
         - bus-neighbor propagation now mutates existing live connection owners in place instead of
           replacing them with brand-new owners, so attached live bus-entry references keep identity
           across exercised driver/member updates
+        - active live topology now prefers shared live handles for:
+          - bus member links
+          - plain bus parents
+          - hierarchy parent/child links
+          - active propagation components
+          - same-name recache caches
+        - the reduced projection now follows those live owners more directly for:
+          - bus-entry attached bus indexes
+          - bus parent indexes
+          - hierarchy parent/child indexes
+          - label/sheet-pin/hier-port live connection owners
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - the recursive walk now has local shared live connection owners, but it still does not have
@@ -665,6 +678,9 @@ Current status:
       - connected-bus-item ownership now reaches the shared live subgraph graph for bus entries,
         but still not all the way to fuller live item / connection pointer topology across every
         attached item kind
+      - live bus members and link/member payloads are still reduced structs carried inside the live
+        graph, not fuller live member/connection objects that can be recached in place without
+        round-tripping through reduced snapshots
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
