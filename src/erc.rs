@@ -2221,7 +2221,8 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // This is not a 1:1 KiCad bus-member connection pass because the Rust tree still expands only
 // reduced alias/vector members instead of full `SCH_CONNECTION::Members()` trees. It exists so the
 // graph-backed ERC runner now flags bus label/port pairs on one connected component when their
-// reduced member sets do not overlap. Remaining divergence is fuller nested bus-member semantics.
+// reduced member-name sets do not overlap. Remaining divergence is fuller nested bus-member
+// semantics beyond this reduced name-only overlap check.
 pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2288,11 +2289,9 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                 continue;
             };
 
-            let has_match = label_members.iter().any(|member| {
-                port_members
-                    .iter()
-                    .any(|test| test != member && test == member)
-            });
+            let has_match = label_members
+                .iter()
+                .any(|member| port_members.iter().any(|test| test == member));
 
             if has_match {
                 continue;

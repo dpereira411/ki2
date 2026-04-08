@@ -456,6 +456,7 @@ Current status:
 - current remaining bus graph gaps are the member-aware branches, not gross bus-vs-net conflicts
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusConflicts()` coverage is now live through:
   - reduced bus-member expansion from aliases and bracketed vectors
+  - reduced shared-member overlap acceptance for connected bus label/port pairs
   - shared reduced label/port connected components
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
   - shared reduced wire/bus-entry components

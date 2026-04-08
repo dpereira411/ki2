@@ -2599,6 +2599,33 @@ fn erc_reports_bus_to_bus_conflicts() {
 }
 
 #[test]
+fn erc_allows_bus_to_bus_overlap_on_shared_member() {
+    let path = temp_schematic(
+        "erc_bus_to_bus_overlap",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 5) (xy 10 5)))
+  (global_label "DATA[0..7]" (shape input) (at -5 5 0) (effects (font (size 1 1))))
+  (hierarchical_label "DATA[7..9]" (shape input) (at 10 5 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-bus-to-bus-conflict"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_bus_entry_member_conflicts() {
     let path = temp_schematic(
         "erc_bus_entry_conflict",
