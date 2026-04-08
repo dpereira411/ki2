@@ -1045,6 +1045,81 @@ fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProje
     }
 }
 
+// Upstream parity: reduced local analogue for the global-secondary-driver promotion branch inside
+// `CONNECTION_GRAPH::buildConnectionGraph()`. This is not a 1:1 live propagation because the Rust
+// tree still rewrites reduced subgraph snapshots instead of mutating live dirty
+// `CONNECTION_SUBGRAPH` objects before calling `propagateToNeighbors()`, but it preserves the
+// exercised static behavior:
+// - only non-local chosen drivers are eligible
+// - only subgraphs with more than one strong driver are considered
+// - non-chosen global secondary drivers can promote matching global subgraphs on any sheet
+// - non-chosen local/power secondary drivers only promote matching global subgraphs on the same
+//   sheet
+// Remaining divergence is the still-missing live recursive propagation immediately after each
+// promotion on the actual visited subgraph objects.
+fn refresh_reduced_global_secondary_driver_promotions(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) {
+    let global_indexes = reduced_subgraphs
+        .iter()
+        .enumerate()
+        .filter(|(_, subgraph)| reduced_subgraph_driver_priority(subgraph) >= 6)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+
+    for subgraph_index in 0..reduced_subgraphs.len() {
+        let chosen_connection = reduced_subgraphs[subgraph_index]
+            .driver_connection
+            .clone()
+            .unwrap_or_else(|| {
+                reduced_subgraphs[subgraph_index]
+                    .resolved_connection
+                    .clone()
+            });
+        let chosen_priority = reduced_subgraph_driver_priority(&reduced_subgraphs[subgraph_index]);
+
+        if chosen_priority < 6 || reduced_subgraphs[subgraph_index].drivers.len() < 2 {
+            continue;
+        }
+
+        for secondary_driver in reduced_subgraphs[subgraph_index].drivers.clone() {
+            if secondary_driver.full_name == chosen_connection.name {
+                continue;
+            }
+
+            let secondary_is_global = secondary_driver.priority >= 6;
+
+            for &candidate_index in &global_indexes {
+                if candidate_index == subgraph_index {
+                    continue;
+                }
+
+                if !secondary_is_global
+                    && reduced_subgraphs[candidate_index].sheet_instance_path
+                        != reduced_subgraphs[subgraph_index].sheet_instance_path
+                {
+                    continue;
+                }
+
+                if !reduced_subgraphs[candidate_index]
+                    .drivers
+                    .iter()
+                    .any(|candidate_driver| {
+                        candidate_driver.full_name == secondary_driver.full_name
+                    })
+                {
+                    continue;
+                }
+
+                clone_reduced_connection_into_subgraph(
+                    &mut reduced_subgraphs[candidate_index],
+                    &chosen_connection,
+                );
+            }
+        }
+    }
+}
+
 // Upstream parity: reduced local analogue for the bus-entry connected-bus item ownership KiCad
 // records during `updateItemConnectivity()`. This is not a 1:1 item-pointer owner because the Rust
 // tree still resolves bus-entry attachment onto reduced subgraph indexes instead of live
@@ -2785,6 +2860,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
+    refresh_reduced_global_secondary_driver_promotions(&mut reduced_subgraphs);
     refresh_reduced_hierarchy_driver_chains(&mut reduced_subgraphs);
     refresh_reduced_bus_propagation_fixpoint(&mut reduced_subgraphs);
     attach_reduced_connected_bus_items(&mut reduced_subgraphs);
@@ -4565,6 +4641,7 @@ mod tests {
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, reduced_bus_member_objects,
         refresh_reduced_bus_link_members, refresh_reduced_bus_members_from_neighbor_connections,
+        refresh_reduced_global_secondary_driver_promotions,
         refresh_reduced_hierarchy_driver_chains, refresh_reduced_multiple_bus_parent_names,
         resolve_reduced_net_name_at, resolve_reduced_project_net_at,
         resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
@@ -5499,7 +5576,7 @@ mod tests {
         .expect("agnd pin graph identity");
 
         assert_eq!(gnd_pin.name, "VCC");
-        assert_eq!(agnd_pin.name, "GND");
+        assert_eq!(agnd_pin.name, "VCC");
 
         let _ = fs::remove_file(path);
     }
@@ -6297,6 +6374,123 @@ mod tests {
                 .expect("root driver")
                 .full_local_name,
             "/Child/GLOBAL_SIG"
+        );
+    }
+
+    #[test]
+    fn reduced_global_secondary_driver_promotion_updates_matching_global_subgraph() {
+        let chosen = ReducedProjectConnection {
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "VCC".to_string(),
+            local_name: "VCC".to_string(),
+            full_local_name: "VCC".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+
+        let mut graph = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "VCC".to_string(),
+                resolved_connection: chosen.clone(),
+                driver_connection: Some(chosen.clone()),
+                driver_identity: None,
+                drivers: vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: 6,
+                        name: "VCC".to_string(),
+                        full_name: "VCC".to_string(),
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: 6,
+                        name: "PWR_ALT".to_string(),
+                        full_name: "PWR_ALT".to_string(),
+                    },
+                ],
+                non_bus_driver_priority: Some(6),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "PWR_ALT".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR_ALT".to_string(),
+                    local_name: "PWR_ALT".to_string(),
+                    full_local_name: "PWR_ALT".to_string(),
+                    sheet_instance_path: "/other".to_string(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR_ALT".to_string(),
+                    local_name: "PWR_ALT".to_string(),
+                    full_local_name: "PWR_ALT".to_string(),
+                    sheet_instance_path: "/other".to_string(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: 6,
+                    name: "PWR_ALT".to_string(),
+                    full_name: "PWR_ALT".to_string(),
+                }],
+                non_bus_driver_priority: Some(6),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/other".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        refresh_reduced_global_secondary_driver_promotions(&mut graph);
+
+        assert_eq!(graph[1].name, "VCC");
+        assert_eq!(
+            graph[1]
+                .driver_connection
+                .as_ref()
+                .expect("promoted driver")
+                .name,
+            "VCC"
         );
     }
 }

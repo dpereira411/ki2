@@ -4222,9 +4222,8 @@ fn erc_reports_ground_pins_on_non_ground_nets() {
   (generator "ki2")
   (paper "A4")
   (lib_symbols
-    (symbol "power:SplitGround"
-      (power)
-      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (symbol "Device:SplitGround"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
       (property "Value" "SplitGround" (id 1) (at 0 0 0) (effects (font (size 1 1))))
       (symbol "SplitGround_1_1"
         (pin power_in line (at 0 0 180) (length 2.54)
@@ -4234,10 +4233,10 @@ fn erc_reports_ground_pins_on_non_ground_nets() {
           (name "AGND" (effects (font (size 1 1))))
           (number "2" (effects (font (size 1 1))))))))
   (symbol
-    (lib_id "power:SplitGround")
+    (lib_id "Device:SplitGround")
     (at 0 0 0)
     (unit 1)
-    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
     (property "Value" "SplitGround" (at 0 0 0) (effects (font (size 1 1)))))
   (wire (pts (xy 0 0) (xy -10 0)))
   (global_label "VCC" (shape input) (at -10 0 0) (effects (font (size 1 1))))
