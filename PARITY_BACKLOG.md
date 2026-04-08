@@ -470,15 +470,17 @@ Current status:
 - current remaining gap in that cluster is fuller bus conflict/subgraph semantics, not absence of
   the wire/bus-entry floating-endpoint rules
 - reduced `CONNECTION_GRAPH::ercCheckBusToNetConflicts()` coverage is now live through:
-  - shared reduced wire/bus connected components
+  - shared reduced project subgraphs
+  - shared reduced wire/bus line membership on those subgraphs
   - reduced bus-vs-net classification from line kind and shown text
 - current remaining bus graph gaps are the member-aware branches, not gross bus-vs-net conflicts
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusConflicts()` coverage is now live through:
   - reduced bus-member expansion from aliases and bracketed vectors
   - reduced shared-member overlap acceptance for connected bus label/port pairs
-  - shared reduced label/port connected components
+  - shared reduced label/port ownership on project subgraphs
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
-  - shared reduced wire/bus-entry components
+  - shared reduced project subgraphs
+  - shared reduced bus-entry line membership
   - reduced bus-member expansion plus reduced non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
   - KiCad-style suppression when a higher-priority global label or power pin overrides the bus

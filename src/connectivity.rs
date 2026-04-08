@@ -134,6 +134,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) label_points: Vec<(PointKey, LabelKind)>,
     pub(crate) sheet_pin_points: Vec<PointKey>,
     pub(crate) no_connect_points: Vec<PointKey>,
+    pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
 }
 
@@ -1007,6 +1008,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         label_points: Vec<(PointKey, LabelKind)>,
         sheet_pin_points: Vec<PointKey>,
         no_connect_points: Vec<PointKey>,
+        bus_items: Vec<ReducedSubgraphWireItem>,
         wire_items: Vec<ReducedSubgraphWireItem>,
     }
 
@@ -1134,7 +1136,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     names.dedup();
                     names
                 };
-                let (label_points, sheet_pin_points, no_connect_points, wire_items) =
+                let (label_points, sheet_pin_points, no_connect_points, bus_items, wire_items) =
                     collect_reduced_subgraph_local_membership(schematic, &connected_component);
 
                 pending_subgraphs.push(PendingProjectSubgraph {
@@ -1151,6 +1153,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     label_points,
                     sheet_pin_points,
                     no_connect_points,
+                    bus_items,
                     wire_items,
                 });
 
@@ -1249,7 +1252,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 continue;
             }
 
-            let (label_points, sheet_pin_points, no_connect_points, wire_items) =
+            let (label_points, sheet_pin_points, no_connect_points, bus_items, wire_items) =
                 collect_reduced_subgraph_local_membership(schematic, &connected_component);
 
             pending_subgraphs.push(PendingProjectSubgraph {
@@ -1272,6 +1275,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 label_points,
                 sheet_pin_points,
                 no_connect_points,
+                bus_items,
                 wire_items,
             });
         }
@@ -1352,6 +1356,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             label_points: pending.label_points.clone(),
             sheet_pin_points: pending.sheet_pin_points.clone(),
             no_connect_points: pending.no_connect_points.clone(),
+            bus_items: pending.bus_items.clone(),
             wire_items: pending.wire_items.clone(),
         };
 
@@ -1794,6 +1799,7 @@ fn collect_reduced_subgraph_local_membership(
     Vec<PointKey>,
     Vec<PointKey>,
     Vec<ReducedSubgraphWireItem>,
+    Vec<ReducedSubgraphWireItem>,
 ) {
     let mut label_points = connected_component
         .members
@@ -1838,6 +1844,36 @@ fn collect_reduced_subgraph_local_membership(
         .iter()
         .map(|member| point_key(member.at))
         .collect::<BTreeSet<_>>();
+    let mut bus_items = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Bus(line) => {
+                let start = line.points.first().copied()?;
+                let end = line.points.last().copied()?;
+                (component_points.contains(&point_key(start))
+                    || component_points.contains(&point_key(end)))
+                .then_some(ReducedSubgraphWireItem {
+                    start: point_key(start),
+                    end: point_key(end),
+                    is_bus_entry: false,
+                })
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    bus_items.sort_by_key(|item| {
+        (
+            item.start.0,
+            item.start.1,
+            item.end.0,
+            item.end.1,
+            item.is_bus_entry,
+        )
+    });
+    bus_items.dedup();
+
     let mut wire_items = schematic
         .screen
         .items
@@ -1883,6 +1919,7 @@ fn collect_reduced_subgraph_local_membership(
         label_points,
         sheet_pin_points,
         no_connect_points,
+        bus_items,
         wire_items,
     )
 }

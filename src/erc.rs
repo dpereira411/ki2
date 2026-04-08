@@ -717,18 +717,6 @@ fn unresolved_variable_diagnostic(path: &std::path::Path, message: String) -> Di
     }
 }
 
-fn component_contains_line_kind(
-    component: &crate::connectivity::ConnectionComponent,
-    line: &crate::model::Line,
-) -> bool {
-    line.points.windows(2).any(|segment| {
-        component
-            .members
-            .iter()
-            .any(|member| point_on_wire_segment(member.at, segment[0], segment[1]))
-    })
-}
-
 fn child_sheet_path_for_sheet<'a>(
     project: &'a SchematicProject,
     parent_path: &crate::loader::LoadedSheetPath,
@@ -738,6 +726,35 @@ fn child_sheet_path_for_sheet<'a>(
         .child_sheet_paths(&parent_path.instance_path)
         .into_iter()
         .find(|child| child.sheet_uuid == sheet.uuid)
+}
+
+fn reduced_subgraph_matches(
+    subgraph: &crate::connectivity::ReducedProjectSubgraphEntry,
+    other: &crate::connectivity::ReducedProjectSubgraphEntry,
+) -> bool {
+    subgraph.sheet_instance_path == other.sheet_instance_path
+        && subgraph.subgraph_code == other.subgraph_code
+}
+
+fn subgraph_labels<'a>(
+    graph: &crate::connectivity::ReducedProjectNetGraph,
+    sheet_path: &'a crate::loader::LoadedSheetPath,
+    schematic: &'a crate::model::Schematic,
+    subgraph: &crate::connectivity::ReducedProjectSubgraphEntry,
+) -> Vec<&'a crate::model::Label> {
+    schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Label(label) => Some(label),
+            _ => None,
+        })
+        .filter(|label| {
+            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label)
+                .is_some_and(|label_subgraph| reduced_subgraph_matches(subgraph, label_subgraph))
+        })
+        .collect()
 }
 
 fn shown_symbol_property_text(
@@ -2302,196 +2319,85 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToNetConflicts()`.
 // This is not a 1:1 KiCad subgraph/`SCH_CONNECTION` pass because the Rust tree still classifies
 // bus-vs-net ownership from line kinds and reduced shown-text instead of full bus-member
-// connections. It exists so the current graph-backed ERC runner now flags connected bus/net mixes
-// on the shared reduced component owner rather than leaving the branch entirely unported. Remaining
-// divergence is fuller member-aware bus semantics.
+// connections. It now flags connected bus/net mixes on shared reduced project subgraphs instead of
+// rebuilding per-sheet connection components. Remaining divergence is fuller member-aware bus
+// semantics.
 pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
+    for subgraph in collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .filter(|subgraph| !subgraph.wire_items.iter().any(|item| item.is_bus_entry))
+    {
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
+            continue;
+        };
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
 
-        for component in collect_connection_components(schematic) {
-            if component
-                .members
-                .iter()
-                .any(|member| member.kind == ConnectionMemberKind::BusEntry)
-            {
+        let mut has_bus_item = !subgraph.bus_items.is_empty();
+        let mut has_net_item = !subgraph.wire_items.is_empty();
+        let mut net_at = subgraph
+            .wire_items
+            .first()
+            .map(|item| [f64::from_bits(item.start.0), f64::from_bits(item.start.1)]);
+
+        for label in subgraph_labels(&graph, sheet_path, schematic, &subgraph) {
+            if label.kind == LabelKind::Directive {
                 continue;
             }
 
-            let mut has_bus_item = false;
-            let mut has_net_item = false;
-            let mut net_at = None;
-
-            for item in &schematic.screen.items {
-                match item {
-                    SchItem::Wire(line) | SchItem::Bus(line)
-                        if component_contains_line_kind(&component, line) =>
-                    {
-                        match line.kind {
-                            crate::model::LineKind::Bus => has_bus_item = true,
-                            crate::model::LineKind::Wire => {
-                                has_net_item = true;
-                                net_at.get_or_insert_with(|| {
-                                    line.points.first().copied().unwrap_or(component.anchor)
-                                });
-                            }
-                            crate::model::LineKind::Polyline => {}
-                        }
-                    }
-                    SchItem::Label(label)
-                        if component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::Label
-                                && points_equal(member.at, label.at)
-                        }) =>
-                    {
-                        if label.kind == LabelKind::Directive {
-                            continue;
-                        }
-
-                        if reduced_text_is_bus(
-                            schematic,
-                            &shown_label_text(project, sheet_path, label),
-                        ) {
-                            has_bus_item = true;
-                        } else {
-                            has_net_item = true;
-                            net_at.get_or_insert(label.at);
-                        }
-                    }
-                    SchItem::Sheet(sheet) => {
-                        for pin in &sheet.pins {
-                            if !component.members.iter().any(|member| {
-                                member.kind == ConnectionMemberKind::SheetPin
-                                    && points_equal(member.at, pin.at)
-                            }) {
-                                continue;
-                            }
-
-                            if reduced_text_is_bus(schematic, &pin.name) {
-                                has_bus_item = true;
-                            } else {
-                                has_net_item = true;
-                                net_at.get_or_insert(pin.at);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            if has_bus_item && has_net_item {
-                let report_at = net_at.unwrap_or(component.anchor);
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-bus-to-net-conflict",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Bus and net items are graphically connected at {}, {}",
-                        report_at[0], report_at[1]
-                    ),
-                    path: Some(sheet_path.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
+            if reduced_text_is_bus(schematic, &shown_label_text(project, sheet_path, label)) {
+                has_bus_item = true;
+            } else {
+                has_net_item = true;
+                net_at.get_or_insert(label.at);
             }
         }
-    }
 
-    diagnostics
-}
-
-// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusConflicts()`.
-// This is not a 1:1 KiCad bus-member connection pass because the Rust tree still expands only
-// reduced alias/vector members instead of full `SCH_CONNECTION::Members()` trees. It exists so the
-// graph-backed ERC runner now flags bus label/port pairs on one connected component when their
-// reduced member-name sets do not overlap. Remaining divergence is fuller nested bus-member
-// semantics beyond this reduced name-only overlap check.
-pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
-
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-
-        for component in collect_connection_components(schematic) {
-            let mut label_members = None::<Vec<String>>;
-            let mut label_at = None::<[f64; 2]>;
-            let mut port_members = None::<Vec<String>>;
-
-            for item in &schematic.screen.items {
-                match item {
-                    SchItem::Label(label)
-                        if component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::Label
-                                && points_equal(member.at, label.at)
-                        }) && matches!(label.kind, LabelKind::Local | LabelKind::Global) =>
-                    {
-                        let shown = shown_label_text(project, sheet_path, label);
-                        if reduced_text_is_bus(schematic, &shown) {
-                            label_at.get_or_insert(label.at);
-                            label_members
-                                .get_or_insert_with(|| reduced_bus_members(schematic, &shown));
-                        }
-                    }
-                    SchItem::Label(label)
-                        if component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::Label
-                                && points_equal(member.at, label.at)
-                        }) && label.kind == LabelKind::Hierarchical =>
-                    {
-                        let shown = shown_label_text(project, sheet_path, label);
-                        if reduced_text_is_bus(schematic, &shown) {
-                            port_members
-                                .get_or_insert_with(|| reduced_bus_members(schematic, &shown));
-                        }
-                    }
-                    SchItem::Sheet(sheet) => {
-                        for pin in &sheet.pins {
-                            if !component.members.iter().any(|member| {
-                                member.kind == ConnectionMemberKind::SheetPin
-                                    && points_equal(member.at, pin.at)
-                            }) {
-                                continue;
-                            }
-
-                            if reduced_text_is_bus(schematic, &pin.name) {
-                                port_members.get_or_insert_with(|| {
-                                    reduced_bus_members(schematic, &pin.name)
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            let (Some(label_members), Some(port_members), Some(label_at)) =
-                (label_members, port_members, label_at)
-            else {
+        for item in &schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
                 continue;
             };
 
-            let has_match = label_members
-                .iter()
-                .any(|member| port_members.iter().any(|test| test == member));
+            for pin in &sheet.pins {
+                if !subgraph
+                    .sheet_pin_points
+                    .contains(&crate::connectivity::PointKey(
+                        pin.at[0].to_bits(),
+                        pin.at[1].to_bits(),
+                    ))
+                {
+                    continue;
+                }
 
-            if has_match {
-                continue;
+                if reduced_text_is_bus(schematic, &pin.name) {
+                    has_bus_item = true;
+                } else {
+                    has_net_item = true;
+                    net_at.get_or_insert(pin.at);
+                }
             }
+        }
 
+        if has_bus_item && has_net_item {
+            let report_at = net_at.unwrap_or([
+                f64::from_bits(subgraph.anchor.0),
+                f64::from_bits(subgraph.anchor.1),
+            ]);
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
-                code: "erc-bus-to-bus-conflict",
+                code: "erc-bus-to-net-conflict",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: format!(
-                    "Bus label and port do not share members at {}, {}",
-                    label_at[0], label_at[1]
+                    "Bus and net items are graphically connected at {}, {}",
+                    report_at[0], report_at[1]
                 ),
                 path: Some(sheet_path.schematic_path.clone()),
                 span: None,
@@ -2504,120 +2410,220 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
     diagnostics
 }
 
-// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
-// This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
-// net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
-// ownership. It now mirrors the exercised KiCad flow for both the member test and the follow-on
-// suppression branch where a higher-priority global label or power pin overrides the bus member.
-// Remaining divergence is fuller bus-object ownership and cached subgraph driver state.
-pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusConflicts()`.
+// This is not a 1:1 KiCad bus-member connection pass because the Rust tree still expands only
+// reduced alias/vector members instead of full `SCH_CONNECTION::Members()` trees. It now flags bus
+// label/port pairs on shared reduced project subgraphs instead of rebuilding per-sheet connection
+// components. Remaining divergence is fuller nested bus-member semantics beyond this reduced
+// name-only overlap check.
+pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
+    for subgraph in collect_reduced_project_subgraphs(project, false) {
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
+            continue;
+        };
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
 
-        for component in collect_connection_components(schematic) {
-            if !component
-                .members
-                .iter()
-                .any(|member| member.kind == ConnectionMemberKind::BusEntry)
-            {
+        let mut label_members = None::<Vec<String>>;
+        let mut label_at = None::<[f64; 2]>;
+        let mut port_members = None::<Vec<String>>;
+
+        for label in subgraph_labels(&graph, sheet_path, schematic, &subgraph) {
+            let shown = shown_label_text(project, sheet_path, label);
+            if !reduced_text_is_bus(schematic, &shown) {
                 continue;
             }
 
-            let mut bus_name = None::<String>;
-            let mut bus_members = None::<Vec<String>>;
-            let mut net_names = Vec::<String>::new();
-            let mut entry_at = component
-                .members
-                .iter()
-                .find(|member| member.kind == ConnectionMemberKind::BusEntry)
-                .map(|member| member.at)
-                .unwrap_or(component.anchor);
-
-            for item in &schematic.screen.items {
-                match item {
-                    SchItem::Bus(line) if component_contains_line_kind(&component, line) => {}
-                    SchItem::Label(label)
-                        if component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::Label
-                                && points_equal(member.at, label.at)
-                        }) =>
-                    {
-                        if label.kind == LabelKind::Directive {
-                            continue;
-                        }
-
-                        let shown = shown_label_text(project, sheet_path, label);
-
-                        if reduced_text_is_bus(schematic, &shown) {
-                            bus_name.get_or_insert(shown.clone());
-                            bus_members
-                                .get_or_insert_with(|| reduced_bus_members(schematic, &shown));
-                        } else {
-                            net_names.push(shown);
-                            entry_at = label.at;
-                        }
-                    }
-                    SchItem::Sheet(sheet) => {
-                        for pin in &sheet.pins {
-                            if !component.members.iter().any(|member| {
-                                member.kind == ConnectionMemberKind::SheetPin
-                                    && points_equal(member.at, pin.at)
-                            }) {
-                                continue;
-                            }
-
-                            if reduced_text_is_bus(schematic, &pin.name) {
-                                bus_name.get_or_insert(pin.name.clone());
-                                bus_members.get_or_insert_with(|| {
-                                    reduced_bus_members(schematic, &pin.name)
-                                });
-                            } else {
-                                net_names.push(pin.name.clone());
-                                entry_at = pin.at;
-                            }
-                        }
-                    }
-                    _ => {}
+            match label.kind {
+                LabelKind::Local | LabelKind::Global => {
+                    label_at.get_or_insert(label.at);
+                    label_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
                 }
+                LabelKind::Hierarchical => {
+                    port_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
+                }
+                LabelKind::Directive => {}
             }
+        }
 
-            let (Some(bus_name), Some(bus_members)) = (bus_name, bus_members) else {
+        for item in &schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
                 continue;
             };
 
-            let suppress_conflict =
-                resolve_reduced_non_bus_driver_priority_at(schematic, component.anchor, |label| {
-                    shown_label_text(project, sheet_path, label)
-                })
-                .is_some_and(|priority| priority >= 6);
-
-            for net_name in net_names {
-                if bus_members.iter().any(|member| member == &net_name) {
+            for pin in &sheet.pins {
+                if !subgraph
+                    .sheet_pin_points
+                    .contains(&crate::connectivity::PointKey(
+                        pin.at[0].to_bits(),
+                        pin.at[1].to_bits(),
+                    ))
+                {
                     continue;
                 }
 
-                if suppress_conflict {
-                    continue;
+                if reduced_text_is_bus(schematic, &pin.name) {
+                    port_members.get_or_insert_with(|| reduced_bus_members(schematic, &pin.name));
                 }
-
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    code: "erc-bus-entry-conflict",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
-                        entry_at[0], entry_at[1]
-                    ),
-                    path: Some(sheet_path.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
             }
+        }
+
+        let (Some(label_members), Some(port_members), Some(label_at)) =
+            (label_members, port_members, label_at)
+        else {
+            continue;
+        };
+
+        let has_match = label_members
+            .iter()
+            .any(|member| port_members.iter().any(|test| test == member));
+
+        if has_match {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-bus-to-bus-conflict",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!(
+                "Bus label and port do not share members at {}, {}",
+                label_at[0], label_at[1]
+            ),
+            path: Some(sheet_path.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
+    }
+
+    diagnostics
+}
+
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
+// This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
+// net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
+// ownership. It now mirrors the exercised KiCad flow on shared reduced project subgraphs instead
+// of rebuilding per-sheet connection components. Remaining divergence is fuller bus-object
+// ownership and cached subgraph driver state.
+pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
+
+    for subgraph in collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .filter(|subgraph| subgraph.wire_items.iter().any(|item| item.is_bus_entry))
+    {
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
+            continue;
+        };
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        let mut bus_name = None::<String>;
+        let mut bus_members = None::<Vec<String>>;
+        let mut net_names = Vec::<String>::new();
+        let mut entry_at = subgraph
+            .wire_items
+            .iter()
+            .find(|item| item.is_bus_entry)
+            .map(|item| [f64::from_bits(item.start.0), f64::from_bits(item.start.1)])
+            .unwrap_or([
+                f64::from_bits(subgraph.anchor.0),
+                f64::from_bits(subgraph.anchor.1),
+            ]);
+
+        for label in subgraph_labels(&graph, sheet_path, schematic, &subgraph) {
+            if label.kind == LabelKind::Directive {
+                continue;
+            }
+
+            let shown = shown_label_text(project, sheet_path, label);
+
+            if reduced_text_is_bus(schematic, &shown) {
+                bus_name.get_or_insert(shown.clone());
+                bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
+            } else {
+                net_names.push(shown);
+                entry_at = label.at;
+            }
+        }
+
+        for item in &schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
+                continue;
+            };
+
+            for pin in &sheet.pins {
+                if !subgraph
+                    .sheet_pin_points
+                    .contains(&crate::connectivity::PointKey(
+                        pin.at[0].to_bits(),
+                        pin.at[1].to_bits(),
+                    ))
+                {
+                    continue;
+                }
+
+                if reduced_text_is_bus(schematic, &pin.name) {
+                    bus_name.get_or_insert(pin.name.clone());
+                    bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &pin.name));
+                } else {
+                    net_names.push(pin.name.clone());
+                    entry_at = pin.at;
+                }
+            }
+        }
+
+        let (Some(bus_name), Some(bus_members)) = (bus_name, bus_members) else {
+            continue;
+        };
+
+        let suppress_conflict = resolve_reduced_non_bus_driver_priority_at(
+            schematic,
+            [
+                f64::from_bits(subgraph.anchor.0),
+                f64::from_bits(subgraph.anchor.1),
+            ],
+            |label| shown_label_text(project, sheet_path, label),
+        )
+        .is_some_and(|priority| priority >= 6);
+
+        for net_name in net_names {
+            if bus_members.iter().any(|member| member == &net_name) {
+                continue;
+            }
+
+            if suppress_conflict {
+                continue;
+            }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "erc-bus-entry-conflict",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
+                    entry_at[0], entry_at[1]
+                ),
+                path: Some(sheet_path.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 
