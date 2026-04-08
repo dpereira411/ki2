@@ -1532,12 +1532,10 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
         xml.push_str(&format!(" lib=\"{}\"", escape_xml(&component.lib)));
         xml.push_str(&format!(" part=\"{}\"", escape_xml(&component.part)));
 
-        if !component.description.is_empty() {
-            xml.push_str(&format!(
-                " description=\"{}\"",
-                escape_xml(&component.description)
-            ));
-        }
+        xml.push_str(&format!(
+            " description=\"{}\"",
+            escape_xml(&component.description)
+        ));
 
         xml.push_str(" />\n");
         xml.push_str(&format!(

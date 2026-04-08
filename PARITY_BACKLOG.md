@@ -704,6 +704,7 @@ What is already covered indirectly:
   - reference/value/footprint/datasheet/description export
   - reduced `libsource`
     - exercised schematic `lib_name` / non-`UseLibIdLookup()` branch is now live
+    - exercised always-present `description=` attribute is now live, including empty descriptions
   - reduced component metadata properties:
     - `exclude_from_bom`
     - `exclude_from_board`

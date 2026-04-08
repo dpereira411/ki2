@@ -448,6 +448,7 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     );
     assert!(report.contains("lib=\"Device\""), "{report}");
     assert!(report.contains("part=\"R\""), "{report}");
+    assert!(report.contains("description=\"\""), "{report}");
     assert!(report.contains("<libparts>"), "{report}");
     assert!(report.contains("<libraries>"), "{report}");
     assert!(
