@@ -4219,6 +4219,55 @@ fn erc_reports_connected_no_connect_pins() {
 }
 
 #[test]
+fn erc_reports_connected_no_connect_markers_across_named_subgraphs() {
+    let path = temp_schematic(
+        "erc_connected_no_connect_marker_named_subgraphs",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73922000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:IN"
+      (symbol "IN_1_1"
+        (pin input line
+          (at 0 0 0)
+          (length 2.54)
+          (name "IN")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:IN")
+    (at 0 0 0)
+    (uuid "73922000-0000-0000-0000-000000000002"))
+  (symbol
+    (lib_id "Device:IN")
+    (at 40 0 0)
+    (uuid "73922000-0000-0000-0000-000000000003"))
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (global_label "SHARED" (shape input) (at -10 0 0))
+  (no_connect (at 0 0))
+  (wire (pts (xy 30 0) (xy 40 0)))
+  (global_label "SHARED" (shape input) (at 30 0 0))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-no-connect-connected")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "No-connect marker is attached to a connected net"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_labels_connected_to_only_one_pin() {
     let path = temp_schematic(
         "erc_label_single_pin",

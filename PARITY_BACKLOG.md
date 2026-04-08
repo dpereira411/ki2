@@ -382,6 +382,11 @@ Current status:
 - reduced `CONNECTION_GRAPH::ercCheckDirectiveLabels()` coverage is now live through the shared
   reduced label-component snapshot
 - the small graph-owned label/hierarchy cluster is now covered in the reduced graph
+- reduced `CONNECTION_GRAPH::ercCheckNoConnects()` coverage is now live for:
+  - no-connect markers on connected local nets
+  - no-connect markers on same-name disconnected subgraphs that KiCad merges into one net
+  - current divergence is the fuller hier-pin/port special-case path and marker attachment, not
+    absence of the graph-owned no-connect rule
 - reduced wire-only coverage is now live for:
   - `CONNECTION_GRAPH::ercCheckFloatingWires()`
   - `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`
