@@ -5,8 +5,7 @@ use crate::connectivity::{
     collect_reduced_project_subgraphs_by_name, projected_symbol_pin_info,
     reduced_bus_member_full_local_names, reduced_project_subgraph_by_index,
     reduced_project_subgraph_index, resolve_reduced_project_net_for_symbol_pin,
-    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
-    resolve_reduced_project_subgraph_for_no_connect,
+    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -1759,28 +1758,23 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 .cloned()
                 .collect::<std::collections::BTreeSet<_>>();
             let local_unique_labels = subgraph
-                .label_points
+                .label_links
                 .iter()
-                .map(|(point, _kind)| (subgraph.sheet_instance_path.clone(), *point))
+                .map(|label| (subgraph.sheet_instance_path.clone(), label.at))
                 .collect::<std::collections::BTreeSet<_>>();
-            let has_sheet_pin = subgraph
-                .sheet_pin_points
-                .contains(&crate::connectivity::PointKey(
-                    no_connect.at[0].to_bits(),
-                    no_connect.at[1].to_bits(),
-                ));
-            let has_hierarchical_label = schematic.screen.items.iter().any(|item| match item {
-                SchItem::Label(label)
-                    if label.kind == LabelKind::Hierarchical
-                        && points_equal(label.at, no_connect.at) =>
-                {
-                    resolve_reduced_project_subgraph_for_label(&graph, sheet_path, label)
-                        .is_some_and(|label_subgraph| {
-                            label_subgraph.sheet_instance_path == subgraph.sheet_instance_path
-                                && label_subgraph.subgraph_code == subgraph.subgraph_code
-                        })
-                }
-                _ => false,
+            let has_sheet_pin = subgraph.hier_sheet_pins.iter().any(|pin| {
+                pin.at
+                    == crate::connectivity::PointKey(
+                        no_connect.at[0].to_bits(),
+                        no_connect.at[1].to_bits(),
+                    )
+            });
+            let has_hierarchical_label = subgraph.hier_ports.iter().any(|label| {
+                label.at
+                    == crate::connectivity::PointKey(
+                        no_connect.at[0].to_bits(),
+                        no_connect.at[1].to_bits(),
+                    )
             });
             let has_nc_pin = schematic.screen.items.iter().any(|item| match item {
                 SchItem::Symbol(symbol) => {
@@ -1811,9 +1805,9 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                     .iter()
                     .flat_map(|neighbor| {
                         neighbor
-                            .label_points
+                            .label_links
                             .iter()
-                            .map(|(point, _kind)| (neighbor.sheet_instance_path.clone(), *point))
+                            .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
                     })
                     .collect::<std::collections::BTreeSet<_>>()
                     .len();
@@ -1856,12 +1850,12 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckLabels()`. This is not a
 // 1:1 KiCad graph pass because the Rust tree still lacks full cross-sheet subgraphs, bus-parent
 // neighbor walks, and live `SCH_TEXT::IsDangling()` state. It now consumes shared graph-owned
-// label-item identity plus shared reduced project subgraphs for pin counts and same-name neighbor
-// aggregation instead of grouping local component snapshots by ad-hoc `net_name` strings inside
-// ERC. It now also follows `RunERC()`-style reused-screen de-duplication through the shared
-// reduced driver owner instead of sweeping every repeated driven subgraph independently. The
-// remaining divergence is the still-missing fuller bus-parent ownership plus the local
-// dangling-label probe.
+// reduced label links plus shared reduced hierarchy pin/port links for local hierarchy state, and
+// shared reduced project subgraphs for pin counts and same-name neighbor aggregation instead of
+// grouping local component snapshots by ad-hoc `net_name` strings inside ERC. It now also follows
+// `RunERC()`-style reused-screen de-duplication through the shared reduced driver owner instead of
+// sweeping every repeated driven subgraph independently. The remaining divergence is the still-
+// missing fuller bus-parent ownership plus the local dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     fn subgraph_has_local_hierarchy_via_bus_parents(
         graph: &crate::connectivity::ReducedProjectNetGraph,
@@ -1877,11 +1871,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             };
 
             parent.sheet_instance_path == subgraph.sheet_instance_path
-                && (!parent.sheet_pin_points.is_empty()
-                    || parent
-                        .label_points
-                        .iter()
-                        .any(|(_point, kind)| *kind == LabelKind::Hierarchical))
+                && (!parent.hier_sheet_pins.is_empty() || !parent.hier_ports.is_empty())
         })
     }
 
@@ -1954,18 +1944,15 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     }
 
     for subgraph in graph_run_erc_subgraphs(project) {
-        if subgraph.label_points.is_empty() {
+        if subgraph.label_links.is_empty() {
             continue;
         }
 
         let subgraph_index = reduced_project_subgraph_index(&graph, &subgraph);
 
         let pin_count = subgraph.base_pins.len();
-        let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
-            || subgraph
-                .label_points
-                .iter()
-                .any(|(_point, kind)| *kind == LabelKind::Hierarchical)
+        let has_local_hierarchy = !subgraph.hier_sheet_pins.is_empty()
+            || !subgraph.hier_ports.is_empty()
             || subgraph_index
                 .is_some_and(|index| subgraph_has_local_hierarchy_via_bus_parents(&graph, index));
         let has_no_connect = subgraph.has_no_connect
@@ -1979,7 +1966,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             pin_count,
             has_no_connect,
             has_local_hierarchy,
-            subgraph.label_points.clone(),
+            subgraph.label_links.clone(),
         ));
     }
 
@@ -1990,7 +1977,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         pin_count,
         subgraph_has_no_connect,
         subgraph_has_local_hierarchy,
-        label_points,
+        label_links,
     ) in label_subgraphs
     {
         let Some(sheet_path) = project
@@ -2015,11 +2002,8 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 neighbor_has_no_connect,
                 neighbor_has_local_hierarchy,
             ) in neighbors.into_iter().map(|neighbor| {
-                let neighbor_has_local_hierarchy = !neighbor.sheet_pin_points.is_empty()
-                    || neighbor
-                        .label_points
-                        .iter()
-                        .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
+                let neighbor_has_local_hierarchy =
+                    !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
 
                 (
                     neighbor.sheet_instance_path.clone(),
@@ -2045,24 +2029,24 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             }
         }
 
-        for (point, kind) in label_points {
-            if kind == LabelKind::Directive {
+        for label in label_links {
+            if label.kind == LabelKind::Directive {
                 continue;
             }
 
             let dangling = dangling_labels
                 .get(&(
                     sheet_instance_path.clone(),
-                    point,
-                    reduced_label_kind_key(kind),
+                    label.at,
+                    reduced_label_kind_key(label.kind),
                 ))
                 .copied()
                 .unwrap_or(false);
 
-            let at = [f64::from_bits(point.0), f64::from_bits(point.1)];
+            let at = [f64::from_bits(label.at.0), f64::from_bits(label.at.1)];
 
             if dangling
-                || (kind == LabelKind::Local
+                || (label.kind == LabelKind::Local
                     && local_pins == 0
                     && all_pins > 1
                     && !has_no_connect
@@ -2167,10 +2151,14 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     .iter()
                     .any(|base_pin| base_pin.at == endpoint)
                     || subgraph
-                        .label_points
+                        .label_links
                         .iter()
-                        .any(|(point, _kind)| *point == endpoint)
-                    || subgraph.sheet_pin_points.contains(&endpoint)
+                        .any(|label| label.at == endpoint)
+                    || subgraph
+                        .hier_sheet_pins
+                        .iter()
+                        .any(|pin| pin.at == endpoint)
+                    || subgraph.hier_ports.iter().any(|port| port.at == endpoint)
                     || subgraph.no_connect_points.contains(&endpoint);
                 let endpoint_wire_count = subgraph
                     .wire_items
@@ -2219,8 +2207,9 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
         if !subgraph.base_pins.is_empty()
-            || !subgraph.sheet_pin_points.is_empty()
-            || !subgraph.label_points.is_empty()
+            || !subgraph.hier_sheet_pins.is_empty()
+            || !subgraph.hier_ports.is_empty()
+            || !subgraph.label_links.is_empty()
             || !subgraph.no_connect_points.is_empty()
         {
             continue;
@@ -2270,14 +2259,14 @@ fn sheet_pin_is_dangling(
 
     let pin_point = crate::connectivity::PointKey(pin_at[0].to_bits(), pin_at[1].to_bits());
     subgraph.base_pins.is_empty()
-        && subgraph.label_points.is_empty()
+        && subgraph.label_links.is_empty()
         && subgraph.no_connect_points.is_empty()
         && subgraph.wire_items.is_empty()
         && subgraph.bus_items.is_empty()
         && !subgraph
-            .sheet_pin_points
+            .hier_sheet_pins
             .iter()
-            .any(|point| *point != pin_point)
+            .any(|pin| pin.at != pin_point)
 }
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckHierSheets()`. This is
