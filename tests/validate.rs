@@ -454,6 +454,14 @@ fn cli_netlist_writes_reduced_xml_by_default() {
         report.contains("<libpart lib=\"Device\" part=\"R\">"),
         "{report}"
     );
+    assert!(
+        report.contains("<field name=\"Reference\">R</field>"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<field name=\"Value\">R</field>"),
+        "{report}"
+    );
     assert!(report.contains("<pins>"), "{report}");
     assert!(
         report.contains("<pin num=\"1\" name=\"~\" type=\"passive\" />"),

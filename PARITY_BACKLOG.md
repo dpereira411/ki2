@@ -721,6 +721,7 @@ What is already covered indirectly:
   - reduced per-lib-unit pin export on `<units>`
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
+    - exercised full libpart field-list export is now live
     - exercised pin `type` emission is now live
     - exercised libpart pin ordering now follows `StrNumCmp`
   - reduced root `<libraries>` section is now live after `<libparts>`

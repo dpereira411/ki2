@@ -1095,8 +1095,9 @@ fn symbol_to_xml_component(
 // Upstream parity: reduced local analogue for the pin portion of
 // `NETLIST_EXPORTER_XML::makeLibParts()`. This is not a 1:1 library-adapter walk because the Rust
 // tree still reads schematic-linked lib-symbol snapshots, but it preserves the exercised
-// duplicate-pin-number erasure, `StrNumCmp` pin ordering, stacked-pin expansion, and pin-type
-// emission so downstream netlist consumers see the same logical pin list KiCad exports.
+// full libpart field list, duplicate-pin-number erasure, `StrNumCmp` pin ordering, stacked-pin
+// expansion, and pin-type emission so downstream netlist consumers see the same logical pin list
+// KiCad exports.
 fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol) -> NetlistLibPart {
     let (lib, part) = lib_id
         .split_once(':')
@@ -1119,11 +1120,13 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
     let mut fields = BTreeMap::new();
 
     for property in &lib_symbol.properties {
-        if property.kind.is_mandatory() || property.is_private {
-            continue;
-        }
+        let key = if property.kind.is_mandatory() {
+            property.kind.canonical_key().to_string()
+        } else {
+            property.key.clone()
+        };
 
-        fields.insert(property.key.clone(), property.value.clone());
+        fields.insert(key, property.value.clone());
     }
 
     let mut pins = BTreeMap::<String, NetlistLibPartPin>::new();
