@@ -721,6 +721,9 @@ Current status:
         scaffolding keeps explicit source indexes where it still needs them
       - live bus items now also use shared local item owners, so the active live item layer is no
         longer split between shared wire/text handles and copied bus-item values
+      - duplicated live summary side state is smaller now too: active hierarchy and driver checks
+        no longer carry copied `has_hier_*`, `local_driver`, or `strong_driver_count` fields when
+        the live subgraph already owns the underlying handles and driver list
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

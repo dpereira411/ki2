@@ -1582,8 +1582,6 @@ struct LiveReducedSubgraph {
     driver_priority: i32,
     driver_identity: Option<ReducedProjectDriverIdentity>,
     drivers: Vec<ReducedProjectStrongDriver>,
-    strong_driver_count: usize,
-    local_driver: bool,
     sheet_instance_path: String,
     bus_neighbor_links: Vec<LiveReducedSubgraphLinkHandle>,
     bus_parent_links: Vec<LiveReducedSubgraphLinkHandle>,
@@ -1597,8 +1595,6 @@ struct LiveReducedSubgraph {
     hier_child_indexes: Vec<usize>,
     hier_parent_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
     hier_child_handles: Vec<Weak<RefCell<LiveReducedSubgraph>>>,
-    has_hier_pins: bool,
-    has_hier_ports: bool,
     label_links: Vec<LiveReducedLabelLinkHandle>,
     hier_sheet_pins: Vec<LiveReducedHierSheetPinLinkHandle>,
     hier_ports: Vec<LiveReducedHierPortLinkHandle>,
@@ -1632,15 +1628,11 @@ impl PartialEq for LiveReducedSubgraph {
             && self.driver_priority == other.driver_priority
             && self.driver_identity == other.driver_identity
             && self.drivers == other.drivers
-            && self.strong_driver_count == other.strong_driver_count
-            && self.local_driver == other.local_driver
             && self.sheet_instance_path == other.sheet_instance_path
             && self.bus_neighbor_links == other.bus_neighbor_links
             && self.bus_parent_links == other.bus_parent_links
             && live_reduced_subgraph_extra_projection_eq(self, other)
             && self.base_pin_count == other.base_pin_count
-            && self.has_hier_pins == other.has_hier_pins
-            && self.has_hier_ports == other.has_hier_ports
             && self.label_links == other.label_links
             && self.hier_sheet_pins == other.hier_sheet_pins
             && self.hier_ports == other.hier_ports
@@ -1684,6 +1676,22 @@ fn sort_dedup_live_subgraph_link_handles(links: &mut Vec<LiveReducedSubgraphLink
         let right = right.borrow();
         *left == *right
     });
+}
+
+fn live_subgraph_strong_driver_count(subgraph: &LiveReducedSubgraph) -> usize {
+    subgraph.drivers.len()
+}
+
+fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
+    subgraph.driver_priority < 6
+}
+
+fn live_subgraph_has_hier_pins(subgraph: &LiveReducedSubgraph) -> bool {
+    !subgraph.hier_sheet_pins.is_empty()
+}
+
+fn live_subgraph_has_hier_ports(subgraph: &LiveReducedSubgraph) -> bool {
+    !subgraph.hier_ports.is_empty()
 }
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
@@ -1815,8 +1823,6 @@ fn build_live_reduced_subgraphs(
             driver_priority: reduced_subgraph_driver_priority(subgraph),
             driver_identity: subgraph.driver_identity.clone(),
             drivers: subgraph.drivers.clone(),
-            strong_driver_count: subgraph.drivers.len(),
-            local_driver: reduced_subgraph_driver_priority(subgraph) < 6,
             sheet_instance_path: subgraph.sheet_instance_path.clone(),
             bus_neighbor_links: subgraph
                 .bus_neighbor_links
@@ -1854,8 +1860,6 @@ fn build_live_reduced_subgraphs(
             hier_child_indexes: subgraph.hier_child_indexes.clone(),
             hier_parent_handle: None,
             hier_child_handles: Vec::new(),
-            has_hier_pins: !subgraph.hier_sheet_pins.is_empty(),
-            has_hier_ports: !subgraph.hier_ports.is_empty(),
             label_links: subgraph
                 .label_links
                 .iter()
@@ -2946,9 +2950,14 @@ fn propagate_reduced_live_hierarchy_chain(
     live_subgraphs: &mut [LiveReducedSubgraph],
     force: bool,
 ) {
-    if !force && live_subgraphs[start].has_hier_ports && live_subgraphs[start].has_hier_pins {
+    if !force
+        && live_subgraph_has_hier_ports(&live_subgraphs[start])
+        && live_subgraph_has_hier_pins(&live_subgraphs[start])
+    {
         return;
-    } else if !live_subgraphs[start].has_hier_ports && !live_subgraphs[start].has_hier_pins {
+    } else if !live_subgraph_has_hier_ports(&live_subgraphs[start])
+        && !live_subgraph_has_hier_pins(&live_subgraphs[start])
+    {
         live_subgraphs[start].dirty = false;
         return;
     }
@@ -3469,9 +3478,14 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
     force: bool,
 ) {
     let start_snapshot = start.borrow().clone();
-    if !force && start_snapshot.has_hier_ports && start_snapshot.has_hier_pins {
+    if !force
+        && live_subgraph_has_hier_ports(&start_snapshot)
+        && live_subgraph_has_hier_pins(&start_snapshot)
+    {
         return;
-    } else if !start_snapshot.has_hier_ports && !start_snapshot.has_hier_pins {
+    } else if !live_subgraph_has_hier_ports(&start_snapshot)
+        && !live_subgraph_has_hier_pins(&start_snapshot)
+    {
         start.borrow_mut().dirty = false;
         return;
     }
@@ -3611,7 +3625,9 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) -> Vec<LiveReducedSubgraphHandle> {
     let start_snapshot = start.borrow().clone();
-    if start_snapshot.local_driver || start_snapshot.strong_driver_count < 2 {
+    if live_subgraph_has_local_driver(&start_snapshot)
+        || live_subgraph_strong_driver_count(&start_snapshot) < 2
+    {
         return Vec::new();
     }
 
@@ -4194,7 +4210,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
         sync_live_reduced_item_connections_from_driver_handle(handle);
 
         let snapshot = handle.borrow().clone();
-        if snapshot.strong_driver_count == 0
+        if live_subgraph_strong_driver_count(&snapshot) == 0
             && snapshot.base_pin_count == 1
             && matches!(
                 snapshot.driver_identity,
@@ -4384,7 +4400,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
     for index in 0..live_subgraphs.len() {
         sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
 
-        if live_subgraphs[index].strong_driver_count == 0
+        if live_subgraph_strong_driver_count(&live_subgraphs[index]) == 0
             && live_subgraphs[index].base_pin_count == 1
             && matches!(
                 live_subgraphs[index].driver_identity,
@@ -10576,8 +10592,6 @@ mod tests {
                 driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
-                strong_driver_count: 0,
-                local_driver: true,
                 sheet_instance_path: String::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
@@ -10588,8 +10602,6 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
-                has_hier_pins: false,
-                has_hier_ports: false,
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
@@ -10611,8 +10623,6 @@ mod tests {
                 driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
-                strong_driver_count: 0,
-                local_driver: true,
                 sheet_instance_path: "/child".to_string(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
@@ -10623,8 +10633,6 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
-                has_hier_pins: false,
-                has_hier_ports: false,
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
@@ -10681,8 +10689,6 @@ mod tests {
             driver_priority: 0,
             driver_identity: None,
             drivers: Vec::new(),
-            strong_driver_count: 0,
-            local_driver: true,
             sheet_instance_path: String::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
@@ -10693,8 +10699,6 @@ mod tests {
             hier_child_indexes: Vec::new(),
             hier_parent_handle: None,
             hier_child_handles: Vec::new(),
-            has_hier_pins: false,
-            has_hier_ports: false,
             label_links: Vec::new(),
             hier_sheet_pins: Vec::new(),
             hier_ports: Vec::new(),
@@ -11243,8 +11247,6 @@ mod tests {
                 driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
-                strong_driver_count: 0,
-                local_driver: true,
                 sheet_instance_path: String::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
@@ -11255,8 +11257,6 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
-                has_hier_pins: false,
-                has_hier_ports: false,
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
@@ -11286,8 +11286,6 @@ mod tests {
                 driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
-                strong_driver_count: 0,
-                local_driver: true,
                 sheet_instance_path: "/child".to_string(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
@@ -11298,8 +11296,6 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
-                has_hier_pins: false,
-                has_hier_ports: false,
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
