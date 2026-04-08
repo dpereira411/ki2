@@ -600,6 +600,8 @@ Current status:
         - direct child-net -> parent-bus member refresh before reduced cleanup
         - direct multiple-parent member rename / same-name subgraph refresh before reduced cleanup
         - direct bus parent/neighbor link member rematch before reduced cleanup
+        - repeated live bus fixpoint over those slices, including stale same-bus link replay after
+          promoted-member renames
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
