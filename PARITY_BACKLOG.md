@@ -724,6 +724,9 @@ Current status:
       - duplicated live summary side state is smaller now too: active hierarchy and driver checks
         no longer carry copied `has_hier_*`, `local_driver`, or `strong_driver_count` fields when
         the live subgraph already owns the underlying handles and driver list
+      - the remaining live summary fields are now concentrated in `driver_identity` and
+        `base_pin_count`; removing those cleanly depends on fuller live base-pin / driver item
+        ownership rather than another local summary-field cleanup
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
