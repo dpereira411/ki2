@@ -355,6 +355,9 @@ Current status:
     same shared graph pass, including `${REF:NET_CLASS(pin)}` after project-graph candidate
     ownership was widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
     lookups no longer lose per-occurrence netclass ownership before identity assignment
+  - current-sheet / cross-reference `SHORT_NET_NAME` text vars now also prefer the shared reduced
+    subgraph driver-name owner instead of trimming the already-resolved full net name after the
+    fact, matching KiCad's separate `Name(true)` vs full-name ownership more closely
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match

@@ -7,6 +7,7 @@ use std::process::Command;
 use crate::connectivity::{
     ReducedProjectNetGraph, collect_reduced_project_net_graph, resolve_reduced_net_name_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_netclass_at,
+    resolve_reduced_project_driver_name_at, resolve_reduced_project_driver_name_for_symbol_pin,
     resolve_reduced_project_net_at, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::diagnostic::Diagnostic;
@@ -4451,8 +4452,10 @@ fn resolved_symbol_pin_in_unit<'a>(
 // `GetEffectiveNetClass()` path because the Rust tree still lacks live `SCH_PIN` instances and the
 // full connection graph. It exists so the exercised pin net-name text vars, and now ERC's reduced
 // ground-pin check, can reuse the shared reduced connection-component carrier instead of diverging
-// into a second ad hoc wire/label scan. Remaining divergence is fuller connection-graph ownership
-// beyond the current reduced component/directive/rule-area model.
+// into a second ad hoc wire/label scan. `SHORT_NET_NAME` now prefers the shared reduced graph's
+// local driver-name owner instead of trimming the full resolved net name after the fact. Remaining
+// divergence is fuller connection-graph ownership beyond the current reduced
+// component/directive/rule-area model.
 pub(crate) fn resolve_point_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4483,7 +4486,17 @@ pub(crate) fn resolve_point_connectivity_text_var(
 
             match token_kind {
                 SymbolPinTextVarKind::NetName => Some(net_name),
-                SymbolPinTextVarKind::ShortNetName => Some(short_net_name(&net_name)),
+                SymbolPinTextVarKind::ShortNetName => {
+                    let reduced_graph = collect_reduced_project_net_graph(
+                        schematics,
+                        sheet_paths,
+                        project,
+                        current_variant,
+                        false,
+                    );
+                    resolve_reduced_project_driver_name_at(&reduced_graph, loaded_path, at)
+                        .or_else(|| Some(short_net_name(&net_name)))
+                }
                 _ => None,
             }
         }
@@ -4507,7 +4520,8 @@ pub(crate) fn resolve_point_connectivity_text_var(
 // `${REF:SHORT_NET_NAME(pin)}` / `${REF:NET_CLASS(pin)}` / `${REF:PIN_NAME(pin)}` slice against
 // loaded symbol/lib-pin state instead of leaving those tokens unresolved. Remaining divergence is
 // the fuller pin-function family and fuller connection-graph exactness beyond the current reduced
-// model.
+// model; `SHORT_NET_NAME` now prefers the shared reduced graph's local driver-name owner when it
+// is available.
 fn resolve_symbol_pin_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -4568,7 +4582,17 @@ fn resolve_symbol_pin_text_var(
                 .or_else(|| Some(String::new())),
             SymbolPinTextVarKind::ShortNetName => graph_net
                 .as_ref()
-                .map(|net| short_net_name(&net.name))
+                .and_then(|_| {
+                    reduced_graph.and_then(|graph| {
+                        resolve_reduced_project_driver_name_for_symbol_pin(
+                            graph,
+                            candidate_path,
+                            symbol,
+                            pin_at,
+                            lib_pin.name.as_deref(),
+                        )
+                    })
+                })
                 .or_else(|| {
                     resolve_reduced_net_name_for_symbol_pin(
                         schematic,
@@ -4704,7 +4728,7 @@ fn resolve_symbol_pin_text_var(
                         .or_else(|| Some(String::new())),
                     SymbolPinTextVarKind::ShortNetName => reduced_graph
                         .and_then(|graph| {
-                            resolve_reduced_project_net_for_symbol_pin(
+                            resolve_reduced_project_driver_name_for_symbol_pin(
                                 graph,
                                 alternate_path,
                                 candidate_symbol,
@@ -4712,7 +4736,6 @@ fn resolve_symbol_pin_text_var(
                                 lib_pin.name.as_deref(),
                             )
                         })
-                        .map(|net| short_net_name(&net.name))
                         .or_else(|| {
                             resolve_reduced_net_name_for_symbol_pin(
                                 schematic,
@@ -5184,7 +5207,8 @@ pub(crate) fn shown_label_text_without_connectivity(
 // resolve reduced `NET_NAME` / `SHORT_NET_NAME` / `NET_CLASS` through the shared connectivity
 // owner instead of each loader caller choosing connected label drivers independently. Remaining
 // divergence is fuller connection-graph driver, subgraph, and cached netclass ownership beyond the
-// current reduced component/directive/rule-area snapshot.
+// current reduced component/directive/rule-area snapshot; `SHORT_NET_NAME` now prefers the shared
+// reduced graph's local driver-name owner when it is available.
 pub(crate) fn resolve_label_connectivity_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -5267,7 +5291,9 @@ fn resolve_label_connectivity_text_var_with_graph(
 
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),
-        "SHORT_NET_NAME" => Some(short_net_name(&net_name)),
+        "SHORT_NET_NAME" => reduced_graph
+            .and_then(|graph| resolve_reduced_project_driver_name_at(graph, loaded_path, label.at))
+            .or_else(|| Some(short_net_name(&net_name))),
         "NET_CLASS" => graph_net
             .as_ref()
             .map(|net| net.class.clone())

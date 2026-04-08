@@ -1414,6 +1414,20 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
         .and_then(|index| graph.subgraphs.get(*index))
 }
 
+// Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
+// `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
+// Rust tree still lacks live `SCH_CONNECTION` objects, but it preserves shared local driver-name
+// ownership instead of deriving short names by trimming the full resolved net name after the fact.
+// Remaining divergence is the still-missing live connection object and fuller subgraph ownership.
+pub(crate) fn resolve_reduced_project_driver_name_at(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<String> {
+    resolve_reduced_project_subgraph_at(graph, sheet_path, at)
+        .map(|subgraph| subgraph.driver_name.clone())
+}
+
 fn reduced_project_pin_identity_key(
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
@@ -1507,6 +1521,22 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
                 .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
                 .and_then(|index| graph.subgraphs.get(*index))
         })
+}
+
+// Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
+// `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
+// Rust tree still lacks live `SCH_CONNECTION` objects, but it preserves shared local driver-name
+// ownership for pin text vars instead of trimming the full resolved net name after graph lookup.
+// Remaining divergence is the still-missing live connection object and fuller subgraph ownership.
+pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+) -> Option<String> {
+    resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name)
+        .map(|subgraph| subgraph.driver_name.clone())
 }
 
 // Upstream parity: reduced local analogue for the connection-point half of
