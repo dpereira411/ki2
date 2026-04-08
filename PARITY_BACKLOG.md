@@ -623,6 +623,14 @@ Current status:
         owner
       - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
         live item / connection pointers
+    - concrete next unblock path:
+      1. replace the current split live hierarchy pass plus live bus fixpoint with one
+         `propagateToNeighbors()`-style walk over a shared visited set of live subgraphs
+      2. carry one live stale-member bag across that walk instead of replaying only within the
+         local same-bus fixpoint
+      3. move live name recache into that same walk so renames and revisits happen on one owner
+      4. only after that, revisit live item/connection pointer ownership and connected-bus-item
+         promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
   - architectural direction from this point:
