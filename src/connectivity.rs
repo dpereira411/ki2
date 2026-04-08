@@ -174,8 +174,6 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) nodes: Vec<ReducedNetNode>,
     pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
     pub(crate) label_links: Vec<ReducedLabelLink>,
-    pub(crate) label_points: Vec<(PointKey, LabelKind)>,
-    pub(crate) sheet_pin_points: Vec<PointKey>,
     pub(crate) no_connect_points: Vec<PointKey>,
     pub(crate) hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
     pub(crate) hier_ports: Vec<ReducedHierPortLink>,
@@ -1344,8 +1342,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         nodes: Vec<ReducedNetNode>,
         base_pins: Vec<ReducedNetBasePinKey>,
         label_links: Vec<ReducedLabelLink>,
-        label_points: Vec<(PointKey, LabelKind)>,
-        sheet_pin_points: Vec<PointKey>,
         no_connect_points: Vec<PointKey>,
         hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
         hier_ports: Vec<ReducedHierPortLink>,
@@ -1538,22 +1534,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     .iter()
                     .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
                     .map(|driver| driver.priority);
-                let (
-                    label_links,
-                    label_points,
-                    sheet_pin_points,
-                    no_connect_points,
-                    bus_items,
-                    wire_items,
-                ) = collect_reduced_subgraph_local_membership(
-                    inputs.schematics,
-                    inputs.sheet_paths,
-                    sheet_path,
-                    schematic,
-                    inputs.project,
-                    inputs.current_variant,
-                    &connected_component,
-                );
+                let (label_links, no_connect_points, bus_items, wire_items) =
+                    collect_reduced_subgraph_local_membership(
+                        inputs.schematics,
+                        inputs.sheet_paths,
+                        sheet_path,
+                        schematic,
+                        inputs.project,
+                        inputs.current_variant,
+                        &connected_component,
+                    );
                 let (hier_sheet_pins, hier_ports) = collect_reduced_subgraph_hierarchy_membership(
                     inputs.schematics,
                     inputs.sheet_paths,
@@ -1595,8 +1585,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     nodes: nodes.clone(),
                     base_pins: base_pins.clone(),
                     label_links,
-                    label_points,
-                    sheet_pin_points,
                     no_connect_points,
                     hier_sheet_pins,
                     hier_ports,
@@ -1706,22 +1694,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 continue;
             }
 
-            let (
-                label_links,
-                label_points,
-                sheet_pin_points,
-                no_connect_points,
-                bus_items,
-                wire_items,
-            ) = collect_reduced_subgraph_local_membership(
-                inputs.schematics,
-                inputs.sheet_paths,
-                sheet_path,
-                schematic,
-                inputs.project,
-                inputs.current_variant,
-                &connected_component,
-            );
+            let (label_links, no_connect_points, bus_items, wire_items) =
+                collect_reduced_subgraph_local_membership(
+                    inputs.schematics,
+                    inputs.sheet_paths,
+                    sheet_path,
+                    schematic,
+                    inputs.project,
+                    inputs.current_variant,
+                    &connected_component,
+                );
             let (hier_sheet_pins, hier_ports) = collect_reduced_subgraph_hierarchy_membership(
                 inputs.schematics,
                 inputs.sheet_paths,
@@ -1753,8 +1735,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 nodes: Vec::new(),
                 base_pins: Vec::new(),
                 label_links,
-                label_points,
-                sheet_pin_points,
                 no_connect_points,
                 hier_sheet_pins,
                 hier_ports,
@@ -1844,8 +1824,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             nodes: pending.nodes.clone(),
             base_pins: pending.base_pins.clone(),
             label_links: pending.label_links.clone(),
-            label_points: pending.label_points.clone(),
-            sheet_pin_points: pending.sheet_pin_points.clone(),
             no_connect_points: pending.no_connect_points.clone(),
             hier_sheet_pins: pending.hier_sheet_pins.clone(),
             hier_ports: pending.hier_ports.clone(),
@@ -1901,12 +1879,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 index,
             );
         }
-        for (point, kind) in &net_identity.label_points {
+        for label in &net_identity.label_links {
             label_subgraph_identities.insert(
                 ReducedProjectLabelIdentityKey {
                     sheet_instance_path: net_identity.sheet_instance_path.clone(),
-                    at: *point,
-                    kind: reduced_label_kind_sort_key(*kind),
+                    at: label.at,
+                    kind: reduced_label_kind_sort_key(label.kind),
                 },
                 index,
             );
@@ -2453,8 +2431,6 @@ fn collect_reduced_subgraph_local_membership(
     connected_component: &ConnectionComponent,
 ) -> (
     Vec<ReducedLabelLink>,
-    Vec<(PointKey, LabelKind)>,
-    Vec<PointKey>,
     Vec<PointKey>,
     Vec<ReducedSubgraphWireItem>,
     Vec<ReducedSubgraphWireItem>,
@@ -2499,35 +2475,6 @@ fn collect_reduced_subgraph_local_membership(
         )
     });
     label_links.dedup();
-
-    let mut label_points = connected_component
-        .members
-        .iter()
-        .filter_map(|member| {
-            if member.kind != ConnectionMemberKind::Label {
-                return None;
-            }
-
-            schematic.screen.items.iter().find_map(|item| match item {
-                SchItem::Label(label) if points_equal(label.at, member.at) => {
-                    Some((point_key(label.at), label.kind))
-                }
-                _ => None,
-            })
-        })
-        .collect::<Vec<_>>();
-    label_points
-        .sort_by_key(|(point, kind)| (point.0, point.1, reduced_label_kind_sort_key(*kind)));
-    label_points.dedup();
-
-    let mut sheet_pin_points = connected_component
-        .members
-        .iter()
-        .filter(|member| member.kind == ConnectionMemberKind::SheetPin)
-        .map(|member| point_key(member.at))
-        .collect::<Vec<_>>();
-    sheet_pin_points.sort();
-    sheet_pin_points.dedup();
 
     let mut no_connect_points = connected_component
         .members
@@ -2614,14 +2561,7 @@ fn collect_reduced_subgraph_local_membership(
     });
     wire_items.dedup();
 
-    (
-        label_links,
-        label_points,
-        sheet_pin_points,
-        no_connect_points,
-        bus_items,
-        wire_items,
-    )
+    (label_links, no_connect_points, bus_items, wire_items)
 }
 
 fn child_sheet_path_for_sheet<'a>(
