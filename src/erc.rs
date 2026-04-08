@@ -2,9 +2,9 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_points,
     collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
     collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
-    projected_symbol_pin_info, reduced_text_is_bus,
-    resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_at,
-    resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
+    projected_symbol_pin_info, reduced_text_is_bus, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
+    resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2545,11 +2545,11 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // reused-screen driver de-duplication through the shared reduced graph owner. It now also warns
 // once from the shared subgraph full-name driver after membership testing against reduced
 // full-local bus members and the shared driver set, instead of sweeping every non-bus shown-text
-// on the subgraph independently. Remaining divergence is fuller bus-object ownership and cached
-// subgraph driver state.
+// on the subgraph independently, and now anchors the reduced report location at the shared
+// bus-entry item position instead of the old repo-local net-label point. Remaining divergence is
+// fuller bus-object ownership and cached subgraph driver state.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    let graph = project.reduced_project_net_graph(false);
 
     for subgraph in graph_run_erc_subgraphs(project)
         .into_iter()
@@ -2562,11 +2562,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         else {
             continue;
         };
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        let mut non_bus_sheet_pin_names = Vec::<String>::new();
-        let mut entry_at = subgraph
+        let entry_at = subgraph
             .wire_items
             .iter()
             .find(|item| item.is_bus_entry)
@@ -2576,43 +2572,6 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 f64::from_bits(subgraph.anchor.1),
             ]);
 
-        for label in subgraph_labels(&graph, sheet_path, schematic, &subgraph) {
-            if label.kind == LabelKind::Directive {
-                continue;
-            }
-
-            let shown = shown_label_text(project, sheet_path, label);
-            if !reduced_text_is_bus(schematic, &shown) {
-                non_bus_sheet_pin_names.push(shown);
-                entry_at = label.at;
-            }
-        }
-
-        for item in &schematic.screen.items {
-            let SchItem::Sheet(sheet) = item else {
-                continue;
-            };
-
-            for pin in &sheet.pins {
-                if !subgraph
-                    .sheet_pin_points
-                    .contains(&crate::connectivity::PointKey(
-                        pin.at[0].to_bits(),
-                        pin.at[1].to_bits(),
-                    ))
-                {
-                    continue;
-                }
-
-                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
-
-                if !reduced_text_is_bus(schematic, &shown) {
-                    non_bus_sheet_pin_names.push(shown);
-                    entry_at = pin.at;
-                }
-            }
-        }
-
         let Some(bus_name) = subgraph.bus_name.clone() else {
             continue;
         };
@@ -2620,15 +2579,19 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         if bus_members.is_empty() {
             continue;
         }
-        let mut test_names = subgraph
-            .driver_full_names
-            .iter()
-            .filter(|name| !reduced_text_is_bus(schematic, name))
-            .cloned()
-            .collect::<Vec<_>>();
-        for name in non_bus_sheet_pin_names {
-            if !test_names.iter().any(|existing| existing == &name) {
-                test_names.push(name);
+        let mut test_names = subgraph.non_bus_full_names.clone();
+        if test_names.is_empty() {
+            test_names.extend(
+                subgraph
+                    .driver_full_names
+                    .iter()
+                    .filter(|name| !bus_members.iter().any(|member| member == *name))
+                    .cloned(),
+            );
+        }
+        for name in &subgraph.non_bus_full_names {
+            if !test_names.iter().any(|existing| existing == name) {
+                test_names.push(name.clone());
             }
         }
         if test_names.is_empty() && !subgraph.driver_name.is_empty() {

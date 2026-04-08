@@ -142,6 +142,8 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) port_bus_members: Vec<String>,
     pub(crate) full_local_bus_members: Vec<String>,
     pub(crate) bus_name: Option<String>,
+    pub(crate) non_bus_names: Vec<String>,
+    pub(crate) non_bus_full_names: Vec<String>,
     pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
 }
@@ -1092,6 +1094,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         port_bus_members: Vec<String>,
         full_local_bus_members: Vec<String>,
         bus_name: Option<String>,
+        non_bus_names: Vec<String>,
+        non_bus_full_names: Vec<String>,
         bus_items: Vec<ReducedSubgraphWireItem>,
         wire_items: Vec<ReducedSubgraphWireItem>,
     }
@@ -1251,16 +1255,22 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 };
                 let (label_points, sheet_pin_points, no_connect_points, bus_items, wire_items) =
                     collect_reduced_subgraph_local_membership(schematic, &connected_component);
-                let (label_bus_members, port_bus_members, full_local_bus_members, bus_name) =
-                    collect_reduced_subgraph_bus_membership(
-                        inputs.schematics,
-                        inputs.sheet_paths,
-                        sheet_path,
-                        schematic,
-                        inputs.project,
-                        inputs.current_variant,
-                        &connected_component,
-                    );
+                let (
+                    label_bus_members,
+                    port_bus_members,
+                    full_local_bus_members,
+                    bus_name,
+                    non_bus_names,
+                    non_bus_full_names,
+                ) = collect_reduced_subgraph_bus_membership(
+                    inputs.schematics,
+                    inputs.sheet_paths,
+                    sheet_path,
+                    schematic,
+                    inputs.project,
+                    inputs.current_variant,
+                    &connected_component,
+                );
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
@@ -1283,6 +1293,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     port_bus_members,
                     full_local_bus_members,
                     bus_name,
+                    non_bus_names,
+                    non_bus_full_names,
                     bus_items,
                     wire_items,
                 });
@@ -1413,6 +1425,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 port_bus_members: Vec::new(),
                 full_local_bus_members: Vec::new(),
                 bus_name: None,
+                non_bus_names: Vec::new(),
+                non_bus_full_names: Vec::new(),
                 bus_items,
                 wire_items,
             });
@@ -1501,6 +1515,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             port_bus_members: pending.port_bus_members.clone(),
             full_local_bus_members: pending.full_local_bus_members.clone(),
             bus_name: pending.bus_name.clone(),
+            non_bus_names: pending.non_bus_names.clone(),
+            non_bus_full_names: pending.non_bus_full_names.clone(),
             bus_items: pending.bus_items.clone(),
             wire_items: pending.wire_items.clone(),
         };
@@ -2104,12 +2120,21 @@ fn collect_reduced_subgraph_bus_membership(
     project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
     connected_component: &ConnectionComponent,
-) -> (Vec<String>, Vec<String>, Vec<String>, Option<String>) {
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Option<String>,
+    Vec<String>,
+    Vec<String>,
+) {
     let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, parent_sheet_path);
     let mut label_bus_members = Vec::<String>::new();
     let mut port_bus_members = Vec::<String>::new();
     let mut full_local_bus_members = Vec::<String>::new();
     let mut bus_name = None::<String>;
+    let mut non_bus_names = Vec::<String>::new();
+    let mut non_bus_full_names = Vec::<String>::new();
 
     for item in &schematic.screen.items {
         match item {
@@ -2127,6 +2152,15 @@ fn collect_reduced_subgraph_bus_membership(
                     label,
                 );
                 if !reduced_text_is_bus(schematic, &shown) {
+                    let full_name = match label.kind {
+                        LabelKind::Global => shown.clone(),
+                        LabelKind::Local | LabelKind::Hierarchical => {
+                            format!("{sheet_path_prefix}{shown}")
+                        }
+                        LabelKind::Directive => shown.clone(),
+                    };
+                    non_bus_names.push(shown);
+                    non_bus_full_names.push(full_name);
                     continue;
                 }
 
@@ -2178,6 +2212,8 @@ fn collect_reduced_subgraph_bus_membership(
                         pin,
                     );
                     if !reduced_text_is_bus(schematic, &shown) {
+                        non_bus_names.push(shown.clone());
+                        non_bus_full_names.push(format!("{sheet_path_prefix}{shown}"));
                         continue;
                     }
 
@@ -2201,12 +2237,18 @@ fn collect_reduced_subgraph_bus_membership(
     port_bus_members.dedup();
     full_local_bus_members.sort();
     full_local_bus_members.dedup();
+    non_bus_names.sort();
+    non_bus_names.dedup();
+    non_bus_full_names.sort();
+    non_bus_full_names.dedup();
 
     (
         label_bus_members,
         port_bus_members,
         full_local_bus_members,
         bus_name,
+        non_bus_names,
+        non_bus_full_names,
     )
 }
 

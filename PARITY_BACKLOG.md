@@ -484,6 +484,7 @@ Current status:
   - shared reduced project subgraphs
   - shared reduced bus-entry line membership
   - shared reduced full-local bus-member caches on subgraphs
+  - shared reduced non-bus connection-name caches on subgraphs
   - reduced bus-member expansion plus reduced shared non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
   - nested bus-group text expansion like `USB{PAIR{DP DM} AUX}`
@@ -491,6 +492,8 @@ Current status:
     member driver
   - KiCad-style single-warning flow from the shared subgraph driver name instead of one warning
     per non-bus shown-text on the same subgraph
+  - reduced report anchoring now follows the shared bus-entry item position instead of the old
+    repo-local net-label point
 - the named graph-owned bus conflict trio is now covered in the reduced graph
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced `ercCheckMultipleDrivers()` now reads strong-driver conflicts from the shared reduced
