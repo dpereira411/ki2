@@ -571,12 +571,22 @@ Current status:
   - shared reduced strong-driver ownership now also preserves reduced driver kind:
     - `ercCheckMultipleDrivers()` now mirrors KiCad's exercised "labels and power pins only"
       secondary-driver filter instead of warning on sheet-pin-only name differences
+  - `ercCheckNoConnects()`, `ercCheckFloatingWires()`, `ercCheckDanglingWireEndpoints()`, and the
+    reduced parent-sheet dangling-pin query now also consume those shared label/hierarchy links
+    instead of the older point-only label/sheet-pin side snapshots
+  - the remaining point-only label/sheet-pin snapshots are now bookkeeping for item lookup and
+    graph indexing, not the active ERC owner for those exercised rules
   - current concrete blocker for the next strict graph step is no longer missing parent links; it
     is the still-reduced connection object model behind those links:
     - no reduced analogue yet for fuller `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` parent-neighbor
       state beyond current member/name snapshots
-    - remaining bus-entry and neighbor exactness still depend on richer resolved connection
-      objects, not another local schematic scan
+    - missing still are shared reduced connection objects with at least:
+      - connection type
+      - local/full-local/resolved name
+      - member tree on the chosen connection object, not only aggregate subgraph members
+      - connected-bus-item / parent-neighbor ownership
+    - remaining bus-entry and neighbor exactness now depends on that richer reduced connection
+      object layer, not another local schematic scan or another point-list cleanup
 
 ## Net Naming / CLI Requirements
 
