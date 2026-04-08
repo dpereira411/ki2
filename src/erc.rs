@@ -929,6 +929,36 @@ fn shown_label_property_text(
     )
 }
 
+// Upstream parity: reduced local helper for `SCH_SHEET_PIN::GetShownText()` calls inside
+// graph-owned ERC checks. This is not a 1:1 KiCad item method dispatch because the Rust tree
+// still reaches sheet pins through reduced model carriers plus `child_sheet_path_for_sheet()`, but
+// it keeps the child-path ownership in one place so ERC does not fall back to raw pin names after
+// the loader-side shown-text owner exists. Remaining divergence is fuller live sheet/item
+// ownership and marker attachment.
+fn shown_sheet_pin_name(
+    project: &SchematicProject,
+    graph: &crate::connectivity::ReducedProjectNetGraph,
+    parent_sheet_path: &crate::loader::LoadedSheetPath,
+    sheet: &crate::model::Sheet,
+    pin: &crate::model::SheetPin,
+) -> String {
+    let Some(child_sheet_path) = child_sheet_path_for_sheet(project, parent_sheet_path, sheet)
+    else {
+        return pin.name.clone();
+    };
+
+    shown_sheet_pin_text(
+        &project.schematics,
+        &project.sheet_paths,
+        parent_sheet_path,
+        &child_sheet_path,
+        project.project.as_ref(),
+        project.current_variant(),
+        Some(graph),
+        pin,
+    )
+}
+
 // Upstream parity: reduced local analogue for `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1
 // KiCad label resolver because the current tree still runs through the reduced Rust text-variable
 // helpers instead of KiCad's full label/item resolver stack, but it preserves the exercised shown-
@@ -2281,16 +2311,7 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
 
             let mut pins = BTreeMap::new();
             for pin in &sheet.pins {
-                let shown = shown_sheet_pin_text(
-                    &project.schematics,
-                    &project.sheet_paths,
-                    sheet_path,
-                    &child_sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
-                    Some(&graph),
-                    pin,
-                );
+                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
                 pins.insert(shown, pin);
             }
 
@@ -2408,7 +2429,9 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                     continue;
                 }
 
-                if reduced_text_is_bus(schematic, &pin.name) {
+                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
+
+                if reduced_text_is_bus(schematic, &shown) {
                     has_bus_item = true;
                 } else {
                     has_net_item = true;
@@ -2502,8 +2525,10 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                     continue;
                 }
 
-                if reduced_text_is_bus(schematic, &pin.name) {
-                    port_members.get_or_insert_with(|| reduced_bus_members(schematic, &pin.name));
+                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
+
+                if reduced_text_is_bus(schematic, &shown) {
+                    port_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
                 }
             }
         }
@@ -2611,11 +2636,13 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                     continue;
                 }
 
-                if reduced_text_is_bus(schematic, &pin.name) {
-                    bus_name.get_or_insert(pin.name.clone());
-                    bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &pin.name));
+                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
+
+                if reduced_text_is_bus(schematic, &shown) {
+                    bus_name.get_or_insert(shown.clone());
+                    bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
                 } else {
-                    net_names.push(pin.name.clone());
+                    net_names.push(shown);
                     entry_at = pin.at;
                 }
             }

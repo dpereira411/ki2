@@ -3667,6 +3667,56 @@ fn erc_reports_bus_to_bus_conflicts() {
 }
 
 #[test]
+fn erc_reports_bus_to_bus_conflicts_from_sheet_pin_shown_text() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_bus_to_bus_shown_text_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "Child[0..7]" (shape input) (at 0 5 0) (effects (font (size 1 1)))))"#;
+    let root_src = format!(
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 5) (xy 0 5)))
+  (sheet (at 0 0) (size 20 10)
+    (uuid "95555555-5555-5555-5555-555555555555")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "${{SHEETNAME}}[0..7]" input (at 0 5 180) (uuid "96666666-6666-6666-6666-666666666666")))
+  (global_label "DATA[0..7]" (shape input) (at -5 5 0) (effects (font (size 1 1)))))"#,
+        child_path.display()
+    );
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-bus-to-bus-conflict"
+            && diagnostic.message == "Bus label and port do not share members at -5, 5"
+    }));
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_allows_bus_to_bus_overlap_on_shared_member() {
     let path = temp_schematic(
         "erc_bus_to_bus_overlap",

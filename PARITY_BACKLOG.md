@@ -539,8 +539,8 @@ Current status:
     - connection-backed tokens resolve from the parent sheet-pin connection point
     - remaining sheet/project text vars recurse through the child sheet path like the upstream
       parent-sheet branch
-    - `ercCheckHierSheets()` now compares parent sheet pins through that owner instead of raw
-      names
+    - `ercCheckHierSheets()` plus the exercised bus conflict checks now compare parent sheet pins
+      through that owner instead of raw names
   - remaining gap is broader sheet-pin item ownership beyond the now-live shown-text path, not the
     old raw-name comparison branch
 
