@@ -598,6 +598,7 @@ Current status:
         - hierarchy-chain best-driver selection
         - direct bus-neighbor driver/member cloning before reduced cleanup
         - direct child-net -> parent-bus member refresh before reduced cleanup
+        - direct multiple-parent member rename / same-name subgraph refresh before reduced cleanup
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
