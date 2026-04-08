@@ -154,7 +154,7 @@ pub(crate) struct ReducedProjectNetGraph {
     nets: Vec<ReducedProjectNetEntry>,
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
-    subgraphs_by_sheet_and_driver_name: BTreeMap<(String, String), usize>,
+    subgraphs_by_sheet_and_name: BTreeMap<(String, String), usize>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
@@ -1194,7 +1194,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut reduced_nets = Vec::new();
     let mut reduced_subgraphs = Vec::new();
     let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
-    let mut subgraphs_by_sheet_and_driver_name = BTreeMap::<(String, String), usize>::new();
+    let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), usize>::new();
     let mut pin_subgraph_identities = BTreeMap::new();
     let mut pin_subgraph_identities_by_location = BTreeMap::new();
     let mut point_subgraph_identities = BTreeMap::new();
@@ -1265,10 +1265,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             .entry(net_identity.name.clone())
             .or_default()
             .push(index);
-        subgraphs_by_sheet_and_driver_name.insert(
+        subgraphs_by_sheet_and_name.insert(
             (
                 net_identity.sheet_instance_path.clone(),
-                net_identity.driver_name.clone(),
+                net_identity.name.clone(),
             ),
             index,
         );
@@ -1299,7 +1299,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         nets: reduced_nets,
         subgraphs: reduced_subgraphs,
         subgraphs_by_name,
-        subgraphs_by_sheet_and_driver_name,
+        subgraphs_by_sheet_and_name,
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
         point_subgraph_identities,
@@ -1362,18 +1362,17 @@ pub(crate) fn collect_reduced_project_subgraphs(
 
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::FindSubgraphByName()`. This is
-// not a 1:1 graph lookup because the Rust tree still lacks live `CONNECTION_SUBGRAPH` ownership
-// and uses `(sheet instance path, short driver name)` as the reduced local key, but it preserves
-// the owner boundary where graph callers ask the shared project graph for the current sheet's
-// local subgraph instead of re-scanning reduced net names ad hoc. Remaining divergence is the
-// fuller subgraph object model and exact driver-connection caching.
+// not a 1:1 graph lookup because the Rust tree still lacks live `CONNECTION_SUBGRAPH` ownership,
+// but it now preserves KiCad's `(sheet instance path, resolved net name)` lookup boundary instead
+// of the old repo-local short-driver key. Remaining divergence is the fuller subgraph object model
+// and exact driver-connection caching.
 pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
     graph: &'a ReducedProjectNetGraph,
     net_name: &str,
     sheet_path: &LoadedSheetPath,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
     graph
-        .subgraphs_by_sheet_and_driver_name
+        .subgraphs_by_sheet_and_name
         .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
         .and_then(|index| graph.subgraphs.get(*index))
 }
@@ -2565,7 +2564,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_project_subgraph_lookup_keeps_sheet_local_driver_names() {
+    fn reduced_project_subgraph_lookup_uses_sheet_and_full_net_name() {
         let dir = env::temp_dir().join(format!(
             "ki2_connectivity_project_subgraphs_{}",
             SystemTime::now()
@@ -2632,7 +2631,7 @@ mod tests {
             .expect("child sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let by_sheet = find_reduced_project_subgraph_by_name(&graph, "SIG", child_sheet)
+        let by_sheet = find_reduced_project_subgraph_by_name(&graph, "/Child/SIG", child_sheet)
             .expect("sheet-local subgraph");
         assert_eq!(by_sheet.subgraph_code, 1);
         assert_eq!(by_sheet.code, 1);

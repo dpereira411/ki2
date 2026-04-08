@@ -767,6 +767,8 @@ What is already covered indirectly:
 - reduced project graph now also preserves per-sheet reduced subgraphs plus
   `FindSubgraphByName()` / `FindFirstSubgraphByName()`-style lookup boundaries instead of
   flattening directly to whole-net identities only
+- reduced project `FindSubgraphByName()` lookup now keys by `(sheet instance path, resolved full
+  net name)` like KiCad instead of the old repo-local short-driver key
 - reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
   symbol pins instead of flattening those lookups straight to whole-net identity
 - reduced project subgraphs now keep their own stable subgraph codes instead of reusing only the
