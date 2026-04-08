@@ -1119,8 +1119,8 @@ fn symbol_to_xml_component(
 // `NETLIST_EXPORTER_XML::makeLibParts()`. This is not a 1:1 library-adapter walk because the Rust
 // tree still reads schematic-linked lib-symbol snapshots, but it preserves the exercised
 // full libpart field list, duplicate-pin-number erasure, `StrNumCmp` pin ordering, stacked-pin
-// expansion, and pin-type emission so downstream netlist consumers see the same logical pin list
-// KiCad exports.
+// expansion, pin-type emission, and library-field iteration order so downstream netlist consumers
+// see the same logical pin list and field order KiCad exports.
 fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol) -> NetlistLibPart {
     let (lib, part) = lib_id
         .split_once(':')
@@ -1140,17 +1140,20 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
             .map(|property| property.value.clone())
             .unwrap_or_default()
     });
-    let mut fields = BTreeMap::new();
-
-    for property in &lib_symbol.properties {
-        let key = if property.kind.is_mandatory() {
-            property.kind.canonical_key().to_string()
-        } else {
-            property.key.clone()
-        };
-
-        fields.insert(key, property.value.clone());
-    }
+    let fields = lib_symbol
+        .properties
+        .iter()
+        .map(|property| {
+            (
+                if property.kind.is_mandatory() {
+                    property.kind.canonical_key().to_string()
+                } else {
+                    property.key.clone()
+                },
+                property.value.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
 
     let mut pins = BTreeMap::<String, NetlistLibPartPin>::new();
 
@@ -1189,7 +1192,7 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
         part,
         description,
         docs,
-        fields: fields.into_iter().collect(),
+        fields,
         footprints: lib_symbol.fp_filters.clone(),
         pins,
     }

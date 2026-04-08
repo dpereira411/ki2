@@ -729,6 +729,8 @@ What is already covered indirectly:
     - exercised linked library-unit order is now preserved instead of repo-local name sorting
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
+    - exercised libpart field order now follows linked library-field order instead of repo-local
+      key sorting
     - exercised full libpart field-list export is now live
     - exercised pin `type` emission is now live
     - exercised libpart pin ordering now follows `StrNumCmp`

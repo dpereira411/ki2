@@ -462,6 +462,19 @@ fn cli_netlist_writes_reduced_xml_by_default() {
         report.contains("<field name=\"Value\">R</field>"),
         "{report}"
     );
+    let reference_field = report
+        .find("<field name=\"Reference\">R</field>")
+        .expect("reference field");
+    let value_field = report
+        .find("<field name=\"Value\">R</field>")
+        .expect("value field");
+    let footprint_field = report
+        .find("<field name=\"Footprint\"></field>")
+        .expect("footprint field");
+    assert!(
+        reference_field < value_field && value_field < footprint_field,
+        "{report}"
+    );
     assert!(report.contains("<pins>"), "{report}");
     assert!(
         report.contains("<pin num=\"1\" name=\"~\" type=\"passive\" />"),
