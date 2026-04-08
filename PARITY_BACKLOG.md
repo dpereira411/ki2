@@ -773,6 +773,8 @@ What is already covered indirectly:
   symbol pins instead of flattening those lookups straight to whole-net identity
 - point/pin net identity now also derives back through that shared subgraph owner instead of
   keeping duplicate item-to-whole-net side maps beside the shared subgraph indexes
+- whole-net map views now also derive from the shared reduced subgraph owner instead of storing a
+  second flattened project-net vector beside the same graph
 - reduced project subgraphs now keep their own stable subgraph codes instead of reusing only the
   whole-net code space
 - reduced project subgraphs now keep local driver names from the shared driver-selection owner

@@ -151,7 +151,6 @@ struct ReducedProjectPointIdentityKey {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectNetGraph {
-    nets: Vec<ReducedProjectNetEntry>,
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), usize>,
@@ -963,9 +962,11 @@ where
 // export rebuild those facts independently. Remaining divergence is the missing full subgraph
 // object model and graph-owned resolved-name caches beyond this reduced project graph; candidate
 // ownership is now widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
-// identity is not collapsed before pin net/class ownership is assigned, and item-to-net facts now
-// derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps. The
-// outward reduced node carrier is still narrower than a real `CONNECTION_SUBGRAPH` item owner.
+// identity is not collapsed before pin net/class ownership is assigned, item-to-net facts now
+// derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps, and
+// whole-net views are derived from the shared subgraph owner instead of a second stored flattened
+// carrier. The outward reduced node carrier is still narrower than a real `CONNECTION_SUBGRAPH`
+// item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
@@ -987,7 +988,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         (String, String, String),
         (String, String, bool, ReducedNetNode, ReducedNetBasePinKey),
     >::new();
-    let mut point_keys_by_net = BTreeMap::<String, Vec<ReducedProjectPointIdentityKey>>::new();
     let mut nets = BTreeMap::<
         String,
         (
@@ -1149,16 +1149,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         _ => {}
                     }
                 }
-
-                for point in points {
-                    point_keys_by_net
-                        .entry(entry.name.clone())
-                        .or_default()
-                        .push(ReducedProjectPointIdentityKey {
-                            sheet_instance_path: sheet_path.instance_path.clone(),
-                            at: point,
-                        });
-                }
             }
         }
     }
@@ -1189,47 +1179,47 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut nets = nets.into_iter().collect::<Vec<_>>();
     nets.sort_by(|(a_name, _), (b_name, _)| reduced_str_num_cmp(a_name, b_name));
 
-    let mut reduced_nets = Vec::new();
     let mut reduced_subgraphs = Vec::new();
     let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
     let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), usize>::new();
     let mut pin_subgraph_identities = BTreeMap::new();
     let mut pin_subgraph_identities_by_location = BTreeMap::new();
     let mut point_subgraph_identities = BTreeMap::new();
+    let mut net_identities_by_name = BTreeMap::<String, ReducedProjectNetIdentity>::new();
 
-    for (index, (name, (class, has_no_connect, nodes, base_pins))) in nets.into_iter().enumerate() {
-        point_keys_by_net.remove(&name);
-
-        reduced_nets.push(ReducedProjectNetEntry {
-            code: index + 1,
-            name,
-            class,
-            has_no_connect,
-            nodes: nodes.into_values().collect(),
-            base_pins,
-        });
+    for (index, (name, (class, has_no_connect, _nodes, _base_pins))) in nets.into_iter().enumerate()
+    {
+        net_identities_by_name.insert(
+            name.clone(),
+            ReducedProjectNetIdentity {
+                code: index + 1,
+                name: name.clone(),
+                class: class.clone(),
+                has_no_connect,
+            },
+        );
     }
 
     for (subgraph_index, pending) in pending_subgraphs.into_iter().enumerate() {
-        let Some(net_identity) = reduced_nets
-            .iter()
-            .find(|net| net.name == pending.name)
-            .map(|net| ReducedProjectSubgraphEntry {
-                subgraph_code: subgraph_index + 1,
-                code: net.code,
-                name: net.name.clone(),
-                driver_name: pending.driver_name.clone(),
-                class: if pending.class.is_empty() {
-                    net.class.clone()
-                } else {
-                    pending.class.clone()
-                },
-                has_no_connect: pending.has_no_connect,
-                sheet_instance_path: pending.sheet_instance_path.clone(),
-                points: pending.points.clone(),
-                nodes: pending.nodes.clone(),
-                base_pins: pending.base_pins.clone(),
-            })
+        let Some(net_identity) =
+            net_identities_by_name
+                .get(&pending.name)
+                .map(|net| ReducedProjectSubgraphEntry {
+                    subgraph_code: subgraph_index + 1,
+                    code: net.code,
+                    name: net.name.clone(),
+                    driver_name: pending.driver_name.clone(),
+                    class: if pending.class.is_empty() {
+                        net.class.clone()
+                    } else {
+                        pending.class.clone()
+                    },
+                    has_no_connect: pending.has_no_connect,
+                    sheet_instance_path: pending.sheet_instance_path.clone(),
+                    points: pending.points.clone(),
+                    nodes: pending.nodes.clone(),
+                    base_pins: pending.base_pins.clone(),
+                })
         else {
             continue;
         };
@@ -1270,7 +1260,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     }
 
     ReducedProjectNetGraph {
-        nets: reduced_nets,
         subgraphs: reduced_subgraphs,
         subgraphs_by_name,
         subgraphs_by_sheet_and_name,
@@ -1308,14 +1297,68 @@ pub(crate) fn collect_reduced_project_net_graph(
 // Upstream parity: reduced local analogue for the project-wide `ConnectionGraph()->GetNetMap()`
 // consumer path used by KiCad's net exporters. This is not a 1:1 graph owner because the Rust
 // tree still lacks real `CONNECTION_SUBGRAPH` objects and graph-owned item identity, but it now
-// reads through the shared reduced project net-graph owner instead of re-owning project net
-// grouping at exporter call sites. Remaining divergence is the missing full subgraph object model
+// derives whole-net entries from the shared reduced subgraph owner instead of storing a second
+// flattened net vector beside it. Remaining divergence is the missing full subgraph object model
 // and graph-owned resolved-name caches beyond this reduced project net map.
 pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
 ) -> Vec<ReducedProjectNetEntry> {
-    project.reduced_project_net_graph(for_board).nets
+    let mut grouped = BTreeMap::<
+        (usize, String),
+        (
+            String,
+            bool,
+            BTreeMap<(String, String), ReducedNetNode>,
+            Vec<ReducedNetBasePinKey>,
+        ),
+    >::new();
+
+    for subgraph in project.reduced_project_net_graph(for_board).subgraphs {
+        let entry = grouped
+            .entry((subgraph.code, subgraph.name.clone()))
+            .or_insert_with(|| {
+                (
+                    subgraph.class.clone(),
+                    false,
+                    BTreeMap::new(),
+                    Vec::<ReducedNetBasePinKey>::new(),
+                )
+            });
+
+        if entry.0.is_empty() && !subgraph.class.is_empty() {
+            entry.0 = subgraph.class.clone();
+        }
+
+        entry.1 |= subgraph.has_no_connect;
+
+        for node in subgraph.nodes {
+            entry
+                .2
+                .entry((node.reference.clone(), node.pin.clone()))
+                .or_insert(node);
+        }
+
+        for base_pin in subgraph.base_pins {
+            if !entry.3.contains(&base_pin) {
+                entry.3.push(base_pin);
+            }
+        }
+    }
+
+    grouped
+        .into_iter()
+        .map(
+            |((code, name), (class, has_no_connect, nodes, base_pins))| ReducedProjectNetEntry {
+                code,
+                name,
+                class,
+                has_no_connect,
+                nodes: nodes.into_values().collect(),
+                base_pins,
+            },
+        )
+        .collect()
 }
 
 // Upstream parity: reduced local analogue for iterating `ConnectionGraph()->GetNetMap()` subgraph
