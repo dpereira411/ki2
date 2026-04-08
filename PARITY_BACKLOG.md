@@ -485,6 +485,8 @@ Current status:
       full-vs-short/path-qualified reduced net naming split
     - netcode-style ownership
     - richer bus-member objects beyond reduced expansion
+  - shared connection points now keep bus segments distinct from wire segments, so wire-only ERC
+    branches no longer count buses through the old collapsed `Wire` member kind
 
 ## Net Naming / CLI Requirements
 

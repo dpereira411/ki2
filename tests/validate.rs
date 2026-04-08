@@ -2865,6 +2865,35 @@ fn erc_allows_bus_alias_member_entries() {
 }
 
 #[test]
+fn erc_does_not_count_buses_as_four_way_junction_items() {
+    let path = temp_schematic(
+        "erc_four_way_excludes_bus",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (wire (pts (xy 0 -10) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 0 10)))
+  (junction (at 0 0)))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-four-way-junction"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_suppresses_bus_entry_conflicts_for_global_label_override() {
     let path = temp_schematic(
         "erc_bus_entry_global_override",

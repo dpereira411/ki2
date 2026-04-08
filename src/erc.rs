@@ -1432,9 +1432,9 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestFourWayJunction()`. This is not a
 // 1:1 KiCad marker pass because the Rust tree still lacks `SCH_MARKER` / `ERC_ITEM` and the full
 // connection graph, but it now uses a shared connection-point snapshot that includes projected
-// symbol pins and wire endpoints instead of a wire-only geometry shortcut. Remaining divergence is
-// fuller connection-graph ownership and broader item-class participation beyond the exercised ERC
-// slice.
+// symbol pins and keeps bus segments separate from wire segments instead of collapsing both into a
+// wire-only geometry shortcut. Remaining divergence is fuller connection-graph ownership and
+// broader item-class participation beyond the exercised ERC slice.
 pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 

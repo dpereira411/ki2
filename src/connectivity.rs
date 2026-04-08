@@ -18,6 +18,7 @@ pub(crate) enum ConnectionMemberKind {
     SymbolPin,
     SheetPin,
     Wire,
+    Bus,
     BusEntry,
     Label,
     Junction,
@@ -520,7 +521,9 @@ fn push_connection_member(
 // `ERC_TESTER::TestFourWayJunction()` / `TestNoConnectPins()`. This is not a 1:1
 // `CONNECTION_GRAPH` port because the Rust tree still lacks KiCad's full subgraph ownership, but
 // it is needed so ERC, shown-text, and net export can run on one shared connection owner instead of
-// repeating isolated geometry scans in each caller.
+// repeating isolated geometry scans in each caller. Bus segments now stay distinct from wire
+// segments in this shared carrier instead of collapsing into one local `Wire` kind, which keeps
+// wire-only ERC branches closer to KiCad's bus-vs-wire item ownership.
 pub(crate) fn collect_connection_points(
     schematic: &Schematic,
 ) -> BTreeMap<PointKey, ConnectionPointSnapshot> {
@@ -547,12 +550,26 @@ pub(crate) fn collect_connection_points(
                     );
                 }
             }
-            SchItem::Wire(line) | SchItem::Bus(line) => {
+            SchItem::Wire(line) => {
                 for point in &line.points {
                     push_connection_member(
                         &mut snapshot,
                         ConnectionMember {
                             kind: ConnectionMemberKind::Wire,
+                            at: *point,
+                            symbol_uuid: None,
+                            visible: true,
+                            electrical_type: None,
+                        },
+                    );
+                }
+            }
+            SchItem::Bus(line) => {
+                for point in &line.points {
+                    push_connection_member(
+                        &mut snapshot,
+                        ConnectionMember {
+                            kind: ConnectionMemberKind::Bus,
                             at: *point,
                             symbol_uuid: None,
                             visible: true,
