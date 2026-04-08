@@ -1479,6 +1479,13 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             .entry(net_identity.name.clone())
             .or_default()
             .push(index);
+        if net_identity.name.contains('[') {
+            let prefix_only = format!("{}[]", net_identity.name.split('[').next().unwrap_or(""));
+            subgraphs_by_name
+                .entry(prefix_only)
+                .or_default()
+                .push(index);
+        }
         subgraphs_by_sheet_and_name
             .entry((
                 net_identity.sheet_instance_path.clone(),
@@ -1746,8 +1753,9 @@ pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
 // is not a 1:1 global lookup because the Rust tree still stores reduced subgraphs in the shared
 // project graph instead of live `CONNECTION_SUBGRAPH*` objects, but it restores the owner
 // boundary where graph/export/ERC callers can ask for the first resolved subgraph by full net name
-// instead of flattening to whole-net facts only. Remaining divergence is the fuller subgraph
-// object model and graph-owned resolved-name caches.
+// instead of flattening to whole-net facts only. It now also preserves KiCad's exercised vector
+// bus `prefix[]` alias entries beside the full resolved bus name. Remaining divergence is the
+// fuller subgraph object model and graph-owned resolved-name caches.
 pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
     graph: &'a ReducedProjectNetGraph,
     net_name: &str,
@@ -3468,6 +3476,42 @@ mod tests {
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn reduced_project_subgraph_lookup_accepts_vector_bus_prefix_alias() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_prefix_lookup_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (global_label "DATA[0..7]" (shape input) (at 0 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+
+        let by_full_name = find_first_reduced_project_subgraph_by_name(&graph, "DATA[0..7]")
+            .expect("full-name bus subgraph");
+        let by_prefix =
+            find_first_reduced_project_subgraph_by_name(&graph, "DATA[]").expect("prefix bus");
+
+        assert_eq!(by_prefix.subgraph_code, by_full_name.subgraph_code);
+        assert_eq!(by_prefix.name, by_full_name.name);
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]

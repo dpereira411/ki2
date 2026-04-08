@@ -832,6 +832,8 @@ What is already covered indirectly:
   net name)` like KiCad instead of the old repo-local short-driver key
 - reduced project `FindSubgraphByName()` lookup now also preserves KiCad's same-sheet duplicate
   resolved-name list shape instead of collapsing `(sheet, name)` to one overwritten subgraph index
+- reduced project `FindFirstSubgraphByName()` lookup now also preserves the exercised vector-bus
+  `prefix[]` alias entries KiCad stores beside full resolved bus names
 - reduced project graph now also exposes a shared `GetAllSubgraphs()`-style same-name lookup for
   ERC/export callers instead of forcing each caller to rebuild per-net neighbor maps
 - reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
