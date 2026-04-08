@@ -708,6 +708,9 @@ Current status:
         scaffolding
       - active bus-link rematch now also uses handle-keyed temporary refresh state instead of
         reduced-index-keyed vectors on the live path
+      - active bus parent/neighbor links now also sit on shared live link owners instead of copied
+        value links inside each live subgraph, so active propagation mutates shared link state
+        alongside the shared live item owners
       - after the active traversal and bus-link refresh handle ports, the remaining `source_index`
         uses are mostly projection, tests, and deterministic ordering rather than core live graph
         ownership/control flow
