@@ -723,17 +723,24 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
 // not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
-// shared reduced `GetNetMap()` analogue instead of full `CONNECTION_GRAPH` subgraphs, but it now
-// preserves one graph-side net grouping owner before exporter formatting. The remaining divergence
-// is the fuller KiCad subgraph object model and graph-owned netcode/name caches. Net ordering now
-// follows the upstream `StrNumCmp` path instead of the old lexical `BTreeMap` order.
+// shared `GetNetMap()` analogue instead of full `CONNECTION_GRAPH` subgraphs, but it now keeps the
+// graph grouping owner and mirrors the exercised write-time filtering branch where power/virtual
+// `#...` refs are skipped after net grouping, which can drop whole nets without renumbering the
+// remaining emitted codes. The remaining divergence is the fuller KiCad subgraph object model and
+// graph-owned netcode/name caches.
 pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<NetlistNet> {
     collect_reduced_project_net_map(project, for_board)
         .into_iter()
-        .map(|entry| {
+        .filter_map(|entry| {
+            let all_net_pins_stacked = !entry.base_pins.is_empty()
+                && entry
+                    .base_pins
+                    .iter()
+                    .all(|base_pin| *base_pin == entry.base_pins[0]);
             let mut nodes = entry
                 .nodes
                 .into_iter()
+                .filter(|node| !node.reference.starts_with('#'))
                 .map(|node| NetlistNode {
                     reference: node.reference,
                     pin: node.pin,
@@ -741,11 +748,10 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
                     pintype: node.pintype,
                 })
                 .collect::<Vec<_>>();
-            let all_net_pins_stacked = !entry.base_pins.is_empty()
-                && entry
-                    .base_pins
-                    .iter()
-                    .all(|base_pin| *base_pin == entry.base_pins[0]);
+
+            if nodes.is_empty() {
+                return None;
+            }
 
             if entry.has_no_connect && (nodes.len() == 1 || all_net_pins_stacked) {
                 for node in &mut nodes {
@@ -753,12 +759,12 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
                 }
             }
 
-            NetlistNet {
+            Some(NetlistNet {
                 code: entry.code,
                 name: entry.name,
                 class: entry.class,
                 nodes,
-            }
+            })
         })
         .collect()
 }

@@ -733,6 +733,9 @@ What is already covered indirectly:
 - reduced graph-side net grouping now flows through one shared `GetNetMap()` analogue before XML /
   KiCad export formatting
 - reduced project-wide net grouping now owns cross-sheet merge plus sorted netcode allocation
+- XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`
+  power/virtual-symbol node filter, including skipped power-only nets without renumbering later
+  emitted net codes
 
 What is not yet explicitly tracked as complete:
 - fuller KiCad/default `kicad` netlist CLI surface
