@@ -454,8 +454,14 @@ fn cli_netlist_writes_reduced_xml_by_default() {
         "{report}"
     );
     assert!(report.contains("<pins>"), "{report}");
-    assert!(report.contains("<pin num=\"1\" name=\"~\" />"), "{report}");
-    assert!(report.contains("<pin num=\"2\" name=\"~\" />"), "{report}");
+    assert!(
+        report.contains("<pin num=\"1\" name=\"~\" type=\"passive\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<pin num=\"2\" name=\"~\" type=\"passive\" />"),
+        "{report}"
+    );
     assert!(report.contains("<nets>"), "{report}");
     assert!(report.contains("name=\"NET_IN\""), "{report}");
     assert!(report.contains("name=\"NET_OUT\""), "{report}");
@@ -514,6 +520,52 @@ fn cli_netlist_uses_schematic_lib_name_in_libsource() {
         report.contains("<libpart lib=\"Device\" part=\"R\">"),
         "{report}"
     );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_netlist_sorts_libpart_pins_by_str_num_cmp() {
+    let path = temp_schematic(
+        "cli_netlist_libpart_pin_order",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:ODD"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "ODD" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "ODD_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "P2" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "P10" (effects (font (size 1 1))))
+          (number "10" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:ODD")
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "ODD" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    let pin_two = report
+        .find("<pin num=\"2\" name=\"P2\" type=\"passive\" />")
+        .expect("pin 2");
+    let pin_ten = report
+        .find("<pin num=\"10\" name=\"P10\" type=\"passive\" />")
+        .expect("pin 10");
+    assert!(pin_two < pin_ten, "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
@@ -762,8 +814,14 @@ fn cli_netlist_expands_stacked_pin_notation() {
     assert!(output.status.success(), "netlist must succeed");
     let report = fs::read_to_string(&report_path).expect("read netlist");
 
-    assert!(report.contains("<pin num=\"1\" name=\"IO\" />"), "{report}");
-    assert!(report.contains("<pin num=\"2\" name=\"IO\" />"), "{report}");
+    assert!(
+        report.contains("<pin num=\"1\" name=\"IO\" type=\"passive\" />"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<pin num=\"2\" name=\"IO\" type=\"passive\" />"),
+        "{report}"
+    );
     assert!(
         report.contains("<node ref=\"U1\" pin=\"1\" pinfunction=\"IO_1\""),
         "{report}"

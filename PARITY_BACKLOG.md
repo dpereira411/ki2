@@ -721,7 +721,9 @@ What is already covered indirectly:
   - reduced per-lib-unit pin export on `<units>`
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
-- reduced `nets`
+    - exercised pin `type` emission is now live
+    - exercised libpart pin ordering now follows `StrNumCmp`
+  - reduced `nets`
 - reduced node lists from the current point-net resolver
 - reduced graph-side net grouping now flows through one shared `GetNetMap()` analogue before XML /
   KiCad export formatting

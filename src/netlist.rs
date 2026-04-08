@@ -60,7 +60,14 @@ pub struct NetlistLibPart {
     pub docs: String,
     pub fields: Vec<(String, String)>,
     pub footprints: Vec<String>,
-    pub pins: Vec<(String, String)>,
+    pub pins: Vec<NetlistLibPartPin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetlistLibPartPin {
+    pub number: String,
+    pub name: String,
+    pub electrical_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1082,8 +1089,8 @@ fn symbol_to_xml_component(
 // Upstream parity: reduced local analogue for the pin portion of
 // `NETLIST_EXPORTER_XML::makeLibParts()`. This is not a 1:1 library-adapter walk because the Rust
 // tree still reads schematic-linked lib-symbol snapshots, but it preserves the exercised
-// duplicate-pin-number erasure and stacked-pin expansion so downstream netlist consumers see the
-// same logical pin list KiCad exports.
+// duplicate-pin-number erasure, `StrNumCmp` pin ordering, stacked-pin expansion, and pin-type
+// emission so downstream netlist consumers see the same logical pin list KiCad exports.
 fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol) -> NetlistLibPart {
     let (lib, part) = lib_id
         .split_once(':')
@@ -1113,7 +1120,7 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
         fields.insert(property.key.clone(), property.value.clone());
     }
 
-    let mut pins = BTreeMap::<String, String>::new();
+    let mut pins = BTreeMap::<String, NetlistLibPartPin>::new();
 
     for unit in &lib_symbol.units {
         for pin in unit.draw_items.iter().filter(|item| item.kind == "pin") {
@@ -1125,13 +1132,25 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
 
             if stacked_valid {
                 for expanded_number in expanded_numbers {
-                    pins.entry(expanded_number).or_insert_with(|| name.clone());
+                    pins.entry(expanded_number.clone())
+                        .or_insert_with(|| NetlistLibPartPin {
+                            number: expanded_number,
+                            name: name.clone(),
+                            electrical_type: pin.electrical_type.clone().unwrap_or_default(),
+                        });
                 }
             } else {
-                pins.entry(number).or_insert(name);
+                pins.entry(number.clone()).or_insert(NetlistLibPartPin {
+                    number,
+                    name,
+                    electrical_type: pin.electrical_type.clone().unwrap_or_default(),
+                });
             }
         }
     }
+
+    let mut pins = pins.into_values().collect::<Vec<_>>();
+    pins.sort_by(|lhs, rhs| str_num_cmp(&lhs.number, &rhs.number, true));
 
     NetlistLibPart {
         lib,
@@ -1140,7 +1159,7 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
         docs,
         fields: fields.into_iter().collect(),
         footprints: lib_symbol.fp_filters.clone(),
-        pins: pins.into_iter().collect(),
+        pins,
     }
 }
 
@@ -1726,11 +1745,12 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
         if !libpart.pins.is_empty() {
             xml.push_str("      <pins>\n");
 
-            for (number, name) in libpart.pins {
+            for pin in libpart.pins {
                 xml.push_str(&format!(
-                    "        <pin num=\"{}\" name=\"{}\" />\n",
-                    escape_xml(&number),
-                    escape_xml(&name)
+                    "        <pin num=\"{}\" name=\"{}\" type=\"{}\" />\n",
+                    escape_xml(&pin.number),
+                    escape_xml(&pin.name),
+                    escape_xml(&pin.electrical_type)
                 ));
             }
 
