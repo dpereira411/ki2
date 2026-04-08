@@ -708,6 +708,9 @@ Current status:
         scaffolding
       - active bus-link rematch now also uses handle-keyed temporary refresh state instead of
         reduced-index-keyed vectors on the live path
+      - after the active traversal and bus-link refresh handle ports, the remaining `source_index`
+        uses are mostly projection, tests, and deterministic ordering rather than core live graph
+        ownership/control flow
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
