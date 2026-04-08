@@ -1567,6 +1567,21 @@ fn reduced_project_bus_parent_indexes_from_live_subgraph(
     parent_indexes
 }
 
+fn reduced_project_hierarchy_indexes_from_live_subgraph(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    subgraph: &LiveReducedSubgraph,
+) -> (Option<usize>, Vec<usize>) {
+    let parent_index = live_subgraph_parent_handle(live_subgraphs, subgraph)
+        .map(|handle| handle.borrow().source_index);
+    let mut child_indexes = live_subgraph_child_handles(live_subgraphs, subgraph)
+        .into_iter()
+        .map(|handle| handle.borrow().source_index)
+        .collect::<Vec<_>>();
+    child_indexes.sort_unstable();
+    child_indexes.dedup();
+    (parent_index, child_indexes)
+}
+
 // Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
 // KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
 // wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
@@ -1714,6 +1729,10 @@ fn apply_live_reduced_driver_connections_from_handles(
             .iter()
             .map(reduced_project_bus_link_from_live)
             .collect();
+        let (hier_parent_index, hier_child_indexes) =
+            reduced_project_hierarchy_indexes_from_live_subgraph(live_subgraphs, &live);
+        reduced.hier_parent_index = hier_parent_index;
+        reduced.hier_child_indexes = hier_child_indexes;
         reduced.bus_parent_indexes =
             reduced_project_bus_parent_indexes_from_live_subgraph(live_subgraphs, &live);
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
@@ -8153,6 +8172,140 @@ mod tests {
         apply_live_reduced_driver_connections_from_handles(&mut reduced, &handles);
 
         assert_eq!(reduced[1].bus_parent_indexes, vec![0]);
+    }
+
+    #[test]
+    fn handle_projection_resolves_hierarchy_indexes_from_live_handles() {
+        let mut reduced = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/TOP".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/TOP".to_string(),
+                    local_name: "TOP".to_string(),
+                    full_local_name: "/TOP".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/TOP".to_string(),
+                    local_name: "TOP".to_string(),
+                    full_local_name: "/TOP".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/TOP".to_string(),
+                        local_name: "TOP".to_string(),
+                        full_local_name: "/TOP".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: vec![1],
+                base_pins: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/CHILD".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/CHILD".to_string(),
+                    local_name: "CHILD".to_string(),
+                    full_local_name: "/CHILD".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/CHILD".to_string(),
+                    local_name: "CHILD".to_string(),
+                    full_local_name: "/CHILD".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/child".to_string(),
+                anchor: PointKey(1, 1),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    at: PointKey(1, 1),
+                    child_sheet_uuid: None,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/CHILD".to_string(),
+                        local_name: "CHILD".to_string(),
+                        full_local_name: "/CHILD".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: Some(0),
+                hier_child_indexes: Vec::new(),
+                base_pins: Vec::new(),
+            },
+        ];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        {
+            let mut parent = handles[0].borrow_mut();
+            parent.hier_child_indexes.clear();
+        }
+        {
+            let mut child = handles[1].borrow_mut();
+            child.hier_parent_index = None;
+        }
+
+        apply_live_reduced_driver_connections_from_handles(&mut reduced, &handles);
+
+        assert_eq!(reduced[0].hier_child_indexes, vec![1]);
+        assert_eq!(reduced[1].hier_parent_index, Some(0));
     }
 
     #[test]
