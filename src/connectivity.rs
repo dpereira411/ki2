@@ -870,8 +870,10 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
 // item identity, but it preserves one shared reduced net-map owner instead of rebuilding net
 // grouping inside each exporter. It now also keeps node-less driver subgraphs instead of dropping
 // them before the shared graph owner sees them, matching KiCad's graph-owned subgraph coverage
-// more closely. Remaining divergence is the missing full subgraph object model and graph-owned
-// netcode allocation beyond these grouped reduced subgraphs.
+// more closely, and it keeps shared base-pin identity even for symbols excluded from node emission
+// so graph item lookup stays available for ERC power-pin paths. Remaining divergence is the
+// missing full subgraph object model and graph-owned netcode allocation beyond these grouped
+// reduced subgraphs.
 pub(crate) fn collect_reduced_net_map<FName, FClass, FAllow, FReference>(
     schematic: &Schematic,
     sheet_instance_path: &str,
@@ -902,13 +904,14 @@ where
                 continue;
             };
 
-            if !symbol.in_netlist || !allow_symbol(symbol) {
+            if !allow_symbol(symbol) {
                 continue;
             }
 
-            let Some(reference) = symbol_reference(symbol) else {
-                continue;
-            };
+            let reference = symbol
+                .in_netlist
+                .then(|| symbol_reference(symbol))
+                .flatten();
 
             for pin in projected_symbol_pin_info(symbol) {
                 let Some(base_pin_number) = pin.number.clone() else {
@@ -934,6 +937,12 @@ where
                     at: point_key(pin.at),
                     name: pin.name.clone(),
                 };
+                base_pins.push(base_pin_key);
+
+                let Some(reference) = reference.as_ref() else {
+                    continue;
+                };
+
                 let emits_expanded_pinfunction =
                     pinfunction_base.is_some() || expanded_numbers.len() > 1;
 
@@ -956,8 +965,6 @@ where
                             pintype: pin.electrical_type.clone().unwrap_or_default(),
                         });
                 }
-
-                base_pins.push(base_pin_key);
             }
         }
 
@@ -3246,5 +3253,92 @@ mod tests {
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn reduced_project_pin_identity_covers_multi_pin_power_symbols() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_power_pin_identity_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:SplitGround"
+      (power)
+      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "SplitGround" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "SplitGround_1_1"
+        (pin power_in line (at 0 0 180) (length 2.54)
+          (name "GND" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin power_in line (at 10 0 0) (length 2.54)
+          (name "AGND" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "power:SplitGround")
+    (uuid "73050000-0000-0000-0000-000000000201")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitGround" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "VCC" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "GND" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"##,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("power symbol");
+
+        let gnd_pin = crate::connectivity::resolve_reduced_project_net_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [0.0, 0.0],
+            Some("GND"),
+        )
+        .expect("gnd pin graph identity");
+        let agnd_pin = crate::connectivity::resolve_reduced_project_net_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [10.0, 0.0],
+            Some("AGND"),
+        )
+        .expect("agnd pin graph identity");
+
+        assert_eq!(gnd_pin.name, "VCC");
+        assert_eq!(agnd_pin.name, "GND");
+
+        let _ = fs::remove_file(path);
     }
 }

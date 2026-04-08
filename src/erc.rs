@@ -3,18 +3,16 @@ use crate::connectivity::{
     collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
     collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
     projected_symbol_pin_info, reduced_bus_members, reduced_text_is_bus,
-    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_for_symbol_pin,
-    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
-    resolve_reduced_project_subgraph_for_no_connect,
+    resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_at,
+    resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
     LoadedErcSeverity, LoadedSheetPath, collect_wire_segments, point_on_wire_segment, points_equal,
-    reduced_net_name_sheet_path_prefix, resolve_cross_reference_text_var,
-    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
-    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
-    resolved_symbol_text_property_value, resolved_symbol_text_state,
+    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
+    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
+    resolved_sheet_text_state, resolved_symbol_text_property_value, resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -489,34 +487,22 @@ fn pin_conflict(lhs: ReducedPinType, rhs: ReducedPinType) -> PinConflict {
 // Upstream parity: reduced local helper for the symbol-pin net lookup that several
 // `ERC_TESTER` pin rules consume through the connection graph. This is not a 1:1 KiCad
 // `SCH_PIN::Connection()` owner because the Rust tree still lacks full `CONNECTION_SUBGRAPH`
-// item ownership for every projected pin, so it prefers the shared project-level reduced graph
-// identity and falls back to the older current-sheet point-net resolver where that reduced item
-// identity is still incomplete. The helper exists to keep that temporary divergence in one place
-// while the backlog drives the remaining item-to-subgraph parity work.
+// item ownership for every projected pin, but it now reads net identity only from the shared
+// project-level reduced graph instead of falling back to a second current-sheet point-net path.
+// Remaining divergence is the still-missing full graph item owner when a projected pin cannot yet
+// be resolved through the shared graph.
 fn resolved_pin_net_name(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
-    schematic: &crate::model::Schematic,
+    _schematic: &crate::model::Schematic,
     symbol: &crate::model::Symbol,
     pin_at: [f64; 2],
     pin_name: Option<&str>,
 ) -> String {
     let graph = project.reduced_project_net_graph(false);
-    if let Some(net) =
-        resolve_reduced_project_net_for_symbol_pin(&graph, sheet_path, symbol, pin_at, pin_name)
-    {
-        return net.name;
-    }
-
-    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-    resolve_reduced_net_name_for_symbol_pin(
-        schematic,
-        symbol,
-        pin_at,
-        Some(&sheet_path_prefix),
-        |label| shown_label_text(project, sheet_path, label),
-    )
-    .unwrap_or_default()
+    resolve_reduced_project_net_for_symbol_pin(&graph, sheet_path, symbol, pin_at, pin_name)
+        .map(|net| net.name)
+        .unwrap_or_default()
 }
 
 // Upstream parity: reduced local helper for the generic connection-point net lookup that the

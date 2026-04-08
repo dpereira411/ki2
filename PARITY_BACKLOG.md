@@ -516,16 +516,13 @@ Current status:
 - reduced cross-reference shown-text now also covers:
   - `${REF:NET_CLASS(pin)}`
 - the remaining gap is fuller KiCad settings/subgraph exactness, not absence of the rule
-- graph-only symbol-pin net lookup is not yet signed off for strict ERC parity:
-  - direct ERC-side removal of the local pin-net fallback exposed a real miss on multi-pin power
-    symbols (`erc_reports_ground_pins_on_non_ground_nets`)
-  - current reduced shared symbol-pin identity is therefore still incomplete for at least one
-    multi-pin power-symbol branch
-  - unblock path:
-    1. add a focused connectivity regression for shared symbol-pin lookup on multi-pin power
-       symbols
-    2. inspect `collect_reduced_net_map()` / `pin_subgraph_identities` population for that branch
-    3. only remove the ERC-side local fallback after the shared graph resolves those pins directly
+- graph-only symbol-pin net lookup now covers the exercised multi-pin power-symbol branch:
+  - shared reduced pin identity now preserves base-pin ownership even when a symbol is excluded
+    from netlist node emission, which keeps power-symbol ERC pin lookup on the graph-owned path
+  - focused regression is live for the old `erc_reports_ground_pins_on_non_ground_nets` miss
+  - `ERC_TESTER::TestGroundPins()` now reads pin net names from the shared project graph only
+  - remaining gap is broader item ownership beyond the now-covered power-symbol branch, not this
+    specific fallback
 - the drawing-sheet text-vars slice is now functionally covered for the exercised ERC path
 - remaining drawing-sheet work is broader worksheet draw-item/painter parity, not missing
   `ERC_TESTER::TestTextVars()` text behavior
