@@ -649,6 +649,7 @@ fn clone_reduced_connection_into_bus_member(
 // `SCH_ITEM`-owned connections, but it keeps the exercised subgraph-resolved connection names and
 // text-link connection owners aligned once the shared graph renames a net subgraph. Remaining
 // divergence is the still-missing live item connection cache on real subgraph objects.
+#[cfg(test)]
 fn clone_reduced_connection_into_subgraph(
     subgraph: &mut ReducedProjectSubgraphEntry,
     connection: &ReducedProjectConnection,
@@ -1238,6 +1239,7 @@ fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
 // KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
 // wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
 // owners synchronized with the current live subgraph driver before the final reduced projection.
+#[cfg(test)]
 fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubgraph) {
     let driver_connection = subgraph.driver_connection.clone();
 
@@ -1256,6 +1258,7 @@ fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubg
 // reduced project graph query surface. This is still a projection step because the repo does not
 // yet keep live item-owned connection pointers, but it now writes the live per-link connection
 // owners instead of blasting the chosen driver connection onto every label/sheet-pin/hier-port.
+#[cfg(test)]
 fn apply_live_reduced_driver_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraph],
@@ -1375,6 +1378,7 @@ fn apply_live_reduced_driver_connections_from_handles(
     }
 }
 
+#[cfg(test)]
 fn build_live_reduced_name_caches(
     live_subgraphs: &[LiveReducedSubgraph],
 ) -> (
@@ -1445,6 +1449,7 @@ fn build_live_reduced_name_caches_from_handles(
     (subgraphs_by_name, subgraphs_by_sheet_and_name)
 }
 
+#[cfg(test)]
 fn recache_live_reduced_subgraph_name(
     live_subgraphs: &[LiveReducedSubgraph],
     subgraphs_by_name: &mut BTreeMap<String, Vec<usize>>,
@@ -1545,6 +1550,7 @@ fn recache_live_reduced_subgraph_name_from_handles(
         .push(subgraph_index);
 }
 
+#[cfg(test)]
 fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
     stale_members: &[ReducedBusMember],
@@ -1582,6 +1588,7 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
     }
 }
 
+#[cfg(test)]
 fn replay_reduced_live_stale_bus_members_on_live_subgraphs_for_indexes(
     live_subgraphs: &mut [LiveReducedSubgraph],
     indexes: &[usize],
@@ -1645,6 +1652,7 @@ fn reduced_connection_from_bus_member(
 // it now remaps stored bus parent/neighbor link members onto the parent's current reduced member
 // tree so later consumers do not keep stale pre-remap member names forever. Remaining divergence is
 // the still-missing in-place connection clone/recache cycle on the subgraphs themselves.
+#[cfg(test)]
 fn refresh_reduced_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut refreshed_parent_links =
         vec![Vec::<ReducedProjectBusNeighborLink>::new(); reduced_subgraphs.len()];
@@ -1699,6 +1707,7 @@ fn refresh_reduced_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgr
 // same-name subgraphs are updated to that propagated name before the final graph caches are built.
 // Remaining divergence is the still-missing live stale-member refresh and pointer-based recache
 // cycle on real connection objects.
+#[cfg(test)]
 fn refresh_reduced_multiple_bus_parent_names(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -1764,6 +1773,7 @@ fn refresh_reduced_multiple_bus_parent_names(
 // real `SCH_CONNECTION` pointers in place, but it now refreshes each parent bus member from the
 // child subgraph's final connection owner once that child net has settled. Remaining divergence is
 // the still-missing recursive live dirty/repropagate cycle on real subgraph objects.
+#[cfg(test)]
 fn refresh_reduced_bus_members_from_neighbor_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -1857,6 +1867,7 @@ fn refresh_reduced_bus_members_from_neighbor_connections(
 // place, but it now keeps running the reduced rename/member refresh passes until the shared graph
 // stops changing instead of assuming one static pass is sufficient. Remaining divergence is the
 // still-missing live dirty graph walk and pointer-based stale-member cache.
+#[cfg(test)]
 fn refresh_reduced_bus_propagation_fixpoint(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let max_passes = reduced_subgraphs.len().saturating_add(1).max(1);
 
@@ -1881,6 +1892,7 @@ fn refresh_reduced_bus_propagation_fixpoint(reduced_subgraphs: &mut [ReducedProj
 // graph. Remaining divergence is that the current live layer still covers only the hierarchy-chain
 // slice and does not yet include KiCad's bus-neighbor recursion, stale bus-member replay, or live
 // item-owned connection updates on the same objects.
+#[cfg(test)]
 fn propagate_reduced_live_hierarchy_chain(
     start: usize,
     live_subgraphs: &mut [LiveReducedSubgraph],
@@ -1962,6 +1974,7 @@ fn propagate_reduced_live_hierarchy_chain(
     }
 }
 
+#[cfg(test)]
 fn collect_live_reduced_hierarchy_component(
     start: usize,
     live_subgraphs: &[LiveReducedSubgraph],
@@ -1990,6 +2003,7 @@ fn collect_live_reduced_hierarchy_component(
     component
 }
 
+#[cfg(test)]
 fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
@@ -2016,6 +2030,7 @@ fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(
     }
 }
 
+#[cfg(test)]
 fn propagate_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
     live_subgraphs: &mut [LiveReducedSubgraph],
     indexes: &[usize],
@@ -2047,6 +2062,7 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
@@ -2059,6 +2075,7 @@ fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProje
 // live objects, but it now mutates chosen bus-member and neighbor driver connections on a shared
 // live subgraph owner before projecting them back onto the reduced graph. Remaining divergence is
 // the later stale-member replay / recache recursion that still falls back to the reduced fixpoint.
+#[cfg(test)]
 fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
     stale_members: &mut Vec<ReducedBusMember>,
@@ -2192,6 +2209,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
     live_subgraphs: &mut [LiveReducedSubgraph],
     indexes: &[usize],
@@ -2326,6 +2344,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_bus_neighbor_drivers(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -2344,6 +2363,7 @@ fn refresh_reduced_live_bus_neighbor_drivers(
 // full live `stale_bus_members` replay because it does not recursively revisit every affected bus
 // subgraph on the same object graph, but it does move the direct child-net -> parent-bus member
 // mutation onto the shared live subgraph owner before the reduced cleanup passes.
+#[cfg(test)]
 fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
@@ -2407,6 +2427,7 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_bus_parent_members_on_live_subgraphs_for_indexes(
     live_subgraphs: &mut [LiveReducedSubgraph],
     indexes: &[usize],
@@ -2471,6 +2492,7 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs_for_indexes(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     refresh_reduced_live_bus_parent_members_on_live_subgraphs(&mut live_subgraphs);
@@ -2481,6 +2503,7 @@ fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProje
 // runs before the final graph caches are rebuilt. This still projects back onto the reduced graph
 // instead of mutating live name indexes in place, but it moves the parent-member clone and
 // same-name subgraph rename onto the shared live subgraph owner before the reduced cache rebuild.
+#[cfg(test)]
 fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
@@ -2548,6 +2571,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_multiple_bus_parent_names(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -2560,6 +2584,7 @@ fn refresh_reduced_live_multiple_bus_parent_names(
 // matching live bus members on the same propagated subgraph objects. This still projects the
 // remapped links back onto reduced vectors, but it moves the member rematch step onto the shared
 // live driver connections before the reduced cache rebuild.
+#[cfg(test)]
 fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
@@ -2629,6 +2654,7 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(
     live_subgraphs: &mut [LiveReducedSubgraph],
     indexes: &[usize],
@@ -2699,6 +2725,7 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(
     }
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
@@ -2710,6 +2737,7 @@ fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProject
 // not the final `m_dirty` / recursive `propagateToNeighbors()` engine, but it moves the repeat
 // loop itself onto the live bus-owner slices instead of leaving all multi-step bus propagation to
 // the reduced snapshot fixpoint.
+#[cfg(test)]
 fn refresh_reduced_live_bus_propagation_fixpoint(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -2740,6 +2768,7 @@ fn refresh_reduced_live_bus_propagation_fixpoint(
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
+#[cfg(test)]
 fn propagate_reduced_live_graph_neighbors(
     start: usize,
     live_subgraphs: &mut [LiveReducedSubgraph],
@@ -3652,6 +3681,7 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
 // instead of mutating live item-owned `SCH_CONNECTION` objects, but it now refreshes live
 // label/sheet-pin/hier-port connection owners before the final reduced projection instead of
 // treating every item connection as an end-of-pass clone of the chosen driver.
+#[cfg(test)]
 fn refresh_reduced_live_post_propagation_item_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -3660,6 +3690,7 @@ fn refresh_reduced_live_post_propagation_item_connections(
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
+#[cfg(test)]
 fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
@@ -3735,6 +3766,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
 //   sheet
 // Remaining divergence is the still-missing live recursive propagation immediately after each
 // promotion on the actual visited subgraph objects.
+#[cfg(test)]
 fn refresh_reduced_global_secondary_driver_promotions(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -3804,6 +3836,7 @@ fn refresh_reduced_global_secondary_driver_promotions(
 // instead of promoting disconnected candidates on reduced snapshots before the live graph runs.
 // Remaining divergence is the still-missing pointer-owned driver/item mutation on the promoted
 // subgraph itself.
+#[cfg(test)]
 fn refresh_reduced_live_global_secondary_driver_promotions_for_index(
     start: usize,
     live_subgraphs: &mut [LiveReducedSubgraph],
@@ -7171,6 +7204,7 @@ fn reduced_force_no_connect_net_name(name: &str) -> String {
 //   neighbors
 // Remaining divergence is the still-missing live `UpdateItemConnections()` cache/update timing on
 // real items.
+#[cfg(test)]
 fn refresh_reduced_post_propagation_item_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
