@@ -602,6 +602,9 @@ Current status:
         - direct bus parent/neighbor link member rematch before reduced cleanup
         - repeated live bus fixpoint over those slices, including stale same-bus link replay after
           promoted-member renames
+        - exercised post-propagation item-connection updates before the reduced fallback:
+          - weak single-pin `Net-(` -> `unconnected-(` renaming
+          - sheet-pin bus/member promotion from bus-typed child neighbors
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
