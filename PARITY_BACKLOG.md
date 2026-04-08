@@ -587,6 +587,7 @@ Current status:
       - member-keyed reduced bus parent/neighbor links
       - reduced stale-member refresh from final child connections
       - reduced repeated settle/fixpoint passes instead of one static propagation step
+      - reduced bus-entry connected-bus ownership on shared subgraph indexes
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with pointer
@@ -597,8 +598,8 @@ Current status:
         converges cloned snapshots
       - no live cached driver connection object that can be cloned and recached in place across
         labels, pins, and connected items
-      - connected-bus-item ownership is still keyed by reduced member snapshots, not live item /
-        connection pointers
+      - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
+        live item / connection pointers
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
 
