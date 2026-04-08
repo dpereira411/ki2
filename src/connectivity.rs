@@ -837,7 +837,7 @@ fn clone_reduced_connection_into_live_connection(
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LiveReducedConnection {
     connection: ReducedProjectConnection,
 }
@@ -861,6 +861,26 @@ impl LiveReducedConnection {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct LiveReducedLabelLink {
+    at: PointKey,
+    kind: LabelKind,
+    connection: LiveReducedConnection,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct LiveReducedHierSheetPinLink {
+    at: PointKey,
+    child_sheet_uuid: Option<String>,
+    connection: LiveReducedConnection,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct LiveReducedHierPortLink {
+    at: PointKey,
+    connection: LiveReducedConnection,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedSubgraph {
     source_index: usize,
     driver_connection: LiveReducedConnection,
@@ -878,9 +898,16 @@ struct LiveReducedSubgraph {
     hier_child_indexes: Vec<usize>,
     has_hier_pins: bool,
     has_hier_ports: bool,
+    label_links: Vec<LiveReducedLabelLink>,
+    hier_sheet_pins: Vec<LiveReducedHierSheetPinLink>,
+    hier_ports: Vec<LiveReducedHierPortLink>,
     dirty: bool,
 }
 
+// Upstream parity: reduced local builder for live graph-owned text and hierarchy link connection
+// carriers. This is still not pointer-shared `SCH_ITEM` ownership, but it lets the live graph keep
+// per-item connection state instead of projecting every label/sheet-pin/hier-port from the chosen
+// subgraph driver only at the end of propagation.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -906,23 +933,109 @@ fn build_live_reduced_subgraphs(
             hier_child_indexes: subgraph.hier_child_indexes.clone(),
             has_hier_pins: !subgraph.hier_sheet_pins.is_empty(),
             has_hier_ports: !subgraph.hier_ports.is_empty(),
+            label_links: subgraph
+                .label_links
+                .iter()
+                .cloned()
+                .map(|link| LiveReducedLabelLink {
+                    at: link.at,
+                    kind: link.kind,
+                    connection: LiveReducedConnection::new(link.connection),
+                })
+                .collect(),
+            hier_sheet_pins: subgraph
+                .hier_sheet_pins
+                .iter()
+                .cloned()
+                .map(|pin| LiveReducedHierSheetPinLink {
+                    at: pin.at,
+                    child_sheet_uuid: pin.child_sheet_uuid,
+                    connection: LiveReducedConnection::new(pin.connection),
+                })
+                .collect(),
+            hier_ports: subgraph
+                .hier_ports
+                .iter()
+                .cloned()
+                .map(|port| LiveReducedHierPortLink {
+                    at: port.at,
+                    connection: LiveReducedConnection::new(port.connection),
+                })
+                .collect(),
             dirty: true,
         })
         .collect()
 }
 
+// Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
+// KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
+// wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
+// owners synchronized with the current live subgraph driver before the final reduced projection.
+fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubgraph) {
+    let driver_connection = subgraph.driver_connection.clone();
+
+    for link in &mut subgraph.label_links {
+        link.connection.clone_from(&driver_connection);
+    }
+    for pin in &mut subgraph.hier_sheet_pins {
+        pin.connection.clone_from(&driver_connection);
+    }
+    for port in &mut subgraph.hier_ports {
+        port.connection.clone_from(&driver_connection);
+    }
+}
+
+// Upstream parity: reduced local bridge for pushing live graph-owned connection state back onto the
+// reduced project graph query surface. This is still a projection step because the repo does not
+// yet keep live item-owned connection pointers, but it now writes the live per-link connection
+// owners instead of blasting the chosen driver connection onto every label/sheet-pin/hier-port.
 fn apply_live_reduced_driver_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraph],
 ) {
     for live in live_subgraphs {
-        clone_reduced_connection_into_subgraph(
-            &mut reduced_subgraphs[live.source_index],
+        let reduced = &mut reduced_subgraphs[live.source_index];
+        reduced.name = live.driver_connection.connection.name.clone();
+        clone_reduced_connection_into_live_connection(
+            &mut reduced.resolved_connection,
             &live.driver_connection.connection,
         );
-        reduced_subgraphs[live.source_index].bus_neighbor_links = live.bus_neighbor_links.clone();
-        reduced_subgraphs[live.source_index].bus_parent_links = live.bus_parent_links.clone();
-        reduced_subgraphs[live.source_index].bus_parent_indexes = live.bus_parent_indexes.clone();
+
+        if let Some(driver_connection) = &mut reduced.driver_connection {
+            clone_reduced_connection_into_live_connection(
+                driver_connection,
+                &live.driver_connection.connection,
+            );
+        }
+
+        for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
+            clone_reduced_connection_into_live_connection(
+                &mut target.connection,
+                &source.connection.connection,
+            );
+        }
+
+        for (target, source) in reduced
+            .hier_sheet_pins
+            .iter_mut()
+            .zip(live.hier_sheet_pins.iter())
+        {
+            clone_reduced_connection_into_live_connection(
+                &mut target.connection,
+                &source.connection.connection,
+            );
+        }
+
+        for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
+            clone_reduced_connection_into_live_connection(
+                &mut target.connection,
+                &source.connection.connection,
+            );
+        }
+
+        reduced.bus_neighbor_links = live.bus_neighbor_links.clone();
+        reduced.bus_parent_links = live.bus_parent_links.clone();
+        reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
     }
 }
 
@@ -2072,6 +2185,9 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
                 if old_candidate_name == old_name {
                     live_subgraphs[candidate_index].driver_connection.connection =
                         connection.clone();
+                    sync_live_reduced_item_connections_from_driver(
+                        &mut live_subgraphs[candidate_index],
+                    );
                     live_subgraphs[candidate_index].dirty = true;
                     recache_live_reduced_subgraph_name(
                         &live_subgraphs,
@@ -2414,9 +2530,9 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
 
 // Upstream parity: reduced local analogue for the post-propagation item-connection update KiCad
 // performs after subgraph names settle. This still projects back onto reduced subgraph snapshots
-// instead of mutating live item-owned `SCH_CONNECTION` objects, but it moves the exercised
-// `UpdateItemConnections()`-visible branches onto the shared live subgraph owner before the final
-// reduced fallback pass.
+// instead of mutating live item-owned `SCH_CONNECTION` objects, but it now refreshes live
+// label/sheet-pin/hier-port connection owners before the final reduced projection instead of
+// treating every item connection as an end-of-pass clone of the chosen driver.
 fn refresh_reduced_live_post_propagation_item_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
@@ -2429,6 +2545,8 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
     for index in 0..live_subgraphs.len() {
+        sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
+
         if live_subgraphs[index].strong_driver_count == 0
             && live_subgraphs[index].base_pin_count == 1
             && matches!(
@@ -2446,6 +2564,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
             connection.local_name = reduced_force_no_connect_net_name(&connection.local_name);
             connection.full_local_name =
                 reduced_force_no_connect_net_name(&connection.full_local_name);
+            sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
         }
 
         if matches!(
@@ -2480,6 +2599,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
                     .connection
                     .connection_type = connection_type;
                 live_subgraphs[index].driver_connection.connection.members = members;
+                sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
             }
         }
     }
@@ -6277,7 +6397,8 @@ mod tests {
         ReducedBusMemberKind, ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
         ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
         ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
-        build_live_reduced_name_caches, clone_reduced_connection_into_subgraph,
+        apply_live_reduced_driver_connections, build_live_reduced_name_caches,
+        build_live_reduced_subgraphs, clone_reduced_connection_into_subgraph,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name,
         reduced_bus_member_objects, refresh_reduced_bus_link_members,
@@ -6646,6 +6767,142 @@ mod tests {
         );
         assert_eq!(
             subgraph.label_links[0].connection.members[0].vector_index,
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn apply_live_reduced_driver_connections_preserves_live_link_connections() {
+        let mut reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/OLD".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "/OLD".to_string(),
+                local_name: "OLD".to_string(),
+                full_local_name: "/OLD".to_string(),
+                sheet_instance_path: String::new(),
+                members: vec![ReducedBusMember {
+                    net_code: 0,
+                    name: "OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "/OLD".to_string(),
+                local_name: "OLD".to_string(),
+                full_local_name: "/OLD".to_string(),
+                sheet_instance_path: String::new(),
+                members: vec![ReducedBusMember {
+                    net_code: 0,
+                    name: "OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            }),
+            driver_identity: None,
+            drivers: Vec::new(),
+            non_bus_driver_priority: None,
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                at: PointKey(0, 0),
+                kind: LabelKind::Local,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/OLD".to_string(),
+                    local_name: "OLD".to_string(),
+                    full_local_name: "/OLD".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let mut live = build_live_reduced_subgraphs(&reduced);
+        live[0].driver_connection = LiveReducedConnection::new(ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "/RENAMED".to_string(),
+            local_name: "RENAMED".to_string(),
+            full_local_name: "/RENAMED".to_string(),
+            sheet_instance_path: "/child".to_string(),
+            members: vec![ReducedBusMember {
+                net_code: 0,
+                name: "RENAMED1".to_string(),
+                local_name: "RENAMED1".to_string(),
+                full_local_name: "/RENAMED1".to_string(),
+                vector_index: None,
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            }],
+        });
+        live[0].label_links[0].connection = LiveReducedConnection::new(ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "/LABEL".to_string(),
+            local_name: "LABEL".to_string(),
+            full_local_name: "/LABEL".to_string(),
+            sheet_instance_path: "/child".to_string(),
+            members: vec![ReducedBusMember {
+                net_code: 0,
+                name: "LABEL1".to_string(),
+                local_name: "LABEL1".to_string(),
+                full_local_name: "/LABEL1".to_string(),
+                vector_index: None,
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            }],
+        });
+
+        apply_live_reduced_driver_connections(&mut reduced, &live);
+
+        assert_eq!(reduced[0].name, "/RENAMED");
+        assert_eq!(reduced[0].resolved_connection.name, "/RENAMED");
+        assert_eq!(reduced[0].label_links[0].connection.name, "/LABEL");
+        assert_eq!(reduced[0].label_links[0].connection.local_name, "OLD");
+        assert_eq!(
+            reduced[0].label_links[0].connection.members[0].local_name,
+            "OLD1"
+        );
+        assert_eq!(
+            reduced[0].label_links[0].connection.members[0].vector_index,
             Some(1)
         );
     }
@@ -7986,6 +8243,9 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 has_hier_pins: false,
                 has_hier_ports: false,
+                label_links: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
                 dirty: true,
             },
             LiveReducedSubgraph {
@@ -8013,6 +8273,9 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 has_hier_pins: false,
                 has_hier_ports: false,
+                label_links: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
                 dirty: true,
             },
         ];
@@ -8078,6 +8341,9 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 has_hier_pins: false,
                 has_hier_ports: false,
+                label_links: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
                 dirty: true,
             },
             LiveReducedSubgraph {
@@ -8113,6 +8379,9 @@ mod tests {
                 hier_child_indexes: Vec::new(),
                 has_hier_pins: false,
                 has_hier_ports: false,
+                label_links: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
                 dirty: true,
             },
         ];
