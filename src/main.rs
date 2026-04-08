@@ -145,7 +145,9 @@ fn print_usage_and_exit() -> ! {
         "               [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions]"
     );
     eprintln!("               [--exit-code-violations]");
-    eprintln!("       ki2 netlist <path> [--output <path>] [--format <kicad|xml>]");
+    eprintln!(
+        "       ki2 netlist <path> [--output <path>] [--format <kicad|kicadsexpr|xml|kicadxml>]"
+    );
     std::process::exit(2);
 }
 
@@ -329,8 +331,9 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 // Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobExportNetlist()`. This
 // is not a 1:1 KiCad jobs/exporter path because the local CLI still exposes only reduced XML and
 // reduced KiCad-format netlist slices instead of the full common exporter base and all exporter
-// backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch instead of
-// defaulting to the reduced XML path from repo-local convenience.
+// backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch and accepts
+// both the short local names and KiCad job-format aliases (`kicadsexpr`, `kicadxml`) instead of
+// narrowing the command to repo-local format spellings.
 fn run_netlist_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
@@ -348,8 +351,8 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
                 print_usage_and_exit();
             };
             format = match value.as_str() {
-                "xml" => NetlistOutputFormat::Xml,
-                "kicad" => NetlistOutputFormat::Kicad,
+                "xml" | "kicadxml" => NetlistOutputFormat::Xml,
+                "kicad" | "kicadsexpr" => NetlistOutputFormat::Kicad,
                 _ => {
                     eprintln!("invalid netlist format");
                     return 2;

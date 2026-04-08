@@ -391,6 +391,76 @@ fn cli_netlist_defaults_to_kicad_output() {
 }
 
 #[test]
+fn cli_netlist_accepts_kicad_format_aliases() {
+    let path = temp_schematic(
+        "cli_netlist_format_aliases",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let xml_path = path.with_extension("xml");
+    let net_path = path.with_extension("net");
+
+    let xml_output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "kicadxml",
+            "--output",
+            xml_path.to_str().expect("xml path"),
+        ])
+        .output()
+        .expect("run ki2 xml alias netlist");
+    assert!(
+        xml_output.status.success(),
+        "xml alias netlist must succeed: {}",
+        String::from_utf8_lossy(&xml_output.stderr)
+    );
+
+    let net_output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "kicadsexpr",
+            "--output",
+            net_path.to_str().expect("net path"),
+        ])
+        .output()
+        .expect("run ki2 kicad alias netlist");
+    assert!(
+        net_output.status.success(),
+        "kicad alias netlist must succeed: {}",
+        String::from_utf8_lossy(&net_output.stderr)
+    );
+
+    let xml_report = fs::read_to_string(&xml_path).expect("read xml alias netlist");
+    let net_report = fs::read_to_string(&net_path).expect("read kicad alias netlist");
+    assert!(xml_report.contains("<design>"), "{xml_report}");
+    assert!(net_report.contains("<groups>"), "{net_report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(xml_path);
+    let _ = fs::remove_file(net_path);
+}
+
+#[test]
 fn cli_netlist_writes_reduced_xml_when_requested() {
     let path = temp_schematic(
         "cli_netlist_xml",
