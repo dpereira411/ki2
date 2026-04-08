@@ -812,11 +812,15 @@ What is already covered indirectly:
   resolved net-map entry before a local subgraph can exist
 - XML/KiCad net export now aggregates `nets` from the shared reduced subgraph owner instead of
   consuming only the already-flattened whole-net carrier
+- XML net writing now also rebuilds write-time net records from shared reduced subgraphs in the
+  same shape as KiCad `makeListOfNets()` instead of serializing the pre-flattened whole-net carrier
 - shared whole-net map canonicalization now prefers user-named `(ref,pin)` ownership before final
   netcode assignment, so discarded duplicate-pin auto nets do not leave stale code gaps in export
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`
   power/virtual-symbol node filter, including skipped power-only nets without renumbering later
   emitted net codes
+- XML net writing now also applies write-time node sort/dedup after subgraph grouping instead of
+  relying only on pre-flattened net-map dedup
 
 What is not yet explicitly tracked as complete:
 - fuller KiCad/default `kicad` netlist CLI surface

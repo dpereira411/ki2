@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::connectivity::collect_reduced_project_net_map;
+use crate::connectivity::collect_reduced_project_subgraphs;
 use crate::core::SchematicProject;
 use crate::loader::{
     resolve_schematic_text_var, resolve_sheet_text_var, resolve_text_variables,
@@ -716,57 +716,108 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 }
 
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
-// not a 1:1 KiCad net exporter because the Rust tree still derives `GetNetMap()` entries from
-// reduced shared subgraphs instead of full `CONNECTION_GRAPH` objects, but it now consumes one
-// shared reduced `GetNetMap()` view instead of re-grouping subgraphs inside the exporter itself.
-// It also mirrors the exercised write-time filtering branch where power/virtual `#...` refs are
-// skipped after net grouping, which can drop whole nets without renumbering the remaining emitted
-// codes. The remaining divergence is the fuller KiCad subgraph object model and graph-owned
-// netcode/name caches.
+// not a 1:1 KiCad net exporter because the Rust tree still carries reduced cloned subgraphs
+// instead of live `CONNECTION_SUBGRAPH*` objects, but it now rebuilds write-time net records from
+// shared reduced subgraphs in the same control-flow shape as upstream instead of consuming the old
+// pre-flattened whole-net carrier directly. It also mirrors the exercised write-time filtering
+// branch where power/virtual `#...` refs are skipped after net grouping, which can drop whole nets
+// without renumbering the remaining emitted codes. The remaining divergence is the fuller KiCad
+// subgraph object model and graph-owned netcode/name caches.
 pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<NetlistNet> {
-    collect_reduced_project_net_map(project, for_board)
-        .into_iter()
-        .filter_map(|net| {
-            let all_net_pins_stacked = !net.base_pins.is_empty()
-                && net
-                    .base_pins
-                    .iter()
-                    .all(|base_pin| *base_pin == net.base_pins[0]);
-            let mut nodes = BTreeMap::<(String, String), NetlistNode>::new();
+    let mut node_candidates = BTreeMap::<(String, String), (String, NetlistNode)>::new();
+    let mut grouped = BTreeMap::<
+        String,
+        (
+            String,
+            bool,
+            Vec<crate::connectivity::ReducedNetBasePinKey>,
+            Vec<NetlistNode>,
+        ),
+    >::new();
 
-            for node in net.nodes {
-                if node.reference.starts_with('#') {
-                    continue;
-                }
-
-                nodes
-                    .entry((node.reference.clone(), node.pin.clone()))
-                    .or_insert(NetlistNode {
-                        reference: node.reference,
-                        pin: node.pin,
-                        pinfunction: node.pinfunction,
-                        pintype: node.pintype,
-                    });
-            }
-            let mut nodes = nodes.into_values().collect::<Vec<_>>();
-
-            if nodes.is_empty() {
-                return None;
-            }
-
-            if net.has_no_connect && (nodes.len() == 1 || all_net_pins_stacked) {
-                for node in &mut nodes {
-                    node.pintype.push_str("+no_connect");
-                }
-            }
-
-            Some(NetlistNet {
-                code: net.code,
-                name: net.name,
-                class: net.class,
-                nodes,
+    for subgraph in collect_reduced_project_subgraphs(project, for_board) {
+        for node in subgraph.nodes.iter().filter_map(|node| {
+            (!node.reference.starts_with('#')).then_some(NetlistNode {
+                reference: node.reference.clone(),
+                pin: node.pin.clone(),
+                pinfunction: node.pinfunction.clone(),
+                pintype: node.pintype.clone(),
             })
-        })
+        }) {
+            let key = (node.reference.clone(), node.pin.clone());
+
+            match node_candidates.get(&key) {
+                Some((existing_name, _))
+                    if existing_name.starts_with("unconnected-(")
+                        || existing_name.starts_with("Net-(") =>
+                {
+                    if !(subgraph.name.starts_with("unconnected-(")
+                        || subgraph.name.starts_with("Net-("))
+                    {
+                        node_candidates.insert(key, (subgraph.name.clone(), node));
+                    }
+                }
+                None => {
+                    node_candidates.insert(key, (subgraph.name.clone(), node));
+                }
+                _ => {}
+            }
+        }
+
+        let entry = grouped
+            .entry(subgraph.name.clone())
+            .or_insert_with(|| (String::new(), false, Vec::new(), Vec::new()));
+
+        if entry.0.is_empty() && !subgraph.class.is_empty() {
+            entry.0 = subgraph.class.clone();
+        }
+
+        entry.1 |= subgraph.has_no_connect;
+        entry.2.extend(subgraph.base_pins.iter().cloned());
+    }
+
+    for (_key, (net_name, node)) in node_candidates {
+        if let Some(entry) = grouped.get_mut(&net_name) {
+            entry.3.push(node);
+        }
+    }
+
+    let mut nets = grouped.into_iter().collect::<Vec<_>>();
+    nets.sort_by(|(lhs_name, _), (rhs_name, _)| str_num_cmp(lhs_name, rhs_name, false));
+
+    nets.into_iter()
+        .filter(|(_name, (_class, _has_no_connect, _base_pins, nodes))| !nodes.is_empty())
+        .enumerate()
+        .filter_map(
+            |(index, (name, (class, has_no_connect, base_pins, mut nodes)))| {
+                nodes.sort_by(|lhs, rhs| {
+                    let ordering = lhs.reference.cmp(&rhs.reference);
+
+                    if ordering == std::cmp::Ordering::Equal {
+                        lhs.pin.cmp(&rhs.pin)
+                    } else {
+                        ordering
+                    }
+                });
+                nodes.dedup_by(|lhs, rhs| lhs.reference == rhs.reference && lhs.pin == rhs.pin);
+
+                let all_net_pins_stacked = !base_pins.is_empty()
+                    && base_pins.iter().all(|base_pin| *base_pin == base_pins[0]);
+
+                if has_no_connect && (nodes.len() == 1 || all_net_pins_stacked) {
+                    for node in &mut nodes {
+                        node.pintype.push_str("+no_connect");
+                    }
+                }
+
+                Some(NetlistNet {
+                    code: index + 1,
+                    name,
+                    class,
+                    nodes,
+                })
+            },
+        )
         .collect()
 }
 
