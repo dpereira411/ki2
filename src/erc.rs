@@ -1,16 +1,16 @@
 use crate::connectivity::{
-    ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_components,
-    collect_connection_points, collect_reduced_label_component_snapshots,
-    collect_reduced_project_net_map, collect_reduced_project_subgraphs,
-    collect_reduced_project_subgraphs_by_name, projected_symbol_pin_info, reduced_bus_members,
-    reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
-    resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_for_label,
+    ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_points,
+    collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
+    collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
+    projected_symbol_pin_info, reduced_bus_members, reduced_text_is_bus,
+    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
     resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    LoadedErcSeverity, collect_wire_segments, point_on_wire_segment, points_equal,
+    LoadedErcSeverity, LoadedSheetPath, collect_wire_segments, point_on_wire_segment, points_equal,
     reduced_net_name_sheet_path_prefix, resolve_cross_reference_text_var,
     resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
@@ -2189,32 +2189,43 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn sheet_pin_is_dangling(schematic: &crate::model::Schematic, pin_at: [f64; 2]) -> bool {
-    let Some(component) = collect_connection_components(schematic)
-        .into_iter()
-        .find(|component| {
-            component.members.iter().any(|member| {
-                member.kind == ConnectionMemberKind::SheetPin && points_equal(member.at, pin_at)
-            })
-        })
-    else {
+// Upstream parity: reduced local helper for the parent-sheet-pin query inside
+// `CONNECTION_GRAPH::ercCheckHierSheets()`. This is not a 1:1 KiCad `GetSubgraphForItem()` lookup
+// because the Rust tree still keys by `(sheet path, point)` instead of a live `SCH_SHEET_PIN*`,
+// but it now asks the shared reduced project graph whether the pin belongs to any broader subgraph
+// instead of rebuilding a one-off local connected component. Remaining divergence is fuller item
+// identity and child-subgraph ownership.
+fn sheet_pin_is_dangling(
+    graph: &crate::connectivity::ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    pin_at: [f64; 2],
+) -> bool {
+    let Some(subgraph) = resolve_reduced_project_subgraph_at(graph, sheet_path, pin_at) else {
         return true;
     };
 
-    !component.members.iter().any(|member| {
-        !matches!(member.kind, ConnectionMemberKind::SheetPin) || !points_equal(member.at, pin_at)
-    })
+    let pin_point = crate::connectivity::PointKey(pin_at[0].to_bits(), pin_at[1].to_bits());
+    subgraph.base_pins.is_empty()
+        && subgraph.label_points.is_empty()
+        && subgraph.no_connect_points.is_empty()
+        && subgraph.wire_items.is_empty()
+        && subgraph.bus_items.is_empty()
+        && !subgraph
+            .sheet_pin_points
+            .iter()
+            .any(|point| *point != pin_point)
 }
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckHierSheets()`. This is
 // not a 1:1 KiCad marker/`GetShownText()` path because the Rust tree still compares raw sheet-pin
 // names, not full pin shown-text with all project text expansion, and it still uses reduced sheet-
-// path helpers instead of KiCad sheet/screen owners. It exists so the current ERC runner now owns
-// the same hierarchy-side checks: root hierarchical labels, dangling parent sheet pins, and
-// parent/child sheet-pin name mismatches. Remaining divergence is fuller pin shown-text and marker
+// path helpers instead of KiCad sheet/screen owners. It now also asks the shared reduced project
+// graph whether parent sheet pins belong to a broader subgraph instead of rebuilding that query
+// from a local connected-component scan. Remaining divergence is fuller pin shown-text and marker
 // attachment parity.
 pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -2256,7 +2267,7 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
             };
 
             for pin in &sheet.pins {
-                if sheet_pin_is_dangling(schematic, pin.at) {
+                if sheet_pin_is_dangling(&graph, sheet_path, pin.at) {
                     diagnostics.push(Diagnostic {
                         severity: Severity::Error,
                         code: "erc-pin-not-connected",
