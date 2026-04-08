@@ -2,8 +2,8 @@ use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
     collect_reduced_label_component_snapshots, projected_symbol_pin_info, reduced_bus_members,
     reduced_text_is_bus, resolve_reduced_driver_conflict_at,
-    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_at,
-    resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_non_bus_driver_priority_at,
+    resolve_reduced_project_net_at, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2319,9 +2319,9 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
 // This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
 // net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
-// ownership. It exists so graph-backed ERC now checks the exercised bus-entry case where a named
-// net enters a labeled bus but is not one of that bus's reduced members. Remaining divergence is
-// fuller driver priority and bus-object ownership.
+// ownership. It now mirrors the exercised KiCad flow for both the member test and the follow-on
+// suppression branch where a higher-priority global label or power pin overrides the bus member.
+// Remaining divergence is fuller bus-object ownership and cached subgraph driver state.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2401,8 +2401,18 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 continue;
             };
 
+            let suppress_conflict =
+                resolve_reduced_non_bus_driver_priority_at(schematic, component.anchor, |label| {
+                    shown_label_text(project, sheet_path, label)
+                })
+                .is_some_and(|priority| priority >= 6);
+
             for net_name in net_names {
                 if bus_members.iter().any(|member| member == &net_name) {
+                    continue;
+                }
+
+                if suppress_conflict {
                     continue;
                 }
 

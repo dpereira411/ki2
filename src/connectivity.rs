@@ -1684,6 +1684,29 @@ where
     drivers
 }
 
+// Upstream parity: reduced local analogue for the non-bus winning-driver-priority query implied by
+// `CONNECTION_SUBGRAPH::GetDriverPriority( m_driver )` after `ResolveDrivers()` on the bus-member
+// side of `ercCheckBusToBusEntryConflicts()`. This is not a 1:1 KiCad subgraph owner because the
+// Rust tree still lacks cached `CONNECTION_SUBGRAPH` objects and separate bus-vs-member subgraphs.
+// The local helper exists because the reduced component currently merges both sides of a bus entry,
+// so the ERC pass needs one shared graph query that ignores bus labels and returns only the
+// strongest non-bus driver priority instead of re-ranking labels and power pins locally. Remaining
+// divergence is fuller subgraph ownership and non-strong driver participation.
+pub(crate) fn resolve_reduced_non_bus_driver_priority_at<F>(
+    schematic: &Schematic,
+    at: [f64; 2],
+    shown_label_text: F,
+) -> Option<i32>
+where
+    F: FnMut(&Label) -> String,
+{
+    let connected_component = connection_component_at(schematic, at)?;
+    collect_reduced_strong_drivers(schematic, &connected_component, shown_label_text)
+        .into_iter()
+        .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
+        .map(|driver| driver.priority)
+}
+
 // Upstream parity: reduced local analogue for the connected-driver naming part of
 // `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `driverName()/GetNameForDriver()`. This is not a
 // 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, sheet pins, power-pin

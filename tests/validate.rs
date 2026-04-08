@@ -2636,7 +2636,7 @@ fn erc_reports_bus_entry_member_conflicts() {
   (wire (pts (xy -5 5) (xy 0 0)))
   (bus (pts (xy 0 0) (xy 10 0)))
   (bus_entry (at 0 0) (size -5 5))
-  (global_label "ADDR9" (shape input) (at -5 5 0) (effects (font (size 1 1))))
+  (label "ADDR9" (at -5 5 0) (effects (font (size 1 1))))
   (global_label "DATA[0..7]" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
     );
 
@@ -2702,6 +2702,36 @@ fn erc_allows_bus_alias_member_entries() {
   (bus_entry (at 0 0) (size -5 5))
   (global_label "D0" (shape input) (at -5 5 0) (effects (font (size 1 1))))
   (global_label "DATA" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-bus-entry-conflict"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_suppresses_bus_entry_conflicts_for_global_label_override() {
+    let path = temp_schematic(
+        "erc_bus_entry_global_override",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -10 5) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (bus_entry (at 0 0) (size -5 5))
+  (label "ADDR9" (at -10 5 0) (effects (font (size 1 1))))
+  (global_label "OVERRIDE" (shape input) (at -5 5 0) (effects (font (size 1 1))))
+  (global_label "DATA[0..7]" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
     );
 
     let loaded = load_schematic_tree(&path).expect("load tree");

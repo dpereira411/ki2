@@ -462,6 +462,8 @@ Current status:
   - shared reduced wire/bus-entry components
   - reduced bus-member expansion plus reduced non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
+  - KiCad-style suppression when a higher-priority global label or power pin overrides the bus
+    member driver
 - the named graph-owned bus conflict trio is now covered in the reduced graph
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
