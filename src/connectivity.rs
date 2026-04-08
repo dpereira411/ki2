@@ -863,6 +863,30 @@ fn refresh_reduced_bus_members_from_neighbor_connections(
     }
 }
 
+// Upstream parity: reduced local analogue for the repeated `propagateToNeighbors()` /
+// stale-member refresh settling KiCad performs before item connections and caches are finalized.
+// This is not a 1:1 live propagation loop because the Rust tree still converges cloned reduced
+// subgraph snapshots instead of mutating real `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` objects in
+// place, but it now keeps running the reduced rename/member refresh passes until the shared graph
+// stops changing instead of assuming one static pass is sufficient. Remaining divergence is the
+// still-missing live dirty graph walk and pointer-based stale-member cache.
+fn refresh_reduced_bus_propagation_fixpoint(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
+    let max_passes = reduced_subgraphs.len().saturating_add(1).max(1);
+
+    for _ in 0..max_passes {
+        let before = reduced_subgraphs.to_vec();
+
+        refresh_reduced_bus_link_members(reduced_subgraphs);
+        refresh_reduced_multiple_bus_parent_names(reduced_subgraphs);
+        refresh_reduced_bus_members_from_neighbor_connections(reduced_subgraphs);
+        refresh_reduced_bus_link_members(reduced_subgraphs);
+
+        if *reduced_subgraphs == before {
+            break;
+        }
+    }
+}
+
 // Upstream parity: reduced local analogue for the shared graph-name recache KiCad performs through
 // `recacheSubgraphName()` plus later netcode assignment. This is not a 1:1 cache owner because
 // the Rust tree still rebuilds reduced lookup maps from snapshots instead of mutating live graph
@@ -2541,9 +2565,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
-    refresh_reduced_multiple_bus_parent_names(&mut reduced_subgraphs);
-    refresh_reduced_bus_members_from_neighbor_connections(&mut reduced_subgraphs);
-    refresh_reduced_bus_link_members(&mut reduced_subgraphs);
+    refresh_reduced_bus_propagation_fixpoint(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
 
