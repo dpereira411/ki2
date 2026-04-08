@@ -2488,12 +2488,12 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusConflicts()`.
 // This is not a 1:1 KiCad bus-member connection pass because the Rust tree still keeps reduced
-// bus-member objects instead of full live `SCH_CONNECTION` ownership. It now picks the bus label
-// and port from shared reduced subgraph text-item membership instead of rescanning schematic items,
-// and still compares direct shared member `Name()` values from reduced bus-member objects instead
-// of bare repo-local string rescans. It also follows `RunERC()`-style reused-screen driver
-// de-duplication through the shared reduced graph owner. Remaining divergence is fuller resolved
-// member-object ownership beyond this reduced direct-member-name overlap check.
+// per-text connection objects instead of full live `SCH_CONNECTION` ownership. It now picks the
+// bus label and port from shared reduced connection owners on the subgraph instead of rescanning
+// schematic items, and still compares direct shared member `Name()` values from those reduced
+// member objects instead of bare repo-local string rescans. It also follows `RunERC()`-style
+// reused-screen driver de-duplication through the shared reduced graph owner. Remaining divergence
+// is fuller resolved member-object ownership beyond this reduced direct-member-name overlap check.
 pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2508,19 +2508,31 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         let mut label_members = None::<Vec<String>>;
         let mut port_members = None::<Vec<String>>;
         let mut label_at = None::<[f64; 2]>;
-        if !subgraph.label_bus_members.is_empty() {
+        if let Some(connection) = subgraph.label_connections.iter().find(|connection| {
+            matches!(
+                connection.connection_type,
+                crate::connectivity::ReducedProjectConnectionType::Bus
+                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
+            )
+        }) {
             label_members = Some(
-                subgraph
-                    .label_bus_members
+                connection
+                    .members
                     .iter()
                     .map(|member| member.name.clone())
                     .collect(),
             );
         }
-        if !subgraph.port_bus_members.is_empty() {
+        if let Some(connection) = subgraph.port_connections.iter().find(|connection| {
+            matches!(
+                connection.connection_type,
+                crate::connectivity::ReducedProjectConnectionType::Bus
+                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
+            )
+        }) {
             port_members = Some(
-                subgraph
-                    .port_bus_members
+                connection
+                    .members
                     .iter()
                     .map(|member| member.name.clone())
                     .collect(),
@@ -2608,7 +2620,15 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         if bus_members.is_empty() {
             continue;
         }
-        let mut test_names = subgraph.non_bus_full_names.clone();
+        let mut test_names = subgraph
+            .label_connections
+            .iter()
+            .chain(subgraph.port_connections.iter())
+            .filter(|connection| {
+                connection.connection_type == crate::connectivity::ReducedProjectConnectionType::Net
+            })
+            .map(|connection| connection.full_local_name.clone())
+            .collect::<Vec<_>>();
         if test_names.is_empty() {
             test_names.extend(
                 subgraph
@@ -2617,11 +2637,6 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                     .map(|driver| driver.full_name.clone())
                     .filter(|name| !bus_members.iter().any(|member| member == name)),
             );
-        }
-        for name in &subgraph.non_bus_full_names {
-            if !test_names.iter().any(|existing| existing == name) {
-                test_names.push(name.clone());
-            }
         }
         if test_names.is_empty() {
             if let Some(driver_connection) = &subgraph.driver_connection {

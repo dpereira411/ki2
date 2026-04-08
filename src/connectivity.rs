@@ -141,7 +141,7 @@ pub(crate) struct ReducedBusMember {
     pub(crate) members: Vec<ReducedBusMember>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedProjectConnection {
     pub(crate) connection_type: ReducedProjectConnectionType,
     pub(crate) name: String,
@@ -196,12 +196,9 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) no_connect_points: Vec<PointKey>,
     pub(crate) hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
     pub(crate) hier_ports: Vec<ReducedHierPortLink>,
-    pub(crate) label_bus_members: Vec<ReducedBusMember>,
-    pub(crate) port_bus_members: Vec<ReducedBusMember>,
+    pub(crate) label_connections: Vec<ReducedProjectConnection>,
+    pub(crate) port_connections: Vec<ReducedProjectConnection>,
     pub(crate) bus_members: Vec<ReducedBusMember>,
-    pub(crate) bus_name: Option<String>,
-    pub(crate) non_bus_names: Vec<String>,
-    pub(crate) non_bus_full_names: Vec<String>,
     pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) bus_parent_indexes: Vec<usize>,
@@ -1416,12 +1413,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         no_connect_points: Vec<PointKey>,
         hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
         hier_ports: Vec<ReducedHierPortLink>,
-        label_bus_members: Vec<ReducedBusMember>,
-        port_bus_members: Vec<ReducedBusMember>,
+        label_connections: Vec<ReducedProjectConnection>,
+        port_connections: Vec<ReducedProjectConnection>,
         bus_members: Vec<ReducedBusMember>,
-        bus_name: Option<String>,
-        non_bus_names: Vec<String>,
-        non_bus_full_names: Vec<String>,
         bus_items: Vec<ReducedSubgraphWireItem>,
         wire_items: Vec<ReducedSubgraphWireItem>,
     }
@@ -1624,22 +1618,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     inputs.current_variant,
                     &connected_component,
                 );
-                let (
-                    label_bus_members,
-                    port_bus_members,
-                    bus_members,
-                    bus_name,
-                    non_bus_names,
-                    non_bus_full_names,
-                ) = collect_reduced_subgraph_bus_membership(
-                    inputs.schematics,
-                    inputs.sheet_paths,
-                    sheet_path,
-                    schematic,
-                    inputs.project,
-                    inputs.current_variant,
-                    &connected_component,
-                );
+                let (label_connections, port_connections, bus_members) =
+                    collect_reduced_subgraph_bus_membership(
+                        inputs.schematics,
+                        inputs.sheet_paths,
+                        sheet_path,
+                        schematic,
+                        inputs.project,
+                        inputs.current_variant,
+                        &connected_component,
+                    );
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
@@ -1659,12 +1647,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     no_connect_points,
                     hier_sheet_pins,
                     hier_ports,
-                    label_bus_members,
-                    port_bus_members,
+                    label_connections,
+                    port_connections,
                     bus_members,
-                    bus_name,
-                    non_bus_names,
-                    non_bus_full_names,
                     bus_items,
                     wire_items,
                 });
@@ -1809,12 +1794,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 no_connect_points,
                 hier_sheet_pins,
                 hier_ports,
-                label_bus_members: Vec::new(),
-                port_bus_members: Vec::new(),
+                label_connections: Vec::new(),
+                port_connections: Vec::new(),
                 bus_members: Vec::new(),
-                bus_name: None,
-                non_bus_names: Vec::new(),
-                non_bus_full_names: Vec::new(),
                 bus_items,
                 wire_items,
             });
@@ -1886,8 +1868,18 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             .unwrap_or_else(|| pending.name.clone());
         let resolved_local_name = if !pending.driver_name.is_empty() {
             pending.driver_name.clone()
-        } else if let Some(bus_name) = &pending.bus_name {
-            bus_name.clone()
+        } else if let Some(connection) = pending
+            .label_connections
+            .iter()
+            .chain(pending.port_connections.iter())
+            .find(|connection| {
+                matches!(
+                    connection.connection_type,
+                    ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+                )
+            })
+        {
+            connection.local_name.clone()
         } else {
             reduced_short_net_name(&resolved_name)
         };
@@ -1943,12 +1935,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             no_connect_points: pending.no_connect_points.clone(),
             hier_sheet_pins: pending.hier_sheet_pins.clone(),
             hier_ports: pending.hier_ports.clone(),
-            label_bus_members: pending.label_bus_members.clone(),
-            port_bus_members: pending.port_bus_members.clone(),
+            label_connections: pending.label_connections.clone(),
+            port_connections: pending.port_connections.clone(),
             bus_members: pending.bus_members.clone(),
-            bus_name: pending.bus_name.clone(),
-            non_bus_names: pending.non_bus_names.clone(),
-            non_bus_full_names: pending.non_bus_full_names.clone(),
             bus_items: pending.bus_items.clone(),
             wire_items: pending.wire_items.clone(),
             bus_parent_indexes: Vec::new(),
@@ -2104,12 +2093,22 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             }
 
             let child = &reduced_subgraphs[*child_index];
-            let mut child_names = child.non_bus_full_names.clone();
+            let mut child_names = child
+                .label_connections
+                .iter()
+                .chain(child.port_connections.iter())
+                .filter(|connection| {
+                    connection.connection_type == ReducedProjectConnectionType::Net
+                })
+                .map(|connection| connection.full_local_name.clone())
+                .collect::<Vec<_>>();
 
-            if !child.driver_full_name.is_empty() {
-                child_names.push(child.driver_full_name.clone());
-            } else if !child.name.is_empty() {
-                child_names.push(child.name.clone());
+            if let Some(driver_connection) = &child.driver_connection {
+                if !driver_connection.full_local_name.is_empty() {
+                    child_names.push(driver_connection.full_local_name.clone());
+                }
+            } else if !child.resolved_connection.name.is_empty() {
+                child_names.push(child.resolved_connection.name.clone());
             }
 
             if child_names
@@ -2706,6 +2705,13 @@ fn child_sheet_path_for_sheet<'a>(
 // `SCH_CONNECTION` trees, but it now preserves reduced member kind plus local/full-local naming on
 // the shared subgraph owner instead of collapsing immediately to flat member strings. Remaining
 // divergence is fuller resolved member-object ownership beyond this reduced tree.
+// Upstream parity: reduced local helper for the bus/net `SCH_CONNECTION` snapshots KiCad keeps
+// on connected text owners while resolving a `CONNECTION_SUBGRAPH`. This is not a 1:1 upstream
+// routine because the Rust tree still builds reduced connection objects from shown text and alias
+// parsing instead of cloning live `SCH_CONNECTION` instances, but it now preserves per-label and
+// per-port reduced connection owners on the shared graph instead of scattering bus-member and
+// non-bus name side caches across the subgraph. Remaining divergence is fuller live connection
+// clone/update behavior and parent-neighbor ownership.
 fn collect_reduced_subgraph_bus_membership(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -2715,20 +2721,14 @@ fn collect_reduced_subgraph_bus_membership(
     current_variant: Option<&str>,
     connected_component: &ConnectionComponent,
 ) -> (
+    Vec<ReducedProjectConnection>,
+    Vec<ReducedProjectConnection>,
     Vec<ReducedBusMember>,
-    Vec<ReducedBusMember>,
-    Vec<ReducedBusMember>,
-    Option<String>,
-    Vec<String>,
-    Vec<String>,
 ) {
     let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, parent_sheet_path);
-    let mut label_bus_members = Vec::<ReducedBusMember>::new();
-    let mut port_bus_members = Vec::<ReducedBusMember>::new();
+    let mut label_connections = Vec::<ReducedProjectConnection>::new();
+    let mut port_connections = Vec::<ReducedProjectConnection>::new();
     let mut bus_members = Vec::<ReducedBusMember>::new();
-    let mut bus_name = None::<String>;
-    let mut non_bus_names = Vec::<String>::new();
-    let mut non_bus_full_names = Vec::<String>::new();
 
     for item in &schematic.screen.items {
         match item {
@@ -2753,8 +2753,13 @@ fn collect_reduced_subgraph_bus_membership(
                         }
                         LabelKind::Directive => shown.clone(),
                     };
-                    non_bus_names.push(shown);
-                    non_bus_full_names.push(full_name);
+                    label_connections.push(build_reduced_project_connection(
+                        schematic,
+                        full_name.clone(),
+                        shown,
+                        full_name,
+                        Vec::new(),
+                    ));
                     continue;
                 }
 
@@ -2770,15 +2775,26 @@ fn collect_reduced_subgraph_bus_membership(
                     member_sheet_prefix,
                     &mut BTreeSet::new(),
                 );
+                let full_name = if label.kind == LabelKind::Global {
+                    shown.clone()
+                } else {
+                    format!("{sheet_path_prefix}{shown}")
+                };
+                let connection = build_reduced_project_connection(
+                    schematic,
+                    full_name.clone(),
+                    shown,
+                    full_name,
+                    members.clone(),
+                );
 
                 if matches!(label.kind, LabelKind::Local | LabelKind::Global) {
-                    label_bus_members.extend(members.iter().cloned());
+                    label_connections.push(connection);
                 } else if label.kind == LabelKind::Hierarchical {
-                    port_bus_members.extend(members.iter().cloned());
+                    port_connections.push(connection);
                 }
 
                 bus_members.extend(members);
-                bus_name.get_or_insert(shown);
             }
             SchItem::Sheet(sheet) => {
                 let Some(child_sheet_path) =
@@ -2806,8 +2822,14 @@ fn collect_reduced_subgraph_bus_membership(
                         pin,
                     );
                     if !reduced_text_is_bus(schematic, &shown) {
-                        non_bus_names.push(shown.clone());
-                        non_bus_full_names.push(format!("{sheet_path_prefix}{shown}"));
+                        let full_name = format!("{sheet_path_prefix}{shown}");
+                        port_connections.push(build_reduced_project_connection(
+                            schematic,
+                            full_name.clone(),
+                            shown,
+                            full_name,
+                            Vec::new(),
+                        ));
                         continue;
                     }
 
@@ -2818,34 +2840,29 @@ fn collect_reduced_subgraph_bus_membership(
                         &sheet_path_prefix,
                         &mut BTreeSet::new(),
                     );
-                    port_bus_members.extend(members.iter().cloned());
+                    let full_name = format!("{sheet_path_prefix}{shown}");
+                    port_connections.push(build_reduced_project_connection(
+                        schematic,
+                        full_name.clone(),
+                        shown,
+                        full_name,
+                        members.clone(),
+                    ));
                     bus_members.extend(members);
-                    bus_name.get_or_insert(shown);
                 }
             }
             _ => {}
         }
     }
 
-    label_bus_members.sort();
-    label_bus_members.dedup();
-    port_bus_members.sort();
-    port_bus_members.dedup();
+    label_connections.sort();
+    label_connections.dedup();
+    port_connections.sort();
+    port_connections.dedup();
     bus_members.sort();
     bus_members.dedup();
-    non_bus_names.sort();
-    non_bus_names.dedup();
-    non_bus_full_names.sort();
-    non_bus_full_names.dedup();
 
-    (
-        label_bus_members,
-        port_bus_members,
-        bus_members,
-        bus_name,
-        non_bus_names,
-        non_bus_full_names,
-    )
+    (label_connections, port_connections, bus_members)
 }
 
 // Upstream parity: reduced local helper for the hierarchical pin/port membership caches KiCad
