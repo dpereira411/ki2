@@ -123,6 +123,7 @@ pub(crate) struct ReducedProjectNetIdentity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectSubgraphEntry {
+    pub(crate) subgraph_code: usize,
     pub(crate) code: usize,
     pub(crate) name: String,
     pub(crate) driver_name: String,
@@ -1214,11 +1215,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         });
     }
 
-    for pending in pending_subgraphs {
+    for (subgraph_index, pending) in pending_subgraphs.into_iter().enumerate() {
         let Some(net_identity) = reduced_nets
             .iter()
             .find(|net| net.name == pending.name)
             .map(|net| ReducedProjectSubgraphEntry {
+                subgraph_code: subgraph_index + 1,
                 code: net.code,
                 name: net.name.clone(),
                 driver_name: pending.driver_name.clone(),
@@ -2528,11 +2530,14 @@ mod tests {
 
         let by_sheet = find_reduced_project_subgraph_by_name(&graph, "SIG", child_sheet)
             .expect("sheet-local subgraph");
+        assert_eq!(by_sheet.subgraph_code, 1);
+        assert_eq!(by_sheet.code, 1);
         assert_eq!(by_sheet.driver_name, "SIG");
         assert_eq!(by_sheet.name, "/Child/SIG");
 
         let by_point = resolve_reduced_project_subgraph_at(&graph, child_sheet, [10.0, 0.0])
             .expect("point subgraph");
+        assert_eq!(by_point.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_point.name, "/Child/SIG");
 
         let child_schematic = project
@@ -2555,10 +2560,12 @@ mod tests {
             Some("~"),
         )
         .expect("pin subgraph");
+        assert_eq!(by_pin.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_pin.name, "/Child/SIG");
 
         let by_full_name = find_first_reduced_project_subgraph_by_name(&graph, "/Child/SIG")
             .expect("full-name subgraph");
+        assert_eq!(by_full_name.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_full_name.sheet_instance_path, child_sheet.instance_path);
         assert_eq!(by_full_name.driver_name, "SIG");
 
