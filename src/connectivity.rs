@@ -827,6 +827,92 @@ fn apply_live_reduced_driver_connections(
     }
 }
 
+fn build_live_reduced_name_caches(
+    live_subgraphs: &[LiveReducedSubgraph],
+) -> (
+    BTreeMap<String, Vec<usize>>,
+    BTreeMap<(String, String), Vec<usize>>,
+) {
+    let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
+    let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
+
+    for (index, subgraph) in live_subgraphs.iter().enumerate() {
+        let name = subgraph.driver_connection.connection.name.clone();
+        subgraphs_by_name
+            .entry(name.clone())
+            .or_default()
+            .push(index);
+
+        if name.contains('[') {
+            let prefix_only = format!("{}[]", name.split('[').next().unwrap_or(""));
+            subgraphs_by_name
+                .entry(prefix_only)
+                .or_default()
+                .push(index);
+        }
+
+        subgraphs_by_sheet_and_name
+            .entry((subgraph.sheet_instance_path.clone(), name))
+            .or_default()
+            .push(index);
+    }
+
+    (subgraphs_by_name, subgraphs_by_sheet_and_name)
+}
+
+fn recache_live_reduced_subgraph_name(
+    live_subgraphs: &[LiveReducedSubgraph],
+    subgraphs_by_name: &mut BTreeMap<String, Vec<usize>>,
+    subgraphs_by_sheet_and_name: &mut BTreeMap<(String, String), Vec<usize>>,
+    subgraph_index: usize,
+    old_name: &str,
+) {
+    if let Some(indexes) = subgraphs_by_name.get_mut(old_name) {
+        indexes.retain(|index| *index != subgraph_index);
+    }
+
+    if old_name.contains('[') {
+        let old_prefix_only = format!("{}[]", old_name.split('[').next().unwrap_or(""));
+        if let Some(indexes) = subgraphs_by_name.get_mut(&old_prefix_only) {
+            indexes.retain(|index| *index != subgraph_index);
+        }
+    }
+
+    let sheet_key = (
+        live_subgraphs[subgraph_index].sheet_instance_path.clone(),
+        old_name.to_string(),
+    );
+    if let Some(indexes) = subgraphs_by_sheet_and_name.get_mut(&sheet_key) {
+        indexes.retain(|index| *index != subgraph_index);
+    }
+
+    let new_name = live_subgraphs[subgraph_index]
+        .driver_connection
+        .connection
+        .name
+        .clone();
+    subgraphs_by_name
+        .entry(new_name.clone())
+        .or_default()
+        .push(subgraph_index);
+
+    if new_name.contains('[') {
+        let new_prefix_only = format!("{}[]", new_name.split('[').next().unwrap_or(""));
+        subgraphs_by_name
+            .entry(new_prefix_only)
+            .or_default()
+            .push(subgraph_index);
+    }
+
+    subgraphs_by_sheet_and_name
+        .entry((
+            live_subgraphs[subgraph_index].sheet_instance_path.clone(),
+            new_name,
+        ))
+        .or_default()
+        .push(subgraph_index);
+}
+
 fn reduced_connection_from_bus_member(
     member: &ReducedBusMember,
     sheet_instance_path: &str,
@@ -1447,6 +1533,8 @@ fn refresh_reduced_live_multiple_bus_parent_names(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    let (mut subgraphs_by_name, mut subgraphs_by_sheet_and_name) =
+        build_live_reduced_name_caches(&live_subgraphs);
 
     for subgraph_index in 0..live_subgraphs.len() {
         if live_subgraphs[subgraph_index].bus_parent_links.len() < 2 {
@@ -1485,9 +1573,27 @@ fn refresh_reduced_live_multiple_bus_parent_names(
                 old_name
             };
 
-            for candidate in &mut live_subgraphs {
-                if candidate.driver_connection.connection.name == old_name {
-                    candidate.driver_connection.connection = connection.clone();
+            let candidate_indexes = subgraphs_by_name
+                .get(&old_name)
+                .cloned()
+                .unwrap_or_default();
+
+            for candidate_index in candidate_indexes {
+                let old_candidate_name = live_subgraphs[candidate_index]
+                    .driver_connection
+                    .connection
+                    .name
+                    .clone();
+                if old_candidate_name == old_name {
+                    live_subgraphs[candidate_index].driver_connection.connection =
+                        connection.clone();
+                    recache_live_reduced_subgraph_name(
+                        &live_subgraphs,
+                        &mut subgraphs_by_name,
+                        &mut subgraphs_by_sheet_and_name,
+                        candidate_index,
+                        &old_candidate_name,
+                    );
                 }
             }
         }
@@ -5376,12 +5482,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        PointKey, ReducedBusMember, ReducedBusMemberKind, ReducedHierPortLink,
-        ReducedHierSheetPinLink, ReducedLabelLink, ReducedProjectBusNeighborLink,
-        ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectDriverKind,
-        ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
-        find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
-        rebuild_reduced_project_graph_name_caches, reduced_bus_member_objects,
+        LiveReducedConnection, LiveReducedSubgraph, PointKey, ReducedBusMember,
+        ReducedBusMemberKind, ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
+        ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
+        ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
+        build_live_reduced_name_caches, find_first_reduced_project_subgraph_by_name,
+        find_reduced_project_subgraph_by_name, rebuild_reduced_project_graph_name_caches,
+        recache_live_reduced_subgraph_name, reduced_bus_member_objects,
         refresh_reduced_bus_link_members, refresh_reduced_bus_members_from_neighbor_connections,
         refresh_reduced_global_secondary_driver_promotions,
         refresh_reduced_hierarchy_driver_chains, refresh_reduced_live_bus_link_members,
@@ -6903,6 +7010,84 @@ mod tests {
             "/PWR"
         );
         assert_eq!(graph[2].resolved_connection.full_local_name, "/PWR");
+    }
+
+    #[test]
+    fn recache_live_reduced_subgraph_name_updates_live_name_indexes() {
+        let mut live_subgraphs = vec![
+            LiveReducedSubgraph {
+                source_index: 0,
+                driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD".to_string(),
+                    local_name: "OLD".to_string(),
+                    full_local_name: "/OLD".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }),
+                driver_priority: 0,
+                driver_identity: None,
+                strong_driver_count: 0,
+                sheet_instance_path: String::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                base_pin_count: 0,
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+                has_hier_pins: false,
+                has_hier_ports: false,
+                dirty: true,
+            },
+            LiveReducedSubgraph {
+                source_index: 1,
+                driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/KEEP".to_string(),
+                    local_name: "KEEP".to_string(),
+                    full_local_name: "/KEEP".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                }),
+                driver_priority: 0,
+                driver_identity: None,
+                strong_driver_count: 0,
+                sheet_instance_path: "/child".to_string(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                base_pin_count: 0,
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+                has_hier_pins: false,
+                has_hier_ports: false,
+                dirty: true,
+            },
+        ];
+
+        let (mut by_name, mut by_sheet_and_name) = build_live_reduced_name_caches(&live_subgraphs);
+
+        live_subgraphs[0].driver_connection.connection.name = "/NEW".to_string();
+        live_subgraphs[0].driver_connection.connection.local_name = "NEW".to_string();
+        live_subgraphs[0]
+            .driver_connection
+            .connection
+            .full_local_name = "/NEW".to_string();
+
+        recache_live_reduced_subgraph_name(
+            &live_subgraphs,
+            &mut by_name,
+            &mut by_sheet_and_name,
+            0,
+            "/OLD",
+        );
+
+        assert_eq!(by_name.get("/OLD"), Some(&Vec::new()));
+        assert_eq!(by_name.get("/NEW"), Some(&vec![0]));
+        assert_eq!(
+            by_sheet_and_name.get(&(String::new(), "/NEW".to_string())),
+            Some(&vec![0])
+        );
     }
 
     #[test]
