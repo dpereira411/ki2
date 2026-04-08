@@ -970,6 +970,25 @@ impl LiveProjectBusMember {
     }
 }
 
+fn live_bus_member_search_from_connection(
+    connection: &ReducedProjectConnection,
+) -> LiveProjectBusMember {
+    LiveProjectBusMember {
+        net_code: connection.net_code,
+        name: connection.local_name.clone(),
+        local_name: connection.local_name.clone(),
+        full_local_name: connection.full_local_name.clone(),
+        vector_index: None,
+        kind: match connection.connection_type {
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
+                ReducedBusMemberKind::Bus
+            }
+            _ => ReducedBusMemberKind::Net,
+        },
+        members: connection.members.iter().cloned().map(Into::into).collect(),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LiveProjectConnection {
     net_code: usize,
@@ -3441,24 +3460,12 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     continue;
                 }
 
-                let search = ReducedBusMember {
-                    net_code: 0,
-                    name: neighbor_connection.local_name.clone(),
-                    local_name: neighbor_connection.local_name.clone(),
-                    full_local_name: neighbor_connection.full_local_name.clone(),
-                    vector_index: None,
-                    kind: match neighbor_connection.connection_type {
-                        ReducedProjectConnectionType::Bus
-                        | ReducedProjectConnectionType::BusGroup => ReducedBusMemberKind::Bus,
-                        _ => ReducedBusMemberKind::Net,
-                    },
-                    members: neighbor_connection.members.clone(),
-                };
+                let search = live_bus_member_search_from_connection(&neighbor_connection);
 
                 let parent_has_search = {
                     let parent = live_subgraphs[parent_index].borrow();
                     let parent_connection = parent.driver_connection.borrow();
-                    match_live_bus_member(&parent_connection.members, &search).is_some()
+                    match_live_bus_member(&parent_connection.members, &search.snapshot()).is_some()
                 };
                 if parent_has_search {
                     continue;
@@ -3566,19 +3573,11 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 continue;
             }
 
-            let search = ReducedBusMember {
-                net_code: 0,
-                name: child_connection.local_name.clone(),
-                local_name: child_connection.local_name.clone(),
-                full_local_name: child_connection.full_local_name.clone(),
-                vector_index: None,
-                kind: ReducedBusMemberKind::Net,
-                members: child_connection.members.clone(),
-            };
+            let search = live_bus_member_search_from_connection(&child_connection);
 
             if match_live_bus_member(
                 &parent_handle.borrow().driver_connection.borrow().members,
-                &search,
+                &search.snapshot(),
             )
             .is_some()
             {
@@ -3721,20 +3720,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                 search_candidates.push(parent_neighbor_member);
             }
 
-            search_candidates.push(LiveProjectBusMember::from(ReducedBusMember {
-                net_code: child_connection.net_code,
-                name: child_connection.local_name.clone(),
-                local_name: child_connection.local_name.clone(),
-                full_local_name: child_connection.full_local_name.clone(),
-                vector_index: None,
-                kind: match child_connection.connection_type {
-                    ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
-                        ReducedBusMemberKind::Bus
-                    }
-                    _ => ReducedBusMemberKind::Net,
-                },
-                members: child_connection.members.clone(),
-            }));
+            search_candidates.push(live_bus_member_search_from_connection(&child_connection));
 
             let Some(refreshed_member) = search_candidates.into_iter().find_map(|search| {
                 match_live_bus_member(
