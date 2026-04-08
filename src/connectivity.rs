@@ -1580,6 +1580,7 @@ struct LiveReducedSubgraph {
     source_index: usize,
     driver_connection: LiveReducedConnection,
     driver_priority: i32,
+    #[cfg(test)]
     driver_identity: Option<ReducedProjectDriverIdentity>,
     drivers: Vec<ReducedProjectStrongDriver>,
     sheet_instance_path: String,
@@ -1622,11 +1623,27 @@ fn live_reduced_subgraph_extra_projection_eq(
     true
 }
 
+#[cfg(test)]
+fn live_reduced_subgraph_driver_identity_eq(
+    left: &LiveReducedSubgraph,
+    right: &LiveReducedSubgraph,
+) -> bool {
+    left.driver_identity == right.driver_identity
+}
+
+#[cfg(not(test))]
+fn live_reduced_subgraph_driver_identity_eq(
+    _left: &LiveReducedSubgraph,
+    _right: &LiveReducedSubgraph,
+) -> bool {
+    true
+}
+
 impl PartialEq for LiveReducedSubgraph {
     fn eq(&self, other: &Self) -> bool {
         self.driver_connection == other.driver_connection
             && self.driver_priority == other.driver_priority
-            && self.driver_identity == other.driver_identity
+            && live_reduced_subgraph_driver_identity_eq(self, other)
             && self.drivers == other.drivers
             && self.sheet_instance_path == other.sheet_instance_path
             && self.bus_neighbor_links == other.bus_neighbor_links
@@ -1696,6 +1713,18 @@ fn live_subgraph_has_hier_ports(subgraph: &LiveReducedSubgraph) -> bool {
 
 fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
     subgraph.base_pins.len()
+}
+
+fn live_subgraph_is_self_driven_symbol_pin(subgraph: &LiveReducedSubgraph) -> bool {
+    live_subgraph_strong_driver_count(subgraph) == 0
+        && live_subgraph_base_pin_count(subgraph) == 1
+        && subgraph.hier_sheet_pins.is_empty()
+}
+
+fn live_subgraph_is_self_driven_sheet_pin(subgraph: &LiveReducedSubgraph) -> bool {
+    live_subgraph_strong_driver_count(subgraph) == 0
+        && subgraph.base_pins.is_empty()
+        && !subgraph.hier_sheet_pins.is_empty()
 }
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
@@ -1811,7 +1840,9 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // carriers. This is still not pointer-shared `SCH_ITEM` ownership, but it lets the live graph keep
 // per-item connection state on shared local item owners instead of projecting every
 // label/sheet-pin/hier-port/wire-item from the chosen subgraph driver only at the end of
-// propagation.
+// propagation. The active payload now also keeps shared live base-pin payload directly instead of
+// a copied base-pin count summary; test-only driver identity still remains because the fuller live
+// driver-item owner is not ported yet.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -1825,6 +1856,7 @@ fn build_live_reduced_subgraphs(
                 subgraph,
             )),
             driver_priority: reduced_subgraph_driver_priority(subgraph),
+            #[cfg(test)]
             driver_identity: subgraph.driver_identity.clone(),
             drivers: subgraph.drivers.clone(),
             sheet_instance_path: subgraph.sheet_instance_path.clone(),
@@ -4214,12 +4246,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
         sync_live_reduced_item_connections_from_driver_handle(handle);
 
         let snapshot = handle.borrow().clone();
-        if live_subgraph_strong_driver_count(&snapshot) == 0
-            && live_subgraph_base_pin_count(&snapshot) == 1
-            && matches!(
-                snapshot.driver_identity,
-                Some(ReducedProjectDriverIdentity::SymbolPin { .. })
-            )
+        if live_subgraph_is_self_driven_symbol_pin(&snapshot)
             && snapshot.driver_connection.borrow().name.contains("Net-(")
         {
             let subgraph = handle.borrow();
@@ -4234,13 +4261,12 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
         }
 
         let snapshot = handle.borrow().clone();
-        if matches!(
-            snapshot.driver_identity,
-            Some(ReducedProjectDriverIdentity::SheetPin { .. })
-        ) && matches!(
-            snapshot.driver_connection.borrow().connection_type,
-            ReducedProjectConnectionType::Net
-        ) {
+        if live_subgraph_is_self_driven_sheet_pin(&snapshot)
+            && matches!(
+                snapshot.driver_connection.borrow().connection_type,
+                ReducedProjectConnectionType::Net
+            )
+        {
             if let Some((connection_type, members)) =
                 live_subgraph_child_handles(live_subgraphs, &snapshot)
                     .into_iter()
@@ -4387,7 +4413,9 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
 // performs after subgraph names settle. This still projects back onto reduced subgraph snapshots
 // instead of mutating live item-owned `SCH_CONNECTION` objects, but it now refreshes live
 // label/sheet-pin/hier-port connection owners before the final reduced projection instead of
-// treating every item connection as an end-of-pass clone of the chosen driver.
+// treating every item connection as an end-of-pass clone of the chosen driver. The active live
+// path now derives the exercised self-driven symbol-pin and sheet-pin branches from shared live
+// base-pin and sheet-pin payload instead of a copied live driver-identity summary.
 #[cfg(test)]
 fn refresh_reduced_live_post_propagation_item_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],

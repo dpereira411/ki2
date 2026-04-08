@@ -726,8 +726,9 @@ Current status:
         the live subgraph already owns the underlying handles and driver list
       - `base_pin_count` is now gone from the active live payload; live post-propagation checks
         read shared live base-pin payload directly
-      - the remaining live summary field is now `driver_identity`, and removing it cleanly depends
-        on fuller live driver item ownership rather than another local summary-field cleanup
+      - the only remaining active live summary field is now `driver_identity`; removing it cleanly
+        depends on fuller live driver item ownership rather than another local summary-field
+        cleanup
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
