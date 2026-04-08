@@ -560,17 +560,20 @@ Current status:
       through that owner instead of raw names
   - remaining gap is broader sheet-pin item ownership beyond the now-live shown-text path, not the
     old raw-name comparison branch
-  - current concrete blocker for the next strict graph step is the missing reduced bus-parent /
-    hierarchy-parent relation on shared subgraphs:
-    - local bus ERC still cannot walk `m_bus_parents` / `m_hier_parent`-style neighbors the way
-      upstream `ercCheckLabels()` / `ercCheckBusToNetConflicts()` / `ercCheckBusToBusEntryConflicts()`
-      do
-    - unblock path:
-      1. add reduced parent-subgraph links on the shared project graph for bus parents and
-         hierarchical parent chains
-      2. preserve those links through same-name/reused-screen subgraph dedup
-      3. move the remaining bus/label neighbor checks onto those shared parent links instead of
-         local item-kind inference
+  - shared reduced subgraphs now also own:
+    - reduced bus-parent links
+    - reduced hierarchy parent/child links
+    - reduced label text-item membership with shown text, point, and bus-vs-net class
+    - reduced hierarchy pin/port text-item membership with shown text, point, and bus-vs-net class
+  - `ercCheckLabels()` now walks shared parent links for no-connect and local-hierarchy state
+  - `ercCheckBusToNetConflicts()` and `ercCheckBusToBusConflicts()` now classify text items from
+    shared subgraph ownership instead of rescanning labels and sheet pins out of the schematic
+  - current concrete blocker for the next strict graph step is no longer missing parent links; it
+    is the still-reduced connection object model behind those links:
+    - no reduced analogue yet for fuller `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` parent-neighbor
+      state beyond current member/name snapshots
+    - remaining bus-entry and neighbor exactness still depend on richer resolved connection
+      objects, not another local schematic scan
 
 ## Net Naming / CLI Requirements
 
