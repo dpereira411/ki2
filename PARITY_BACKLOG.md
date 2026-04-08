@@ -612,30 +612,33 @@ Current status:
           - hierarchy-chain propagation
           - bus propagation
           - exercised post-propagation item updates
-        - dirty-worklist propagation over connected live hierarchy/bus components instead of
-          whole-graph live repeat sweeps
-        - global secondary-driver promotion now runs on the shared live subgraph owner inside that
-          worklist instead of on reduced snapshots before the live graph runs
-        - one shared stale-member bag across the combined live propagation pass, including
-          cross-bus member replay beyond the earlier same-bus-only refresh
-        - live stale-member replay is now scoped to the active connected live component instead of
-          the whole graph
+        - true recursive live graph traversal now owns the exercised propagation path instead of
+          the earlier whole-graph repeat sweeps
+        - the recursive live walk is now seeded from hierarchy discovery, while newly dirtied
+          bus-connected subgraphs are reached by recursive revisits instead of pre-expanded
+          hierarchy+bus components
+        - global secondary-driver promotion now runs on the shared live subgraph owner and
+          recurses promoted candidates immediately instead of waiting for a later outer pass
+        - one shared stale-member bag now rides with each recursive live propagation root,
+          including cross-bus member replay beyond the earlier same-bus-only refresh
+        - live stale-member replay is now scoped to the active recursive propagation root instead
+          of the whole graph
         - hierarchy-chain propagation now reruns inside that shared live loop instead of only once
           before bus propagation, so bus-driven changes can feed back into hierarchy selection on
           the same live owner
-        - the combined live loop now preserves and propagates dirty-state instead of resetting the
-          whole live graph on every pass
         - the exercised multiple-bus-parent rename / same-name recache step now runs after live
           propagation, closer to KiCad's post-`propagateToNeighbors()` ordering, before item
           connection updates
+        - live bus parent/neighbor links now rebuild from stable bus-parent topology plus the
+          current parent member tree instead of depending on stale mutable link snapshots
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
-      - no full live per-visited-subgraph recursive `propagateToNeighbors()` walk yet; the local
-        graph now has a dirty worklist over connected live components, but it still does not
-        recurse neighbor-by-neighbor on one visited object set the way KiCad does
+      - the recursive walk still operates on reduced wrapper snapshots, not real live
+        `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects with pointer identity and in-place
+        mutation shared by items and subgraphs
       - no full live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be
         replayed across all visited bus subgraphs after hierarchy propagation; the local graph now
-        scopes stale replay to the active live component, but it still clones reduced connection
+        scopes stale replay to the active recursive root, but it still clones reduced connection
         snapshots rather than replaying live connection objects through recursive revisits
       - no live cached driver connection object that can be cloned and recached in place across
         labels, pins, sheet pins, and connected items via a shared `recacheSubgraphName()`-style
@@ -643,12 +646,12 @@ Current status:
       - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
         live item / connection pointers
     - concrete next unblock path:
-      1. replace the current dirty component worklist with a true recursive
-         `propagateToNeighbors()`-style visited walk over the same live subgraph objects
-      2. carry one live stale-member bag across that recursive walk instead of replaying through
-         component waves
-      3. move live name recache and neighbor revisits into that same recursive owner
-      4. only after that, revisit live item/connection pointer ownership and connected-bus-item
+      1. replace the reduced wrapper connections inside the recursive walk with a live local
+         `SCH_CONNECTION` analogue that items and subgraphs can share by identity
+      2. move live name recache and bus-member replay onto that same connection owner instead of
+         cloning reduced snapshots through recursive revisits
+      3. widen connected-bus ownership from subgraph indexes to live item/connection ownership
+      4. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
          promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
