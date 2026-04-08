@@ -486,6 +486,8 @@ Current status:
 - reduced missing-driver selection now also prefers non-power-symbol driven pins over power-symbol
   pins when choosing one report target, matching KiCad's `nonPowerPinsNeedingDrivers` branch more
   closely with the local signal that is currently modeled
+- reduced pin-context ordering now also uses a local `StrNumCmp` analogue for references and pin
+  numbers before conflict selection, instead of plain lexical ordering
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
   - `${REF:NET_NAME(pin)}`
   - `${REF:SHORT_NET_NAME(pin)}`

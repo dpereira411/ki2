@@ -144,6 +144,70 @@ fn reduced_pin_type_weight(pin_type: ReducedPinType) -> usize {
     }
 }
 
+fn reduced_str_num_cmp_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    if a.eq_ignore_ascii_case(b) {
+        return Ordering::Equal;
+    }
+
+    let mut a_chars = a.chars().peekable();
+    let mut b_chars = b.chars().peekable();
+
+    loop {
+        match (a_chars.peek().copied(), b_chars.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(a_ch), Some(b_ch)) if a_ch.is_ascii_digit() && b_ch.is_ascii_digit() => {
+                let mut a_digits = String::new();
+                let mut b_digits = String::new();
+
+                while let Some(ch) = a_chars.peek().copied() {
+                    if !ch.is_ascii_digit() {
+                        break;
+                    }
+
+                    a_digits.push(ch);
+                    a_chars.next();
+                }
+
+                while let Some(ch) = b_chars.peek().copied() {
+                    if !ch.is_ascii_digit() {
+                        break;
+                    }
+
+                    b_digits.push(ch);
+                    b_chars.next();
+                }
+
+                let a_trimmed = a_digits.trim_start_matches('0');
+                let b_trimmed = b_digits.trim_start_matches('0');
+                let a_normalized = if a_trimmed.is_empty() { "0" } else { a_trimmed };
+                let b_normalized = if b_trimmed.is_empty() { "0" } else { b_trimmed };
+                let ordering = a_normalized
+                    .len()
+                    .cmp(&b_normalized.len())
+                    .then_with(|| a_normalized.cmp(b_normalized))
+                    .then_with(|| a_digits.len().cmp(&b_digits.len()));
+
+                if ordering != Ordering::Equal {
+                    return ordering;
+                }
+            }
+            (Some(a_ch), Some(b_ch)) => {
+                let ordering = a_ch.to_ascii_lowercase().cmp(&b_ch.to_ascii_lowercase());
+                a_chars.next();
+                b_chars.next();
+
+                if ordering != Ordering::Equal {
+                    return ordering;
+                }
+            }
+        }
+    }
+}
+
 fn resolve_base_pin_type(
     project: &SchematicProject,
     base_pin: &ReducedNetBasePinKey,
@@ -2565,8 +2629,10 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 // components, and applies the typed companion-project `erc.pin_map` override slice on top of the
 // upstream default matrix instead of hard-coding only the defaults. It now also follows the
 // reduced `needsDriver` / non-power preference shape more closely when choosing one missing-driver
-// report target from a net. Remaining divergence is richer settings, visibility-based pin
-// preference, multi-marker emission, and full subgraph ownership.
+// report target from a net, and now sorts reduced pin contexts with a local `StrNumCmp` analogue
+// before conflict selection so reference/pin ordering stays deterministic on mixed numeric names.
+// Remaining divergence is richer settings, visibility-based pin preference, multi-marker emission,
+// and full subgraph ownership.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2588,12 +2654,9 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
         }
 
         pins.sort_by(|lhs, rhs| {
-            let mut ordering = lhs
-                .reference
-                .to_ascii_uppercase()
-                .cmp(&rhs.reference.to_ascii_uppercase());
+            let mut ordering = reduced_str_num_cmp_ignore_case(&lhs.reference, &rhs.reference);
             if ordering == std::cmp::Ordering::Equal {
-                ordering = lhs.pin_number.cmp(&rhs.pin_number);
+                ordering = reduced_str_num_cmp_ignore_case(&lhs.pin_number, &rhs.pin_number);
             }
             if ordering == std::cmp::Ordering::Equal {
                 ordering = lhs.at[0].to_bits().cmp(&rhs.at[0].to_bits());
