@@ -726,6 +726,7 @@ What is already covered indirectly:
   - reduced `sheetpath names` / `tstamps` from loaded hierarchy paths
   - reduced `tstamps`
   - reduced per-lib-unit pin export on `<units>`
+    - exercised linked library-unit order is now preserved instead of repo-local name sorting
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
     - exercised full libpart field-list export is now live

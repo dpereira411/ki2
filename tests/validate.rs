@@ -1355,6 +1355,60 @@ fn cli_netlist_exports_component_variant_diffs() {
 }
 
 #[test]
+fn cli_netlist_preserves_library_unit_order_on_components() {
+    let path = temp_schematic(
+        "cli_netlist_component_unit_order",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:DUAL"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "DUAL" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "DUAL_1_1"
+        (unit_name "Zeta")
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))
+      (symbol "DUAL_2_1"
+        (unit_name "Alpha")
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:DUAL")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (unit 1)
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUAL" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:DUAL")
+    (uuid "73000000-0000-0000-0000-000000000001")
+    (unit 2)
+    (at 10 0 0)
+    (property "Reference" "U1" (at 10 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUAL" (at 10 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    let zeta = report.find("<unit name=\"Zeta\">").expect("zeta unit");
+    let alpha = report.find("<unit name=\"Alpha\">").expect("alpha unit");
+    assert!(zeta < alpha, "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_rejects_unknown_formats() {
     let path = temp_schematic(
         "cli_netlist_bad_format",

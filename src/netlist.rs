@@ -776,7 +776,9 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
 // now also carries the representable `addSymbolFields()` multi-unit field scavenging plus the
 // `makeSymbols()` unit/tstamp data and exercised `UseLibIdLookup()` / schematic `lib_name` split
 // so same-reference units can collapse onto one component owner without losing the KiCad
-// `<libsource>` branch choice.
+// `<libsource>` branch choice. Component `<units>` now also preserve the linked library-unit order
+// instead of applying the old repo-local name sort, matching the exercised `GetUnitPinInfo()`
+// ownership more closely.
 fn symbol_to_xml_component(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
@@ -1053,7 +1055,7 @@ fn symbol_to_xml_component(
             .lib_symbol
             .as_ref()
             .map(|lib_symbol| {
-                let mut units = lib_symbol
+                lib_symbol
                     .units
                     .iter()
                     .map(|unit| {
@@ -1071,9 +1073,7 @@ fn symbol_to_xml_component(
                             pins,
                         }
                     })
-                    .collect::<Vec<_>>();
-                units.sort_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
-                units
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default(),
         excluded_from_bom: !symbol.in_bom,
