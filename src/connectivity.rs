@@ -948,6 +948,35 @@ impl PartialEq for LiveReducedSubgraphWireItem {
 
 impl Eq for LiveReducedSubgraphWireItem {}
 
+#[derive(Clone, Debug)]
+struct LiveReducedSubgraphLink {
+    member: ReducedBusMember,
+    subgraph_index: usize,
+    subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
+}
+
+impl PartialEq for LiveReducedSubgraphLink {
+    fn eq(&self, other: &Self) -> bool {
+        self.member == other.member && self.subgraph_index == other.subgraph_index
+    }
+}
+
+impl Eq for LiveReducedSubgraphLink {}
+
+impl PartialOrd for LiveReducedSubgraphLink {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for LiveReducedSubgraphLink {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.member
+            .cmp(&other.member)
+            .then(self.subgraph_index.cmp(&other.subgraph_index))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedSubgraph {
     source_index: usize,
@@ -958,8 +987,8 @@ struct LiveReducedSubgraph {
     strong_driver_count: usize,
     local_driver: bool,
     sheet_instance_path: String,
-    bus_neighbor_links: Vec<ReducedProjectBusNeighborLink>,
-    bus_parent_links: Vec<ReducedProjectBusNeighborLink>,
+    bus_neighbor_links: Vec<LiveReducedSubgraphLink>,
+    bus_parent_links: Vec<LiveReducedSubgraphLink>,
     bus_parent_indexes: Vec<usize>,
     base_pin_count: usize,
     hier_parent_index: Option<usize>,
@@ -987,8 +1016,27 @@ fn build_live_reduced_subgraph_handles(
         .into_iter()
         .map(|subgraph| Rc::new(RefCell::new(subgraph)))
         .collect::<Vec<_>>();
+    attach_live_subgraph_links_to_handles(&handles);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
+}
+
+// Upstream parity: local bridge toward pointer-style bus parent/neighbor topology on the shared
+// live subgraph graph. This still resolves links from reduced indexes during construction, but the
+// active handle graph now keeps explicit live handle attachment on those links instead of treating
+// every bus relationship as a bare reduced index.
+fn attach_live_subgraph_links_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
+    for handle in live_subgraphs {
+        let mut subgraph = handle.borrow_mut();
+
+        for link in &mut subgraph.bus_neighbor_links {
+            link.subgraph_handle = live_subgraphs.get(link.subgraph_index).map(Rc::downgrade);
+        }
+
+        for link in &mut subgraph.bus_parent_links {
+            link.subgraph_handle = live_subgraphs.get(link.subgraph_index).map(Rc::downgrade);
+        }
+    }
 }
 
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
@@ -1030,8 +1078,26 @@ fn build_live_reduced_subgraphs(
             strong_driver_count: subgraph.drivers.len(),
             local_driver: reduced_subgraph_driver_priority(subgraph) < 6,
             sheet_instance_path: subgraph.sheet_instance_path.clone(),
-            bus_neighbor_links: subgraph.bus_neighbor_links.clone(),
-            bus_parent_links: subgraph.bus_parent_links.clone(),
+            bus_neighbor_links: subgraph
+                .bus_neighbor_links
+                .iter()
+                .cloned()
+                .map(|link| LiveReducedSubgraphLink {
+                    member: link.member,
+                    subgraph_index: link.subgraph_index,
+                    subgraph_handle: None,
+                })
+                .collect(),
+            bus_parent_links: subgraph
+                .bus_parent_links
+                .iter()
+                .cloned()
+                .map(|link| LiveReducedSubgraphLink {
+                    member: link.member,
+                    subgraph_index: link.subgraph_index,
+                    subgraph_handle: None,
+                })
+                .collect(),
             bus_parent_indexes: subgraph.bus_parent_indexes.clone(),
             base_pin_count: subgraph.base_pins.len(),
             hier_parent_index: subgraph.hier_parent_index,
@@ -1235,6 +1301,20 @@ fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
     }
 }
 
+fn reduced_project_bus_link_from_live(
+    link: &LiveReducedSubgraphLink,
+) -> ReducedProjectBusNeighborLink {
+    ReducedProjectBusNeighborLink {
+        member: link.member.clone(),
+        subgraph_index: link
+            .subgraph_handle
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .map(|subgraph| subgraph.borrow().source_index)
+            .unwrap_or(link.subgraph_index),
+    }
+}
+
 // Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
 // KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
 // wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
@@ -1301,8 +1381,16 @@ fn apply_live_reduced_driver_connections(
             );
         }
 
-        reduced.bus_neighbor_links = live.bus_neighbor_links.clone();
-        reduced.bus_parent_links = live.bus_parent_links.clone();
+        reduced.bus_neighbor_links = live
+            .bus_neighbor_links
+            .iter()
+            .map(reduced_project_bus_link_from_live)
+            .collect();
+        reduced.bus_parent_links = live
+            .bus_parent_links
+            .iter()
+            .map(reduced_project_bus_link_from_live)
+            .collect();
         reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
             target.connected_bus_subgraph_index = source
@@ -1364,8 +1452,16 @@ fn apply_live_reduced_driver_connections_from_handles(
             );
         }
 
-        reduced.bus_neighbor_links = live.bus_neighbor_links.clone();
-        reduced.bus_parent_links = live.bus_parent_links.clone();
+        reduced.bus_neighbor_links = live
+            .bus_neighbor_links
+            .iter()
+            .map(reduced_project_bus_link_from_live)
+            .collect();
+        reduced.bus_parent_links = live
+            .bus_parent_links
+            .iter()
+            .map(reduced_project_bus_link_from_live)
+            .collect();
         reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
             target.connected_bus_subgraph_index = source
@@ -2270,7 +2366,7 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
     let mut refreshed_parent_links =
-        vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
+        vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
 
     for child_index in 0..live_subgraphs.len() {
         let child_connection = live_subgraphs[child_index].driver_connection.snapshot();
@@ -2306,21 +2402,23 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
                 continue;
             };
 
-            refreshed_parent_links[child_index].push(ReducedProjectBusNeighborLink {
+            refreshed_parent_links[child_index].push(LiveReducedSubgraphLink {
                 member: refreshed_member,
                 subgraph_index: parent_index,
+                subgraph_handle: None,
             });
         }
     }
 
     let mut refreshed_neighbor_links =
-        vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
+        vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
 
     for (child_index, links) in refreshed_parent_links.iter().enumerate() {
         for link in links {
-            refreshed_neighbor_links[link.subgraph_index].push(ReducedProjectBusNeighborLink {
+            refreshed_neighbor_links[link.subgraph_index].push(LiveReducedSubgraphLink {
                 member: link.member.clone(),
                 subgraph_index: child_index,
+                subgraph_handle: None,
             });
         }
     }
@@ -2828,7 +2926,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
     indexes: &[usize],
 ) {
     let mut refreshed_parent_links =
-        vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
+        vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
 
     for &child_index in indexes {
         let child_snapshot = live_subgraphs[child_index].borrow().clone();
@@ -2881,21 +2979,23 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
                 continue;
             };
 
-            refreshed_parent_links[child_index].push(ReducedProjectBusNeighborLink {
+            refreshed_parent_links[child_index].push(LiveReducedSubgraphLink {
                 member: refreshed_member,
                 subgraph_index: parent_index,
+                subgraph_handle: live_subgraphs.get(parent_index).map(Rc::downgrade),
             });
         }
     }
 
     let mut refreshed_neighbor_links =
-        vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
+        vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
 
     for &child_index in indexes {
         for link in &refreshed_parent_links[child_index] {
-            refreshed_neighbor_links[link.subgraph_index].push(ReducedProjectBusNeighborLink {
+            refreshed_neighbor_links[link.subgraph_index].push(LiveReducedSubgraphLink {
                 member: link.member.clone(),
                 subgraph_index: child_index,
+                subgraph_handle: live_subgraphs.get(child_index).map(Rc::downgrade),
             });
         }
     }
@@ -9297,6 +9397,163 @@ mod tests {
             .and_then(Weak::upgrade)
             .expect("attached live bus");
         assert!(Rc::ptr_eq(&attached_bus, &shared));
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_attach_bus_link_handles() {
+        let reduced = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/BUS".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG0".to_string(),
+                        local_name: "SIG0".to_string(),
+                        full_local_name: "/SIG0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG0".to_string(),
+                        local_name: "SIG0".to_string(),
+                        full_local_name: "/SIG0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: vec![ReducedSubgraphWireItem {
+                    start: PointKey(0, 0),
+                    end: PointKey(10, 0),
+                    is_bus_entry: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                wire_items: Vec::new(),
+                bus_neighbor_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG0".to_string(),
+                        local_name: "SIG0".to_string(),
+                        full_local_name: "/SIG0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 1,
+                }],
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/SIG0".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG0".to_string(),
+                    local_name: "SIG0".to_string(),
+                    full_local_name: "/SIG0".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG0".to_string(),
+                    local_name: "SIG0".to_string(),
+                    full_local_name: "/SIG0".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 10),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG0".to_string(),
+                        local_name: "SIG0".to_string(),
+                        full_local_name: "/SIG0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 0,
+                }],
+                bus_parent_indexes: vec![0],
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let bus = handles[0].borrow();
+        let net = handles[1].borrow();
+
+        let bus_neighbor = bus.bus_neighbor_links[0]
+            .subgraph_handle
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .expect("bus neighbor handle");
+        let net_parent = net.bus_parent_links[0]
+            .subgraph_handle
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .expect("net parent handle");
+
+        assert!(Rc::ptr_eq(&bus_neighbor, &handles[1]));
+        assert!(Rc::ptr_eq(&net_parent, &handles[0]));
     }
 
     #[test]
