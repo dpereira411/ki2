@@ -711,6 +711,8 @@ Current status:
       - after the active traversal and bus-link refresh handle ports, the remaining `source_index`
         uses are mostly projection, tests, and deterministic ordering rather than core live graph
         ownership/control flow
+      - active bus-neighbor propagation and bus-link parent/child matching no longer bounce
+        through reduced subgraph indexes when the relevant live handles already exist
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

@@ -3640,9 +3640,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
 ) {
     // Upstream parity: local live-handle analogue for the bus-neighbor driver/member propagation
     // KiCad runs through connected `CONNECTION_SUBGRAPH` neighbors. This still keeps reduced
-    // member snapshots, but active traversal now prefers the attached live neighbor handle.
+    // member snapshots, but active traversal now matches and mutates through attached live
+    // parent/neighbor handles instead of reduced subgraph indexes.
     for parent_handle in component {
-        let parent_index = parent_handle.borrow().source_index;
         let parent_snapshot = parent_handle.borrow().clone();
         if !parent_snapshot.dirty {
             continue;
@@ -3668,7 +3668,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 continue;
             };
             let current_link_member = {
-                let parent = live_subgraphs[parent_index].borrow();
+                let parent = parent_handle.borrow();
                 parent
                     .bus_neighbor_links
                     .iter()
@@ -3679,7 +3679,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     .unwrap_or_else(|| link.member.clone())
             };
             let parent_member = {
-                let parent = live_subgraphs[parent_index].borrow();
+                let parent = parent_handle.borrow();
                 let parent_connection = parent.driver_connection.borrow();
                 match_live_bus_member_live(&parent_connection.members, &current_link_member)
                     .cloned()
@@ -3706,7 +3706,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 let search = live_bus_member_search_from_connection(&neighbor_connection);
 
                 let parent_has_search = {
-                    let parent = live_subgraphs[parent_index].borrow();
+                    let parent = parent_handle.borrow();
                     let parent_connection = parent.driver_connection.borrow();
                     match_live_bus_member_live(&parent_connection.members, &search).is_some()
                 };
@@ -3719,7 +3719,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 let promoted = neighbor_connection;
                 let old_member = current_link_member.clone();
                 let refreshed_member = {
-                    let parent = live_subgraphs[parent_index].borrow();
+                    let parent = parent_handle.borrow();
                     let mut parent_connection = parent.driver_connection.borrow_mut();
                     let Some(member) = match_live_bus_member_mut_live(
                         &mut parent_connection.members,
@@ -3732,7 +3732,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 };
 
                 {
-                    let mut parent = live_subgraphs[parent_index].borrow_mut();
+                    let mut parent = parent_handle.borrow_mut();
                     let refreshed_member = refreshed_member.snapshot();
                     for candidate_link in &mut parent.bus_neighbor_links {
                         if candidate_link.member == old_member {
@@ -3907,38 +3907,36 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
 
     for child_handle in component {
         let child_id = live_subgraph_handle_id(child_handle);
-        let child_index = child_handle.borrow().source_index;
         let child_snapshot = child_handle.borrow().clone();
         let child_connection = child_snapshot.driver_connection.snapshot();
         let existing_parent_links = child_snapshot.bus_parent_links.clone();
 
-        let parent_indexes = live_subgraph_bus_parent_handles(live_subgraphs, &child_snapshot)
+        let mut parent_handles = live_subgraph_bus_parent_handles(live_subgraphs, &child_snapshot)
             .into_iter()
-            .map(|handle| handle.borrow().source_index)
-            .chain(
-                child_snapshot
-                    .bus_parent_links
-                    .iter()
-                    .map(live_subgraph_link_index),
-            )
-            .collect::<BTreeSet<_>>();
-
-        for parent_index in parent_indexes {
-            let parent_handle = child_snapshot
-                .bus_parent_links
-                .iter()
-                .find(|link| live_subgraph_link_index(link) == parent_index)
-                .and_then(|link| live_subgraph_handle_for_link(live_subgraphs, link))
-                .or_else(|| live_subgraphs.get(parent_index).cloned());
-            let Some(parent_handle) = parent_handle else {
+            .collect::<Vec<_>>();
+        for link in &child_snapshot.bus_parent_links {
+            let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, link) else {
                 continue;
             };
+            if !parent_handles
+                .iter()
+                .any(|candidate| Rc::ptr_eq(candidate, &parent_handle))
+            {
+                parent_handles.push(parent_handle);
+            }
+        }
+
+        for parent_handle in parent_handles {
             let parent_snapshot = parent_handle.borrow().clone();
             let mut search_candidates = Vec::new();
 
             if let Some(existing_member) = existing_parent_links
                 .iter()
-                .find(|link| live_subgraph_link_index(link) == parent_index)
+                .find(|link| {
+                    live_subgraph_handle_for_link(live_subgraphs, link)
+                        .as_ref()
+                        .is_some_and(|candidate| Rc::ptr_eq(candidate, &parent_handle))
+                })
                 .map(|link| link.member.clone())
             {
                 search_candidates.push(existing_member);
@@ -3947,7 +3945,11 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
             if let Some(parent_neighbor_member) = parent_snapshot
                 .bus_neighbor_links
                 .iter()
-                .find(|link| live_subgraph_link_index(link) == child_index)
+                .find(|link| {
+                    live_subgraph_handle_for_link(live_subgraphs, link)
+                        .as_ref()
+                        .is_some_and(|candidate| Rc::ptr_eq(candidate, child_handle))
+                })
                 .map(|link| link.member.clone())
             {
                 search_candidates.push(parent_neighbor_member);
@@ -3971,7 +3973,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                 .push(LiveReducedSubgraphLink {
                     member: refreshed_member,
                     #[cfg(test)]
-                    subgraph_index: parent_index,
+                    subgraph_index: parent_handle.borrow().source_index,
                     subgraph_handle: Some(Rc::downgrade(&parent_handle)),
                 });
         }
@@ -3983,12 +3985,11 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
         let child_id = live_subgraph_handle_id(child_handle);
         let child_index = child_handle.borrow().source_index;
         for link in refreshed_parent_links.get(&child_id).into_iter().flatten() {
-            let neighbor_index = live_subgraph_link_index(link);
-            let Some(neighbor_handle) = live_subgraphs.get(neighbor_index) else {
+            let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, link) else {
                 continue;
             };
             refreshed_neighbor_links
-                .entry(live_subgraph_handle_id(neighbor_handle))
+                .entry(live_subgraph_handle_id(&neighbor_handle))
                 .or_default()
                 .push(LiveReducedSubgraphLink {
                     member: link.member.clone(),
