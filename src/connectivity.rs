@@ -134,6 +134,7 @@ pub(crate) enum ReducedProjectConnectionType {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedBusMember {
+    pub(crate) net_code: usize,
     pub(crate) name: String,
     pub(crate) local_name: String,
     pub(crate) full_local_name: String,
@@ -144,6 +145,7 @@ pub(crate) struct ReducedBusMember {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedProjectConnection {
+    pub(crate) net_code: usize,
     pub(crate) connection_type: ReducedProjectConnectionType,
     pub(crate) name: String,
     pub(crate) local_name: String,
@@ -432,6 +434,7 @@ fn build_reduced_project_connection(
     };
 
     ReducedProjectConnection {
+        net_code: 0,
         connection_type: reduced_project_connection_type(schematic, type_name),
         name: resolved_name,
         local_name,
@@ -624,6 +627,7 @@ fn clone_reduced_connection_into_bus_member(
     member: &mut ReducedBusMember,
     connection: &ReducedProjectConnection,
 ) {
+    member.net_code = connection.net_code;
     member.name = connection.local_name.clone();
     member.local_name = connection.local_name.clone();
     member.full_local_name = connection.full_local_name.clone();
@@ -663,6 +667,50 @@ fn clone_reduced_connection_into_subgraph(
 
     for port in &mut subgraph.hier_ports {
         port.connection = connection.clone();
+    }
+}
+
+// Upstream parity: reduced local analogue for `assignNewNetCode()` / `assignNetCodesToBus()`.
+// This is not a 1:1 live `SCH_CONNECTION` mutation because the Rust tree still assigns onto
+// reduced snapshot connections after propagation settles, but it moves netcode ownership onto the
+// shared reduced connection objects and their non-bus bus members instead of keeping it only on
+// detached whole-net entries. Remaining divergence is the still-missing in-place live clone/update
+// timing on real connection objects during propagation.
+fn assign_reduced_connection_net_codes(
+    connection: &mut ReducedProjectConnection,
+    net_codes: &mut BTreeMap<String, usize>,
+) {
+    if !connection.name.is_empty() {
+        let next_code = net_codes.len() + 1;
+        connection.net_code = *net_codes
+            .entry(connection.name.clone())
+            .or_insert(next_code);
+    } else {
+        connection.net_code = 0;
+    }
+
+    assign_reduced_bus_member_net_codes(&mut connection.members, net_codes);
+}
+
+fn assign_reduced_bus_member_net_codes(
+    members: &mut [ReducedBusMember],
+    net_codes: &mut BTreeMap<String, usize>,
+) {
+    for member in members {
+        if member.kind == ReducedBusMemberKind::Bus {
+            member.net_code = 0;
+            assign_reduced_bus_member_net_codes(&mut member.members, net_codes);
+            continue;
+        }
+
+        if !member.full_local_name.is_empty() {
+            let next_code = net_codes.len() + 1;
+            member.net_code = *net_codes
+                .entry(member.full_local_name.clone())
+                .or_insert(next_code);
+        } else {
+            member.net_code = 0;
+        }
     }
 }
 
@@ -863,6 +911,7 @@ fn refresh_reduced_bus_members_from_neighbor_connections(
             }
 
             let search = ReducedBusMember {
+                net_code: 0,
                 name: child_connection.local_name.clone(),
                 local_name: child_connection.local_name.clone(),
                 full_local_name: child_connection.full_local_name.clone(),
@@ -1201,6 +1250,23 @@ fn rebuild_reduced_project_graph_name_caches(
             let next_code = net_codes.len() + 1;
             let code = *net_codes.entry(subgraph.name.clone()).or_insert(next_code);
             subgraph.code = code;
+            assign_reduced_connection_net_codes(&mut subgraph.resolved_connection, &mut net_codes);
+
+            if let Some(driver_connection) = &mut subgraph.driver_connection {
+                assign_reduced_connection_net_codes(driver_connection, &mut net_codes);
+            }
+
+            for link in &mut subgraph.label_links {
+                assign_reduced_connection_net_codes(&mut link.connection, &mut net_codes);
+            }
+
+            for pin in &mut subgraph.hier_sheet_pins {
+                assign_reduced_connection_net_codes(&mut pin.connection, &mut net_codes);
+            }
+
+            for port in &mut subgraph.hier_ports {
+                assign_reduced_connection_net_codes(&mut port.connection, &mut net_codes);
+            }
             subgraphs_by_name
                 .entry(subgraph.name.clone())
                 .or_default()
@@ -1236,6 +1302,7 @@ fn make_reduced_bus_member(
 
     ReducedBusMember {
         name: text.to_string(),
+        net_code: 0,
         local_name: local_name.clone(),
         full_local_name: format!("{sheet_prefix}{local_name}"),
         vector_index,
@@ -4798,6 +4865,7 @@ mod tests {
         let bus = reduced_bus_member_objects(&schematic, "DATA[0..3]");
 
         let search = ReducedBusMember {
+            net_code: 0,
             name: "ALT9".to_string(),
             local_name: "ALT9".to_string(),
             full_local_name: "/ALT9".to_string(),
@@ -5490,6 +5558,64 @@ mod tests {
         assert_eq!(second_net.name, "NET2");
         assert_eq!(first_net.code, 1);
         assert_eq!(second_net.code, 2);
+        let first_subgraph = graph
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.name == "NET10")
+            .expect("first subgraph");
+        let second_subgraph = graph
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.name == "NET2")
+            .expect("second subgraph");
+        assert_eq!(first_subgraph.resolved_connection.net_code, 1);
+        assert_eq!(second_subgraph.resolved_connection.net_code, 2);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_members_get_shared_connection_net_codes() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_member_net_codes_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (global_label "DATA[0..1]" (shape input) (at 0 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let bus_subgraph = graph
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.name == "DATA[0..1]")
+            .expect("bus subgraph");
+
+        assert_eq!(bus_subgraph.resolved_connection.net_code, 1);
+        assert_eq!(bus_subgraph.resolved_connection.members.len(), 2);
+        assert_eq!(
+            bus_subgraph.resolved_connection.members[0].full_local_name,
+            "DATA0"
+        );
+        assert_eq!(bus_subgraph.resolved_connection.members[0].net_code, 2);
+        assert_eq!(
+            bus_subgraph.resolved_connection.members[1].full_local_name,
+            "DATA1"
+        );
+        assert_eq!(bus_subgraph.resolved_connection.members[1].net_code, 3);
 
         let _ = fs::remove_file(path);
     }
@@ -5636,6 +5762,7 @@ mod tests {
             code: 1,
             name: "BUS".to_string(),
             resolved_connection: ReducedProjectConnection {
+                net_code: 0,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "BUS".to_string(),
                 local_name: "BUS".to_string(),
@@ -5643,6 +5770,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: vec![
                     ReducedBusMember {
+                        net_code: 0,
                         name: "RENAMED0".to_string(),
                         local_name: "RENAMED0".to_string(),
                         full_local_name: "/RENAMED0".to_string(),
@@ -5651,6 +5779,7 @@ mod tests {
                         members: Vec::new(),
                     },
                     ReducedBusMember {
+                        net_code: 0,
                         name: "RENAMED1".to_string(),
                         local_name: "RENAMED1".to_string(),
                         full_local_name: "/RENAMED1".to_string(),
@@ -5680,6 +5809,7 @@ mod tests {
             wire_items: Vec::new(),
             bus_neighbor_links: vec![ReducedProjectBusNeighborLink {
                 member: ReducedBusMember {
+                    net_code: 0,
                     name: "OLD1".to_string(),
                     local_name: "OLD1".to_string(),
                     full_local_name: "/OLD1".to_string(),
@@ -5699,6 +5829,7 @@ mod tests {
             code: 2,
             name: "/OLD1".to_string(),
             resolved_connection: ReducedProjectConnection {
+                net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/OLD1".to_string(),
                 local_name: "OLD1".to_string(),
@@ -5727,6 +5858,7 @@ mod tests {
             bus_neighbor_links: Vec::new(),
             bus_parent_links: vec![ReducedProjectBusNeighborLink {
                 member: ReducedBusMember {
+                    net_code: 0,
                     name: "OLD1".to_string(),
                     local_name: "OLD1".to_string(),
                     full_local_name: "/OLD1".to_string(),
@@ -5752,6 +5884,7 @@ mod tests {
     #[test]
     fn reduced_multiple_bus_parents_refresh_subgraph_names() {
         let connection = ReducedProjectConnection {
+            net_code: 0,
             connection_type: ReducedProjectConnectionType::Net,
             name: "/RENAMED1".to_string(),
             local_name: "RENAMED1".to_string(),
@@ -5765,12 +5898,14 @@ mod tests {
                 code: 1,
                 name: "/BUS_A".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_A".to_string(),
                     local_name: "BUS_A".to_string(),
                     full_local_name: "/BUS_A".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -5780,12 +5915,14 @@ mod tests {
                     }],
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_A".to_string(),
                     local_name: "BUS_A".to_string(),
                     full_local_name: "/BUS_A".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -5822,12 +5959,14 @@ mod tests {
                 code: 2,
                 name: "/BUS_B".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_B".to_string(),
                     local_name: "BUS_B".to_string(),
                     full_local_name: "/BUS_B".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -5837,12 +5976,14 @@ mod tests {
                     }],
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_B".to_string(),
                     local_name: "BUS_B".to_string(),
                     full_local_name: "/BUS_B".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -5901,6 +6042,7 @@ mod tests {
                 bus_parent_links: vec![
                     ReducedProjectBusNeighborLink {
                         member: ReducedBusMember {
+                            net_code: 0,
                             name: "OLD1".to_string(),
                             local_name: "OLD1".to_string(),
                             full_local_name: "/OLD1".to_string(),
@@ -5912,6 +6054,7 @@ mod tests {
                     },
                     ReducedProjectBusNeighborLink {
                         member: ReducedBusMember {
+                            net_code: 0,
                             name: "OLD1".to_string(),
                             local_name: "OLD1".to_string(),
                             full_local_name: "/OLD1".to_string(),
@@ -5931,6 +6074,7 @@ mod tests {
                 code: 4,
                 name: "/OLD1".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
                     local_name: "OLD1".to_string(),
@@ -5939,6 +6083,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
                     local_name: "OLD1".to_string(),
@@ -5960,6 +6105,7 @@ mod tests {
                     at: PointKey(0, 0),
                     kind: LabelKind::Local,
                     connection: ReducedProjectConnection {
+                        net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
                         name: "/OLD1".to_string(),
                         local_name: "OLD1".to_string(),
@@ -6018,12 +6164,14 @@ mod tests {
                 code: 1,
                 name: "/BUS".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
                     local_name: "BUS".to_string(),
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -6033,12 +6181,14 @@ mod tests {
                     }],
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
                     local_name: "BUS".to_string(),
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -6075,6 +6225,7 @@ mod tests {
                 code: 2,
                 name: "/PWR".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
                     local_name: "PWR".to_string(),
@@ -6083,6 +6234,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
                     local_name: "PWR".to_string(),
@@ -6110,6 +6262,7 @@ mod tests {
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: vec![ReducedProjectBusNeighborLink {
                     member: ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -6148,12 +6301,14 @@ mod tests {
                 code: 1,
                 name: "/BUS".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
                     local_name: "BUS".to_string(),
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -6163,12 +6318,14 @@ mod tests {
                     }],
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
                     local_name: "BUS".to_string(),
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: vec![ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -6205,6 +6362,7 @@ mod tests {
                 code: 2,
                 name: "/PWR".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
                     local_name: "PWR".to_string(),
@@ -6213,6 +6371,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
                     local_name: "PWR".to_string(),
@@ -6240,6 +6399,7 @@ mod tests {
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: vec![ReducedProjectBusNeighborLink {
                     member: ReducedBusMember {
+                        net_code: 0,
                         name: "OLD1".to_string(),
                         local_name: "OLD1".to_string(),
                         full_local_name: "/OLD1".to_string(),
@@ -6270,6 +6430,7 @@ mod tests {
                 code: 1,
                 name: "/ROOT_SIG".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/ROOT_SIG".to_string(),
                     local_name: "ROOT_SIG".to_string(),
@@ -6278,6 +6439,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/ROOT_SIG".to_string(),
                     local_name: "ROOT_SIG".to_string(),
@@ -6318,6 +6480,7 @@ mod tests {
                 code: 2,
                 name: "/Child/GLOBAL_SIG".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/Child/GLOBAL_SIG".to_string(),
                     local_name: "GLOBAL_SIG".to_string(),
@@ -6326,6 +6489,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/Child/GLOBAL_SIG".to_string(),
                     local_name: "GLOBAL_SIG".to_string(),
@@ -6380,6 +6544,7 @@ mod tests {
     #[test]
     fn reduced_global_secondary_driver_promotion_updates_matching_global_subgraph() {
         let chosen = ReducedProjectConnection {
+            net_code: 0,
             connection_type: ReducedProjectConnectionType::Net,
             name: "VCC".to_string(),
             local_name: "VCC".to_string(),
@@ -6436,6 +6601,7 @@ mod tests {
                 code: 2,
                 name: "PWR_ALT".to_string(),
                 resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "PWR_ALT".to_string(),
                     local_name: "PWR_ALT".to_string(),
@@ -6444,6 +6610,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "PWR_ALT".to_string(),
                     local_name: "PWR_ALT".to_string(),
