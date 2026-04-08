@@ -515,6 +515,19 @@ fn is_power_driver_pin_type(pin_type: ReducedPinType) -> bool {
     pin_type == ReducedPinType::PowerOut
 }
 
+// Upstream parity: local helper for deterministic reduced label lookup keys. KiCad keeps live
+// `SCH_TEXT*` identity inside `CONNECTION_SUBGRAPH`, so it does not need this enum-to-key helper.
+// The reduced Rust ERC path still keys dangling-label facts by cloned `(sheet, point, kind)`
+// tuples, and this keeps that carrier stable without broadening `LabelKind` itself.
+fn reduced_label_kind_key(kind: LabelKind) -> u8 {
+    match kind {
+        LabelKind::Local => 0,
+        LabelKind::Global => 1,
+        LabelKind::Hierarchical => 2,
+        LabelKind::Directive => 3,
+    }
+}
+
 fn parse_alphanumeric_pin_token(token: &str) -> (String, Option<i64>) {
     let split_at = token
         .char_indices()
@@ -1802,82 +1815,138 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckLabels()`. This is not a
 // 1:1 KiCad graph pass because the Rust tree still lacks full cross-sheet subgraphs, bus-parent
-// neighbor walks, and live `SCH_TEXT::IsDangling()` state. It exists so ERC now consumes shared
-// reduced label/pin/no-connect component facts from `src/connectivity.rs` instead of another local
-// geometry-only label scan. Remaining divergence is broader graph ownership beyond the current
-// reduced connected-component carrier.
+// neighbor walks, and live `SCH_TEXT::IsDangling()` state. It now consumes shared reduced project
+// subgraphs for label grouping, pin counts, and same-name neighbor aggregation instead of grouping
+// local component snapshots by ad-hoc `net_name` strings inside ERC. The remaining divergence is
+// the still-missing fuller bus-parent ownership plus the local dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    let mut label_components = Vec::new();
-    let mut components_by_net =
-        BTreeMap::<String, Vec<(std::path::PathBuf, [f64; 2], usize, bool, bool)>>::new();
+    let mut dangling_labels = BTreeMap::<(String, crate::connectivity::PointKey, u8), bool>::new();
+    let mut label_subgraphs = Vec::new();
+    let mut components_by_net = BTreeMap::<String, Vec<(String, usize, usize, bool, bool)>>::new();
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
-        for component in collect_reduced_label_component_snapshots(
-            schematic,
-            Some(&sheet_path_prefix),
-            |label| shown_label_text(project, sheet_path, label),
-        ) {
-            if let Some(net_name) = component.net_name.clone().filter(|name| !name.is_empty()) {
-                components_by_net.entry(net_name).or_default().push((
-                    sheet_path.schematic_path.clone(),
-                    component.anchor,
-                    component.pin_count,
-                    component.has_no_connect,
-                    component.has_local_hierarchy,
-                ));
+        for component in collect_reduced_label_component_snapshots(schematic) {
+            for label in component.labels {
+                dangling_labels.insert(
+                    (
+                        sheet_path.instance_path.clone(),
+                        crate::connectivity::PointKey(label.at[0].to_bits(), label.at[1].to_bits()),
+                        reduced_label_kind_key(label.kind),
+                    ),
+                    label.dangling,
+                );
             }
-
-            label_components.push((sheet_path.schematic_path.clone(), component));
         }
     }
 
-    for (schematic_path, component) in label_components {
-        let mut all_pins = component.pin_count;
-        let mut local_pins = component.pin_count;
-        let mut has_no_connect = component.has_no_connect;
-        let mut has_local_hierarchy = component.has_local_hierarchy;
+    for subgraph in collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .filter(|subgraph| !subgraph.label_points.is_empty())
+    {
+        let pin_count = subgraph.base_pins.len();
+        let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
+            || subgraph
+                .label_points
+                .iter()
+                .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
 
-        if let Some(net_name) = component.net_name.as_ref() {
-            if let Some(neighbors) = components_by_net.get(net_name) {
-                for (
-                    neighbor_path,
-                    neighbor_anchor,
-                    neighbor_pin_count,
-                    neighbor_has_no_connect,
-                    neighbor_has_local_hierarchy,
-                ) in neighbors
+        if !subgraph.name.is_empty() {
+            components_by_net
+                .entry(subgraph.name.clone())
+                .or_default()
+                .push((
+                    subgraph.sheet_instance_path.clone(),
+                    subgraph.subgraph_code,
+                    pin_count,
+                    subgraph.has_no_connect,
+                    has_local_hierarchy,
+                ));
+        }
+
+        label_subgraphs.push((
+            subgraph.sheet_instance_path.clone(),
+            subgraph.subgraph_code,
+            subgraph.name.clone(),
+            pin_count,
+            subgraph.has_no_connect,
+            has_local_hierarchy,
+            subgraph.label_points,
+        ));
+    }
+
+    for (
+        sheet_instance_path,
+        subgraph_code,
+        net_name,
+        pin_count,
+        subgraph_has_no_connect,
+        subgraph_has_local_hierarchy,
+        label_points,
+    ) in label_subgraphs
+    {
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == sheet_instance_path)
+        else {
+            continue;
+        };
+
+        let mut all_pins = pin_count;
+        let mut local_pins = pin_count;
+        let mut has_no_connect = subgraph_has_no_connect;
+        let mut has_local_hierarchy = subgraph_has_local_hierarchy;
+
+        if let Some(neighbors) = (!net_name.is_empty())
+            .then(|| components_by_net.get(&net_name))
+            .flatten()
+        {
+            for (
+                neighbor_sheet_instance_path,
+                neighbor_subgraph_code,
+                neighbor_pin_count,
+                neighbor_has_no_connect,
+                neighbor_has_local_hierarchy,
+            ) in neighbors
+            {
+                if *neighbor_sheet_instance_path == sheet_instance_path
+                    && *neighbor_subgraph_code == subgraph_code
                 {
-                    if *neighbor_path == schematic_path
-                        && points_equal(*neighbor_anchor, component.anchor)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    all_pins += neighbor_pin_count;
-                    has_no_connect |= *neighbor_has_no_connect;
+                all_pins += neighbor_pin_count;
+                has_no_connect |= *neighbor_has_no_connect;
 
-                    if *neighbor_path == schematic_path {
-                        local_pins += neighbor_pin_count;
-                        has_local_hierarchy |= *neighbor_has_local_hierarchy;
-                    }
+                if *neighbor_sheet_instance_path == sheet_instance_path {
+                    local_pins += neighbor_pin_count;
+                    has_local_hierarchy |= *neighbor_has_local_hierarchy;
                 }
             }
         }
 
-        for label in &component.labels {
-            if label.kind == LabelKind::Directive {
+        for (point, kind) in label_points {
+            if kind == LabelKind::Directive {
                 continue;
             }
 
-            if label.dangling
-                || (label.kind == LabelKind::Local
+            let dangling = dangling_labels
+                .get(&(
+                    sheet_instance_path.clone(),
+                    point,
+                    reduced_label_kind_key(kind),
+                ))
+                .copied()
+                .unwrap_or(false);
+
+            let at = [f64::from_bits(point.0), f64::from_bits(point.1)];
+
+            if dangling
+                || (kind == LabelKind::Local
                     && local_pins == 0
                     && all_pins > 1
                     && !has_no_connect
@@ -1888,8 +1957,8 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     severity: Severity::Error,
                     code: "erc-label-not-connected",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!("Label is not connected at {}, {}", label.at[0], label.at[1]),
-                    path: Some(schematic_path.clone()),
+                    message: format!("Label is not connected at {}, {}", at[0], at[1]),
+                    path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
@@ -1902,11 +1971,8 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     severity: Severity::Warning,
                     code: "erc-label-single-pin",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Label is connected to only one pin at {}, {}",
-                        label.at[0], label.at[1]
-                    ),
-                    path: Some(schematic_path.clone()),
+                    message: format!("Label is connected to only one pin at {}, {}", at[0], at[1]),
+                    path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
@@ -1930,14 +1996,7 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
-        for component in collect_reduced_label_component_snapshots(
-            schematic,
-            Some(&sheet_path_prefix),
-            |label| shown_label_text(project, sheet_path, label),
-        ) {
+        for component in collect_reduced_label_component_snapshots(schematic) {
             for label in component
                 .labels
                 .iter()

@@ -429,6 +429,8 @@ Current status:
   label-component owner:
   - `erc-label-not-connected`
   - `erc-label-single-pin`
+  - same-name label grouping, pin counts, and no-connect aggregation now also derive from shared
+    reduced project subgraphs instead of regrouping local component `net_name` strings inside ERC
   - current divergence is fuller cross-sheet subgraph/bus-parent neighbor ownership, not absence of
     the graph-owned label rule
 - reduced `CONNECTION_GRAPH::ercCheckSingleGlobalLabel()` coverage is now live through the loaded

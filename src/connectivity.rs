@@ -56,11 +56,6 @@ pub(crate) struct ReducedLabelComponentLabel {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReducedLabelComponentSnapshot {
-    pub(crate) anchor: [f64; 2],
-    pub(crate) net_name: Option<String>,
-    pub(crate) pin_count: usize,
-    pub(crate) has_no_connect: bool,
-    pub(crate) has_local_hierarchy: bool,
     pub(crate) labels: Vec<ReducedLabelComponentLabel>,
 }
 
@@ -1827,19 +1822,14 @@ fn label_is_dangling_on_component(
         .any(|segment| point_on_wire_segment(at, segment[0], segment[1]))
 }
 
-// Upstream parity: reduced local analogue for the label-bearing subgraph facts consumed by
-// `CONNECTION_GRAPH::ercCheckLabels()`. This is not a 1:1 KiCad subgraph snapshot because the Rust
-// tree still lacks global net-name neighbors, bus parents, and live `SCH_TEXT::IsDangling()`
-// state. It exists so the shared reduced connectivity owner can provide label/pin/no-connect
-// component facts to ERC instead of rebuilding them inside another local label scan.
-pub(crate) fn collect_reduced_label_component_snapshots<F>(
+// Upstream parity: reduced local analogue for the label-item `IsDangling()` facts consumed by
+// `CONNECTION_GRAPH::ercCheckLabels()` / `ercCheckDirectiveLabels()`. This is not a 1:1 KiCad
+// subgraph snapshot because the Rust tree still lacks live `SCH_TEXT*` objects and graph-owned
+// dangling state. It now exists only for the remaining per-label dangling probe while the shared
+// project subgraph owner carries the broader label/pin/no-connect grouping facts.
+pub(crate) fn collect_reduced_label_component_snapshots(
     schematic: &Schematic,
-    sheet_path_prefix: Option<&str>,
-    mut shown_label_text: F,
-) -> Vec<ReducedLabelComponentSnapshot>
-where
-    F: FnMut(&Label) -> String,
-{
+) -> Vec<ReducedLabelComponentSnapshot> {
     collect_connection_components(schematic)
         .into_iter()
         .filter_map(|connected_component| {
@@ -1872,32 +1862,7 @@ where
                 return None;
             }
 
-            Some(ReducedLabelComponentSnapshot {
-                anchor: connected_component.anchor,
-                net_name: resolve_reduced_net_name_at(
-                    schematic,
-                    connected_component.anchor,
-                    sheet_path_prefix,
-                    |label| shown_label_text(label),
-                ),
-                pin_count: connected_component
-                    .members
-                    .iter()
-                    .filter(|member| member.kind == ConnectionMemberKind::SymbolPin)
-                    .count(),
-                has_no_connect: connected_component
-                    .members
-                    .iter()
-                    .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker),
-                has_local_hierarchy: connected_component
-                    .members
-                    .iter()
-                    .any(|member| member.kind == ConnectionMemberKind::SheetPin)
-                    || labels
-                        .iter()
-                        .any(|label| label.kind == LabelKind::Hierarchical),
-                labels,
-            })
+            Some(ReducedLabelComponentSnapshot { labels })
         })
         .collect()
 }
