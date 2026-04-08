@@ -918,7 +918,9 @@ where
 // still lacks real `CONNECTION_SUBGRAPH` objects, driver objects, and live item pointers, but it
 // now owns one shared reduced project net map plus item lookup indexes instead of making ERC and
 // export rebuild those facts independently. Remaining divergence is the missing full subgraph
-// object model and graph-owned resolved-name caches beyond this reduced project graph.
+// object model and graph-owned resolved-name caches beyond this reduced project graph; the current
+// node-candidate collapse still keys by `(reference, pin)` rather than a fuller occurrence/item
+// identity, which is why one reused-sheet symbol-pin netclass path still needs a fallback.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,

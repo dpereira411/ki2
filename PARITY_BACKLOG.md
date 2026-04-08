@@ -356,6 +356,11 @@ Current status:
     `NET_CLASS(pin)`, which still falls back to the older point-netclass resolver in at least one
     reused-sheet symbol-pin case even after reduced component netclass ownership was widened from
     the anchor point to the full reduced component
+  - likely remaining cause for that reused-sheet pin-class miss:
+    - project graph node candidates still collapse by `(reference, pin)` instead of fuller
+      occurrence/item identity
+    - next unblock path is to widen that candidate key (or the node carrier) so reused-sheet
+      symbol-pin lookups do not lose per-occurrence netclass ownership
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match
