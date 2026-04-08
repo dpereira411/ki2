@@ -841,15 +841,103 @@ fn clone_reduced_connection_into_live_connection(
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct LiveProjectConnection {
+    net_code: usize,
+    connection_type: ReducedProjectConnectionType,
+    name: String,
+    local_name: String,
+    full_local_name: String,
+    sheet_instance_path: String,
+    members: Vec<ReducedBusMember>,
+}
+
+impl From<ReducedProjectConnection> for LiveProjectConnection {
+    fn from(connection: ReducedProjectConnection) -> Self {
+        Self {
+            net_code: connection.net_code,
+            connection_type: connection.connection_type,
+            name: connection.name,
+            local_name: connection.local_name,
+            full_local_name: connection.full_local_name,
+            sheet_instance_path: connection.sheet_instance_path,
+            members: connection.members,
+        }
+    }
+}
+
+impl LiveProjectConnection {
+    fn snapshot(&self) -> ReducedProjectConnection {
+        ReducedProjectConnection {
+            net_code: self.net_code,
+            connection_type: self.connection_type,
+            name: self.name.clone(),
+            local_name: self.local_name.clone(),
+            full_local_name: self.full_local_name.clone(),
+            sheet_instance_path: self.sheet_instance_path.clone(),
+            members: self.members.clone(),
+        }
+    }
+}
+
+fn clone_reduced_connection_into_live_connection_owner(
+    target: &mut LiveProjectConnection,
+    source: &ReducedProjectConnection,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.connection_type = source.connection_type;
+    target.name = source.name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    target.sheet_instance_path = source.sheet_instance_path.clone();
+
+    if matches!(
+        target.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) && matches!(
+        source.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = existing_members.clone();
+
+            let clone_limit = target.members.len().min(source.members.len());
+            for index in 0..clone_limit {
+                clone_reduced_bus_member_into_live_member(
+                    &mut target.members[index],
+                    &source.members[index],
+                );
+            }
+
+            if target.members.len() > source.members.len() {
+                target.members.truncate(source.members.len());
+            } else if target.members.len() < source.members.len() {
+                target
+                    .members
+                    .extend(source.members[target.members.len()..].iter().cloned());
+            }
+        }
+    } else {
+        target.members = source.members.clone();
+    }
+}
+
 #[derive(Clone)]
 struct LiveReducedConnection {
-    connection: Rc<RefCell<ReducedProjectConnection>>,
+    connection: Rc<RefCell<LiveProjectConnection>>,
 }
 
 impl LiveReducedConnection {
     fn new(connection: ReducedProjectConnection) -> Self {
         Self {
-            connection: Rc::new(RefCell::new(connection)),
+            connection: Rc::new(RefCell::new(connection.into())),
         }
     }
 
@@ -859,20 +947,20 @@ impl LiveReducedConnection {
     // copied snapshot on every clone. Remaining divergence is fuller item/subgraph pointer
     // topology beyond these local live connection owners.
     fn clone_from(&self, other: &LiveReducedConnection) {
-        let source = other.borrow().clone();
-        clone_reduced_connection_into_live_connection(&mut self.borrow_mut(), &source);
+        let source = other.snapshot();
+        clone_reduced_connection_into_live_connection_owner(&mut self.borrow_mut(), &source);
     }
 
-    fn borrow(&self) -> Ref<'_, ReducedProjectConnection> {
+    fn borrow(&self) -> Ref<'_, LiveProjectConnection> {
         self.connection.borrow()
     }
 
-    fn borrow_mut(&self) -> RefMut<'_, ReducedProjectConnection> {
+    fn borrow_mut(&self) -> RefMut<'_, LiveProjectConnection> {
         self.connection.borrow_mut()
     }
 
     fn snapshot(&self) -> ReducedProjectConnection {
-        self.borrow().clone()
+        self.borrow().snapshot()
     }
 
     fn name(&self) -> String {
@@ -2363,7 +2451,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 &parent_member,
                 &live_subgraphs[neighbor_index].sheet_instance_path,
             );
-            clone_reduced_connection_into_live_connection(
+            clone_reduced_connection_into_live_connection_owner(
                 &mut live_subgraphs[neighbor_index]
                     .driver_connection
                     .borrow_mut(),
@@ -2519,7 +2607,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
                 if old_candidate_name == old_name {
                     *live_subgraphs[candidate_index]
                         .driver_connection
-                        .borrow_mut() = connection.clone();
+                        .borrow_mut() = connection.clone().into();
                     sync_live_reduced_item_connections_from_driver(
                         &mut live_subgraphs[candidate_index],
                     );
@@ -2839,7 +2927,7 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle_index(
                 continue;
             }
 
-            *handle.borrow().driver_connection.borrow_mut() = chosen_connection.clone();
+            *handle.borrow().driver_connection.borrow_mut() = chosen_connection.clone().into();
             sync_live_reduced_item_connections_from_driver_handle(handle);
             handle.borrow_mut().dirty = true;
             promoted.push(candidate_index);
@@ -3015,7 +3103,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 &parent_member,
                 &neighbor_snapshot.sheet_instance_path,
             );
-            clone_reduced_connection_into_live_connection(
+            clone_reduced_connection_into_live_connection_owner(
                 &mut neighbor_handle.borrow().driver_connection.borrow_mut(),
                 &promoted,
             );
@@ -3342,7 +3430,8 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             for candidate_handle in candidate_handles {
                 let old_candidate_name = candidate_handle.borrow().driver_connection.name();
                 if old_candidate_name == old_name {
-                    *candidate_handle.borrow().driver_connection.borrow_mut() = connection.clone();
+                    *candidate_handle.borrow().driver_connection.borrow_mut() =
+                        connection.clone().into();
                     sync_live_reduced_item_connections_from_driver_handle(&candidate_handle);
                     candidate_handle.borrow_mut().dirty = true;
                     recache_live_reduced_subgraph_name_handle_cache_from_handles(
@@ -7383,7 +7472,8 @@ mod tests {
         ReducedProjectSubgraphEntry, ReducedSubgraphWireItem,
         apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
-        clone_reduced_connection_into_live_connection, clone_reduced_connection_into_subgraph,
+        clone_reduced_connection_into_live_connection_owner,
+        clone_reduced_connection_into_subgraph,
         collect_live_reduced_propagation_component_from_handles,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name_from_handles,
@@ -8167,7 +8257,7 @@ mod tests {
             .clone();
         assert_eq!(connected_bus.borrow().members[0].full_local_name, "/OLD1");
 
-        clone_reduced_connection_into_live_connection(
+        clone_reduced_connection_into_live_connection_owner(
             &mut live[0].borrow().driver_connection.borrow_mut(),
             &ReducedProjectConnection {
                 net_code: 0,
