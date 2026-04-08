@@ -2566,16 +2566,11 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 }
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
-// This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
-// net drivers from reduced graph carriers instead of live `SCH_CONNECTION` plus connected-bus-item
-// ownership. It now mirrors the exercised KiCad flow on shared reduced project subgraphs instead
-// of rebuilding per-sheet connection components, now tests shared bus-member objects by flattened
-// `FullLocalName()`-style names, and now also follows `RunERC()`-style reused-screen driver
-// de-duplication through the shared reduced graph owner. It still warns once from the shared
-// subgraph full-name driver after membership testing against the shared driver set, and now
-// anchors the reduced report location at the shared bus-entry item position instead of the old
-// repo-local net-label point. Remaining divergence is fuller resolved bus-object ownership and
-// cached subgraph driver state.
+// This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still lacks live
+// `SCH_CONNECTION` plus connected-bus-item ownership, but it now reads the shared reduced
+// resolved/driver connection owners on each subgraph instead of mixing bus/member/full-name state
+// from unrelated string caches. It still compares flattened reduced `FullLocalName()` values and
+// still diverges on fuller resolved bus-object ownership plus cached live driver connections.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2600,10 +2595,16 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 f64::from_bits(subgraph.anchor.1),
             ]);
 
-        let Some(bus_name) = subgraph.bus_name.clone() else {
+        let bus_connection = &subgraph.resolved_connection;
+        if !matches!(
+            bus_connection.connection_type,
+            crate::connectivity::ReducedProjectConnectionType::Bus
+                | crate::connectivity::ReducedProjectConnectionType::BusGroup
+        ) {
             continue;
-        };
-        let bus_members = reduced_bus_member_full_local_names(&subgraph.bus_members);
+        }
+        let bus_name = bus_connection.local_name.clone();
+        let bus_members = reduced_bus_member_full_local_names(&bus_connection.members);
         if bus_members.is_empty() {
             continue;
         }
@@ -2622,8 +2623,12 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 test_names.push(name.clone());
             }
         }
-        if test_names.is_empty() && !subgraph.driver_full_name.is_empty() {
-            test_names.push(subgraph.driver_full_name.clone());
+        if test_names.is_empty() {
+            if let Some(driver_connection) = &subgraph.driver_connection {
+                if !driver_connection.full_local_name.is_empty() {
+                    test_names.push(driver_connection.full_local_name.clone());
+                }
+            }
         }
 
         let suppress_conflict = subgraph
@@ -2642,10 +2647,16 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         }
 
         let net_name = test_names.first().cloned().unwrap_or_else(|| {
-            if subgraph.driver_full_name.is_empty() {
+            if let Some(driver_connection) = &subgraph.driver_connection {
+                if !driver_connection.full_local_name.is_empty() {
+                    return driver_connection.full_local_name.clone();
+                }
+            }
+
+            if subgraph.resolved_connection.name.is_empty() {
                 subgraph.name.clone()
             } else {
-                subgraph.driver_full_name.clone()
+                subgraph.resolved_connection.name.clone()
             }
         });
         diagnostics.push(Diagnostic {

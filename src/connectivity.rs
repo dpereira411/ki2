@@ -124,12 +124,29 @@ pub(crate) enum ReducedBusMemberKind {
     Bus,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ReducedProjectConnectionType {
+    None,
+    Net,
+    Bus,
+    BusGroup,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedBusMember {
     pub(crate) name: String,
     pub(crate) local_name: String,
     pub(crate) full_local_name: String,
     pub(crate) kind: ReducedBusMemberKind,
+    pub(crate) members: Vec<ReducedBusMember>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedProjectConnection {
+    pub(crate) connection_type: ReducedProjectConnectionType,
+    pub(crate) name: String,
+    pub(crate) local_name: String,
+    pub(crate) full_local_name: String,
     pub(crate) members: Vec<ReducedBusMember>,
 }
 
@@ -161,8 +178,10 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) subgraph_code: usize,
     pub(crate) code: usize,
     pub(crate) name: String,
+    pub(crate) resolved_connection: ReducedProjectConnection,
     pub(crate) driver_name: String,
     pub(crate) driver_full_name: String,
+    pub(crate) driver_connection: Option<ReducedProjectConnection>,
     pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
     pub(crate) non_bus_driver_priority: Option<i32>,
@@ -364,6 +383,58 @@ pub(crate) fn reduced_text_is_bus(schematic: &Schematic, text: &str) -> bool {
             .bus_aliases
             .iter()
             .any(|alias| alias.name.eq_ignore_ascii_case(text))
+}
+
+// Upstream parity: reduced local analogue for the connection-kind portion of
+// `SCH_CONNECTION::Type()` after `ConfigureFromLabel()`. This is not a 1:1 connection-object
+// query because the Rust tree still derives type from reduced text plus alias parsing instead of
+// cached `SCH_CONNECTION` state, but it now centralizes the shared graph's reduced net/bus/group
+// discrimination on the same owner that stores local/full-local/resolved names. Remaining
+// divergence is fuller live connection-object caching beyond this reduced type carrier.
+fn reduced_project_connection_type(
+    schematic: &Schematic,
+    text: &str,
+) -> ReducedProjectConnectionType {
+    if text.is_empty() {
+        ReducedProjectConnectionType::None
+    } else if !reduced_text_is_bus(schematic, text) {
+        ReducedProjectConnectionType::Net
+    } else if text.contains('{') || text.contains('}') {
+        ReducedProjectConnectionType::BusGroup
+    } else {
+        ReducedProjectConnectionType::Bus
+    }
+}
+
+// Upstream parity: reduced local helper for the `SCH_CONNECTION` name/type/member state the
+// shared graph still lacks as a live object. This is not a 1:1 upstream routine because the Rust
+// tree still stores cloned reduced data on the subgraph owner instead of live `SCH_CONNECTION`
+// instances, but it now keeps the exercised resolved/local/full-local/member tuple together on one
+// owner rather than spreading it across unrelated string fields. Remaining divergence is fuller
+// clone/update behavior and parent-neighbor ownership on live connection objects.
+fn build_reduced_project_connection(
+    schematic: &Schematic,
+    resolved_name: impl Into<String>,
+    local_name: impl Into<String>,
+    full_local_name: impl Into<String>,
+    members: Vec<ReducedBusMember>,
+) -> ReducedProjectConnection {
+    let resolved_name = resolved_name.into();
+    let local_name = local_name.into();
+    let full_local_name = full_local_name.into();
+    let type_name = if !local_name.is_empty() {
+        local_name.as_str()
+    } else {
+        resolved_name.as_str()
+    };
+
+    ReducedProjectConnection {
+        connection_type: reduced_project_connection_type(schematic, type_name),
+        name: resolved_name,
+        local_name,
+        full_local_name,
+        members,
+    }
 }
 
 fn reduced_bus_members_inner(
@@ -1799,14 +1870,59 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             );
         }
         let net_identity = net_identities_by_name.get(&pending.name);
+        let subgraph_sheet = inputs
+            .sheet_paths
+            .iter()
+            .find(|sheet| sheet.instance_path == pending.sheet_instance_path)
+            .and_then(|sheet| {
+                inputs
+                    .schematics
+                    .iter()
+                    .find(|schematic| schematic.path == sheet.schematic_path)
+            })
+            .expect("pending reduced subgraph must resolve its source schematic");
+        let resolved_name = net_identity
+            .map(|net| net.name.clone())
+            .unwrap_or_else(|| pending.name.clone());
+        let resolved_local_name = if !pending.driver_name.is_empty() {
+            pending.driver_name.clone()
+        } else if let Some(bus_name) = &pending.bus_name {
+            bus_name.clone()
+        } else {
+            reduced_short_net_name(&resolved_name)
+        };
+        let resolved_full_local_name = if !pending.driver_full_name.is_empty() {
+            pending.driver_full_name.clone()
+        } else if !resolved_name.is_empty() {
+            resolved_name.clone()
+        } else {
+            resolved_local_name.clone()
+        };
+        let resolved_connection = build_reduced_project_connection(
+            subgraph_sheet,
+            resolved_name.clone(),
+            resolved_local_name,
+            resolved_full_local_name,
+            pending.bus_members.clone(),
+        );
+        let driver_connection =
+            (!pending.driver_name.is_empty() || !pending.driver_full_name.is_empty()).then(|| {
+                build_reduced_project_connection(
+                    subgraph_sheet,
+                    resolved_name.clone(),
+                    pending.driver_name.clone(),
+                    pending.driver_full_name.clone(),
+                    pending.bus_members.clone(),
+                )
+            });
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
-            name: net_identity
-                .map(|net| net.name.clone())
-                .unwrap_or_else(|| pending.name.clone()),
+            name: resolved_name,
+            resolved_connection,
             driver_name: pending.driver_name.clone(),
             driver_full_name: pending.driver_full_name.clone(),
+            driver_connection,
             driver_identity: pending.driver_identity.clone(),
             drivers: pending.drivers.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
@@ -2348,16 +2464,20 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
 
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
-// Rust tree still lacks live `SCH_CONNECTION` objects, but it preserves shared local driver-name
-// ownership instead of deriving short names by trimming the full resolved net name after the fact.
-// Remaining divergence is the still-missing live connection object and fuller subgraph ownership.
+// Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
+// driver connection owner instead of storing a separate short-name cache on the subgraph.
+// Remaining divergence is fuller live connection-object caching and item ownership.
 pub(crate) fn resolve_reduced_project_driver_name_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_at(graph, sheet_path, at)
-        .map(|subgraph| subgraph.driver_name.clone())
+    resolve_reduced_project_subgraph_at(graph, sheet_path, at).and_then(|subgraph| {
+        subgraph
+            .driver_connection
+            .as_ref()
+            .map(|connection| connection.local_name.clone())
+    })
 }
 
 fn reduced_project_pin_identity_key(
@@ -2886,9 +3006,9 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 
 // Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
-// Rust tree still lacks live `SCH_CONNECTION` objects, but it preserves shared local driver-name
-// ownership for pin text vars instead of trimming the full resolved net name after graph lookup.
-// Remaining divergence is the still-missing live connection object and fuller subgraph ownership.
+// Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
+// driver connection owner for pin text vars instead of keeping a duplicate short-name cache.
+// Remaining divergence is fuller live connection-object caching and item ownership.
 pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -2897,16 +3017,21 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     pin_name: Option<&str>,
 ) -> Option<String> {
     resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name)
-        .map(|subgraph| subgraph.driver_name.clone())
+        .and_then(|subgraph| {
+            subgraph
+                .driver_connection
+                .as_ref()
+                .map(|connection| connection.local_name.clone())
+        })
 }
 
 // Upstream parity: reduced local analogue for the connection-point half of
 // `CONNECTION_GRAPH::GetSubgraphForItem()` / `GetResolvedSubgraphName()` on the project graph
 // path. This is not a 1:1 KiCad item map because the Rust tree still keys the lookup by `(sheet
 // instance path, reduced subgraph anchor)` instead of a live item-owned `CONNECTION_SUBGRAPH`,
-// but it now derives shared net identity through the stored point-to-subgraph owner instead of a
-// duplicate point-to-net side map. Remaining divergence is fuller item identity for labels, wires,
-// and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
+// but it now derives the reported net name through the shared reduced resolved-connection owner
+// instead of only the older flattened subgraph name field. Remaining divergence is fuller item
+// identity for labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -2915,7 +3040,7 @@ pub(crate) fn resolve_reduced_project_net_at(
     resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
         ReducedProjectNetIdentity {
             code: subgraph.code,
-            name: subgraph.name.clone(),
+            name: subgraph.resolved_connection.name.clone(),
             class: subgraph.class.clone(),
             has_no_connect: subgraph.has_no_connect,
         }
@@ -4219,6 +4344,16 @@ mod tests {
         assert_eq!(by_sheet.code, 1);
         assert_eq!(by_sheet.driver_name, "SIG");
         assert_eq!(by_sheet.name, "/Child/SIG");
+        assert_eq!(by_sheet.resolved_connection.name, "/Child/SIG");
+        assert_eq!(by_sheet.resolved_connection.local_name, "SIG");
+        assert_eq!(
+            by_sheet
+                .driver_connection
+                .as_ref()
+                .expect("driver connection")
+                .local_name,
+            "SIG"
+        );
 
         let by_point = resolve_reduced_project_subgraph_at(&graph, child_sheet, [10.0, 0.0])
             .expect("point subgraph");
@@ -4362,6 +4497,7 @@ mod tests {
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.driver_name, "SIG");
+        assert_eq!(by_point.resolved_connection.local_name, "SIG");
         assert!(by_point.drivers.iter().any(|driver| driver.name == "SIG"));
 
         let _ = fs::remove_file(root_path);
@@ -4439,6 +4575,18 @@ mod tests {
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.driver_name, child_sheet.instance_path);
         assert_eq!(by_point.driver_full_name, child_sheet.instance_path);
+        assert_eq!(
+            by_point.resolved_connection.local_name,
+            child_sheet.instance_path
+        );
+        assert_eq!(
+            by_point
+                .driver_connection
+                .as_ref()
+                .expect("driver connection")
+                .full_local_name,
+            child_sheet.instance_path
+        );
         assert!(
             by_point
                 .drivers
