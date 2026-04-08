@@ -3273,20 +3273,22 @@ where
 // sheet-pin names, but it now routes the reduced driver choice through the same shared owner used
 // by the project graph instead of re-deriving the first visible label locally. Remaining
 // divergence is fuller sheet-pin shown-text context plus the still-missing live connection object.
-fn resolve_reduced_net_name_on_component<F>(
+fn resolve_reduced_net_name_on_component<FLabel, FSheet>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
     sheet_path_prefix: Option<&str>,
-    shown_label_text: F,
+    shown_label_text: FLabel,
+    shown_sheet_pin_text: FSheet,
 ) -> Option<String>
 where
-    F: FnMut(&Label) -> String,
+    FLabel: FnMut(&Label) -> String,
+    FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
     resolve_reduced_driver_name_candidate_on_component(
         schematic,
         connected_component,
         shown_label_text,
-        |_sheet, pin| pin.name.clone(),
+        shown_sheet_pin_text,
     )
     .map(|candidate| {
         let prepend_path = matches!(
@@ -3315,14 +3317,16 @@ where
 // driver names using the same driver-kind split KiCad applies in `SCH_CONNECTION::recacheName()`.
 // Remaining divergence is fuller bus/subgraph/item identity beyond the current reduced component
 // carrier.
-pub(crate) fn resolve_reduced_net_name_at<F>(
+pub(crate) fn resolve_reduced_net_name_at<FLabel, FSheet>(
     schematic: &Schematic,
     at: [f64; 2],
     sheet_path_prefix: Option<&str>,
-    shown_label_text: F,
+    shown_label_text: FLabel,
+    shown_sheet_pin_text: FSheet,
 ) -> Option<String>
 where
-    F: FnMut(&Label) -> String,
+    FLabel: FnMut(&Label) -> String,
+    FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
     let connected_component = connection_component_at(schematic, at)?;
     resolve_reduced_net_name_on_component(
@@ -3330,6 +3334,7 @@ where
         &connected_component,
         sheet_path_prefix,
         shown_label_text,
+        shown_sheet_pin_text,
     )
 }
 
@@ -3338,15 +3343,17 @@ where
 // because the Rust tree still identifies a placed pin by `(symbol uuid, projected pin at)` instead
 // of a live `SCH_PIN*`, but it lets pin-owned ERC/shown-text paths resolve against a symbol-pin
 // component owner instead of a raw point query.
-pub(crate) fn resolve_reduced_net_name_for_symbol_pin<F>(
+pub(crate) fn resolve_reduced_net_name_for_symbol_pin<FLabel, FSheet>(
     schematic: &Schematic,
     symbol: &Symbol,
     at: [f64; 2],
     sheet_path_prefix: Option<&str>,
-    shown_label_text: F,
+    shown_label_text: FLabel,
+    shown_sheet_pin_text: FSheet,
 ) -> Option<String>
 where
-    F: FnMut(&Label) -> String,
+    FLabel: FnMut(&Label) -> String,
+    FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
     let connected_component = connection_component_for_symbol_pin(schematic, symbol, at)?;
     resolve_reduced_net_name_on_component(
@@ -3354,6 +3361,7 @@ where
         &connected_component,
         sheet_path_prefix,
         shown_label_text,
+        shown_sheet_pin_text,
     )
 }
 
@@ -3379,9 +3387,13 @@ where
 {
     let connected_component = connection_component_at(schematic, at);
     let component_net_name = connected_component.as_ref().and_then(|component| {
-        resolve_reduced_net_name_on_component(schematic, component, None, |label| {
-            shown_label_text(label)
-        })
+        resolve_reduced_net_name_on_component(
+            schematic,
+            component,
+            None,
+            |label| shown_label_text(label),
+            |_sheet, pin| pin.name.clone(),
+        )
     });
     let wire_segments = collect_wire_segments(schematic);
     let junctions = schematic
@@ -3549,8 +3561,13 @@ mod tests {
         .expect("write schematic");
 
         let schematic = parse_schematic_file(&path).expect("parse schematic");
-        let resolved =
-            resolve_reduced_net_name_at(&schematic, [0.0, 0.0], None, |label| label.text.clone());
+        let resolved = resolve_reduced_net_name_at(
+            &schematic,
+            [0.0, 0.0],
+            None,
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        );
 
         assert_eq!(resolved.as_deref(), Some("DATA[0..7]"));
 
@@ -4068,8 +4085,7 @@ mod tests {
     (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
     (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
     (pin "${{SHEETPATH}}" input (at 0 5 180) (uuid "73050000-0000-0000-0000-000000000312")))
-  (wire (pts (xy 0 5) (xy 10 5)))
-  (label "SIG" (at 10 5 0) (effects (font (size 1 1)))))"#,
+  (wire (pts (xy 0 5) (xy 10 5))))"#,
                 child_path.display()
             ),
         )
@@ -4101,7 +4117,7 @@ mod tests {
 
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
-        assert_eq!(by_point.driver_name, "SIG");
+        assert_eq!(by_point.driver_name, child_sheet.instance_path);
         assert!(
             by_point
                 .driver_names

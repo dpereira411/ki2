@@ -4475,16 +4475,33 @@ pub(crate) fn resolve_point_connectivity_text_var(
     match token_kind {
         SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
             let net_name = graph_net.as_ref().map(|net| net.name.clone()).or_else(|| {
-                resolve_reduced_net_name_at(schematic, at, Some(&sheet_path_prefix), |other| {
-                    shown_label_text_without_connectivity(
-                        schematics,
-                        sheet_paths,
-                        loaded_path,
-                        project,
-                        current_variant,
-                        other,
-                    )
-                })
+                resolve_reduced_net_name_at(
+                    schematic,
+                    at,
+                    Some(&sheet_path_prefix),
+                    |other| {
+                        shown_label_text_without_connectivity(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            project,
+                            current_variant,
+                            other,
+                        )
+                    },
+                    |sheet, pin| {
+                        reduced_shown_sheet_pin_text(
+                            schematics,
+                            sheet_paths,
+                            loaded_path,
+                            sheet,
+                            project,
+                            current_variant,
+                            reduced_graph,
+                            pin,
+                        )
+                    },
+                )
             })?;
 
             match token_kind {
@@ -4580,6 +4597,18 @@ fn resolve_symbol_pin_text_var(
                                 other,
                             )
                         },
+                        |sheet, pin| {
+                            reduced_shown_sheet_pin_text(
+                                schematics,
+                                sheet_paths,
+                                candidate_path,
+                                sheet,
+                                project,
+                                current_variant,
+                                reduced_graph,
+                                pin,
+                            )
+                        },
                     )
                 })
                 .or_else(|| Some(String::new())),
@@ -4610,6 +4639,18 @@ fn resolve_symbol_pin_text_var(
                                 project,
                                 current_variant,
                                 other,
+                            )
+                        },
+                        |sheet, pin| {
+                            reduced_shown_sheet_pin_text(
+                                schematics,
+                                sheet_paths,
+                                candidate_path,
+                                sheet,
+                                project,
+                                current_variant,
+                                reduced_graph,
+                                pin,
                             )
                         },
                     )
@@ -4727,6 +4768,18 @@ fn resolve_symbol_pin_text_var(
                                         other,
                                     )
                                 },
+                                |sheet, pin| {
+                                    reduced_shown_sheet_pin_text(
+                                        schematics,
+                                        sheet_paths,
+                                        alternate_path,
+                                        sheet,
+                                        project,
+                                        current_variant,
+                                        reduced_graph,
+                                        pin,
+                                    )
+                                },
                             )
                         })
                         .or_else(|| Some(String::new())),
@@ -4754,6 +4807,18 @@ fn resolve_symbol_pin_text_var(
                                         project,
                                         current_variant,
                                         other,
+                                    )
+                                },
+                                |sheet, pin| {
+                                    reduced_shown_sheet_pin_text(
+                                        schematics,
+                                        sheet_paths,
+                                        alternate_path,
+                                        sheet,
+                                        project,
+                                        current_variant,
+                                        reduced_graph,
+                                        pin,
                                     )
                                 },
                             )
@@ -5278,16 +5343,33 @@ fn resolve_label_connectivity_text_var_with_graph(
         .as_ref()
         .map(|net| net.name.clone())
         .or_else(|| {
-            resolve_reduced_net_name_at(schematic, label.at, Some(&sheet_path_prefix), |other| {
-                shown_label_text_without_connectivity(
-                    schematics,
-                    sheet_paths,
-                    loaded_path,
-                    project,
-                    current_variant,
-                    other,
-                )
-            })
+            resolve_reduced_net_name_at(
+                schematic,
+                label.at,
+                Some(&sheet_path_prefix),
+                |other| {
+                    shown_label_text_without_connectivity(
+                        schematics,
+                        sheet_paths,
+                        loaded_path,
+                        project,
+                        current_variant,
+                        other,
+                    )
+                },
+                |sheet, pin| {
+                    reduced_shown_sheet_pin_text(
+                        schematics,
+                        sheet_paths,
+                        loaded_path,
+                        sheet,
+                        project,
+                        current_variant,
+                        reduced_graph,
+                        pin,
+                    )
+                },
+            )
         })
         .or_else(|| {
             (!own_text.contains("${") && !own_text.starts_with('<') && !own_text.is_empty())
@@ -5470,6 +5552,47 @@ pub(crate) fn shown_sheet_pin_text(
             )
         },
         0,
+    )
+}
+
+// Upstream parity: reduced local helper for the child-sheet dispatch that KiCad reaches before
+// `SCH_SHEET_PIN::GetShownText()`. This is not a 1:1 `SCH_SHEET_PATH` walk because the Rust tree
+// still matches reduced loaded sheet paths by stored UUID/path snapshots, but it keeps current-
+// sheet net-name and graph-driver callers on the same shown-text owner instead of falling back to
+// raw sheet-pin names when the child sheet is available. Remaining divergence is fuller live sheet
+// object ownership.
+fn reduced_shown_sheet_pin_text(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    parent_sheet_path: &LoadedSheetPath,
+    sheet: &crate::model::Sheet,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
+    pin: &crate::model::SheetPin,
+) -> String {
+    let Some(child_sheet_path) = sheet_paths
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .instance_path
+                .starts_with(&parent_sheet_path.instance_path)
+                && candidate.instance_path != parent_sheet_path.instance_path
+        })
+        .find(|candidate| candidate.sheet_uuid == sheet.uuid)
+    else {
+        return pin.name.clone();
+    };
+
+    shown_sheet_pin_text(
+        schematics,
+        sheet_paths,
+        parent_sheet_path,
+        child_sheet_path,
+        project,
+        current_variant,
+        reduced_graph,
+        pin,
     )
 }
 
