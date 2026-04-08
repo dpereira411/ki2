@@ -763,6 +763,8 @@ What is already covered indirectly:
 - reduced node lists from the current point-net resolver
 - reduced graph-side net grouping now flows through one shared `GetNetMap()` analogue before XML /
   KiCad export formatting
+- XML/KiCad net export now also consumes that shared reduced `GetNetMap()` view directly instead of
+  regrouping subgraphs inside the exporter
 - reduced project-wide net grouping now owns cross-sheet merge plus sorted netcode allocation
 - reduced project graph now also preserves per-sheet reduced subgraphs plus
   `FindSubgraphByName()` / `FindFirstSubgraphByName()`-style lookup boundaries instead of

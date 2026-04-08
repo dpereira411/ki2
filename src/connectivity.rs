@@ -1361,6 +1361,7 @@ pub(crate) fn collect_reduced_project_net_map(
         .collect()
 }
 
+#[allow(dead_code)]
 // Upstream parity: reduced local analogue for iterating `ConnectionGraph()->GetNetMap()` subgraph
 // members on the project graph path. This is not a 1:1 KiCad container because the Rust tree
 // still stores reduced cloned subgraph snapshots instead of live `CONNECTION_SUBGRAPH*` objects,
