@@ -766,6 +766,8 @@ What is already covered indirectly:
   flattening directly to whole-net identities only
 - reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
   symbol pins instead of flattening those lookups straight to whole-net identity
+- XML/KiCad net export now aggregates `nets` from the shared reduced subgraph owner instead of
+  consuming only the already-flattened whole-net carrier
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`
   power/virtual-symbol node filter, including skipped power-only nets without renumbering later
   emitted net codes
