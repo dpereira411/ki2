@@ -873,6 +873,8 @@ What is already covered indirectly:
   consuming only the already-flattened whole-net carrier
 - XML net writing now also rebuilds write-time net records from shared reduced subgraphs in the
   same shape as KiCad `makeListOfNets()` instead of serializing the pre-flattened whole-net carrier
+- XML net writing now also preserves shared graph net codes instead of renumbering nets inside the
+  exporter, matching KiCad's `ConnectionGraph()->GetNetMap()` ownership more closely
 - shared whole-net map canonicalization now prefers user-named `(ref,pin)` ownership before final
   netcode assignment, so discarded duplicate-pin auto nets do not leave stale code gaps in export
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`

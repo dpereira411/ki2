@@ -719,10 +719,12 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 // not a 1:1 KiCad net exporter because the Rust tree still carries reduced whole-net snapshots
 // instead of live `CONNECTION_SUBGRAPH*` objects behind `ConnectionGraph()->GetNetMap()`, but it
 // now starts from the shared reduced `GetNetMap()` owner instead of regrouping subgraphs inside
-// the exporter. It also mirrors the exercised write-time filtering branch where power/virtual
-// `#...` refs are skipped after net grouping, which can drop whole nets without renumbering the
-// remaining emitted codes. The remaining divergence is the fuller KiCad subgraph object model and
-// graph-owned netcode/name caches.
+// the exporter. It also now preserves the shared graph net codes instead of renumbering nets in
+// the writer, matching KiCad's `GetNetMap()`-driven XML flow more closely. It still mirrors the
+// exercised write-time filtering branch where power/virtual `#...` refs are skipped after net
+// grouping, which can drop whole nets without renumbering the remaining emitted codes. The
+// remaining divergence is the fuller KiCad subgraph object model and graph-owned resolved-name
+// caches.
 pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<NetlistNet> {
     let mut nets = collect_reduced_project_net_map(project, for_board)
         .into_iter()
@@ -763,16 +765,19 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
                 }
             }
 
-            (net.name, net.class, nodes)
+            (net.code, net.name, net.class, nodes)
         })
         .collect::<Vec<_>>();
-    nets.sort_by(|(lhs_name, _, _), (rhs_name, _, _)| str_num_cmp(lhs_name, rhs_name, false));
+    nets.sort_by(|(lhs_code, lhs_name, _, _), (rhs_code, rhs_name, _, _)| {
+        lhs_code
+            .cmp(rhs_code)
+            .then_with(|| str_num_cmp(lhs_name, rhs_name, false))
+    });
 
     nets.into_iter()
-        .filter(|(_name, _class, nodes)| !nodes.is_empty())
-        .enumerate()
-        .map(|(index, (name, class, nodes))| NetlistNet {
-            code: index + 1,
+        .filter(|(_code, _name, _class, nodes)| !nodes.is_empty())
+        .map(|(code, name, class, nodes)| NetlistNet {
+            code,
             name,
             class,
             nodes,

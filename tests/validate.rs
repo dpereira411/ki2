@@ -1613,7 +1613,7 @@ fn cli_netlist_omits_pinfunction_for_single_unnamed_pins() {
 }
 
 #[test]
-fn cli_netlist_sorts_components_and_nets_with_strnumcmp_ordering() {
+fn cli_netlist_sorts_components_and_preserves_graph_net_codes() {
     let path = temp_schematic(
         "cli_netlist_strnumcmp_ordering",
         r#"(kicad_sch
@@ -1671,13 +1671,13 @@ fn cli_netlist_sorts_components_and_nets_with_strnumcmp_ordering() {
         .expect("R10 component in xml");
     assert!(r2_component < r10_component, "{report}");
 
-    let net2 = report
-        .find("<net code=\"1\" name=\"NET2\"")
-        .expect("NET2 in xml");
     let net10 = report
-        .find("<net code=\"2\" name=\"NET10\"")
+        .find("<net code=\"1\" name=\"NET10\"")
         .expect("NET10 in xml");
-    assert!(net2 < net10, "{report}");
+    let net2 = report
+        .find("<net code=\"3\" name=\"NET2\"")
+        .expect("NET2 in xml");
+    assert!(net10 < net2, "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
