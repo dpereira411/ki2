@@ -2441,7 +2441,11 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                 continue;
             }
 
-            if label.is_bus {
+            if matches!(
+                label.connection.connection_type,
+                crate::connectivity::ReducedProjectConnectionType::Bus
+                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
+            ) {
                 has_bus_item = true;
             } else {
                 has_net_item = true;
@@ -2450,7 +2454,11 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         }
 
         for pin in &subgraph.hier_sheet_pins {
-            if pin.is_bus {
+            if matches!(
+                pin.connection.connection_type,
+                crate::connectivity::ReducedProjectConnectionType::Bus
+                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
+            ) {
                 has_bus_item = true;
             } else {
                 has_net_item = true;
@@ -2459,7 +2467,11 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         }
 
         for port in &subgraph.hier_ports {
-            if port.is_bus {
+            if matches!(
+                port.connection.connection_type,
+                crate::connectivity::ReducedProjectConnectionType::Bus
+                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
+            ) {
                 has_bus_item = true;
             } else {
                 has_net_item = true;
@@ -2545,8 +2557,12 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         }
         if label_members.is_some() {
             label_at = subgraph.label_links.iter().find_map(|label| {
-                (label.is_bus && matches!(label.kind, LabelKind::Local | LabelKind::Global))
-                    .then_some([f64::from_bits(label.at.0), f64::from_bits(label.at.1)])
+                (matches!(
+                    label.connection.connection_type,
+                    crate::connectivity::ReducedProjectConnectionType::Bus
+                        | crate::connectivity::ReducedProjectConnectionType::BusGroup
+                ) && matches!(label.kind, LabelKind::Local | LabelKind::Global))
+                .then_some([f64::from_bits(label.at.0), f64::from_bits(label.at.1)])
             });
         }
 

@@ -160,23 +160,20 @@ pub(crate) struct ReducedProjectBusNeighborLink {
 pub(crate) struct ReducedLabelLink {
     pub(crate) at: PointKey,
     pub(crate) kind: LabelKind,
-    pub(crate) name: String,
-    pub(crate) is_bus: bool,
+    pub(crate) connection: ReducedProjectConnection,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedHierSheetPinLink {
     pub(crate) at: PointKey,
     pub(crate) child_sheet_uuid: Option<String>,
-    pub(crate) name: String,
-    pub(crate) is_bus: bool,
+    pub(crate) connection: ReducedProjectConnection,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedHierPortLink {
     pub(crate) at: PointKey,
-    pub(crate) name: String,
-    pub(crate) is_bus: bool,
+    pub(crate) connection: ReducedProjectConnection,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2090,11 +2087,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             for child_index in child_indexes {
                 let child = &reduced_subgraphs[*child_index];
 
-                if !child
-                    .hier_ports
-                    .iter()
-                    .any(|port| port.name == hier_pin.name && port.is_bus == hier_pin.is_bus)
-                {
+                if !child.hier_ports.iter().any(|port| {
+                    port.connection.local_name == hier_pin.connection.local_name
+                        && port.connection.connection_type == hier_pin.connection.connection_type
+                }) {
                     continue;
                 }
 
@@ -2579,6 +2575,11 @@ fn reduced_label_kind_sort_key(kind: LabelKind) -> u8 {
 // from cloned connected-component members plus a schematic item scan, but it exists so project-
 // graph ERC paths can share one reduced local label/sheet-pin/no-connect/wire-item membership
 // snapshot instead of rebuilding those facts differently per rule.
+// Upstream parity: reduced local helper for the label/no-connect/wire membership KiCad keeps on
+// `CONNECTION_SUBGRAPH`. This is not a 1:1 item-owner cache because the Rust tree still stores
+// reduced snapshots instead of live `SCH_ITEM*`, but it now attaches reduced connection ownership
+// directly to label links instead of splitting label point state from bus/net text state. Remaining
+// divergence is fuller live item identity plus in-place connection updates.
 fn collect_reduced_subgraph_local_membership(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -2593,6 +2594,7 @@ fn collect_reduced_subgraph_local_membership(
     Vec<ReducedSubgraphWireItem>,
     Vec<ReducedSubgraphWireItem>,
 ) {
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, sheet_path);
     let mut label_links = connected_component
         .members
         .iter()
@@ -2611,12 +2613,23 @@ fn collect_reduced_subgraph_local_membership(
                         current_variant,
                         label,
                     );
+                    let full_name = match label.kind {
+                        LabelKind::Global | LabelKind::Directive => shown.clone(),
+                        LabelKind::Local | LabelKind::Hierarchical => {
+                            format!("{sheet_path_prefix}{shown}")
+                        }
+                    };
 
                     Some(ReducedLabelLink {
                         at: point_key(label.at),
                         kind: label.kind,
-                        name: shown.clone(),
-                        is_bus: reduced_text_is_bus(schematic, &shown),
+                        connection: build_reduced_project_connection(
+                            schematic,
+                            full_name.clone(),
+                            shown,
+                            full_name,
+                            Vec::new(),
+                        ),
                     })
                 }
                 _ => None,
@@ -2628,8 +2641,8 @@ fn collect_reduced_subgraph_local_membership(
             link.at.0,
             link.at.1,
             reduced_label_kind_sort_key(link.kind),
-            link.is_bus,
-            link.name.clone(),
+            link.connection.connection_type,
+            link.connection.full_local_name.clone(),
         )
     });
     label_links.dedup();
@@ -2907,9 +2920,9 @@ fn collect_reduced_subgraph_bus_membership(
 // Upstream parity: reduced local helper for the hierarchical pin/port membership caches KiCad
 // keeps on `CONNECTION_SUBGRAPH`. This is not a 1:1 item-owner cache because the Rust tree still
 // stores reduced shown-text snapshots instead of live `SCH_SHEET_PIN*` / `SCH_HIERLABEL*`, but it
-// preserves the owning graph boundary where parent-child hierarchy relations can be derived once
-// on the shared subgraph owner instead of inside ERC. Remaining divergence is fuller item-pointer
-// identity and live connection-type ownership.
+// now attaches reduced connection ownership directly to those hierarchy links so parent-child
+// matching and ERC do not need separate raw name/type caches. Remaining divergence is fuller
+// item-pointer identity and live connection-type ownership.
 fn collect_reduced_subgraph_hierarchy_membership(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -2919,6 +2932,7 @@ fn collect_reduced_subgraph_hierarchy_membership(
     current_variant: Option<&str>,
     connected_component: &ConnectionComponent,
 ) -> (Vec<ReducedHierSheetPinLink>, Vec<ReducedHierPortLink>) {
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, parent_sheet_path);
     let mut hier_sheet_pins = Vec::<ReducedHierSheetPinLink>::new();
     let mut hier_ports = Vec::<ReducedHierPortLink>::new();
 
@@ -2953,8 +2967,13 @@ fn collect_reduced_subgraph_hierarchy_membership(
                     hier_sheet_pins.push(ReducedHierSheetPinLink {
                         at: point_key(pin.at),
                         child_sheet_uuid: sheet.uuid.clone(),
-                        is_bus: reduced_text_is_bus(schematic, &shown),
-                        name: shown,
+                        connection: build_reduced_project_connection(
+                            schematic,
+                            format!("{sheet_path_prefix}{shown}"),
+                            shown.clone(),
+                            format!("{sheet_path_prefix}{shown}"),
+                            Vec::new(),
+                        ),
                     });
                 }
             }
@@ -2976,8 +2995,13 @@ fn collect_reduced_subgraph_hierarchy_membership(
 
                 hier_ports.push(ReducedHierPortLink {
                     at: point_key(label.at),
-                    is_bus: reduced_text_is_bus(schematic, &shown),
-                    name: shown,
+                    connection: build_reduced_project_connection(
+                        schematic,
+                        format!("{sheet_path_prefix}{shown}"),
+                        shown.clone(),
+                        format!("{sheet_path_prefix}{shown}"),
+                        Vec::new(),
+                    ),
                 });
             }
             _ => {}
