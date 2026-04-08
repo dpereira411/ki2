@@ -662,15 +662,17 @@ Current status:
         handles still wrap reduced local subgraph carriers instead of a fuller local
         `CONNECTION_SUBGRAPH` analogue with stable pointer-style topology and recache/update
         behavior across the whole graph
-      - connected-bus-item ownership now exists on live bus-entry wrappers, but still not on real
-        live item / connection pointers
+      - connected-bus-item ownership now reaches the shared live subgraph graph for bus entries,
+        but still not all the way to fuller live item / connection pointer topology across every
+        attached item kind
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
       2. move live name recache and bus-member replay onto that same connection owner instead of
          cloning reduced snapshots through recursive revisits
-      3. widen the new live bus-entry connection owner into fuller live item/connection pointer
-         ownership instead of collapsing it back to subgraph indexes at projection time
+      3. widen the new live bus-entry and item-side owners into fuller live item/connection
+         pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
+         at projection time
       4. replace the current reduced live subgraph handle payload with a fuller local
          `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
          live item owners stay on one shared object graph instead of reduced wrapper structs

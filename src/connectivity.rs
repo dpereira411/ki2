@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::core::SchematicProject;
 use crate::loader::{
@@ -925,14 +925,27 @@ struct LiveReducedHierPortLink {
     connection: LiveReducedConnection,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct LiveReducedSubgraphWireItem {
     start: PointKey,
     end: PointKey,
     is_bus_entry: bool,
     connected_bus_subgraph_index: Option<usize>,
     connected_bus_connection: Option<LiveReducedConnection>,
+    connected_bus_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
+
+impl PartialEq for LiveReducedSubgraphWireItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.start == other.start
+            && self.end == other.end
+            && self.is_bus_entry == other.is_bus_entry
+            && self.connected_bus_subgraph_index == other.connected_bus_subgraph_index
+            && self.connected_bus_connection == other.connected_bus_connection
+    }
+}
+
+impl Eq for LiveReducedSubgraphWireItem {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedSubgraph {
@@ -969,10 +982,12 @@ type LiveReducedSubgraphHandle = Rc<RefCell<LiveReducedSubgraph>>;
 fn build_live_reduced_subgraph_handles(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraphHandle> {
-    build_live_reduced_subgraphs(reduced_subgraphs)
+    let handles = build_live_reduced_subgraphs(reduced_subgraphs)
         .into_iter()
         .map(|subgraph| Rc::new(RefCell::new(subgraph)))
-        .collect()
+        .collect::<Vec<_>>();
+    attach_live_connected_bus_items_to_handles(&handles);
+    handles
 }
 
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
@@ -1061,6 +1076,7 @@ fn build_live_reduced_subgraphs(
                     is_bus_entry: item.is_bus_entry,
                     connected_bus_subgraph_index: item.connected_bus_subgraph_index,
                     connected_bus_connection: None,
+                    connected_bus_handle: None,
                 })
                 .collect(),
             wire_items: subgraph
@@ -1073,6 +1089,7 @@ fn build_live_reduced_subgraphs(
                     is_bus_entry: item.is_bus_entry,
                     connected_bus_subgraph_index: item.connected_bus_subgraph_index,
                     connected_bus_connection: None,
+                    connected_bus_handle: None,
                 })
                 .collect(),
             dirty: true,
@@ -1081,6 +1098,78 @@ fn build_live_reduced_subgraphs(
 
     attach_live_connected_bus_items(&mut live_subgraphs);
     live_subgraphs
+}
+
+// Upstream parity: local bridge for connected-bus ownership on the shared live subgraph graph.
+// This still uses reduced wire geometry instead of real `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*`
+// pointers, but bus entries on the active live graph now keep a live reference back to the
+// attached bus subgraph instead of only an index and projected connection snapshot.
+fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
+    let bus_subgraphs = live_subgraphs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, handle)| {
+            let subgraph = handle.borrow();
+            (!subgraph.bus_items.is_empty()).then(|| {
+                (
+                    index,
+                    subgraph.sheet_instance_path.clone(),
+                    subgraph.bus_items.clone(),
+                    subgraph.driver_connection.clone(),
+                    Rc::downgrade(handle),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for handle in live_subgraphs {
+        let sheet_instance_path = handle.borrow().sheet_instance_path.clone();
+        let mut subgraph = handle.borrow_mut();
+
+        for item in &mut subgraph.wire_items {
+            if !item.is_bus_entry {
+                continue;
+            }
+
+            let attached_bus = bus_subgraphs
+                .iter()
+                .find(|(_, bus_sheet_path, bus_items, _, _)| {
+                    *bus_sheet_path == sheet_instance_path
+                        && bus_items.iter().any(|bus_item| {
+                            point_on_wire_segment(
+                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            ) || point_on_wire_segment(
+                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            )
+                        })
+                })
+                .map(|(index, _, _, connection, bus_handle)| {
+                    (*index, connection.clone(), bus_handle.clone())
+                });
+
+            item.connected_bus_subgraph_index = attached_bus.as_ref().map(|(index, _, _)| *index);
+            item.connected_bus_connection = attached_bus
+                .as_ref()
+                .map(|(_, connection, _)| connection.clone());
+            item.connected_bus_handle = attached_bus.map(|(_, _, bus_handle)| bus_handle);
+        }
+    }
 }
 
 // Upstream parity: reduced local analogue for the bus-entry connected-bus item owner during live
@@ -7389,6 +7478,7 @@ mod tests {
     use crate::parser::parse_schematic_file;
     use std::env;
     use std::fs;
+    use std::rc::{Rc, Weak};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -9517,6 +9607,12 @@ mod tests {
 
         assert_eq!(shared.borrow().driver_connection.name(), "/RENAMED");
         assert!(!shared.borrow().dirty);
+        let attached_bus = shared.borrow().wire_items[0]
+            .connected_bus_handle
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .expect("attached live bus");
+        assert!(Rc::ptr_eq(&attached_bus, &shared));
     }
 
     #[test]
