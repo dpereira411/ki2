@@ -792,6 +792,7 @@ fn clone_reduced_bus_member_into_live_member(
     }
 }
 
+#[cfg(test)]
 fn clone_reduced_connection_into_live_connection(
     target: &mut ReducedProjectConnection,
     source: &ReducedProjectConnection,
@@ -883,6 +884,55 @@ impl LiveProjectConnection {
 fn clone_reduced_connection_into_live_connection_owner(
     target: &mut LiveProjectConnection,
     source: &ReducedProjectConnection,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.connection_type = source.connection_type;
+    target.name = source.name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    target.sheet_instance_path = source.sheet_instance_path.clone();
+
+    if matches!(
+        target.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) && matches!(
+        source.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = existing_members.clone();
+
+            let clone_limit = target.members.len().min(source.members.len());
+            for index in 0..clone_limit {
+                clone_reduced_bus_member_into_live_member(
+                    &mut target.members[index],
+                    &source.members[index],
+                );
+            }
+
+            if target.members.len() > source.members.len() {
+                target.members.truncate(source.members.len());
+            } else if target.members.len() < source.members.len() {
+                target
+                    .members
+                    .extend(source.members[target.members.len()..].iter().cloned());
+            }
+        }
+    } else {
+        target.members = source.members.clone();
+    }
+}
+
+fn clone_live_connection_owner_into_reduced_connection(
+    target: &mut ReducedProjectConnection,
+    source: &LiveProjectConnection,
 ) {
     let existing_local_name = target.local_name.clone();
     let existing_members = target.members.clone();
@@ -1683,21 +1733,22 @@ fn apply_live_reduced_driver_connections_from_handles(
     for handle in live_subgraphs {
         let live = handle.borrow();
         let reduced = &mut reduced_subgraphs[live.source_index];
-        let live_driver = live.driver_connection.snapshot();
+        let live_driver = live.driver_connection.borrow();
         reduced.name = live_driver.name.clone();
-        clone_reduced_connection_into_live_connection(
+        clone_live_connection_owner_into_reduced_connection(
             &mut reduced.resolved_connection,
             &live_driver,
         );
 
         if let Some(driver_connection) = &mut reduced.driver_connection {
-            clone_reduced_connection_into_live_connection(driver_connection, &live_driver);
+            clone_live_connection_owner_into_reduced_connection(driver_connection, &live_driver);
         }
 
         for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
-            clone_reduced_connection_into_live_connection(
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
                 &mut target.connection,
-                &source.connection.snapshot(),
+                &source_connection,
             );
         }
 
@@ -1706,16 +1757,18 @@ fn apply_live_reduced_driver_connections_from_handles(
             .iter_mut()
             .zip(live.hier_sheet_pins.iter())
         {
-            clone_reduced_connection_into_live_connection(
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
                 &mut target.connection,
-                &source.connection.snapshot(),
+                &source_connection,
             );
         }
 
         for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
-            clone_reduced_connection_into_live_connection(
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
                 &mut target.connection,
-                &source.connection.snapshot(),
+                &source_connection,
             );
         }
 
