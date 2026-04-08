@@ -706,6 +706,8 @@ Current status:
         promotion now use shared live-handle identity instead of reduced subgraph indexes as their
         traversal identity; `source_index` remains mainly as projection identity and test
         scaffolding
+      - active bus-link rematch now also uses handle-keyed temporary refresh state instead of
+        reduced-index-keyed vectors on the live path
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

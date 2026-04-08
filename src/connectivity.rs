@@ -3901,11 +3901,12 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
 ) {
     // Upstream parity: local live-handle analogue for rematching bus parent/neighbor links after
     // propagation. This still projects reduced member snapshots into link state, but active
-    // refresh now prefers the attached live parent/child handles over copied link indexes.
-    let mut refreshed_parent_links =
-        vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
+    // refresh now prefers the attached live parent/child handles and handle-keyed refresh state
+    // over copied link or subgraph indexes.
+    let mut refreshed_parent_links = BTreeMap::<usize, Vec<LiveReducedSubgraphLink>>::new();
 
     for child_handle in component {
+        let child_id = live_subgraph_handle_id(child_handle);
         let child_index = child_handle.borrow().source_index;
         let child_snapshot = child_handle.borrow().clone();
         let child_connection = child_snapshot.driver_connection.snapshot();
@@ -3964,38 +3965,53 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                 continue;
             };
 
-            refreshed_parent_links[child_index].push(LiveReducedSubgraphLink {
-                member: refreshed_member,
-                #[cfg(test)]
-                subgraph_index: parent_index,
-                subgraph_handle: Some(Rc::downgrade(&parent_handle)),
-            });
+            refreshed_parent_links
+                .entry(child_id)
+                .or_default()
+                .push(LiveReducedSubgraphLink {
+                    member: refreshed_member,
+                    #[cfg(test)]
+                    subgraph_index: parent_index,
+                    subgraph_handle: Some(Rc::downgrade(&parent_handle)),
+                });
         }
     }
 
-    let mut refreshed_neighbor_links =
-        vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
+    let mut refreshed_neighbor_links = BTreeMap::<usize, Vec<LiveReducedSubgraphLink>>::new();
 
     for child_handle in component {
+        let child_id = live_subgraph_handle_id(child_handle);
         let child_index = child_handle.borrow().source_index;
-        for link in &refreshed_parent_links[child_index] {
+        for link in refreshed_parent_links.get(&child_id).into_iter().flatten() {
             let neighbor_index = live_subgraph_link_index(link);
-            refreshed_neighbor_links[neighbor_index].push(LiveReducedSubgraphLink {
-                member: link.member.clone(),
-                #[cfg(test)]
-                subgraph_index: child_index,
-                subgraph_handle: live_subgraphs.get(child_index).map(Rc::downgrade),
-            });
+            let Some(neighbor_handle) = live_subgraphs.get(neighbor_index) else {
+                continue;
+            };
+            refreshed_neighbor_links
+                .entry(live_subgraph_handle_id(neighbor_handle))
+                .or_default()
+                .push(LiveReducedSubgraphLink {
+                    member: link.member.clone(),
+                    #[cfg(test)]
+                    subgraph_index: child_index,
+                    subgraph_handle: live_subgraphs.get(child_index).map(Rc::downgrade),
+                });
         }
     }
 
     for handle in component {
-        let index = handle.borrow().source_index;
+        let handle_id = live_subgraph_handle_id(handle);
         let mut live = handle.borrow_mut();
-        live.bus_parent_links = refreshed_parent_links[index].clone();
+        live.bus_parent_links = refreshed_parent_links
+            .get(&handle_id)
+            .cloned()
+            .unwrap_or_default();
         live.bus_parent_links.sort();
         live.bus_parent_links.dedup();
-        live.bus_neighbor_links = refreshed_neighbor_links[index].clone();
+        live.bus_neighbor_links = refreshed_neighbor_links
+            .get(&handle_id)
+            .cloned()
+            .unwrap_or_default();
         live.bus_neighbor_links.sort();
         live.bus_neighbor_links.dedup();
     }
