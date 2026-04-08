@@ -2172,7 +2172,22 @@ fn propagate_reduced_live_graph_neighbors(
         return;
     }
 
-    refresh_reduced_live_global_secondary_driver_promotions_for_index(start, live_subgraphs);
+    if !force {
+        let promoted = refresh_reduced_live_global_secondary_driver_promotions_for_index(
+            start,
+            live_subgraphs,
+        );
+
+        for promoted_index in promoted {
+            propagate_reduced_live_graph_neighbors(
+                promoted_index,
+                live_subgraphs,
+                false,
+                visiting,
+                stale_members,
+            );
+        }
+    }
 
     let active = collect_live_reduced_propagation_component(start, live_subgraphs);
 
@@ -2425,19 +2440,20 @@ fn refresh_reduced_global_secondary_driver_promotions(
 // `CONNECTION_GRAPH::Recalculate()` immediately before `propagateToNeighbors()`. This still stops
 // short of pointer-owned driver/item mutation, but it now mutates the shared live subgraph owner
 // instead of promoting disconnected candidates on reduced snapshots before the live graph runs.
-// Remaining divergence is the still-missing immediate recursive call on the exact promoted live
-// object; the local worklist re-queues that dirty subgraph instead.
+// Remaining divergence is the still-missing pointer-owned driver/item mutation on the promoted
+// subgraph itself.
 fn refresh_reduced_live_global_secondary_driver_promotions_for_index(
     start: usize,
     live_subgraphs: &mut [LiveReducedSubgraph],
-) {
+) -> Vec<usize> {
     if live_subgraphs[start].local_driver || live_subgraphs[start].strong_driver_count < 2 {
-        return;
+        return Vec::new();
     }
 
     let chosen_connection = live_subgraphs[start].driver_connection.connection.clone();
     let start_sheet = live_subgraphs[start].sheet_instance_path.clone();
     let secondary_drivers = live_subgraphs[start].drivers.clone();
+    let mut promoted = Vec::new();
 
     for secondary_driver in secondary_drivers {
         if secondary_driver.full_name == chosen_connection.name {
@@ -2472,8 +2488,13 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_index(
             live_subgraphs[candidate_index].driver_connection.connection =
                 chosen_connection.clone();
             live_subgraphs[candidate_index].dirty = true;
+            promoted.push(candidate_index);
         }
     }
+
+    promoted.sort_unstable();
+    promoted.dedup();
+    promoted
 }
 
 // Upstream parity: reduced local analogue for the bus-entry connected-bus item ownership KiCad
