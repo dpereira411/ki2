@@ -1017,10 +1017,18 @@ fn symbol_to_xml_component(
     upsert_component_field(&mut fields, "Datasheet", i32::MAX, datasheet.clone());
     upsert_component_field(&mut fields, "Description", i32::MAX, description.clone());
 
-    let mut metadata_properties = collect_parent_sheet_properties(project, sheet_path)
-        .into_iter()
-        .map(|(name, value)| (name, Some(value)))
+    let mut metadata_properties = state
+        .properties
+        .iter()
+        .filter(|property| !property.kind.is_mandatory() && !property.is_private)
+        .map(|property| (property.key.clone(), Some(property.value.clone())))
         .collect::<Vec<_>>();
+
+    metadata_properties.extend(
+        collect_parent_sheet_properties(project, sheet_path)
+            .into_iter()
+            .map(|(name, value)| (name, Some(value))),
+    );
 
     if let Some(keywords) = symbol
         .lib_symbol

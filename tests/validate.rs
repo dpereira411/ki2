@@ -1160,6 +1160,7 @@ fn cli_netlist_exports_component_metadata_properties() {
     (in_bom no)
     (on_board no)
     (dnp yes)
+    (property "MPN" "ABC123" (at 0 0 0) (effects (font (size 1 1))))
     (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
     (property "Value" "JUMPER" (at 0 0 0) (effects (font (size 1 1))))))"#,
     );
@@ -1190,6 +1191,10 @@ fn cli_netlist_exports_component_metadata_properties() {
         "{report}"
     );
     assert!(
+        report.contains("<property name=\"MPN\" value=\"ABC123\" />"),
+        "{report}"
+    );
+    assert!(
         report.contains("<duplicate_pin_numbers_are_jumpers>1</duplicate_pin_numbers_are_jumpers>"),
         "{report}"
     );
@@ -1197,6 +1202,10 @@ fn cli_netlist_exports_component_metadata_properties() {
     assert!(report.contains("<group>"), "{report}");
     assert!(report.contains("<pin>1</pin>"), "{report}");
     assert!(report.contains("<pin>4</pin>"), "{report}");
+    assert!(
+        report.contains("<field name=\"MPN\">ABC123</field>"),
+        "{report}"
+    );
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);

@@ -706,6 +706,8 @@ What is already covered indirectly:
     - exercised schematic `lib_name` / non-`UseLibIdLookup()` branch is now live
     - exercised always-present `description=` attribute is now live, including empty descriptions
   - reduced component metadata properties:
+    - symbol user fields now also emit on the `<property>` stream before sheet properties, matching
+      the exercised `makeSymbols()` property walk more closely
     - `exclude_from_bom`
     - `exclude_from_board`
     - `exclude_from_pos_files`
