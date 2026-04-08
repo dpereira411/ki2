@@ -1554,54 +1554,6 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
         ));
 
         xml.push_str(" />\n");
-        xml.push_str(&format!(
-            "      <sheetpath names=\"{}\" tstamps=\"{}\" />\n",
-            escape_xml(&component.path_names),
-            escape_xml(if component.path.is_empty() {
-                "/"
-            } else {
-                &component.path
-            })
-        ));
-
-        if !component.tstamps.is_empty() {
-            xml.push_str("      <tstamps>");
-
-            for (index, tstamp) in component.tstamps.iter().enumerate() {
-                if index > 0 {
-                    xml.push(' ');
-                }
-
-                xml.push_str(&escape_xml(tstamp));
-            }
-
-            xml.push_str("</tstamps>\n");
-        }
-
-        if !component.units.is_empty() {
-            xml.push_str("      <units>\n");
-
-            for unit in component.units {
-                xml.push_str(&format!(
-                    "        <unit name=\"{}\">\n",
-                    escape_xml(&unit.name)
-                ));
-                xml.push_str("          <pins>\n");
-
-                for pin in unit.pins {
-                    xml.push_str(&format!(
-                        "            <pin num=\"{}\" />\n",
-                        escape_xml(&pin)
-                    ));
-                }
-
-                xml.push_str("          </pins>\n");
-                xml.push_str("        </unit>\n");
-            }
-
-            xml.push_str("      </units>\n");
-        }
-
         for (name, value) in component.metadata_properties {
             match value {
                 Some(value) => xml.push_str(&format!(
@@ -1686,6 +1638,54 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             }
 
             xml.push_str("      </component_classes>\n");
+        }
+
+        xml.push_str(&format!(
+            "      <sheetpath names=\"{}\" tstamps=\"{}\" />\n",
+            escape_xml(&component.path_names),
+            escape_xml(if component.path.is_empty() {
+                "/"
+            } else {
+                &component.path
+            })
+        ));
+
+        if !component.tstamps.is_empty() {
+            xml.push_str("      <tstamps>");
+
+            for (index, tstamp) in component.tstamps.iter().enumerate() {
+                if index > 0 {
+                    xml.push(' ');
+                }
+
+                xml.push_str(&escape_xml(tstamp));
+            }
+
+            xml.push_str("</tstamps>\n");
+        }
+
+        if !component.units.is_empty() {
+            xml.push_str("      <units>\n");
+
+            for unit in component.units {
+                xml.push_str(&format!(
+                    "        <unit name=\"{}\">\n",
+                    escape_xml(&unit.name)
+                ));
+                xml.push_str("          <pins>\n");
+
+                for pin in unit.pins {
+                    xml.push_str(&format!(
+                        "            <pin num=\"{}\" />\n",
+                        escape_xml(&pin)
+                    ));
+                }
+
+                xml.push_str("          </pins>\n");
+                xml.push_str("        </unit>\n");
+            }
+
+            xml.push_str("      </units>\n");
         }
 
         if !component.fields.is_empty() {

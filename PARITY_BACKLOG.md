@@ -740,6 +740,10 @@ What is already covered indirectly:
   - reduced `tstamps`
   - reduced per-lib-unit pin export on `<units>`
     - exercised linked library-unit order is now preserved instead of repo-local name sorting
+  - exercised XML component child ordering now follows KiCad's `makeSymbols()` shape more closely
+    through:
+    - `<property>` / `<variants>` / jumper metadata before `<sheetpath>`
+    - `<component_classes>` before `<tstamps>` / `<units>`
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
     - exercised libpart field order now follows linked library-field order instead of repo-local

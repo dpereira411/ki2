@@ -1212,11 +1212,23 @@ fn cli_netlist_exports_component_metadata_properties() {
     let ki_fp_filters = report
         .find("<property name=\"ki_fp_filters\" value=\"R_* 0603\" />")
         .expect("ki_fp_filters property");
+    let duplicate_pin_numbers = report
+        .find("<duplicate_pin_numbers_are_jumpers>1</duplicate_pin_numbers_are_jumpers>")
+        .expect("duplicate_pin_numbers_are_jumpers");
+    let jumper_pin_groups = report
+        .find("<jumper_pin_groups>")
+        .expect("jumper_pin_groups");
+    let sheetpath = report.find("<sheetpath ").expect("sheetpath");
+    let units = report.find("<units>").expect("units");
     assert!(mpn < exclude_from_bom, "{report}");
     assert!(exclude_from_bom < exclude_from_board, "{report}");
     assert!(exclude_from_board < dnp, "{report}");
     assert!(dnp < ki_keywords, "{report}");
     assert!(ki_keywords < ki_fp_filters, "{report}");
+    assert!(ki_fp_filters < duplicate_pin_numbers, "{report}");
+    assert!(duplicate_pin_numbers < jumper_pin_groups, "{report}");
+    assert!(jumper_pin_groups < sheetpath, "{report}");
+    assert!(sheetpath < units, "{report}");
     assert!(
         report.contains("<duplicate_pin_numbers_are_jumpers>1</duplicate_pin_numbers_are_jumpers>"),
         "{report}"
@@ -1740,6 +1752,9 @@ fn cli_netlist_exports_component_classes() {
         .find("</component_classes>")
         .expect("component classes end");
     let classes = &report[start..end];
+    let sheetpath = report.find("<sheetpath ").expect("sheetpath");
+    let tstamps = report.find("<tstamps>").expect("tstamps");
+    let units = report.find("<units>").expect("units");
 
     assert!(classes.contains("<class>RuleAreaClass</class>"), "{report}");
     assert!(classes.contains("<class>SymbolClass</class>"), "{report}");
@@ -1747,6 +1762,9 @@ fn cli_netlist_exports_component_classes() {
         classes.find("RuleAreaClass") < classes.find("SymbolClass"),
         "{report}"
     );
+    assert!(start < sheetpath, "{report}");
+    assert!(sheetpath < tstamps, "{report}");
+    assert!(tstamps < units, "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
