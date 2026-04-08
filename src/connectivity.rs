@@ -1588,7 +1588,7 @@ struct LiveReducedSubgraph {
     #[cfg(test)]
     bus_parent_indexes: Vec<usize>,
     bus_parent_handles: Vec<Weak<RefCell<LiveReducedSubgraph>>>,
-    base_pin_count: usize,
+    base_pins: Vec<ReducedNetBasePinKey>,
     #[cfg(test)]
     hier_parent_index: Option<usize>,
     #[cfg(test)]
@@ -1632,7 +1632,7 @@ impl PartialEq for LiveReducedSubgraph {
             && self.bus_neighbor_links == other.bus_neighbor_links
             && self.bus_parent_links == other.bus_parent_links
             && live_reduced_subgraph_extra_projection_eq(self, other)
-            && self.base_pin_count == other.base_pin_count
+            && self.base_pins == other.base_pins
             && self.label_links == other.label_links
             && self.hier_sheet_pins == other.hier_sheet_pins
             && self.hier_ports == other.hier_ports
@@ -1692,6 +1692,10 @@ fn live_subgraph_has_hier_pins(subgraph: &LiveReducedSubgraph) -> bool {
 
 fn live_subgraph_has_hier_ports(subgraph: &LiveReducedSubgraph) -> bool {
     !subgraph.hier_ports.is_empty()
+}
+
+fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
+    subgraph.base_pins.len()
 }
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
@@ -1853,7 +1857,7 @@ fn build_live_reduced_subgraphs(
             #[cfg(test)]
             bus_parent_indexes: subgraph.bus_parent_indexes.clone(),
             bus_parent_handles: Vec::new(),
-            base_pin_count: subgraph.base_pins.len(),
+            base_pins: subgraph.base_pins.clone(),
             #[cfg(test)]
             hier_parent_index: subgraph.hier_parent_index,
             #[cfg(test)]
@@ -4211,7 +4215,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
 
         let snapshot = handle.borrow().clone();
         if live_subgraph_strong_driver_count(&snapshot) == 0
-            && snapshot.base_pin_count == 1
+            && live_subgraph_base_pin_count(&snapshot) == 1
             && matches!(
                 snapshot.driver_identity,
                 Some(ReducedProjectDriverIdentity::SymbolPin { .. })
@@ -4401,7 +4405,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
         sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
 
         if live_subgraph_strong_driver_count(&live_subgraphs[index]) == 0
-            && live_subgraphs[index].base_pin_count == 1
+            && live_subgraph_base_pin_count(&live_subgraphs[index]) == 1
             && matches!(
                 live_subgraphs[index].driver_identity,
                 Some(ReducedProjectDriverIdentity::SymbolPin { .. })
@@ -10597,7 +10601,7 @@ mod tests {
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
                 bus_parent_handles: Vec::new(),
-                base_pin_count: 0,
+                base_pins: Vec::new(),
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
@@ -10628,7 +10632,7 @@ mod tests {
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
                 bus_parent_handles: Vec::new(),
-                base_pin_count: 0,
+                base_pins: Vec::new(),
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
@@ -10694,7 +10698,7 @@ mod tests {
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
             bus_parent_handles: Vec::new(),
-            base_pin_count: 0,
+            base_pins: Vec::new(),
             hier_parent_index: None,
             hier_child_indexes: Vec::new(),
             hier_parent_handle: None,
@@ -11252,7 +11256,7 @@ mod tests {
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
                 bus_parent_handles: Vec::new(),
-                base_pin_count: 0,
+                base_pins: Vec::new(),
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
@@ -11291,7 +11295,7 @@ mod tests {
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
                 bus_parent_handles: Vec::new(),
-                base_pin_count: 0,
+                base_pins: Vec::new(),
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
                 hier_parent_handle: None,
