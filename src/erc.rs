@@ -2622,10 +2622,10 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         if test_names.is_empty() {
             test_names.extend(
                 subgraph
-                    .driver_full_names
+                    .drivers
                     .iter()
-                    .filter(|name| !bus_members.iter().any(|member| member == *name))
-                    .cloned(),
+                    .map(|driver| driver.full_name.clone())
+                    .filter(|name| !bus_members.iter().any(|member| member == name)),
             );
         }
         for name in &subgraph.non_bus_full_names {

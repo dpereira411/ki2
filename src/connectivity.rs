@@ -165,8 +165,6 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) driver_full_name: String,
     pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
-    pub(crate) driver_names: Vec<String>,
-    pub(crate) driver_full_names: Vec<String>,
     pub(crate) non_bus_driver_priority: Option<i32>,
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
@@ -1337,8 +1335,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         driver_full_name: String,
         driver_identity: Option<ReducedProjectDriverIdentity>,
         drivers: Vec<ReducedProjectStrongDriver>,
-        driver_names: Vec<String>,
-        driver_full_names: Vec<String>,
         non_bus_driver_priority: Option<i32>,
         class: String,
         has_no_connect: bool,
@@ -1542,22 +1538,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     .iter()
                     .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
                     .map(|driver| driver.priority);
-                let driver_names = {
-                    let mut names = strong_drivers
-                        .iter()
-                        .map(|driver| driver.name.clone())
-                        .collect::<Vec<_>>();
-                    names.dedup();
-                    names
-                };
-                let driver_full_names = {
-                    let mut names = strong_drivers
-                        .iter()
-                        .map(|driver| driver.full_name.clone())
-                        .collect::<Vec<_>>();
-                    names.dedup();
-                    names
-                };
                 let (
                     label_links,
                     label_points,
@@ -1606,8 +1586,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     driver_full_name,
                     driver_identity,
                     drivers: strong_drivers.clone(),
-                    driver_names,
-                    driver_full_names,
                     non_bus_driver_priority,
                     class: class.clone(),
                     has_no_connect,
@@ -1760,8 +1738,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 driver_full_name: String::new(),
                 driver_identity: None,
                 drivers: Vec::new(),
-                driver_names: Vec::new(),
-                driver_full_names: Vec::new(),
                 non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: true,
@@ -1853,8 +1829,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             driver_full_name: pending.driver_full_name.clone(),
             driver_identity: pending.driver_identity.clone(),
             drivers: pending.drivers.clone(),
-            driver_names: pending.driver_names.clone(),
-            driver_full_names: pending.driver_full_names.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
             class: if pending.class.is_empty() {
                 net_identity
@@ -4448,7 +4422,7 @@ mod tests {
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.driver_name, "SIG");
-        assert!(by_point.driver_names.iter().any(|name| name == "SIG"));
+        assert!(by_point.drivers.iter().any(|driver| driver.name == "SIG"));
 
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
@@ -4527,9 +4501,9 @@ mod tests {
         assert_eq!(by_point.driver_full_name, child_sheet.instance_path);
         assert!(
             by_point
-                .driver_names
+                .drivers
                 .iter()
-                .any(|name| name == &child_sheet.instance_path)
+                .any(|driver| driver.name == child_sheet.instance_path)
         );
 
         let _ = fs::remove_file(root_path);
