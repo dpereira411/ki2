@@ -691,6 +691,10 @@ Current status:
         beside the live bus owner, but projection and remaining boundary adapters still round-trip
         through reduced snapshots instead of keeping one fuller live member/pointer graph through
         propagation and projection
+      - after removing copied active bus-entry, hierarchy/plain-parent, and bus-link indexes from
+        the non-test live payload, the main remaining reduced carriers are the live item wrappers
+        themselves and `source_index`-style projection identity, not more active-topology side
+        caches
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
