@@ -3765,7 +3765,7 @@ fn erc_reports_bus_entry_member_conflicts() {
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-bus-entry-conflict"
             && diagnostic.message
-                == "Net ADDR9 is graphically connected to bus DATA[0..7] but is not a member of that bus at -5, 5"
+                == "Net /ADDR9 is graphically connected to bus DATA[0..7] but is not a member of that bus at -5, 5"
     }));
     assert!(
         !diagnostics
@@ -3863,7 +3863,7 @@ fn erc_reports_one_bus_entry_conflict_from_driver_name() {
     assert_eq!(conflicts.len(), 1, "{diagnostics:#?}");
     assert_eq!(
         conflicts[0].message,
-        "Net ADDR9 is graphically connected to bus DATA[0..7] but is not a member of that bus at -5, 5"
+        "Net /ADDR9 is graphically connected to bus DATA[0..7] but is not a member of that bus at -5, 5"
     );
 
     let _ = fs::remove_file(path);

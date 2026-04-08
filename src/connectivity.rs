@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::core::SchematicProject;
 use crate::loader::{
     LoadedProjectSettings, LoadedSheetPath, SymbolPinTextVarKind, collect_wire_segments,
-    point_on_wire_segment, points_equal, resolve_point_connectivity_text_var,
-    resolved_sheet_text_state, resolved_symbol_text_property_value,
-    shown_label_text_without_connectivity,
+    point_on_wire_segment, points_equal, reduced_net_name_sheet_path_prefix,
+    resolve_point_connectivity_text_var, resolved_sheet_text_state,
+    resolved_symbol_text_property_value, shown_label_text_without_connectivity,
 };
 use crate::model::{
     Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, SheetPinShape, Symbol,
@@ -125,6 +125,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) driver_name: String,
     pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) driver_names: Vec<String>,
+    pub(crate) driver_full_names: Vec<String>,
     pub(crate) non_bus_driver_priority: Option<i32>,
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
@@ -1070,6 +1071,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         driver_name: String,
         driver_identity: Option<ReducedProjectDriverIdentity>,
         driver_names: Vec<String>,
+        driver_full_names: Vec<String>,
         non_bus_driver_priority: Option<i32>,
         class: String,
         has_no_connect: bool,
@@ -1122,6 +1124,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         else {
             continue;
         };
+        let sheet_path_prefix = reduced_net_name_sheet_path_prefix(inputs.sheet_paths, sheet_path);
 
         for entry in collect_reduced_net_map(
             schematic,
@@ -1202,8 +1205,11 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         .as_ref()
                         .map(|identity| identity.to_project_identity(&sheet_path.schematic_path))
                 });
-                let strong_drivers =
-                    collect_reduced_strong_drivers(schematic, &connected_component, |label| {
+                let strong_drivers = collect_reduced_strong_drivers(
+                    schematic,
+                    &connected_component,
+                    &sheet_path_prefix,
+                    |label| {
                         shown_label_text_without_connectivity(
                             inputs.schematics,
                             inputs.sheet_paths,
@@ -1212,15 +1218,24 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                             inputs.current_variant,
                             label,
                         )
-                    });
+                    },
+                );
                 let non_bus_driver_priority = strong_drivers
                     .iter()
                     .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
                     .map(|driver| driver.priority);
                 let driver_names = {
                     let mut names = strong_drivers
+                        .iter()
+                        .map(|driver| driver.name.clone())
+                        .collect::<Vec<_>>();
+                    names.dedup();
+                    names
+                };
+                let driver_full_names = {
+                    let mut names = strong_drivers
                         .into_iter()
-                        .map(|driver| driver.name)
+                        .map(|driver| driver.full_name)
                         .collect::<Vec<_>>();
                     names.dedup();
                     names
@@ -1233,6 +1248,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     driver_name,
                     driver_identity,
                     driver_names,
+                    driver_full_names,
                     non_bus_driver_priority,
                     class: class.clone(),
                     has_no_connect,
@@ -1352,6 +1368,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 driver_name: String::new(),
                 driver_identity: None,
                 driver_names: Vec::new(),
+                driver_full_names: Vec::new(),
                 non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: true,
@@ -1435,6 +1452,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             driver_name: pending.driver_name.clone(),
             driver_identity: pending.driver_identity.clone(),
             driver_names: pending.driver_names.clone(),
+            driver_full_names: pending.driver_full_names.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
             class: if pending.class.is_empty() {
                 net_identity
@@ -2438,6 +2456,7 @@ fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
 struct ReducedStrongDriver {
     priority: i32,
     name: String,
+    full_name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2504,6 +2523,7 @@ struct ReducedDriverNameCandidate {
 fn collect_reduced_strong_drivers<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
+    sheet_path_prefix: &str,
     mut shown_label_text: F,
 ) -> Vec<ReducedStrongDriver>
 where
@@ -2523,9 +2543,17 @@ where
                     }) =>
             {
                 let text = shown_label_text(label);
+                let full_name = match label.kind {
+                    LabelKind::Global => text.clone(),
+                    LabelKind::Local | LabelKind::Hierarchical => {
+                        format!("{sheet_path_prefix}{text}")
+                    }
+                    LabelKind::Directive => return None,
+                };
                 Some(ReducedStrongDriver {
                     priority: reduced_label_driver_priority(label),
                     name: text,
+                    full_name,
                 })
             }
             SchItem::Sheet(sheet) => sheet
@@ -2540,6 +2568,7 @@ where
                 .map(|pin| ReducedStrongDriver {
                     priority: reduced_sheet_pin_driver_rank(pin.shape),
                     name: pin.name.clone(),
+                    full_name: format!("{sheet_path_prefix}{}", pin.name),
                 })
                 .max_by(|lhs, rhs| {
                     lhs.priority
@@ -2563,6 +2592,15 @@ where
                             .and_then(|priority| {
                                 symbol_value_text(symbol).map(|text| ReducedStrongDriver {
                                     priority,
+                                    full_name: if symbol
+                                        .lib_symbol
+                                        .as_ref()
+                                        .is_some_and(|lib_symbol| lib_symbol.local_power)
+                                    {
+                                        format!("{sheet_path_prefix}{text}")
+                                    } else {
+                                        text.clone()
+                                    },
                                     name: text,
                                 })
                             })

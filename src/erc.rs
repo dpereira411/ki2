@@ -10,10 +10,10 @@ use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
     LoadedErcSeverity, LoadedSheetPath, collect_wire_segments, point_on_wire_segment, points_equal,
-    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
-    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
-    resolved_sheet_text_state, resolved_symbol_text_property_value, resolved_symbol_text_state,
-    shown_sheet_pin_text,
+    reduced_net_name_sheet_path_prefix, resolve_cross_reference_text_var,
+    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
+    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
+    resolved_symbol_text_property_value, resolved_symbol_text_state, shown_sheet_pin_text,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -79,6 +79,26 @@ fn graph_run_erc_subgraphs(
                 .as_ref()
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
         })
+        .collect()
+}
+
+fn reduced_full_local_name(name: &str, sheet_path_prefix: &str, prepend_path: bool) -> String {
+    if prepend_path {
+        format!("{sheet_path_prefix}{name}")
+    } else {
+        name.to_string()
+    }
+}
+
+fn reduced_full_local_bus_members(
+    schematic: &crate::model::Schematic,
+    text: &str,
+    sheet_path_prefix: &str,
+    prepend_path: bool,
+) -> Vec<String> {
+    reduced_bus_members(schematic, text)
+        .into_iter()
+        .map(|member| reduced_full_local_name(&member, sheet_path_prefix, prepend_path))
         .collect()
 }
 
@@ -2468,9 +2488,10 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // This is not a 1:1 KiCad bus-member connection pass because the Rust tree still expands only
 // reduced alias/vector members instead of full `SCH_CONNECTION::Members()` trees. It now flags bus
 // label/port pairs on shared reduced project subgraphs instead of rebuilding per-sheet connection
-// components, and now also follows `RunERC()`-style reused-screen driver de-duplication through
-// the shared reduced graph owner. Remaining divergence is fuller nested bus-member semantics beyond
-// this reduced name-only overlap check.
+// components, now compares reduced full-local member names instead of bare member text, and now
+// also follows `RunERC()`-style reused-screen driver de-duplication through the shared reduced
+// graph owner. Remaining divergence is fuller nested bus-member semantics beyond this reduced
+// full-local-name overlap check.
 pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2486,7 +2507,6 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
         let mut label_members = None::<Vec<String>>;
         let mut label_at = None::<[f64; 2]>;
         let mut port_members = None::<Vec<String>>;
@@ -2571,9 +2591,10 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // ownership. It now mirrors the exercised KiCad flow on shared reduced project subgraphs instead
 // of rebuilding per-sheet connection components, and now also follows `RunERC()`-style
 // reused-screen driver de-duplication through the shared reduced graph owner. It now also warns
-// once from the shared subgraph driver name after membership testing against the reduced driver
-// set, instead of sweeping every non-bus shown-text on the subgraph independently. Remaining
-// divergence is fuller bus-object ownership and cached subgraph driver state.
+// once from the shared subgraph full-name driver after membership testing against reduced
+// full-local bus members and the shared driver set, instead of sweeping every non-bus shown-text
+// on the subgraph independently. Remaining divergence is fuller bus-object ownership and cached
+// subgraph driver state.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2592,6 +2613,8 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
         let mut bus_name = None::<String>;
         let mut bus_members = None::<Vec<String>>;
@@ -2615,7 +2638,14 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 
             if reduced_text_is_bus(schematic, &shown) {
                 bus_name.get_or_insert(shown.clone());
-                bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
+                bus_members.get_or_insert_with(|| {
+                    reduced_full_local_bus_members(
+                        schematic,
+                        &shown,
+                        &sheet_path_prefix,
+                        label.kind != LabelKind::Global,
+                    )
+                });
             } else {
                 non_bus_sheet_pin_names.push(shown);
                 entry_at = label.at;
@@ -2642,7 +2672,9 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 
                 if reduced_text_is_bus(schematic, &shown) {
                     bus_name.get_or_insert(shown.clone());
-                    bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
+                    bus_members.get_or_insert_with(|| {
+                        reduced_full_local_bus_members(schematic, &shown, &sheet_path_prefix, true)
+                    });
                 } else {
                     non_bus_sheet_pin_names.push(shown);
                     entry_at = pin.at;
@@ -2654,7 +2686,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             continue;
         };
         let mut test_names = subgraph
-            .driver_names
+            .driver_full_names
             .iter()
             .filter(|name| !reduced_text_is_bus(schematic, name))
             .cloned()
@@ -2665,7 +2697,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             }
         }
         if test_names.is_empty() && !subgraph.driver_name.is_empty() {
-            test_names.push(subgraph.driver_name.clone());
+            test_names.push(subgraph.name.clone());
         }
 
         let suppress_conflict = subgraph
@@ -2686,7 +2718,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let net_name = test_names
             .first()
             .cloned()
-            .unwrap_or_else(|| subgraph.driver_name.clone());
+            .unwrap_or_else(|| subgraph.name.clone());
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             code: "erc-bus-entry-conflict",
