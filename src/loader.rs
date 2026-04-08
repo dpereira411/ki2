@@ -120,6 +120,7 @@ pub struct LoadedSchematicSettings {
     pub netclasses: BTreeSet<String>,
     pub default_netclass: String,
     pub erc_pin_map: Option<Vec<Vec<u8>>>,
+    pub erc_rule_severities: BTreeMap<String, LoadedErcSeverity>,
 }
 
 impl Default for LoadedSchematicSettings {
@@ -132,8 +133,16 @@ impl Default for LoadedSchematicSettings {
             netclasses: BTreeSet::from(["Default".to_string()]),
             default_netclass: "Default".to_string(),
             erc_pin_map: None,
+            erc_rule_severities: BTreeMap::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadedErcSeverity {
+    Warning,
+    Error,
+    Ignore,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,12 +178,13 @@ impl LoadedProjectSettings {
 
     // Upstream parity: typed local analogue for the exercised companion-project settings slice.
     // This is not a 1:1 KiCad settings object because the current tree still preserves raw
-    // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
-    // the exercised `SCHEMATIC_SETTINGS` subset: intersheet refs, drawing-sheet source path,
-    // connection grid size, project text vars, schematic variant descriptions, reduced ERC pin-map
-    // overrides, and the reduced ERC-visible netclass-name set. Remaining divergence is the
-    // missing worksheet/page-layout object model behind that path plus the broader ERC settings
-    // surface beyond the typed pin-map slice.
+    // companion project JSON too, but loader/current-sheet refresh and the current ERC owner now
+    // read one typed carrier for the exercised `SCHEMATIC_SETTINGS` subset: intersheet refs,
+    // drawing-sheet source path, connection grid size, project text vars, schematic variant
+    // descriptions, reduced ERC pin-map overrides, typed ERC rule severities, and the reduced
+    // ERC-visible netclass-name set. Remaining divergence is the missing worksheet/page-layout
+    // object model behind that path plus the broader ERC settings surface beyond the typed
+    // pin-map/rule-severity slices.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
         let mut text_variables = BTreeMap::new();
@@ -292,6 +302,30 @@ impl LoadedProjectSettings {
             }
         }
 
+        if let Some(rule_severities) = json
+            .get("erc")
+            .and_then(Value::as_object)
+            .and_then(|erc| erc.get("rule_severities"))
+            .and_then(Value::as_object)
+        {
+            for (key, value) in rule_severities {
+                let Some(value) = value.as_str() else {
+                    continue;
+                };
+
+                let Some(severity) = (match value {
+                    "warning" => Some(LoadedErcSeverity::Warning),
+                    "error" => Some(LoadedErcSeverity::Error),
+                    "ignore" => Some(LoadedErcSeverity::Ignore),
+                    _ => None,
+                }) else {
+                    continue;
+                };
+
+                schematic.erc_rule_severities.insert(key.clone(), severity);
+            }
+        }
+
         if let Some(classes) = json
             .get("net_settings")
             .and_then(Value::as_object)
@@ -373,6 +407,15 @@ impl LoadedProjectSettings {
             .and_then(|rows| rows.get(row))
             .and_then(|row_values| row_values.get(column))
             .copied()
+    }
+
+    // Upstream parity: reduced local analogue for `ERC_SETTINGS::m_ERCSeverities` lookup through
+    // the companion-project JSON `erc.rule_severities` object. This is not a 1:1 KiCad settings
+    // owner because the current tree still does not expose the full ERC item registry or nested
+    // settings object graph, but it keeps the exercised severity override path on the same
+    // project-owned JSON field instead of hard-coding policy in each ERC check.
+    pub fn erc_rule_severity(&self, key: &str) -> Option<LoadedErcSeverity> {
+        self.schematic.erc_rule_severities.get(key).copied()
     }
 }
 

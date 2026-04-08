@@ -160,9 +160,13 @@ Current ERC unblock paths:
   2. add reduced footprint-link resolution for symbols with assigned footprints
   3. only then port the CvPcb-facing mismatch checks
 - fuller pin-to-pin exactness:
-  1. type the exercised ERC settings slice from project JSON
-  2. apply severity/pin-map overrides on top of the current default matrix
-  3. then decide whether the remaining gap is still graph-owned pin context and marker ranking
+  - done:
+    - typed companion-project `erc.pin_map`
+    - typed companion-project `erc.rule_severities`
+    - reduced `ERC_SETTINGS` severity application over the exercised local ERC rule slice
+  - remaining gap:
+    - fuller graph-owned pin context and marker ranking
+    - broader KiCad ERC settings surface such as exclusions and any still-untyped rule owners
 
 Current local reality after audit:
 - there is no symbol-library subsystem in this tree today:

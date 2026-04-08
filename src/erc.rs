@@ -8,19 +8,22 @@ use crate::connectivity::{
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    collect_wire_segments, point_on_wire_segment, points_equal, reduced_net_name_sheet_path_prefix,
-    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
-    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
-    resolved_sheet_text_state, resolved_symbol_text_state,
+    LoadedErcSeverity, collect_wire_segments, point_on_wire_segment, points_equal,
+    reduced_net_name_sheet_path_prefix, resolve_cross_reference_text_var,
+    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
+    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
+    resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
 
 // Upstream parity: local entrypoint for the implemented `ERC_TESTER` slice. This is not a 1:1
-// KiCad ERC runner because the current tree still lacks markers, the full pin-conflict matrix, and
-// full `CONNECTION_GRAPH` ownership. It exists so ERC work can proceed in upstream routine order
-// against real loaded schematic state instead of ad-hoc checks. Remaining divergence is the
-// broader unported `ERC_TESTER` surface beyond the reduced rules currently implemented here.
+// KiCad ERC runner because the current tree still lacks markers, the full pin-conflict matrix,
+// and full `CONNECTION_GRAPH` ownership. It exists so ERC work can proceed in upstream routine
+// order against real loaded schematic state instead of ad-hoc checks, and it now runs the
+// collected diagnostics back through a reduced project-owned severity resolver instead of leaving
+// rule severity hard-coded at every check site. Remaining divergence is the broader unported
+// `ERC_TESTER` surface beyond the reduced rules currently implemented here.
 pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     diagnostics.extend(check_duplicate_sheet_names(project));
@@ -53,7 +56,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_ground_pins(project));
     diagnostics.extend(check_off_grid_endpoints(project));
     diagnostics.extend(check_field_name_whitespace(project));
-    diagnostics
+    apply_configured_rule_severities(project, diagnostics)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,6 +158,143 @@ fn configured_pin_conflict(
         Some(2 | 3) => PinConflict::Error,
         Some(_) | None => pin_conflict(lhs, rhs),
     }
+}
+
+fn configured_rule_severity(
+    project: &SchematicProject,
+    settings_key: &'static str,
+    default: Option<Severity>,
+) -> Option<Severity> {
+    match project
+        .project
+        .as_ref()
+        .and_then(|settings| settings.erc_rule_severity(settings_key))
+    {
+        Some(LoadedErcSeverity::Warning) => Some(Severity::Warning),
+        Some(LoadedErcSeverity::Error) => Some(Severity::Error),
+        Some(LoadedErcSeverity::Ignore) => None,
+        None => default,
+    }
+}
+
+fn configured_missing_driver_severity(
+    project: &SchematicProject,
+    message: &str,
+) -> Option<Severity> {
+    let settings_key = if message.starts_with("Power input pin") {
+        "power_pin_not_driven"
+    } else {
+        "pin_not_driven"
+    };
+
+    configured_rule_severity(project, settings_key, Some(Severity::Error))
+}
+
+fn apply_configured_rule_severity(
+    project: &SchematicProject,
+    mut diagnostic: Diagnostic,
+) -> Option<Diagnostic> {
+    let severity = match diagnostic.code {
+        "erc-duplicate-sheet-name" => {
+            configured_rule_severity(project, "duplicate_sheet_names", Some(Severity::Error))
+        }
+        "erc-missing-units" => {
+            configured_rule_severity(project, "missing_unit", Some(Severity::Warning))
+        }
+        "erc-undefined-netclass" => {
+            configured_rule_severity(project, "undefined_netclass", Some(Severity::Error))
+        }
+        "erc-label-multiple-wires" => {
+            configured_rule_severity(project, "label_multiple_wires", Some(Severity::Warning))
+        }
+        "erc-four-way-junction" => configured_rule_severity(project, "four_way_junction", None),
+        "erc-nc-pin-connected" | "erc-no-connect-connected" => {
+            configured_rule_severity(project, "no_connect_connected", Some(Severity::Warning))
+        }
+        "erc-label-not-connected" => {
+            configured_rule_severity(project, "label_dangling", Some(Severity::Error))
+        }
+        "erc-label-single-pin" => {
+            configured_rule_severity(project, "isolated_pin_label", Some(Severity::Warning))
+        }
+        "erc-unconnected-wire-endpoint" => configured_rule_severity(
+            project,
+            "unconnected_wire_endpoint",
+            Some(Severity::Warning),
+        ),
+        "erc-wire-dangling" => {
+            configured_rule_severity(project, "wire_dangling", Some(Severity::Error))
+        }
+        "erc-pin-not-connected" => {
+            configured_rule_severity(project, "pin_not_connected", Some(Severity::Error))
+        }
+        "erc-hierarchical-label-mismatch" => {
+            configured_rule_severity(project, "hier_label_mismatch", Some(Severity::Error))
+        }
+        "erc-bus-to-net-conflict" => {
+            configured_rule_severity(project, "bus_to_net_conflict", Some(Severity::Error))
+        }
+        "erc-bus-to-bus-conflict" => {
+            configured_rule_severity(project, "bus_to_bus_conflict", Some(Severity::Error))
+        }
+        "erc-bus-entry-conflict" => {
+            configured_rule_severity(project, "net_not_bus_member", Some(Severity::Warning))
+        }
+        "erc-pin-to-pin-warning" => {
+            configured_rule_severity(project, "pin_to_pin", Some(Severity::Warning))
+        }
+        "erc-pin-to-pin-error" => {
+            configured_rule_severity(project, "pin_to_pin", Some(Severity::Error))
+        }
+        "erc-missing-driver" => configured_missing_driver_severity(project, &diagnostic.message),
+        "erc-driver-conflict" => {
+            configured_rule_severity(project, "multiple_net_names", Some(Severity::Warning))
+        }
+        "erc-single-global-label" => configured_rule_severity(project, "single_global_label", None),
+        "erc-similar-labels" => {
+            configured_rule_severity(project, "similar_labels", Some(Severity::Warning))
+        }
+        "erc-similar-power" => {
+            configured_rule_severity(project, "similar_power", Some(Severity::Warning))
+        }
+        "erc-similar-label-and-power" => {
+            configured_rule_severity(project, "similar_label_and_power", Some(Severity::Warning))
+        }
+        "erc-same-local-global-label" => {
+            configured_rule_severity(project, "same_local_global_label", Some(Severity::Warning))
+        }
+        "erc-ground-pin-not-ground" => {
+            configured_rule_severity(project, "ground_pin_not_ground", Some(Severity::Warning))
+        }
+        "erc-endpoint-off-grid" => {
+            configured_rule_severity(project, "endpoint_off_grid", Some(Severity::Warning))
+        }
+        "erc-field-name-whitespace" => {
+            configured_rule_severity(project, "field_name_whitespace", Some(Severity::Warning))
+        }
+        "erc-unresolved-variable" => {
+            configured_rule_severity(project, "unresolved_variable", Some(Severity::Error))
+        }
+        _ => Some(diagnostic.severity),
+    }?;
+
+    diagnostic.severity = severity;
+    Some(diagnostic)
+}
+
+// Upstream parity: reduced local analogue for the `ERC_SETTINGS::m_ERCSeverities` application
+// path. This is not a 1:1 KiCad marker/report owner because the current tree still collects plain
+// `Diagnostic`s instead of `SCH_MARKER`s linked to `ERC_ITEM`s, but it keeps the exercised
+// severity/default-ignore policy in one project-owned post-pass instead of hard-coding rule policy
+// at each call site. Remaining divergence is the broader ERC item registry and marker lifecycle.
+fn apply_configured_rule_severities(
+    project: &SchematicProject,
+    diagnostics: Vec<Diagnostic>,
+) -> Vec<Diagnostic> {
+    diagnostics
+        .into_iter()
+        .filter_map(|diagnostic| apply_configured_rule_severity(project, diagnostic))
+        .collect()
 }
 
 fn pin_conflict(lhs: ReducedPinType, rhs: ReducedPinType) -> PinConflict {

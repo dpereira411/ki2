@@ -1991,7 +1991,7 @@ fn erc_reports_connected_driver_conflicts() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-driver-conflict"
-            && diagnostic.severity == ki2::diagnostic::Severity::Error
+            && diagnostic.severity == ki2::diagnostic::Severity::Warning
             && diagnostic
                 .message
                 .contains("Both NET_A and NET_B are attached to the same items; NET_A will be used in the netlist")
@@ -2018,14 +2018,57 @@ fn erc_reports_single_global_labels() {
         .filter(|diagnostic| diagnostic.code == "erc-single-global-label")
         .collect::<Vec<_>>();
 
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_uses_project_rule_severity_overrides() {
+    let dir = temp_dir_path("erc_rule_severity_override");
+    fs::create_dir_all(&dir).expect("create temp dir");
+    let schematic_path = dir.join("erc_rule_severity_override.kicad_sch");
+    let project_path = dir.join("erc_rule_severity_override.kicad_pro");
+
+    fs::write(
+        &schematic_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (global_label "NET_A" (shape input) (at 0 0 0) (effects (font (size 1 1)))))"#,
+    )
+    .expect("write schematic");
+
+    fs::write(
+        &project_path,
+        r#"{
+  "erc": {
+    "rule_severities": {
+      "single_global_label": "error"
+    }
+  }
+}"#,
+    )
+    .expect("write project");
+
+    let loaded = load_schematic_tree(&schematic_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-single-global-label")
+        .collect::<Vec<_>>();
+
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].severity, ki2::diagnostic::Severity::Warning);
+    assert_eq!(diagnostics[0].severity, ki2::diagnostic::Severity::Error);
     assert_eq!(
         diagnostics[0].message,
         "Global label 'NET_A' appears only once"
     );
 
-    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(schematic_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
 }
 
 #[test]
@@ -4200,8 +4243,7 @@ fn erc_reports_four_way_junctions() {
         .filter(|diagnostic| diagnostic.code == "erc-four-way-junction")
         .collect::<Vec<_>>();
 
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].message, "Four items connected at 0, 0");
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
 
     let _ = fs::remove_file(path);
 }
@@ -6865,15 +6907,7 @@ fn load_tree_discovers_companion_project_settings() {
     let project = loaded.project().expect("project settings");
     assert_eq!(project.path, project_path);
     assert_eq!(project.meta_version(), Some(2));
-    assert_eq!(
-        project
-            .json
-            .get("erc")
-            .and_then(|erc| erc.get("rule_severities"))
-            .and_then(|rules| rules.as_object())
-            .map(|rules| rules.len()),
-        Some(0)
-    );
+    assert_eq!(project.erc_rule_severity("single_global_label"), None);
     assert!(project.intersheet_refs().show);
     assert!(!project.intersheet_refs().own_page);
     assert!(project.intersheet_refs().short);
