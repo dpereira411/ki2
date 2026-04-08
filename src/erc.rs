@@ -2525,12 +2525,13 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         let mut label_members = None::<Vec<String>>;
         let mut port_members = None::<Vec<String>>;
         let mut label_at = None::<[f64; 2]>;
-        if let Some(connection) = subgraph.label_connections.iter().find(|connection| {
+        if let Some(connection) = subgraph.label_links.iter().find_map(|label| {
             matches!(
-                connection.connection_type,
+                label.connection.connection_type,
                 crate::connectivity::ReducedProjectConnectionType::Bus
                     | crate::connectivity::ReducedProjectConnectionType::BusGroup
             )
+            .then_some(&label.connection)
         }) {
             label_members = Some(
                 connection
@@ -2540,13 +2541,19 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                     .collect(),
             );
         }
-        if let Some(connection) = subgraph.port_connections.iter().find(|connection| {
-            matches!(
-                connection.connection_type,
-                crate::connectivity::ReducedProjectConnectionType::Bus
-                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
-            )
-        }) {
+        if let Some(connection) = subgraph
+            .hier_sheet_pins
+            .iter()
+            .map(|pin| &pin.connection)
+            .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
+            .find(|connection| {
+                matches!(
+                    connection.connection_type,
+                    crate::connectivity::ReducedProjectConnectionType::Bus
+                        | crate::connectivity::ReducedProjectConnectionType::BusGroup
+                )
+            })
+        {
             port_members = Some(
                 connection
                     .members
@@ -2641,22 +2648,59 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         if bus_members.is_empty() {
             continue;
         }
-        let mut test_names = subgraph
-            .label_connections
+        let mut test_names = Vec::new();
+        if let Some(non_bus_driver) = subgraph.drivers.iter().find(|driver| {
+            !driver.full_name.is_empty()
+                && driver.full_name != bus_connection.full_local_name
+                && driver.name != bus_connection.local_name
+        }) {
+            test_names.push(non_bus_driver.full_name.clone());
+        }
+        if let Some(driver_connection) = &subgraph.driver_connection {
+            if driver_connection.connection_type
+                == crate::connectivity::ReducedProjectConnectionType::Net
+                && !driver_connection.full_local_name.is_empty()
+                && !bus_members
+                    .iter()
+                    .any(|member| member == &driver_connection.full_local_name)
+                && !test_names
+                    .iter()
+                    .any(|existing| existing == &driver_connection.full_local_name)
+            {
+                test_names.push(driver_connection.full_local_name.clone());
+            }
+        }
+        for connection in subgraph
+            .label_links
             .iter()
-            .chain(subgraph.port_connections.iter())
+            .map(|link| &link.connection)
+            .chain(subgraph.hier_sheet_pins.iter().map(|pin| &pin.connection))
+            .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
             .filter(|connection| {
                 connection.connection_type == crate::connectivity::ReducedProjectConnectionType::Net
             })
-            .map(|connection| connection.full_local_name.clone())
-            .collect::<Vec<_>>();
+        {
+            if !test_names
+                .iter()
+                .any(|existing| existing == &connection.full_local_name)
+                && !bus_members
+                    .iter()
+                    .any(|member| member == &connection.full_local_name)
+            {
+                test_names.push(connection.full_local_name.clone());
+            }
+        }
         if test_names.is_empty() {
             test_names.extend(
                 subgraph
                     .drivers
                     .iter()
                     .map(|driver| driver.full_name.clone())
-                    .filter(|name| !bus_members.iter().any(|member| member == name)),
+                    .filter(|name| {
+                        !bus_members.iter().any(|member| member == name)
+                            && name != &bus_connection.full_local_name
+                            && name != &bus_connection.local_name
+                    }),
             );
         }
         if test_names.is_empty() {
