@@ -306,6 +306,49 @@ fn reduced_bus_members_inner(
     text: &str,
     active_aliases: &mut BTreeSet<String>,
 ) -> Vec<String> {
+    fn split_group_members(inner: &str) -> Vec<String> {
+        let mut members = Vec::new();
+        let mut current = String::new();
+        let mut depth = 0usize;
+        let mut escaped = false;
+
+        for ch in inner.chars() {
+            if escaped {
+                current.push(ch);
+                escaped = false;
+                continue;
+            }
+
+            match ch {
+                '\\' => {
+                    current.push(ch);
+                    escaped = true;
+                }
+                '{' => {
+                    depth += 1;
+                    current.push(ch);
+                }
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    current.push(ch);
+                }
+                _ if ch.is_whitespace() && depth == 0 => {
+                    if !current.is_empty() {
+                        members.push(current);
+                        current = String::new();
+                    }
+                }
+                _ => current.push(ch),
+            }
+        }
+
+        if !current.is_empty() {
+            members.push(current);
+        }
+
+        members
+    }
+
     if let Some(alias) = schematic
         .screen
         .bus_aliases
@@ -340,20 +383,19 @@ fn reduced_bus_members_inner(
         .strip_prefix('{')
         .and_then(|value| value.strip_suffix('}'))
     {
-        return inner
-            .split_whitespace()
+        return split_group_members(inner)
+            .into_iter()
             .filter(|member| !member.is_empty())
-            .map(|member| member.to_string())
             .collect();
     }
 
     if let Some((prefix, suffix)) = text.split_once('{') {
         if let Some(inner) = suffix.strip_suffix('}') {
-            return inner
-                .split_whitespace()
+            return split_group_members(inner)
+                .into_iter()
                 .filter(|member| !member.is_empty())
                 .flat_map(|member| {
-                    let expanded = reduced_bus_members_inner(schematic, member, active_aliases);
+                    let expanded = reduced_bus_members_inner(schematic, &member, active_aliases);
 
                     if expanded.is_empty() {
                         let name = if prefix.is_empty() {
@@ -2999,6 +3041,10 @@ mod tests {
         assert_eq!(
             super::reduced_bus_members(&schematic, "USBPAIR"),
             vec!["DP", "DM"]
+        );
+        assert_eq!(
+            super::reduced_bus_members(&schematic, "USB{PAIR{DP DM} AUX}"),
+            vec!["USB.PAIR.DP", "USB.PAIR.DM", "USB.AUX"]
         );
 
         let _ = fs::remove_file(path);

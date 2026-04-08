@@ -476,6 +476,7 @@ Current status:
 - current remaining bus graph gaps are the member-aware branches, not gross bus-vs-net conflicts
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusConflicts()` coverage is now live through:
   - reduced bus-member expansion from aliases and bracketed vectors
+  - nested bus-group text expansion with brace-depth-aware member splitting
   - reduced shared-member overlap acceptance for connected bus label/port pairs
   - shared reduced label/port ownership on project subgraphs
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
@@ -483,6 +484,7 @@ Current status:
   - shared reduced bus-entry line membership
   - reduced bus-member expansion plus reduced non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
+  - nested bus-group text expansion like `USB{PAIR{DP DM} AUX}`
   - KiCad-style suppression when a higher-priority global label or power pin overrides the bus
     member driver
 - the named graph-owned bus conflict trio is now covered in the reduced graph
@@ -532,7 +534,7 @@ Current status:
     - fuller item-owned connection naming beyond the now-shared `Name()`-style
       full-vs-short/path-qualified reduced net naming split
     - netcode-style ownership
-    - richer bus-member objects beyond reduced expansion
+    - richer bus-member objects beyond the now-live nested text expansion
   - shared connection points now keep bus segments distinct from wire segments, so wire-only ERC
     branches no longer count buses through the old collapsed `Wire` member kind
   - hierarchy-side sheet-pin shown-text now uses a reduced `SCH_SHEET_PIN::GetShownText()` owner:
