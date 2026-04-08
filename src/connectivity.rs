@@ -1326,7 +1326,7 @@ fn build_live_reduced_subgraphs(
 // Upstream parity: local bridge for connected-bus ownership on the shared live subgraph graph.
 // This still uses reduced wire geometry instead of real `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*`
 // pointers, but bus entries on the active live graph now keep a live reference back to the
-// attached bus subgraph instead of only an index and projected connection snapshot.
+// attached bus subgraph instead of carrying a copied subgraph index as active ownership.
 fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
     let bus_subgraphs = live_subgraphs
         .iter()
@@ -1386,7 +1386,7 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
                     (*index, connection.clone(), bus_handle.clone())
                 });
 
-            item.connected_bus_subgraph_index = attached_bus.as_ref().map(|(index, _, _)| *index);
+            item.connected_bus_subgraph_index = None;
             item.connected_bus_connection = attached_bus
                 .as_ref()
                 .map(|(_, connection, _)| connection.clone());
@@ -8001,6 +8001,10 @@ mod tests {
         ];
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
+        assert_eq!(
+            handles[1].borrow().wire_items[0].connected_bus_subgraph_index,
+            None
+        );
         handles[1].borrow_mut().wire_items[0].connected_bus_subgraph_index = Some(999);
         handles[1].borrow_mut().wire_items[0].connected_bus_handle =
             Some(Rc::downgrade(&handles[0]));
