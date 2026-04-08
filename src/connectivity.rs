@@ -744,7 +744,7 @@ fn reduced_subgraph_driver_connection(
         .unwrap_or_else(|| subgraph.resolved_connection.clone())
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedConnection {
     connection: ReducedProjectConnection,
 }
@@ -768,7 +768,7 @@ impl LiveReducedConnection {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedSubgraph {
     source_index: usize,
     driver_connection: LiveReducedConnection,
@@ -1298,11 +1298,9 @@ fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProje
 // live objects, but it now mutates chosen bus-member and neighbor driver connections on a shared
 // live subgraph owner before projecting them back onto the reduced graph. Remaining divergence is
 // the later stale-member replay / recache recursion that still falls back to the reduced fixpoint.
-fn refresh_reduced_live_bus_neighbor_drivers(
-    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
+    live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-
     for parent_index in 0..live_subgraphs.len() {
         if !matches!(
             live_subgraphs[parent_index]
@@ -1452,7 +1450,13 @@ fn refresh_reduced_live_bus_neighbor_drivers(
                 ));
         }
     }
+}
 
+fn refresh_reduced_live_bus_neighbor_drivers(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) {
+    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(&mut live_subgraphs);
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
@@ -1461,9 +1465,9 @@ fn refresh_reduced_live_bus_neighbor_drivers(
 // full live `stale_bus_members` replay because it does not recursively revisit every affected bus
 // subgraph on the same object graph, but it does move the direct child-net -> parent-bus member
 // mutation onto the shared live subgraph owner before the reduced cleanup passes.
-fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-
+fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+) {
     for child_index in 0..live_subgraphs.len() {
         let child_connection = live_subgraphs[child_index]
             .driver_connection
@@ -1521,7 +1525,11 @@ fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProje
             }
         }
     }
+}
 
+fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
+    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    refresh_reduced_live_bus_parent_members_on_live_subgraphs(&mut live_subgraphs);
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
@@ -1529,10 +1537,9 @@ fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProje
 // runs before the final graph caches are rebuilt. This still projects back onto the reduced graph
 // instead of mutating live name indexes in place, but it moves the parent-member clone and
 // same-name subgraph rename onto the shared live subgraph owner before the reduced cache rebuild.
-fn refresh_reduced_live_multiple_bus_parent_names(
-    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
+    live_subgraphs: &mut [LiveReducedSubgraph],
 ) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
     let (mut subgraphs_by_name, mut subgraphs_by_sheet_and_name) =
         build_live_reduced_name_caches(&live_subgraphs);
 
@@ -1598,7 +1605,13 @@ fn refresh_reduced_live_multiple_bus_parent_names(
             }
         }
     }
+}
 
+fn refresh_reduced_live_multiple_bus_parent_names(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) {
+    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
@@ -1606,9 +1619,9 @@ fn refresh_reduced_live_multiple_bus_parent_names(
 // matching live bus members on the same propagated subgraph objects. This still projects the
 // remapped links back onto reduced vectors, but it moves the member rematch step onto the shared
 // live driver connections before the reduced cache rebuild.
-fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-
+fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
+    live_subgraphs: &mut [LiveReducedSubgraph],
+) {
     let mut refreshed_parent_links =
         vec![Vec::<ReducedProjectBusNeighborLink>::new(); live_subgraphs.len()];
 
@@ -1653,7 +1666,11 @@ fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProject
         live.bus_neighbor_links.sort();
         live.bus_neighbor_links.dedup();
     }
+}
 
+fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
+    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
@@ -1666,19 +1683,22 @@ fn refresh_reduced_live_bus_propagation_fixpoint(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
     let max_passes = reduced_subgraphs.len().saturating_add(1).max(1);
+    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
 
     for _ in 0..max_passes {
-        let before = reduced_subgraphs.to_vec();
+        let before = live_subgraphs.clone();
 
-        refresh_reduced_live_bus_neighbor_drivers(reduced_subgraphs);
-        refresh_reduced_live_bus_parent_members(reduced_subgraphs);
-        refresh_reduced_live_multiple_bus_parent_names(reduced_subgraphs);
-        refresh_reduced_live_bus_link_members(reduced_subgraphs);
+        refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(&mut live_subgraphs);
+        refresh_reduced_live_bus_parent_members_on_live_subgraphs(&mut live_subgraphs);
+        refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
+        refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
 
-        if *reduced_subgraphs == before {
+        if live_subgraphs == before {
             break;
         }
     }
+
+    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the post-propagation item-connection update KiCad
@@ -3587,8 +3607,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     refresh_reduced_hierarchy_driver_chains(&mut reduced_subgraphs);
     refresh_reduced_live_bus_propagation_fixpoint(&mut reduced_subgraphs);
     refresh_reduced_live_post_propagation_item_connections(&mut reduced_subgraphs);
-    refresh_reduced_bus_propagation_fixpoint(&mut reduced_subgraphs);
-    refresh_reduced_post_propagation_item_connections(&mut reduced_subgraphs);
     attach_reduced_connected_bus_items(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);

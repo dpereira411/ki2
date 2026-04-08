@@ -606,6 +606,8 @@ Current status:
           - weak single-pin `Net-(` -> `unconnected-(` renaming
           - sheet-pin bus/member promotion from bus-typed child neighbors
         - live graph-name cache owner for same-name subgraph recache on renamed live subgraphs
+        - one shared live bus fixpoint object set across those bus sub-passes instead of rebuilding
+          fresh live wrappers between each sub-pass
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
