@@ -195,7 +195,7 @@ pub(crate) struct ReducedSubgraphWireItem {
 pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
-    subgraphs_by_sheet_and_name: BTreeMap<(String, String), usize>,
+    subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
@@ -1403,7 +1403,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 
     let mut reduced_subgraphs = Vec::new();
     let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
-    let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), usize>::new();
+    let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
     let mut pin_subgraph_identities = BTreeMap::new();
     let mut pin_subgraph_identities_by_location = BTreeMap::new();
     let mut point_subgraph_identities = BTreeMap::new();
@@ -1461,13 +1461,13 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             .entry(net_identity.name.clone())
             .or_default()
             .push(index);
-        subgraphs_by_sheet_and_name.insert(
-            (
+        subgraphs_by_sheet_and_name
+            .entry((
                 net_identity.sheet_instance_path.clone(),
                 net_identity.name.clone(),
-            ),
-            index,
-        );
+            ))
+            .or_default()
+            .push(index);
         for base_pin in &net_identity.base_pins {
             pin_subgraph_identities.insert(base_pin.clone(), index);
             pin_subgraph_identities_by_location.insert(
@@ -1708,9 +1708,9 @@ pub(crate) fn collect_reduced_project_subgraphs(
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::FindSubgraphByName()`. This is
 // not a 1:1 graph lookup because the Rust tree still lacks live `CONNECTION_SUBGRAPH` ownership,
-// but it now preserves KiCad's `(sheet instance path, resolved net name)` lookup boundary instead
-// of the old repo-local short-driver key. Remaining divergence is the fuller subgraph object model
-// and exact driver-connection caching.
+// but it now preserves KiCad's `(sheet instance path, resolved net name)` lookup boundary and
+// same-name multi-subgraph list shape instead of the old repo-local short-driver key. Remaining
+// divergence is the fuller subgraph object model and exact driver-connection caching.
 pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
     graph: &'a ReducedProjectNetGraph,
     net_name: &str,
@@ -1719,6 +1719,7 @@ pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
     graph
         .subgraphs_by_sheet_and_name
         .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
+        .and_then(|indexes| indexes.first())
         .and_then(|index| graph.subgraphs.get(*index))
 }
 
@@ -3301,6 +3302,55 @@ mod tests {
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn reduced_project_subgraph_lookup_keeps_first_same_sheet_duplicate_name() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_duplicate_sheet_name_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000201")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (label "SIG" (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 20) (xy 10 20)))
+  (label "SIG" (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("first point subgraph");
+        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+            .expect("second point subgraph");
+        assert_ne!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        let by_name =
+            find_reduced_project_subgraph_by_name(&graph, &first_by_point.name, root_sheet)
+                .expect("same-sheet lookup");
+        let by_first = find_first_reduced_project_subgraph_by_name(&graph, &first_by_point.name)
+            .expect("global same-name lookup");
+        assert_eq!(by_name.subgraph_code, first_by_point.subgraph_code);
+        assert_eq!(by_first.subgraph_code, first_by_point.subgraph_code);
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
