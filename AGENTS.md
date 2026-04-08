@@ -88,6 +88,10 @@ Strict mode is the default for parity work in this repository.
     the fuller live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` analogue instead of continuing to
     expand snapshot-only propagation helpers. Treat the reduced graph as transitional scaffolding,
     not the destination architecture.
+22. At the end of each work unit, question whether the current plan is still the best one. Play
+    devil's advocate against the active approach. If that review shows a cleaner upstream-shaped
+    path or shows the current direction is becoming transitional churn, change course instead of
+    continuing out of momentum.
 
 ## Parser-Only Parity Strategy
 
