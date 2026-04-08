@@ -4450,11 +4450,10 @@ fn resolved_symbol_pin_in_unit<'a>(
 // Upstream parity: reduced local helper for the pin-connection half of
 // `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 `SCH_PIN::Connection()` /
 // `GetEffectiveNetClass()` path because the Rust tree still lacks live `SCH_PIN` instances and the
-// full connection graph. It exists so the exercised pin net-name text vars, and now ERC's reduced
-// ground-pin check, can reuse the shared reduced connection-component carrier instead of diverging
-// into a second ad hoc wire/label scan. `SHORT_NET_NAME` now prefers the shared reduced graph's
-// local driver-name owner instead of trimming the full resolved net name after the fact. Remaining
-// divergence is fuller connection-graph ownership beyond the current reduced
+// full connection graph. It now prefers the shared reduced project graph's net/driver owner for
+// `NET_NAME` / `SHORT_NET_NAME` before falling back to the older current-sheet component scan, so
+// point text-vars no longer recompute graph-owned naming facts locally when that shared owner is
+// available. Remaining divergence is fuller connection-graph ownership beyond the current reduced
 // component/directive/rule-area model.
 pub(crate) fn resolve_point_connectivity_text_var(
     schematics: &[Schematic],
@@ -4462,6 +4461,7 @@ pub(crate) fn resolve_point_connectivity_text_var(
     loaded_path: &LoadedSheetPath,
     project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
     at: [f64; 2],
     token_kind: SymbolPinTextVarKind,
 ) -> Option<String> {
@@ -4469,10 +4469,12 @@ pub(crate) fn resolve_point_connectivity_text_var(
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
     let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, loaded_path);
+    let graph_net =
+        reduced_graph.and_then(|graph| resolve_reduced_project_net_at(graph, loaded_path, at));
 
     match token_kind {
         SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
-            let net_name =
+            let net_name = graph_net.as_ref().map(|net| net.name.clone()).or_else(|| {
                 resolve_reduced_net_name_at(schematic, at, Some(&sheet_path_prefix), |other| {
                     shown_label_text_without_connectivity(
                         schematics,
@@ -4482,33 +4484,34 @@ pub(crate) fn resolve_point_connectivity_text_var(
                         current_variant,
                         other,
                     )
-                })?;
+                })
+            })?;
 
             match token_kind {
                 SymbolPinTextVarKind::NetName => Some(net_name),
-                SymbolPinTextVarKind::ShortNetName => {
-                    let reduced_graph = collect_reduced_project_net_graph(
-                        schematics,
-                        sheet_paths,
-                        project,
-                        current_variant,
-                        false,
-                    );
-                    resolve_reduced_project_driver_name_at(&reduced_graph, loaded_path, at)
-                        .or_else(|| Some(short_net_name(&net_name)))
-                }
+                SymbolPinTextVarKind::ShortNetName => reduced_graph
+                    .and_then(|graph| {
+                        resolve_reduced_project_driver_name_at(graph, loaded_path, at)
+                    })
+                    .or_else(|| Some(short_net_name(&net_name))),
                 _ => None,
             }
         }
-        SymbolPinTextVarKind::NetClass => resolve_point_netclass_value(
-            schematics,
-            sheet_paths,
-            loaded_path,
-            project,
-            current_variant,
-            schematic,
-            at,
-        ),
+        SymbolPinTextVarKind::NetClass => graph_net
+            .as_ref()
+            .map(|net| net.class.clone())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                resolve_point_netclass_value(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    schematic,
+                    at,
+                )
+            }),
         SymbolPinTextVarKind::PinName => None,
     }
 }
@@ -4624,6 +4627,7 @@ fn resolve_symbol_pin_text_var(
                 candidate_path,
                 project,
                 current_variant,
+                reduced_graph,
                 pin_at,
                 token_kind,
             )
@@ -4775,6 +4779,7 @@ fn resolve_symbol_pin_text_var(
                         alternate_path,
                         project,
                         current_variant,
+                        reduced_graph,
                         pin_at,
                         token_kind,
                     )

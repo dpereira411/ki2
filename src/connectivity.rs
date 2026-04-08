@@ -1084,6 +1084,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     sheet_path,
                     inputs.project,
                     inputs.current_variant,
+                    None,
                     at,
                     SymbolPinTextVarKind::NetName,
                 )
@@ -1095,6 +1096,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     sheet_path,
                     inputs.project,
                     inputs.current_variant,
+                    None,
                     at,
                     SymbolPinTextVarKind::NetClass,
                 )
@@ -1270,6 +1272,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 sheet_path,
                 inputs.project,
                 inputs.current_variant,
+                None,
                 connected_component.anchor,
                 SymbolPinTextVarKind::NetName,
             )
