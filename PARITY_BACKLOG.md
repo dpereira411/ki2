@@ -516,6 +516,16 @@ Current status:
 - reduced cross-reference shown-text now also covers:
   - `${REF:NET_CLASS(pin)}`
 - the remaining gap is fuller KiCad settings/subgraph exactness, not absence of the rule
+- graph-only symbol-pin net lookup is not yet signed off for strict ERC parity:
+  - direct ERC-side removal of the local pin-net fallback exposed a real miss on multi-pin power
+    symbols (`erc_reports_ground_pins_on_non_ground_nets`)
+  - current reduced shared symbol-pin identity is therefore still incomplete for at least one
+    multi-pin power-symbol branch
+  - unblock path:
+    1. add a focused connectivity regression for shared symbol-pin lookup on multi-pin power
+       symbols
+    2. inspect `collect_reduced_net_map()` / `pin_subgraph_identities` population for that branch
+    3. only remove the ERC-side local fallback after the shared graph resolves those pins directly
 - the drawing-sheet text-vars slice is now functionally covered for the exercised ERC path
 - remaining drawing-sheet work is broader worksheet draw-item/painter parity, not missing
   `ERC_TESTER::TestTextVars()` text behavior
@@ -528,6 +538,14 @@ Current status:
     - richer bus-member objects beyond reduced expansion
   - shared connection points now keep bus segments distinct from wire segments, so wire-only ERC
     branches no longer count buses through the old collapsed `Wire` member kind
+  - hierarchy-side sheet-pin shown-text is still raw-name based:
+    - direct sheet-pin shown-text port attempts exposed that the current reduced sheet token
+      resolver is not yet an honest `SCH_SHEET_PIN` shown-text owner
+    - unblock path:
+      1. identify the upstream sheet-pin shown-text path and required child-occurrence context
+      2. add a real reduced sheet-pin shown-text owner instead of reusing raw pin names or generic
+         sheet-property fallback
+      3. then move `ercCheckHierSheets()` / bus-pin name comparisons onto that owner
 
 ## Net Naming / CLI Requirements
 
