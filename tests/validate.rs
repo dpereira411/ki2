@@ -1194,6 +1194,29 @@ fn cli_netlist_exports_component_metadata_properties() {
         report.contains("<property name=\"MPN\" value=\"ABC123\" />"),
         "{report}"
     );
+    let mpn = report
+        .find("<property name=\"MPN\" value=\"ABC123\" />")
+        .expect("component user property");
+    let exclude_from_bom = report
+        .find("<property name=\"exclude_from_bom\" />")
+        .expect("exclude_from_bom property");
+    let exclude_from_board = report
+        .find("<property name=\"exclude_from_board\" />")
+        .expect("exclude_from_board property");
+    let dnp = report
+        .find("<property name=\"dnp\" />")
+        .expect("dnp property");
+    let ki_keywords = report
+        .find("<property name=\"ki_keywords\" value=\"analog precision\" />")
+        .expect("ki_keywords property");
+    let ki_fp_filters = report
+        .find("<property name=\"ki_fp_filters\" value=\"R_* 0603\" />")
+        .expect("ki_fp_filters property");
+    assert!(mpn < exclude_from_bom, "{report}");
+    assert!(exclude_from_bom < exclude_from_board, "{report}");
+    assert!(exclude_from_board < dnp, "{report}");
+    assert!(dnp < ki_keywords, "{report}");
+    assert!(ki_keywords < ki_fp_filters, "{report}");
     assert!(
         report.contains("<duplicate_pin_numbers_are_jumpers>1</duplicate_pin_numbers_are_jumpers>"),
         "{report}"

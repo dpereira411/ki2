@@ -1030,6 +1030,22 @@ fn symbol_to_xml_component(
             .map(|(name, value)| (name, Some(value))),
     );
 
+    if !symbol.in_bom {
+        metadata_properties.push(("exclude_from_bom".to_string(), None));
+    }
+
+    if !symbol.on_board {
+        metadata_properties.push(("exclude_from_board".to_string(), None));
+    }
+
+    if !symbol.in_pos_files {
+        metadata_properties.push(("exclude_from_pos_files".to_string(), None));
+    }
+
+    if symbol.dnp {
+        metadata_properties.push(("dnp".to_string(), None));
+    }
+
     if let Some(keywords) = symbol
         .lib_symbol
         .as_ref()
@@ -1048,22 +1064,6 @@ fn symbol_to_xml_component(
         .collect::<Vec<_>>();
     if !fp_filters.is_empty() {
         metadata_properties.push(("ki_fp_filters".to_string(), Some(fp_filters.join(" "))));
-    }
-
-    if !symbol.in_bom {
-        metadata_properties.push(("exclude_from_bom".to_string(), None));
-    }
-
-    if !symbol.on_board {
-        metadata_properties.push(("exclude_from_board".to_string(), None));
-    }
-
-    if !symbol.in_pos_files {
-        metadata_properties.push(("exclude_from_pos_files".to_string(), None));
-    }
-
-    if symbol.dnp {
-        metadata_properties.push(("dnp".to_string(), None));
     }
 
     Some(NetlistComponent {

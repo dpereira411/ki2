@@ -712,6 +712,8 @@ What is already covered indirectly:
     - `exclude_from_board`
     - `exclude_from_pos_files`
     - `dnp`
+      - exercised exclude-flag ordering now precedes `ki_keywords` / `ki_fp_filters`, matching
+        KiCad's `makeSymbols()` property walk more closely
     - `ki_keywords`
     - `ki_fp_filters`
       - exercised blank filter entries are now skipped like KiCad's joined/trimmed export path
