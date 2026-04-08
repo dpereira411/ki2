@@ -124,6 +124,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) name: String,
     pub(crate) driver_name: String,
     pub(crate) driver_names: Vec<String>,
+    pub(crate) non_bus_driver_priority: Option<i32>,
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
     pub(crate) sheet_instance_path: String,
@@ -998,6 +999,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         name: String,
         driver_name: String,
         driver_names: Vec<String>,
+        non_bus_driver_priority: Option<i32>,
         class: String,
         has_no_connect: bool,
         sheet_instance_path: String,
@@ -1118,18 +1120,23 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     },
                 )
                 .unwrap_or_else(|| reduced_short_net_name(&entry.name));
+                let strong_drivers =
+                    collect_reduced_strong_drivers(schematic, &connected_component, |label| {
+                        shown_label_text_without_connectivity(
+                            inputs.schematics,
+                            inputs.sheet_paths,
+                            sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            label,
+                        )
+                    });
+                let non_bus_driver_priority = strong_drivers
+                    .iter()
+                    .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
+                    .map(|driver| driver.priority);
                 let driver_names = {
-                    let mut names =
-                        collect_reduced_strong_drivers(schematic, &connected_component, |label| {
-                            shown_label_text_without_connectivity(
-                                inputs.schematics,
-                                inputs.sheet_paths,
-                                sheet_path,
-                                inputs.project,
-                                inputs.current_variant,
-                                label,
-                            )
-                        })
+                    let mut names = strong_drivers
                         .into_iter()
                         .map(|driver| driver.name)
                         .collect::<Vec<_>>();
@@ -1143,6 +1150,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     name: entry.name.clone(),
                     driver_name,
                     driver_names,
+                    non_bus_driver_priority,
                     class: class.clone(),
                     has_no_connect,
                     sheet_instance_path: sheet_path.instance_path.clone(),
@@ -1259,6 +1267,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 name: String::new(),
                 driver_name: String::new(),
                 driver_names: Vec::new(),
+                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: true,
                 sheet_instance_path: sheet_path.instance_path.clone(),
@@ -1340,6 +1349,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .unwrap_or_else(|| pending.name.clone()),
             driver_name: pending.driver_name.clone(),
             driver_names: pending.driver_names.clone(),
+            non_bus_driver_priority: pending.non_bus_driver_priority,
             class: if pending.class.is_empty() {
                 net_identity
                     .map(|net| net.class.clone())
@@ -2422,29 +2432,6 @@ where
             .then_with(|| lhs.name.cmp(&rhs.name))
     });
     drivers
-}
-
-// Upstream parity: reduced local analogue for the non-bus winning-driver-priority query implied by
-// `CONNECTION_SUBGRAPH::GetDriverPriority( m_driver )` after `ResolveDrivers()` on the bus-member
-// side of `ercCheckBusToBusEntryConflicts()`. This is not a 1:1 KiCad subgraph owner because the
-// Rust tree still lacks cached `CONNECTION_SUBGRAPH` objects and separate bus-vs-member subgraphs.
-// The local helper exists because the reduced component currently merges both sides of a bus entry,
-// so the ERC pass needs one shared graph query that ignores bus labels and returns only the
-// strongest non-bus driver priority instead of re-ranking labels and power pins locally. Remaining
-// divergence is fuller subgraph ownership and non-strong driver participation.
-pub(crate) fn resolve_reduced_non_bus_driver_priority_at<F>(
-    schematic: &Schematic,
-    at: [f64; 2],
-    shown_label_text: F,
-) -> Option<i32>
-where
-    F: FnMut(&Label) -> String,
-{
-    let connected_component = connection_component_at(schematic, at)?;
-    collect_reduced_strong_drivers(schematic, &connected_component, shown_label_text)
-        .into_iter()
-        .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
-        .map(|driver| driver.priority)
 }
 
 // Upstream parity: reduced local analogue for the connected-driver naming part of

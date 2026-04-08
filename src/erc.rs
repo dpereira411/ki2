@@ -4,8 +4,8 @@ use crate::connectivity::{
     collect_reduced_project_net_map, collect_reduced_project_subgraphs,
     collect_reduced_project_subgraphs_by_name, projected_symbol_pin_info, reduced_bus_members,
     reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
-    resolve_reduced_non_bus_driver_priority_at, resolve_reduced_project_net_for_symbol_pin,
-    resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
+    resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_for_label,
+    resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2592,15 +2592,9 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             continue;
         };
 
-        let suppress_conflict = resolve_reduced_non_bus_driver_priority_at(
-            schematic,
-            [
-                f64::from_bits(subgraph.anchor.0),
-                f64::from_bits(subgraph.anchor.1),
-            ],
-            |label| shown_label_text(project, sheet_path, label),
-        )
-        .is_some_and(|priority| priority >= 6);
+        let suppress_conflict = subgraph
+            .non_bus_driver_priority
+            .is_some_and(|priority| priority >= 6);
 
         for net_name in net_names {
             if bus_members.iter().any(|member| member == &net_name) {
