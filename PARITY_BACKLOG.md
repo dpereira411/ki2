@@ -617,6 +617,8 @@ Current status:
         - hierarchy-chain propagation now reruns inside that shared live loop instead of only once
           before bus propagation, so bus-driven changes can feed back into hierarchy selection on
           the same live owner
+        - the combined live loop now preserves and propagates dirty-state instead of resetting the
+          whole live graph on every pass
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with

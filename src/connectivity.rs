@@ -930,6 +930,7 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
                 &mut subgraph.driver_connection.connection.members,
                 stale_member,
             ) {
+                let old_member = member.clone();
                 clone_reduced_connection_into_bus_member(
                     member,
                     &reduced_connection_from_bus_member(
@@ -937,6 +938,9 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
                         &subgraph.sheet_instance_path,
                     ),
                 );
+                if *member != old_member {
+                    subgraph.dirty = true;
+                }
             }
         }
     }
@@ -1467,6 +1471,8 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                     if !stale_members.contains(&refreshed_member) {
                         stale_members.push(refreshed_member);
                     }
+
+                    live_subgraphs[parent_index].dirty = true;
                 }
                 continue;
             }
@@ -1476,6 +1482,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                     &parent_member,
                     &live_subgraphs[neighbor_index].sheet_instance_path,
                 ));
+            live_subgraphs[neighbor_index].dirty = true;
         }
     }
 }
@@ -1554,7 +1561,11 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
                     .members,
                 &link.member,
             ) {
+                let old_member = member.clone();
                 clone_reduced_connection_into_bus_member(member, &child_connection);
+                if *member != old_member {
+                    live_subgraphs[parent_index].dirty = true;
+                }
             }
         }
     }
@@ -1627,6 +1638,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
                 if old_candidate_name == old_name {
                     live_subgraphs[candidate_index].driver_connection.connection =
                         connection.clone();
+                    live_subgraphs[candidate_index].dirty = true;
                     recache_live_reduced_subgraph_name(
                         &live_subgraphs,
                         &mut subgraphs_by_name,
@@ -1755,10 +1767,6 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
     for _ in 0..max_passes {
         let before = live_subgraphs.clone();
         let mut stale_members = Vec::new();
-
-        for live in &mut live_subgraphs {
-            live.dirty = true;
-        }
 
         refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
         refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
