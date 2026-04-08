@@ -729,6 +729,10 @@ Current status:
       - the only remaining active live summary field is now `driver_identity`; removing it cleanly
         depends on fuller live driver item ownership rather than another local summary-field
         cleanup
+      - the exercised active bus search/rematch path no longer has to rebuild reduced connection
+        snapshots just to derive member-search keys for child-net and neighbor-driver cases; those
+        branches now read the shared live connection owner directly and only snapshot when a
+        reduced projection/update is still genuinely required
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

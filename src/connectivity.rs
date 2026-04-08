@@ -1119,8 +1119,8 @@ impl LiveProjectBusMember {
     }
 }
 
-fn live_bus_member_search_from_connection(
-    connection: &ReducedProjectConnection,
+fn live_bus_member_search_from_live_connection(
+    connection: &LiveProjectConnection,
 ) -> LiveProjectBusMember {
     LiveProjectBusMember {
         net_code: connection.net_code,
@@ -1134,7 +1134,7 @@ fn live_bus_member_search_from_connection(
             }
             _ => ReducedBusMemberKind::Net,
         },
-        members: connection.members.iter().cloned().map(Into::into).collect(),
+        members: connection.members.clone(),
     }
 }
 
@@ -1291,6 +1291,62 @@ fn clone_live_bus_member_into_reduced_bus_member(
             .iter()
             .map(LiveProjectBusMember::snapshot)
             .collect();
+    }
+}
+
+fn clone_live_connection_owner_into_live_bus_member(
+    target: &mut LiveProjectBusMember,
+    source: &LiveProjectConnection,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_vector_index = target.vector_index;
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.name = source.name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    if existing_vector_index.is_some() {
+        target.vector_index = existing_vector_index;
+    }
+    target.kind = match source.connection_type {
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
+            ReducedBusMemberKind::Bus
+        }
+        _ => ReducedBusMemberKind::Net,
+    };
+
+    if matches!(target.kind, ReducedBusMemberKind::Bus)
+        && matches!(
+            source.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        )
+    {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = existing_members;
+
+            let clone_limit = target.members.len().min(source.members.len());
+            for index in 0..clone_limit {
+                clone_live_bus_member_into_live_bus_member(
+                    &mut target.members[index],
+                    &source.members[index],
+                );
+            }
+
+            if target.members.len() > source.members.len() {
+                target.members.truncate(source.members.len());
+            } else if target.members.len() < source.members.len() {
+                target
+                    .members
+                    .extend(source.members[target.members.len()..].iter().cloned());
+            }
+        }
+    } else {
+        target.members = source.members.clone();
     }
 }
 
@@ -3802,26 +3858,32 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
             };
 
             let neighbor_snapshot = neighbor_handle.borrow().clone();
-            let neighbor_connection = neighbor_snapshot.driver_connection.snapshot();
-            if neighbor_connection.name == parent_member.full_local_name {
+            let (neighbor_name, neighbor_connection_sheet, neighbor_search, promoted_connection) = {
+                let neighbor_connection = neighbor_snapshot.driver_connection.borrow();
+                (
+                    neighbor_connection.name.clone(),
+                    neighbor_connection.sheet_instance_path.clone(),
+                    live_bus_member_search_from_live_connection(&neighbor_connection),
+                    neighbor_connection.snapshot(),
+                )
+            };
+            if neighbor_name == parent_member.full_local_name {
                 continue;
             }
 
             let parent_sheet_instance_path = parent_snapshot.sheet_instance_path.clone();
             let neighbor_sheet_instance_path = neighbor_snapshot.sheet_instance_path.clone();
-            let neighbor_connection_sheet = neighbor_connection.sheet_instance_path.clone();
 
             if neighbor_connection_sheet != neighbor_sheet_instance_path {
                 if neighbor_connection_sheet != parent_sheet_instance_path {
                     continue;
                 }
 
-                let search = live_bus_member_search_from_connection(&neighbor_connection);
-
                 let parent_has_search = {
                     let parent = parent_handle.borrow();
                     let parent_connection = parent.driver_connection.borrow();
-                    match_live_bus_member_live(&parent_connection.members, &search).is_some()
+                    match_live_bus_member_live(&parent_connection.members, &neighbor_search)
+                        .is_some()
                 };
                 if parent_has_search {
                     continue;
@@ -3829,7 +3891,6 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
             }
 
             if neighbor_snapshot.driver_priority >= 6 {
-                let promoted = neighbor_connection;
                 let old_member = current_link_member.clone();
                 let refreshed_member = {
                     let parent = parent_handle.borrow();
@@ -3840,7 +3901,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     ) else {
                         continue;
                     };
-                    clone_reduced_connection_into_live_bus_member(member, &promoted);
+                    clone_reduced_connection_into_live_bus_member(member, &promoted_connection);
                     member.clone()
                 };
 
@@ -3909,7 +3970,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
         if !child_snapshot.dirty {
             continue;
         }
-        let child_connection = child_snapshot.driver_connection.snapshot();
+        let child_connection = child_snapshot.driver_connection.borrow();
         if child_connection.connection_type != ReducedProjectConnectionType::Net {
             continue;
         }
@@ -3928,7 +3989,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 continue;
             }
 
-            let search = live_bus_member_search_from_connection(&child_connection);
+            let search = live_bus_member_search_from_live_connection(&child_connection);
 
             if match_live_bus_member_live(
                 &parent_handle.borrow().driver_connection.borrow().members,
@@ -3949,7 +4010,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                     continue;
                 };
                 let old_member = member.clone();
-                clone_reduced_connection_into_live_bus_member(member, &child_connection);
+                clone_live_connection_owner_into_live_bus_member(member, &child_connection);
                 *member != old_member
             };
 
@@ -4024,7 +4085,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
     for child_handle in component {
         let child_id = live_subgraph_handle_id(child_handle);
         let child_snapshot = child_handle.borrow().clone();
-        let child_connection = child_snapshot.driver_connection.snapshot();
+        let child_connection = child_snapshot.driver_connection.borrow();
         let existing_parent_links = child_snapshot.bus_parent_links.clone();
 
         let mut parent_handles = live_subgraph_bus_parent_handles(live_subgraphs, &child_snapshot)
@@ -4071,7 +4132,9 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                 search_candidates.push(parent_neighbor_member);
             }
 
-            search_candidates.push(live_bus_member_search_from_connection(&child_connection));
+            search_candidates.push(live_bus_member_search_from_live_connection(
+                &child_connection,
+            ));
 
             let Some(refreshed_member) = search_candidates.into_iter().find_map(|search| {
                 match_live_bus_member_live(
@@ -4155,8 +4218,14 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             continue;
         }
 
-        let connection = subgraph_snapshot.driver_connection.snapshot();
-        if connection.connection_type != ReducedProjectConnectionType::Net {
+        let connection_snapshot = {
+            let connection = subgraph_snapshot.driver_connection.borrow();
+            if connection.connection_type != ReducedProjectConnectionType::Net {
+                continue;
+            }
+            connection.snapshot()
+        };
+        if connection_snapshot.connection_type != ReducedProjectConnectionType::Net {
             continue;
         }
 
@@ -4174,12 +4243,12 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                     continue;
                 };
 
-                if member.full_local_name == connection.full_local_name {
+                if member.full_local_name == connection_snapshot.full_local_name {
                     continue;
                 }
 
                 let old_name = member.full_local_name.clone();
-                clone_reduced_connection_into_live_bus_member(member, &connection);
+                clone_reduced_connection_into_live_bus_member(member, &connection_snapshot);
                 old_name
             };
             parent_handle.borrow_mut().dirty = true;
@@ -4193,7 +4262,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                 let old_candidate_name = candidate_handle.borrow().driver_connection.name();
                 if old_candidate_name == old_name {
                     *candidate_handle.borrow().driver_connection.borrow_mut() =
-                        connection.clone().into();
+                        connection_snapshot.clone().into();
                     sync_live_reduced_item_connections_from_driver_handle(&candidate_handle);
                     candidate_handle.borrow_mut().dirty = true;
                     recache_live_reduced_subgraph_name_handle_cache_from_handles(
