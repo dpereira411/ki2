@@ -716,6 +716,8 @@ Current status:
       - the non-test live subgraph payload no longer stores `source_index`; reduced subgraph
         position is now derived from the live handle graph only at projection sites, while test
         scaffolding keeps explicit source indexes where it still needs them
+      - live bus items now also use shared local item owners, so the active live item layer is no
+        longer split between shared wire/text handles and copied bus-item values
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

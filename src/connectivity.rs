@@ -1600,7 +1600,7 @@ struct LiveReducedSubgraph {
     label_links: Vec<LiveReducedLabelLinkHandle>,
     hier_sheet_pins: Vec<LiveReducedHierSheetPinLinkHandle>,
     hier_ports: Vec<LiveReducedHierPortLinkHandle>,
-    bus_items: Vec<LiveReducedSubgraphWireItem>,
+    bus_items: Vec<LiveReducedSubgraphWireItemHandle>,
     wire_items: Vec<LiveReducedSubgraphWireItemHandle>,
     dirty: bool,
 }
@@ -1776,7 +1776,8 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // Upstream parity: reduced local builder for live graph-owned text and hierarchy link connection
 // carriers. This is still not pointer-shared `SCH_ITEM` ownership, but it lets the live graph keep
 // per-item connection state on shared local item owners instead of projecting every
-// label/sheet-pin/hier-port from the chosen subgraph driver only at the end of propagation.
+// label/sheet-pin/hier-port/wire-item from the chosen subgraph driver only at the end of
+// propagation.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -1868,12 +1869,14 @@ fn build_live_reduced_subgraphs(
                 .bus_items
                 .iter()
                 .cloned()
-                .map(|item| LiveReducedSubgraphWireItem {
-                    start: item.start,
-                    end: item.end,
-                    is_bus_entry: item.is_bus_entry,
-                    connected_bus_connection: None,
-                    connected_bus_handle: None,
+                .map(|item| {
+                    Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
+                        start: item.start,
+                        end: item.end,
+                        is_bus_entry: item.is_bus_entry,
+                        connected_bus_connection: None,
+                        connected_bus_handle: None,
+                    }))
                 })
                 .collect(),
             wire_items: subgraph
@@ -1900,8 +1903,9 @@ fn build_live_reduced_subgraphs(
 
 // Upstream parity: local bridge for connected-bus ownership on the shared live subgraph graph.
 // This still uses reduced wire geometry instead of real `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*`
-// pointers, but bus entries on the active live graph now keep a live reference back to the
-// attached bus subgraph instead of carrying a copied reduced bus index as active ownership.
+// pointers, but bus and wire items on the active live graph now keep shared local item owners,
+// and bus entries keep a live reference back to the attached bus subgraph instead of carrying a
+// copied reduced bus index as active ownership.
 fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
     let bus_subgraphs = live_subgraphs
         .iter()
@@ -1935,6 +1939,7 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
                 .find(|(_, bus_sheet_path, bus_items, _, _)| {
                     *bus_sheet_path == sheet_instance_path
                         && bus_items.iter().any(|bus_item| {
+                            let bus_item = bus_item.borrow();
                             point_on_wire_segment(
                                 [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
                                 [
@@ -2007,6 +2012,7 @@ fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
                 .find(|(_, sheet_instance_path, bus_items, _)| {
                     *sheet_instance_path == subgraph.sheet_instance_path
                         && bus_items.iter().any(|bus_item| {
+                            let bus_item = bus_item.borrow();
                             point_on_wire_segment(
                                 [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
                                 [
