@@ -1302,7 +1302,12 @@ fn apply_live_reduced_driver_connections(
         reduced.bus_parent_links = live.bus_parent_links.clone();
         reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
-            target.connected_bus_subgraph_index = source.connected_bus_subgraph_index;
+            target.connected_bus_subgraph_index = source
+                .connected_bus_handle
+                .as_ref()
+                .and_then(Weak::upgrade)
+                .map(|bus| bus.borrow().source_index)
+                .or(source.connected_bus_subgraph_index);
         }
     }
 }
