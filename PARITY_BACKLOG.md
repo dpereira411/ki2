@@ -440,6 +440,7 @@ Current status:
 - reduced `CONNECTION_GRAPH::ercCheckNoConnects()` coverage is now live for:
   - no-connect markers on connected local nets
   - no-connect markers on same-name disconnected subgraphs that KiCad merges into one net
+  - dangling no-connect markers with no pins or labels
   - hier-pin / hierarchical-label special-case exemption when the local subgraph is only the
     no-connect plus that hierarchy boundary item
   - current divergence is the fuller marker attachment path, not

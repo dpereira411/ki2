@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 use ki2::core::SchematicProject;
-use ki2::diagnostic::DiagnosticKind;
+use ki2::diagnostic::{DiagnosticKind, Severity};
 use ki2::erc;
 use ki2::error::Error;
 use ki2::loader::{DrawingSheetSource, load_schematic_tree};
@@ -5537,6 +5537,31 @@ fn erc_reports_connected_no_connect_markers_across_named_subgraphs() {
         diagnostics[0].message,
         "No-connect marker is attached to a connected net"
     );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_dangling_no_connect_markers() {
+    let path = temp_schematic(
+        "erc_dangling_no_connect_marker",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (no_connect (at 10 10)))"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-no-connect-dangling")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].severity, Severity::Warning);
+    assert_eq!(diagnostics[0].message, "Unconnected \"no connection\" flag");
 
     let _ = fs::remove_file(path);
 }
