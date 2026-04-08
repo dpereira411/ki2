@@ -2,7 +2,7 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_points,
     collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
     collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
-    projected_symbol_pin_info, reduced_bus_members, reduced_text_is_bus,
+    projected_symbol_pin_info, reduced_text_is_bus,
     resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_at,
     resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
 };
@@ -10,10 +10,10 @@ use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
     LoadedErcSeverity, LoadedSheetPath, collect_wire_segments, point_on_wire_segment, points_equal,
-    reduced_net_name_sheet_path_prefix, resolve_cross_reference_text_var,
-    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
-    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
-    resolved_symbol_text_property_value, resolved_symbol_text_state, shown_sheet_pin_text,
+    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
+    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
+    resolved_sheet_text_state, resolved_symbol_text_property_value, resolved_symbol_text_state,
+    shown_sheet_pin_text,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -79,26 +79,6 @@ fn graph_run_erc_subgraphs(
                 .as_ref()
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
         })
-        .collect()
-}
-
-fn reduced_full_local_name(name: &str, sheet_path_prefix: &str, prepend_path: bool) -> String {
-    if prepend_path {
-        format!("{sheet_path_prefix}{name}")
-    } else {
-        name.to_string()
-    }
-}
-
-fn reduced_full_local_bus_members(
-    schematic: &crate::model::Schematic,
-    text: &str,
-    sheet_path_prefix: &str,
-    prepend_path: bool,
-) -> Vec<String> {
-    reduced_bus_members(schematic, text)
-        .into_iter()
-        .map(|member| reduced_full_local_name(&member, sheet_path_prefix, prepend_path))
         .collect()
 }
 
@@ -2504,53 +2484,25 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         else {
             continue;
         };
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
         let mut label_members = None::<Vec<String>>;
         let mut label_at = None::<[f64; 2]>;
         let mut port_members = None::<Vec<String>>;
 
-        for label in subgraph_labels(&graph, sheet_path, schematic, &subgraph) {
-            let shown = shown_label_text(project, sheet_path, label);
-            if !reduced_text_is_bus(schematic, &shown) {
-                continue;
-            }
-
-            match label.kind {
-                LabelKind::Local | LabelKind::Global => {
-                    label_at.get_or_insert(label.at);
-                    label_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
-                }
-                LabelKind::Hierarchical => {
-                    port_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
-                }
-                LabelKind::Directive => {}
-            }
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+        if !subgraph.label_bus_members.is_empty() {
+            label_members = Some(subgraph.label_bus_members.clone());
         }
-
-        for item in &schematic.screen.items {
-            let SchItem::Sheet(sheet) = item else {
-                continue;
-            };
-
-            for pin in &sheet.pins {
-                if !subgraph
-                    .sheet_pin_points
-                    .contains(&crate::connectivity::PointKey(
-                        pin.at[0].to_bits(),
-                        pin.at[1].to_bits(),
-                    ))
-                {
-                    continue;
-                }
-
-                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
-
-                if reduced_text_is_bus(schematic, &shown) {
-                    port_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
-                }
-            }
+        if !subgraph.port_bus_members.is_empty() {
+            port_members = Some(subgraph.port_bus_members.clone());
+        }
+        if label_members.is_some() {
+            label_at = subgraph_labels(&graph, sheet_path, schematic, &subgraph)
+                .into_iter()
+                .find_map(|label| {
+                    matches!(label.kind, LabelKind::Local | LabelKind::Global).then_some(label.at)
+                });
         }
 
         let (Some(label_members), Some(port_members), Some(label_at)) =
@@ -2613,11 +2565,6 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
-        let mut bus_name = None::<String>;
-        let mut bus_members = None::<Vec<String>>;
         let mut non_bus_sheet_pin_names = Vec::<String>::new();
         let mut entry_at = subgraph
             .wire_items
@@ -2635,18 +2582,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             }
 
             let shown = shown_label_text(project, sheet_path, label);
-
-            if reduced_text_is_bus(schematic, &shown) {
-                bus_name.get_or_insert(shown.clone());
-                bus_members.get_or_insert_with(|| {
-                    reduced_full_local_bus_members(
-                        schematic,
-                        &shown,
-                        &sheet_path_prefix,
-                        label.kind != LabelKind::Global,
-                    )
-                });
-            } else {
+            if !reduced_text_is_bus(schematic, &shown) {
                 non_bus_sheet_pin_names.push(shown);
                 entry_at = label.at;
             }
@@ -2670,21 +2606,20 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 
                 let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
 
-                if reduced_text_is_bus(schematic, &shown) {
-                    bus_name.get_or_insert(shown.clone());
-                    bus_members.get_or_insert_with(|| {
-                        reduced_full_local_bus_members(schematic, &shown, &sheet_path_prefix, true)
-                    });
-                } else {
+                if !reduced_text_is_bus(schematic, &shown) {
                     non_bus_sheet_pin_names.push(shown);
                     entry_at = pin.at;
                 }
             }
         }
 
-        let (Some(bus_name), Some(bus_members)) = (bus_name, bus_members) else {
+        let Some(bus_name) = subgraph.bus_name.clone() else {
             continue;
         };
+        let bus_members = &subgraph.full_local_bus_members;
+        if bus_members.is_empty() {
+            continue;
+        }
         let mut test_names = subgraph
             .driver_full_names
             .iter()

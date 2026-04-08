@@ -475,6 +475,7 @@ Current status:
   - reduced bus-vs-net classification from line kind and shown text
 - current remaining bus graph gaps are the member-aware branches, not gross bus-vs-net conflicts
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusConflicts()` coverage is now live through:
+  - shared reduced subgraph-owned bus-member caches for label/port members
   - reduced bus-member expansion from aliases and bracketed vectors
   - nested bus-group text expansion with brace-depth-aware member splitting
   - reduced shared-member overlap acceptance for connected bus label/port pairs
@@ -482,6 +483,7 @@ Current status:
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
   - shared reduced project subgraphs
   - shared reduced bus-entry line membership
+  - shared reduced full-local bus-member caches on subgraphs
   - reduced bus-member expansion plus reduced shared non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
   - nested bus-group text expansion like `USB{PAIR{DP DM} AUX}`

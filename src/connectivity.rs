@@ -6,6 +6,7 @@ use crate::loader::{
     point_on_wire_segment, points_equal, reduced_net_name_sheet_path_prefix,
     resolve_point_connectivity_text_var, resolved_sheet_text_state,
     resolved_symbol_text_property_value, shown_label_text_without_connectivity,
+    shown_sheet_pin_text,
 };
 use crate::model::{
     Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, SheetPinShape, Symbol,
@@ -137,6 +138,10 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) label_points: Vec<(PointKey, LabelKind)>,
     pub(crate) sheet_pin_points: Vec<PointKey>,
     pub(crate) no_connect_points: Vec<PointKey>,
+    pub(crate) label_bus_members: Vec<String>,
+    pub(crate) port_bus_members: Vec<String>,
+    pub(crate) full_local_bus_members: Vec<String>,
+    pub(crate) bus_name: Option<String>,
     pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
 }
@@ -1083,6 +1088,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         label_points: Vec<(PointKey, LabelKind)>,
         sheet_pin_points: Vec<PointKey>,
         no_connect_points: Vec<PointKey>,
+        label_bus_members: Vec<String>,
+        port_bus_members: Vec<String>,
+        full_local_bus_members: Vec<String>,
+        bus_name: Option<String>,
         bus_items: Vec<ReducedSubgraphWireItem>,
         wire_items: Vec<ReducedSubgraphWireItem>,
     }
@@ -1242,6 +1251,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 };
                 let (label_points, sheet_pin_points, no_connect_points, bus_items, wire_items) =
                     collect_reduced_subgraph_local_membership(schematic, &connected_component);
+                let (label_bus_members, port_bus_members, full_local_bus_members, bus_name) =
+                    collect_reduced_subgraph_bus_membership(
+                        inputs.schematics,
+                        inputs.sheet_paths,
+                        sheet_path,
+                        schematic,
+                        inputs.project,
+                        inputs.current_variant,
+                        &connected_component,
+                    );
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
@@ -1260,6 +1279,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     label_points,
                     sheet_pin_points,
                     no_connect_points,
+                    label_bus_members,
+                    port_bus_members,
+                    full_local_bus_members,
+                    bus_name,
                     bus_items,
                     wire_items,
                 });
@@ -1386,6 +1409,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 label_points,
                 sheet_pin_points,
                 no_connect_points,
+                label_bus_members: Vec::new(),
+                port_bus_members: Vec::new(),
+                full_local_bus_members: Vec::new(),
+                bus_name: None,
                 bus_items,
                 wire_items,
             });
@@ -1470,6 +1497,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             label_points: pending.label_points.clone(),
             sheet_pin_points: pending.sheet_pin_points.clone(),
             no_connect_points: pending.no_connect_points.clone(),
+            label_bus_members: pending.label_bus_members.clone(),
+            port_bus_members: pending.port_bus_members.clone(),
+            full_local_bus_members: pending.full_local_bus_members.clone(),
+            bus_name: pending.bus_name.clone(),
             bus_items: pending.bus_items.clone(),
             wire_items: pending.wire_items.clone(),
         };
@@ -2046,6 +2077,136 @@ fn collect_reduced_subgraph_local_membership(
         no_connect_points,
         bus_items,
         wire_items,
+    )
+}
+
+fn child_sheet_path_for_sheet<'a>(
+    sheet_paths: &'a [LoadedSheetPath],
+    parent_path: &LoadedSheetPath,
+    sheet: &crate::model::Sheet,
+) -> Option<&'a LoadedSheetPath> {
+    sheet_paths
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .instance_path
+                .starts_with(&parent_path.instance_path)
+                && candidate.instance_path != parent_path.instance_path
+        })
+        .find(|candidate| candidate.sheet_uuid == sheet.uuid)
+}
+
+fn collect_reduced_subgraph_bus_membership(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    parent_sheet_path: &LoadedSheetPath,
+    schematic: &Schematic,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    connected_component: &ConnectionComponent,
+) -> (Vec<String>, Vec<String>, Vec<String>, Option<String>) {
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, parent_sheet_path);
+    let mut label_bus_members = Vec::<String>::new();
+    let mut port_bus_members = Vec::<String>::new();
+    let mut full_local_bus_members = Vec::<String>::new();
+    let mut bus_name = None::<String>;
+
+    for item in &schematic.screen.items {
+        match item {
+            SchItem::Label(label)
+                if connected_component.members.iter().any(|member| {
+                    member.kind == ConnectionMemberKind::Label && points_equal(member.at, label.at)
+                }) =>
+            {
+                let shown = shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    parent_sheet_path,
+                    project,
+                    current_variant,
+                    label,
+                );
+                if !reduced_text_is_bus(schematic, &shown) {
+                    continue;
+                }
+
+                let members = reduced_bus_members(schematic, &shown);
+                let prepend_path = label.kind != LabelKind::Global;
+                let full_members = members
+                    .iter()
+                    .map(|member| {
+                        if prepend_path {
+                            format!("{sheet_path_prefix}{member}")
+                        } else {
+                            member.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if matches!(label.kind, LabelKind::Local | LabelKind::Global) {
+                    label_bus_members.extend(members.iter().cloned());
+                } else if label.kind == LabelKind::Hierarchical {
+                    port_bus_members.extend(members.iter().cloned());
+                }
+
+                full_local_bus_members.extend(full_members);
+                bus_name.get_or_insert(shown);
+            }
+            SchItem::Sheet(sheet) => {
+                let Some(child_sheet_path) =
+                    child_sheet_path_for_sheet(sheet_paths, parent_sheet_path, sheet)
+                else {
+                    continue;
+                };
+
+                for pin in &sheet.pins {
+                    if !connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::SheetPin
+                            && points_equal(member.at, pin.at)
+                    }) {
+                        continue;
+                    }
+
+                    let shown = shown_sheet_pin_text(
+                        schematics,
+                        sheet_paths,
+                        parent_sheet_path,
+                        child_sheet_path,
+                        project,
+                        current_variant,
+                        None,
+                        pin,
+                    );
+                    if !reduced_text_is_bus(schematic, &shown) {
+                        continue;
+                    }
+
+                    let members = reduced_bus_members(schematic, &shown);
+                    port_bus_members.extend(members.iter().cloned());
+                    full_local_bus_members.extend(
+                        members
+                            .iter()
+                            .map(|member| format!("{sheet_path_prefix}{member}")),
+                    );
+                    bus_name.get_or_insert(shown);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    label_bus_members.sort();
+    label_bus_members.dedup();
+    port_bus_members.sort();
+    port_bus_members.dedup();
+    full_local_bus_members.sort();
+    full_local_bus_members.dedup();
+
+    (
+        label_bus_members,
+        port_bus_members,
+        full_local_bus_members,
+        bus_name,
     )
 }
 
