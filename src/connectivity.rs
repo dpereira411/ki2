@@ -1898,11 +1898,17 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 continue;
             }
 
-            live_subgraphs[neighbor_index].driver_connection =
-                LiveReducedConnection::new(reduced_connection_from_bus_member(
-                    &parent_member,
-                    &live_subgraphs[neighbor_index].sheet_instance_path,
-                ));
+            let promoted = reduced_connection_from_bus_member(
+                &parent_member,
+                &live_subgraphs[neighbor_index].sheet_instance_path,
+            );
+            clone_reduced_connection_into_live_connection(
+                &mut live_subgraphs[neighbor_index]
+                    .driver_connection
+                    .borrow_mut(),
+                &promoted,
+            );
+            sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[neighbor_index]);
             live_subgraphs[neighbor_index].dirty = true;
         }
     }
@@ -2026,11 +2032,17 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
                 continue;
             }
 
-            live_subgraphs[neighbor_index].driver_connection =
-                LiveReducedConnection::new(reduced_connection_from_bus_member(
-                    &parent_member,
-                    &live_subgraphs[neighbor_index].sheet_instance_path,
-                ));
+            let promoted = reduced_connection_from_bus_member(
+                &parent_member,
+                &live_subgraphs[neighbor_index].sheet_instance_path,
+            );
+            clone_reduced_connection_into_live_connection(
+                &mut live_subgraphs[neighbor_index]
+                    .driver_connection
+                    .borrow_mut(),
+                &promoted,
+            );
+            sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[neighbor_index]);
             live_subgraphs[neighbor_index].dirty = true;
         }
     }
@@ -6448,17 +6460,19 @@ mod tests {
         ReducedBusMemberKind, ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
         ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
         ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
-        apply_live_reduced_driver_connections, build_live_reduced_name_caches,
-        build_live_reduced_subgraphs, clone_reduced_connection_into_subgraph,
+        ReducedSubgraphWireItem, apply_live_reduced_driver_connections,
+        build_live_reduced_name_caches, build_live_reduced_subgraphs,
+        clone_reduced_connection_into_live_connection, clone_reduced_connection_into_subgraph,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name,
         reduced_bus_member_objects, refresh_reduced_bus_link_members,
         refresh_reduced_bus_members_from_neighbor_connections,
         refresh_reduced_global_secondary_driver_promotions,
         refresh_reduced_hierarchy_driver_chains, refresh_reduced_live_bus_link_members,
-        refresh_reduced_live_bus_neighbor_drivers, refresh_reduced_live_bus_parent_members,
-        refresh_reduced_live_bus_propagation_fixpoint, refresh_reduced_live_graph_propagation,
-        refresh_reduced_live_multiple_bus_parent_names,
+        refresh_reduced_live_bus_neighbor_drivers,
+        refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes,
+        refresh_reduced_live_bus_parent_members, refresh_reduced_live_bus_propagation_fixpoint,
+        refresh_reduced_live_graph_propagation, refresh_reduced_live_multiple_bus_parent_names,
         refresh_reduced_live_post_propagation_item_connections,
         refresh_reduced_multiple_bus_parent_names,
         refresh_reduced_post_propagation_item_connections,
@@ -6957,6 +6971,175 @@ mod tests {
             reduced[0].label_links[0].connection.members[0].vector_index,
             Some(1)
         );
+    }
+
+    #[test]
+    fn live_bus_entry_connected_bus_owner_tracks_in_place_bus_updates() {
+        let reduced = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/BUS".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: vec![ReducedSubgraphWireItem {
+                    start: PointKey(0, 0),
+                    end: PointKey(10, 0),
+                    is_bus_entry: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/OLD1".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }),
+                driver_identity: None,
+                drivers: Vec::new(),
+                non_bus_driver_priority: None,
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(5, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: vec![ReducedSubgraphWireItem {
+                    start: PointKey(5, 0),
+                    end: PointKey(6, 1),
+                    is_bus_entry: true,
+                    connected_bus_subgraph_index: Some(0),
+                }],
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 0,
+                }],
+                bus_parent_indexes: vec![0],
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        let mut live = build_live_reduced_subgraphs(&reduced);
+        refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
+            &mut live,
+            &[0],
+            &mut Vec::new(),
+        );
+
+        let connected_bus = live[1].wire_items[0]
+            .connected_bus_connection
+            .as_ref()
+            .expect("connected bus owner");
+        assert_eq!(connected_bus.borrow().members[0].full_local_name, "/OLD1");
+
+        clone_reduced_connection_into_live_connection(
+            &mut live[0].driver_connection.borrow_mut(),
+            &ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "/BUS".to_string(),
+                local_name: "BUS".to_string(),
+                full_local_name: "/BUS".to_string(),
+                sheet_instance_path: String::new(),
+                members: vec![ReducedBusMember {
+                    net_code: 0,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "/PWR".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            },
+        );
+
+        assert_eq!(connected_bus.borrow().members[0].full_local_name, "/PWR");
     }
 
     #[test]

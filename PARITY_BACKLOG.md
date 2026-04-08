@@ -641,6 +641,9 @@ Current status:
         - live bus-entry items now also keep an attached live bus connection owner during graph
           build, and only collapse back to `connected_bus_subgraph_index` when projecting to the
           reduced query surface
+        - bus-neighbor propagation now mutates existing live connection owners in place instead of
+          replacing them with brand-new owners, so attached live bus-entry references keep identity
+          across exercised driver/member updates
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - the recursive walk now has local shared live connection owners, but it still does not have
@@ -655,6 +658,9 @@ Current status:
         `recacheSubgraphName()`-style owner; the local live connection owners now exist, but item
         and subgraph relationships still synchronize through local wrappers instead of a fuller
         shared object graph
+      - the live graph still passes whole `LiveReducedSubgraph` values around and still clones
+        whole live subgraph vectors for fixpoint/equality checks, so subgraph topology itself is
+        not yet a shared mutable object graph
       - connected-bus-item ownership now exists on live bus-entry wrappers, but still not on real
         live item / connection pointers
     - concrete next unblock path:
@@ -664,7 +670,10 @@ Current status:
          cloning reduced snapshots through recursive revisits
       3. widen the new live bus-entry connection owner into fuller live item/connection pointer
          ownership instead of collapsing it back to subgraph indexes at projection time
-      4. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
+      4. replace the current value-owned `Vec<LiveReducedSubgraph>` recursion/fixpoint with shared
+         live subgraph handles so topology, dirty state, and attached live item owners stop being
+         copied by whole-subgraph clones
+      5. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
          promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
