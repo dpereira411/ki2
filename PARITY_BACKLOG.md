@@ -474,6 +474,9 @@ Current status:
 - reduced `TestPinToPin()` now iterates the shared reduced project net map like upstream `m_nets`
   instead of per-sheet connection components, while still using shared physical `base_pins` so
   same-reference physical pin multiplicity survives node flattening
+- reduced `TestPinToPin()` now also builds deterministic reduced pin contexts from shared
+  `base_pins` (sheet path, reference, pin number, pin type, point) instead of treating each net as
+  an unordered bag of bare pin types
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
   - `${REF:NET_NAME(pin)}`
   - `${REF:SHORT_NET_NAME(pin)}`

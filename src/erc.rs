@@ -13,7 +13,7 @@ use crate::loader::{
     reduced_net_name_sheet_path_prefix, resolve_cross_reference_text_var,
     resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
-    resolved_symbol_text_state,
+    resolved_symbol_text_property_value, resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -83,6 +83,14 @@ enum PinConflict {
     Error,
 }
 
+struct ReducedErcPinContext {
+    at: [f64; 2],
+    path: std::path::PathBuf,
+    reference: String,
+    pin_number: String,
+    pin_type: ReducedPinType,
+}
+
 // Upstream parity: reduced local helper for the modulus test inside
 // `ERC_TESTER::TestOffGridEndpoints()`. This is not a 1:1 KiCad IU check because the Rust tree
 // stores schematic geometry in millimeters, but it exists so the typed project connection-grid
@@ -121,7 +129,7 @@ fn parse_reduced_pin_type(electrical_type: &str) -> Option<ReducedPinType> {
 fn resolve_base_pin_type(
     project: &SchematicProject,
     base_pin: &ReducedNetBasePinKey,
-) -> Option<ReducedPinType> {
+) -> Option<ReducedErcPinContext> {
     let sheet_path = project
         .sheet_paths
         .iter()
@@ -143,8 +151,27 @@ fn resolve_base_pin_type(
                     _ => true,
                 }
         })
-        .and_then(|pin| pin.electrical_type)
-        .and_then(|electrical_type| parse_reduced_pin_type(&electrical_type))
+        .and_then(|pin| {
+            let pin_number = pin.number?;
+            let electrical_type = pin.electrical_type?;
+            let pin_type = parse_reduced_pin_type(&electrical_type)?;
+            let reference = resolved_symbol_text_property_value(
+                &project.schematics,
+                sheet_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                symbol,
+                "Reference",
+            )?;
+
+            Some(ReducedErcPinContext {
+                at: pin.at,
+                path: schematic.path.clone(),
+                reference,
+                pin_number,
+                pin_type,
+            })
+        })
 }
 
 fn pin_type_index(pin_type: ReducedPinType) -> usize {
@@ -2520,7 +2547,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     for net in collect_reduced_project_net_map(project, false) {
-        let pins = net
+        let mut pins = net
             .base_pins
             .iter()
             .filter_map(|base_pin| resolve_base_pin_type(project, base_pin))
@@ -2530,23 +2557,37 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         }
 
-        let is_power_net = pins.contains(&ReducedPinType::PowerIn);
-        let has_driver = pins.iter().any(|pin_type| {
+        pins.sort_by(|lhs, rhs| {
+            let mut ordering = lhs
+                .reference
+                .to_ascii_uppercase()
+                .cmp(&rhs.reference.to_ascii_uppercase());
+            if ordering == std::cmp::Ordering::Equal {
+                ordering = lhs.pin_number.cmp(&rhs.pin_number);
+            }
+            if ordering == std::cmp::Ordering::Equal {
+                ordering = lhs.at[0].to_bits().cmp(&rhs.at[0].to_bits());
+            }
+            if ordering == std::cmp::Ordering::Equal {
+                ordering = lhs.at[1].to_bits().cmp(&rhs.at[1].to_bits());
+            }
+            ordering
+        });
+
+        let is_power_net = pins
+            .iter()
+            .any(|pin| pin.pin_type == ReducedPinType::PowerIn);
+        let has_driver = pins.iter().any(|pin| {
             if is_power_net {
-                is_power_driver_pin_type(*pin_type)
+                is_power_driver_pin_type(pin.pin_type)
             } else {
-                is_normal_driver_pin_type(*pin_type)
+                is_normal_driver_pin_type(pin.pin_type)
             }
         });
-        let anchor = net
-            .base_pins
-            .first()
-            .map(|base_pin| [f64::from_bits(base_pin.at.0), f64::from_bits(base_pin.at.1)])
-            .unwrap_or([0.0, 0.0]);
 
-        for (index, lhs_type) in pins.iter().enumerate() {
-            for rhs_type in pins.iter().skip(index + 1) {
-                let conflict = configured_pin_conflict(project, *lhs_type, *rhs_type);
+        for (index, lhs_pin) in pins.iter().enumerate() {
+            for rhs_pin in pins.iter().skip(index + 1) {
+                let conflict = configured_pin_conflict(project, lhs_pin.pin_type, rhs_pin.pin_type);
                 if conflict == PinConflict::Ok {
                     continue;
                 }
@@ -2563,8 +2604,11 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                         PinConflict::Ok => continue,
                     },
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!("Conflicting pins connected at {}, {}", anchor[0], anchor[1]),
-                    path: Some(project.root_path.clone()),
+                    message: format!(
+                        "Conflicting pins connected at {}, {}",
+                        lhs_pin.at[0], lhs_pin.at[1]
+                    ),
+                    path: Some(lhs_pin.path.clone()),
                     span: None,
                     line: None,
                     column: None,
@@ -2577,8 +2621,8 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         }
 
-        if let Some(pin_type) = pins.iter().find(|pin_type| is_driven_pin_type(**pin_type)) {
-            let article = if *pin_type == ReducedPinType::PowerIn {
+        if let Some(pin) = pins.iter().find(|pin| is_driven_pin_type(pin.pin_type)) {
+            let article = if pin.pin_type == ReducedPinType::PowerIn {
                 "Power input pin is not driven"
             } else {
                 "Input pin is not driven"
@@ -2589,7 +2633,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                 code: "erc-missing-driver",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: article.to_string(),
-                path: Some(project.root_path.clone()),
+                path: Some(pin.path.clone()),
                 span: None,
                 line: None,
                 column: None,
