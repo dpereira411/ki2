@@ -581,6 +581,7 @@ Current status:
       - connection type
       - local/full-local/resolved names
       - member trees
+      - vector-member indexes plus reduced `matchBusMember()`-style matching
       - link-owned label/sheet-pin/hier-port connections
       - member-keyed reduced bus parent/neighbor links
     - the remaining gap is that these are still static reduced snapshots, not live
