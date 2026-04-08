@@ -1495,7 +1495,6 @@ struct LiveReducedSubgraphWireItem {
     start: PointKey,
     end: PointKey,
     is_bus_entry: bool,
-    connected_bus_subgraph_index: Option<usize>,
     connected_bus_connection: Option<LiveReducedConnection>,
     connected_bus_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
@@ -1505,7 +1504,6 @@ impl PartialEq for LiveReducedSubgraphWireItem {
         self.start == other.start
             && self.end == other.end
             && self.is_bus_entry == other.is_bus_entry
-            && self.connected_bus_subgraph_index == other.connected_bus_subgraph_index
             && self.connected_bus_connection == other.connected_bus_connection
     }
 }
@@ -1786,7 +1784,6 @@ fn build_live_reduced_subgraphs(
                     start: item.start,
                     end: item.end,
                     is_bus_entry: item.is_bus_entry,
-                    connected_bus_subgraph_index: item.connected_bus_subgraph_index,
                     connected_bus_connection: None,
                     connected_bus_handle: None,
                 })
@@ -1799,7 +1796,6 @@ fn build_live_reduced_subgraphs(
                     start: item.start,
                     end: item.end,
                     is_bus_entry: item.is_bus_entry,
-                    connected_bus_subgraph_index: item.connected_bus_subgraph_index,
                     connected_bus_connection: None,
                     connected_bus_handle: None,
                 })
@@ -1815,7 +1811,7 @@ fn build_live_reduced_subgraphs(
 // Upstream parity: local bridge for connected-bus ownership on the shared live subgraph graph.
 // This still uses reduced wire geometry instead of real `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*`
 // pointers, but bus entries on the active live graph now keep a live reference back to the
-// attached bus subgraph instead of carrying a copied subgraph index as active ownership.
+// attached bus subgraph instead of carrying a copied reduced bus index as active ownership.
 fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
     let bus_subgraphs = live_subgraphs
         .iter()
@@ -1875,7 +1871,6 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
                     (*index, connection.clone(), bus_handle.clone())
                 });
 
-            item.connected_bus_subgraph_index = None;
             item.connected_bus_connection = attached_bus
                 .as_ref()
                 .map(|(_, connection, _)| connection.clone());
@@ -1886,9 +1881,10 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
 
 // Upstream parity: reduced local analogue for the bus-entry connected-bus item owner during live
 // graph build. This still identifies the attached bus from reduced wire geometry and stores a live
-// local connection owner plus subgraph index instead of real `SCH_LINE*` item pointers, but it
+// local connection owner instead of real `SCH_LINE*` item pointers, but it
 // moves connected-bus ownership onto the live graph objects so later live graph updates can follow
-// the attached bus connection owner directly.
+// the attached bus connection owner directly. Remaining divergence is that the bus-entry item
+// itself is still a reduced carrier rather than a live item/pointer object.
 fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
     let bus_subgraphs = live_subgraphs
         .iter()
@@ -1940,7 +1936,6 @@ fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
                 })
                 .map(|(index, _, _, connection)| (*index, connection.clone()));
 
-            item.connected_bus_subgraph_index = attached_bus.as_ref().map(|(index, _)| *index);
             item.connected_bus_connection = attached_bus.map(|(_, connection)| connection);
         }
     }
@@ -2134,8 +2129,7 @@ fn apply_live_reduced_driver_connections(
                 .connected_bus_handle
                 .as_ref()
                 .and_then(Weak::upgrade)
-                .map(|bus| bus.borrow().source_index)
-                .or(source.connected_bus_subgraph_index);
+                .map(|bus| bus.borrow().source_index);
         }
     }
 }
@@ -2145,7 +2139,8 @@ fn apply_live_reduced_driver_connections(
 // not yet keep live item/subgraph pointers, but the active recursive graph build now mutates one
 // shared live subgraph object graph before that projection. Remaining divergence is that callers
 // still consume reduced indices instead of live item/subgraph pointers, so this projection must
-// collapse bus-entry attachment back to source indexes at the edge.
+// collapse bus-entry attachment back to source indexes at the edge. Active live bus-entry items no
+// longer carry a copied reduced bus index alongside that live owner.
 fn apply_live_reduced_driver_connections_from_handles(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -2213,8 +2208,7 @@ fn apply_live_reduced_driver_connections_from_handles(
                 .connected_bus_handle
                 .as_ref()
                 .and_then(Weak::upgrade)
-                .map(|bus| bus.borrow().source_index)
-                .or(source.connected_bus_subgraph_index);
+                .map(|bus| bus.borrow().source_index);
         }
     }
 }
@@ -8489,11 +8483,6 @@ mod tests {
         ];
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
-        assert_eq!(
-            handles[1].borrow().wire_items[0].connected_bus_subgraph_index,
-            None
-        );
-        handles[1].borrow_mut().wire_items[0].connected_bus_subgraph_index = Some(999);
         handles[1].borrow_mut().wire_items[0].connected_bus_handle =
             Some(Rc::downgrade(&handles[0]));
 

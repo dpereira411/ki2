@@ -681,9 +681,10 @@ Current status:
       - live connection member trees, the active stale-member bag, stored live bus
         parent/neighbor links, the exercised active rematch helpers, active same-name recache
         updates, and active bus-driven promotion now use dedicated live local member/connection
-        payloads, but projection and remaining boundary adapters still round-trip through reduced
-        snapshots instead of keeping one fuller live member/pointer graph through propagation and
-        projection
+        payloads, and active live bus-entry items no longer carry copied reduced bus indexes
+        beside the live bus owner, but projection and remaining boundary adapters still round-trip
+        through reduced snapshots instead of keeping one fuller live member/pointer graph through
+        propagation and projection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
