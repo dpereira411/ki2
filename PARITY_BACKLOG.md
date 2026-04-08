@@ -723,6 +723,8 @@ What is already covered indirectly:
   - reduced multi-unit field/value merge by unit order
   - reduced component `<fields>` now mirrors the exercised `addSymbolFields()` slice:
     - user fields
+    - lowest-unit empty user fields now stay authoritative instead of being skipped by repo-local
+      nonblank filtering
     - canonical `Footprint`
     - canonical `Datasheet`
     - canonical `Description`

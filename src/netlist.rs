@@ -1002,10 +1002,7 @@ fn symbol_to_xml_component(
                 }
 
                 for property in &candidate_state.properties {
-                    if property.kind.is_mandatory()
-                        || property.is_private
-                        || property.value.is_empty()
-                    {
+                    if property.kind.is_mandatory() || property.is_private {
                         continue;
                     }
 

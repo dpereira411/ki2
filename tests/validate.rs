@@ -1991,6 +1991,57 @@ fn cli_netlist_merges_multi_unit_fields_by_unit_order() {
 }
 
 #[test]
+fn cli_netlist_keeps_lowest_unit_empty_user_field() {
+    let path = temp_schematic(
+        "cli_netlist_multi_unit_empty_field",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:DUAL"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "DUAL" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "DUAL_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))
+      (symbol "DUAL_2_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:DUAL")
+    (unit 1)
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUAL" (at 0 0 0) (effects (font (size 1 1))))
+    (property "MPN" "" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:DUAL")
+    (unit 2)
+    (at 10 0 0)
+    (property "Reference" "U1" (at 10 0 0) (effects (font (size 1 1))))
+    (property "Value" "DUAL" (at 10 0 0) (effects (font (size 1 1))))
+    (property "MPN" "SHOULD_NOT_WIN" (at 10 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("<field name=\"MPN\"></field>"), "{report}");
+    assert!(!report.contains("SHOULD_NOT_WIN"), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_prefers_non_pad_default_driver_names() {
     let path = temp_schematic(
         "cli_netlist_prefers_non_pad_driver",
