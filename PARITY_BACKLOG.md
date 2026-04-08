@@ -771,6 +771,8 @@ What is already covered indirectly:
   net name)` like KiCad instead of the old repo-local short-driver key
 - reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
   symbol pins instead of flattening those lookups straight to whole-net identity
+- point/pin net identity now also derives back through that shared subgraph owner instead of
+  keeping duplicate item-to-whole-net side maps beside the shared subgraph indexes
 - reduced project subgraphs now keep their own stable subgraph codes instead of reusing only the
   whole-net code space
 - reduced project subgraphs now keep local driver names from the shared driver-selection owner

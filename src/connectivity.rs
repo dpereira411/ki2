@@ -158,9 +158,6 @@ pub(crate) struct ReducedProjectNetGraph {
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
-    pin_identities: BTreeMap<ReducedNetBasePinKey, ReducedProjectNetIdentity>,
-    pin_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectNetIdentity>,
-    point_identities: BTreeMap<ReducedProjectPointIdentityKey, ReducedProjectNetIdentity>,
 }
 
 pub(crate) struct ReducedProjectGraphInputs<'a> {
@@ -966,8 +963,9 @@ where
 // export rebuild those facts independently. Remaining divergence is the missing full subgraph
 // object model and graph-owned resolved-name caches beyond this reduced project graph; candidate
 // ownership is now widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
-// identity is not collapsed before pin net/class ownership is assigned, but the outward reduced
-// node carrier is still narrower than a real `CONNECTION_SUBGRAPH` item owner.
+// identity is not collapsed before pin net/class ownership is assigned, and item-to-net facts now
+// derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps. The
+// outward reduced node carrier is still narrower than a real `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
@@ -1198,33 +1196,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut pin_subgraph_identities = BTreeMap::new();
     let mut pin_subgraph_identities_by_location = BTreeMap::new();
     let mut point_subgraph_identities = BTreeMap::new();
-    let mut pin_identities = BTreeMap::new();
-    let mut pin_identities_by_location = BTreeMap::new();
-    let mut point_identities = BTreeMap::new();
 
     for (index, (name, (class, has_no_connect, nodes, base_pins))) in nets.into_iter().enumerate() {
-        let identity = ReducedProjectNetIdentity {
-            code: index + 1,
-            name: name.clone(),
-            class: class.clone(),
-            has_no_connect,
-        };
-
-        for base_pin in &base_pins {
-            pin_identities.insert(base_pin.clone(), identity.clone());
-            pin_identities_by_location.insert(
-                ReducedProjectPinIdentityKey {
-                    sheet_instance_path: base_pin.sheet_instance_path.clone(),
-                    symbol_uuid: base_pin.symbol_uuid.clone(),
-                    at: base_pin.at,
-                },
-                identity.clone(),
-            );
-        }
-
-        for point_key in point_keys_by_net.remove(&name).unwrap_or_default() {
-            point_identities.insert(point_key, identity.clone());
-        }
+        point_keys_by_net.remove(&name);
 
         reduced_nets.push(ReducedProjectNetEntry {
             code: index + 1,
@@ -1303,9 +1277,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
         point_subgraph_identities,
-        pin_identities,
-        pin_identities_by_location,
-        point_identities,
     }
 }
 
@@ -1466,9 +1437,9 @@ fn reduced_project_base_pin_key(
 // Upstream parity: reduced local analogue for the symbol-pin item half of
 // `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
 // item map because the Rust tree still uses `(sheet instance path, symbol uuid, projected pin
-// point)` instead of a live `SCH_PIN*`, but it gives ERC/export one shared project-net owner for
-// pin identity instead of re-deriving net names from local component scans. Remaining divergence
-// is fuller item identity for non-pin items and the still-missing `CONNECTION_SUBGRAPH` object.
+// point)` instead of a live `SCH_PIN*`, but it now derives shared net identity through the stored
+// pin-to-subgraph owner instead of keeping a second pin-to-net side map. Remaining divergence is
+// fuller item identity for non-pin items and the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -1476,19 +1447,14 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     at: [f64; 2],
     pin_name: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
-    pin_name
-        .and_then(|pin_name| {
-            graph.pin_identities.get(&reduced_project_base_pin_key(
-                sheet_path, symbol, at, pin_name,
-            ))
-        })
-        .map(|identity| identity.clone())
-        .or_else(|| {
-            graph
-                .pin_identities_by_location
-                .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
-                .map(|identity| identity.clone())
-        })
+    resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name).map(
+        |subgraph| ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: subgraph.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        },
+    )
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1542,18 +1508,22 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
 // `CONNECTION_GRAPH::GetSubgraphForItem()` / `GetResolvedSubgraphName()` on the project graph
 // path. This is not a 1:1 KiCad item map because the Rust tree still keys the lookup by `(sheet
 // instance path, reduced subgraph anchor)` instead of a live item-owned `CONNECTION_SUBGRAPH`,
-// but it gives ERC one shared project-net owner for non-pin connection points instead of
-// re-deriving cross-sheet net names from local scans. Remaining divergence is fuller item identity
-// for labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
+// but it now derives shared net identity through the stored point-to-subgraph owner instead of a
+// duplicate point-to-net side map. Remaining divergence is fuller item identity for labels, wires,
+// and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectNetIdentity> {
-    graph
-        .point_identities
-        .get(&reduced_project_point_identity_key(sheet_path, at))
-        .cloned()
+    resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
+        ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: subgraph.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        }
+    })
 }
 
 fn label_is_dangling_on_component(
