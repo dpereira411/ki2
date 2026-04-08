@@ -714,6 +714,8 @@ What is already covered indirectly:
     - `duplicate_pin_numbers_are_jumpers`
     - `jumper_pin_groups`
       - exercised pin-name order now follows KiCad's sorted-set group ownership
+    - component metadata properties now emit through one ordered property stream instead of
+      repo-local write buckets
   - reduced component-local variant diffs on `<comp><variants>`
   - reduced KiCad-format root `<groups>` export
   - reduced KiCad-format root `<variants>` export

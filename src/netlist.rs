@@ -25,18 +25,12 @@ pub struct NetlistComponent {
     pub path: String,
     pub tstamps: Vec<String>,
     pub units: Vec<NetlistComponentUnit>,
-    pub excluded_from_bom: bool,
-    pub excluded_from_board: bool,
-    pub excluded_from_pos_files: bool,
-    pub dnp: bool,
-    pub sheet_properties: Vec<(String, String)>,
-    pub keywords: Option<String>,
-    pub fp_filters: Vec<String>,
     pub duplicate_pin_numbers_are_jumpers: bool,
     pub jumper_pin_groups: Vec<Vec<String>>,
     pub component_classes: Vec<String>,
     pub variants: Vec<NetlistComponentVariant>,
-    pub properties: Vec<(String, String)>,
+    pub metadata_properties: Vec<(String, Option<String>)>,
+    pub fields: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1023,6 +1017,44 @@ fn symbol_to_xml_component(
     upsert_component_field(&mut fields, "Datasheet", i32::MAX, datasheet.clone());
     upsert_component_field(&mut fields, "Description", i32::MAX, description.clone());
 
+    let mut metadata_properties = collect_parent_sheet_properties(project, sheet_path)
+        .into_iter()
+        .map(|(name, value)| (name, Some(value)))
+        .collect::<Vec<_>>();
+
+    if let Some(keywords) = symbol
+        .lib_symbol
+        .as_ref()
+        .and_then(|lib_symbol| lib_symbol.keywords.clone())
+    {
+        metadata_properties.push(("ki_keywords".to_string(), Some(keywords)));
+    }
+
+    let fp_filters = symbol
+        .lib_symbol
+        .as_ref()
+        .map(|lib_symbol| lib_symbol.fp_filters.clone())
+        .unwrap_or_default();
+    if !fp_filters.is_empty() {
+        metadata_properties.push(("ki_fp_filters".to_string(), Some(fp_filters.join(" "))));
+    }
+
+    if !symbol.in_bom {
+        metadata_properties.push(("exclude_from_bom".to_string(), None));
+    }
+
+    if !symbol.on_board {
+        metadata_properties.push(("exclude_from_board".to_string(), None));
+    }
+
+    if !symbol.in_pos_files {
+        metadata_properties.push(("exclude_from_pos_files".to_string(), None));
+    }
+
+    if symbol.dnp {
+        metadata_properties.push(("dnp".to_string(), None));
+    }
+
     Some(NetlistComponent {
         reference,
         unit_number: symbol.unit.unwrap_or(1),
@@ -1073,20 +1105,6 @@ fn symbol_to_xml_component(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default(),
-        excluded_from_bom: !symbol.in_bom,
-        excluded_from_board: !symbol.on_board,
-        excluded_from_pos_files: !symbol.in_pos_files,
-        dnp: symbol.dnp,
-        sheet_properties: collect_parent_sheet_properties(project, sheet_path),
-        keywords: symbol
-            .lib_symbol
-            .as_ref()
-            .and_then(|lib_symbol| lib_symbol.keywords.clone()),
-        fp_filters: symbol
-            .lib_symbol
-            .as_ref()
-            .map(|lib_symbol| lib_symbol.fp_filters.clone())
-            .unwrap_or_default(),
         duplicate_pin_numbers_are_jumpers: symbol
             .lib_symbol
             .as_ref()
@@ -1109,7 +1127,8 @@ fn symbol_to_xml_component(
             .unwrap_or_default(),
         component_classes,
         variants,
-        properties: fields
+        metadata_properties,
+        fields: fields
             .into_iter()
             .map(|(key, (_unit, value))| (key, value))
             .collect(),
@@ -1569,42 +1588,18 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             xml.push_str("      </units>\n");
         }
 
-        if component.excluded_from_bom {
-            xml.push_str("      <property name=\"exclude_from_bom\" />\n");
-        }
-
-        if component.excluded_from_board {
-            xml.push_str("      <property name=\"exclude_from_board\" />\n");
-        }
-
-        if component.excluded_from_pos_files {
-            xml.push_str("      <property name=\"exclude_from_pos_files\" />\n");
-        }
-
-        if component.dnp {
-            xml.push_str("      <property name=\"dnp\" />\n");
-        }
-
-        for (name, value) in component.sheet_properties {
-            xml.push_str(&format!(
-                "      <property name=\"{}\" value=\"{}\" />\n",
-                escape_xml(&name),
-                escape_xml(&value)
-            ));
-        }
-
-        if let Some(keywords) = component.keywords {
-            xml.push_str(&format!(
-                "      <property name=\"ki_keywords\" value=\"{}\" />\n",
-                escape_xml(&keywords)
-            ));
-        }
-
-        if !component.fp_filters.is_empty() {
-            xml.push_str(&format!(
-                "      <property name=\"ki_fp_filters\" value=\"{}\" />\n",
-                escape_xml(&component.fp_filters.join(" "))
-            ));
+        for (name, value) in component.metadata_properties {
+            match value {
+                Some(value) => xml.push_str(&format!(
+                    "      <property name=\"{}\" value=\"{}\" />\n",
+                    escape_xml(&name),
+                    escape_xml(&value)
+                )),
+                None => xml.push_str(&format!(
+                    "      <property name=\"{}\" />\n",
+                    escape_xml(&name)
+                )),
+            }
         }
 
         if component.duplicate_pin_numbers_are_jumpers {
@@ -1679,10 +1674,10 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             xml.push_str("      </component_classes>\n");
         }
 
-        if !component.properties.is_empty() {
+        if !component.fields.is_empty() {
             xml.push_str("      <fields>\n");
 
-            for (name, value) in component.properties {
+            for (name, value) in component.fields {
                 xml.push_str(&format!(
                     "        <field name=\"{}\">{}</field>\n",
                     escape_xml(&name),
