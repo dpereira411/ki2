@@ -164,3 +164,5 @@ of opportunistic branch chasing.
 - Silent skips for unsupported nested constructs.
 - Expanding surface area without tying it back to a real upstream branch.
 - Leaving detailed parity trivia in `AGENTS.md` once it belongs in `PARITY_BACKLOG.md`.
+- Reply patterns like "it's X, not Y" / "the issue is A, not B" as filler framing. State the fact
+  directly unless the contrast is technically necessary.
