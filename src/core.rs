@@ -411,7 +411,13 @@ impl SchematicProject {
             return graph;
         }
 
-        let graph = collect_reduced_project_net_graph(self, for_board);
+        let graph = collect_reduced_project_net_graph(
+            &self.schematics,
+            &self.sheet_paths,
+            self.project.as_ref(),
+            self.current_variant(),
+            for_board,
+        );
         *cache.borrow_mut() = Some(graph.clone());
         graph
     }

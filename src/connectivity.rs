@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core::SchematicProject;
 use crate::loader::{
-    LoadedSheetPath, SymbolPinTextVarKind, collect_wire_segments, point_on_wire_segment,
-    points_equal, resolve_point_connectivity_text_var, resolved_sheet_text_state,
-    resolved_symbol_text_property_value,
+    LoadedProjectSettings, LoadedSheetPath, SymbolPinTextVarKind, collect_wire_segments,
+    point_on_wire_segment, points_equal, resolve_point_connectivity_text_var,
+    resolved_sheet_text_state, resolved_symbol_text_property_value,
 };
 use crate::model::{
     Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, SheetPinShape, Symbol,
@@ -139,6 +139,13 @@ pub(crate) struct ReducedProjectNetGraph {
     pin_identities: BTreeMap<ReducedNetBasePinKey, ReducedProjectNetIdentity>,
     pin_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectNetIdentity>,
     point_identities: BTreeMap<ReducedProjectPointIdentityKey, ReducedProjectNetIdentity>,
+}
+
+pub(crate) struct ReducedProjectGraphInputs<'a> {
+    pub(crate) schematics: &'a [Schematic],
+    pub(crate) sheet_paths: &'a [LoadedSheetPath],
+    pub(crate) project: Option<&'a LoadedProjectSettings>,
+    pub(crate) current_variant: Option<&'a str>,
 }
 
 fn connection_component_at(schematic: &Schematic, at: [f64; 2]) -> Option<ConnectionComponent> {
@@ -904,8 +911,8 @@ where
 // now owns one shared reduced project net map plus item lookup indexes instead of making ERC and
 // export rebuild those facts independently. Remaining divergence is the missing full subgraph
 // object model and graph-owned resolved-name caches beyond this reduced project graph.
-pub(crate) fn collect_reduced_project_net_graph(
-    project: &SchematicProject,
+pub(crate) fn collect_reduced_project_net_graph_from_inputs(
+    inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
 ) -> ReducedProjectNetGraph {
     let mut all_base_pins_by_net = BTreeMap::<String, Vec<ReducedNetBasePinKey>>::new();
@@ -924,13 +931,13 @@ pub(crate) fn collect_reduced_project_net_graph(
         ),
     >::new();
 
-    for sheet_path in &project.sheet_paths {
+    for sheet_path in inputs.sheet_paths {
         if for_board
             && !resolved_sheet_text_state(
-                &project.schematics,
-                &project.sheet_paths,
+                inputs.schematics,
+                inputs.sheet_paths,
                 sheet_path,
-                project.current_variant(),
+                inputs.current_variant,
             )
             .map(|state| state.on_board)
             .unwrap_or(true)
@@ -938,7 +945,11 @@ pub(crate) fn collect_reduced_project_net_graph(
             continue;
         }
 
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+        let Some(schematic) = inputs
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
             continue;
         };
 
@@ -947,22 +958,22 @@ pub(crate) fn collect_reduced_project_net_graph(
             &sheet_path.instance_path,
             |at| {
                 resolve_point_connectivity_text_var(
-                    &project.schematics,
-                    &project.sheet_paths,
+                    inputs.schematics,
+                    inputs.sheet_paths,
                     sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
+                    inputs.project,
+                    inputs.current_variant,
                     at,
                     SymbolPinTextVarKind::NetName,
                 )
             },
             |at| {
                 resolve_point_connectivity_text_var(
-                    &project.schematics,
-                    &project.sheet_paths,
+                    inputs.schematics,
+                    inputs.sheet_paths,
                     sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
+                    inputs.project,
+                    inputs.current_variant,
                     at,
                     SymbolPinTextVarKind::NetClass,
                 )
@@ -970,10 +981,10 @@ pub(crate) fn collect_reduced_project_net_graph(
             |symbol| !for_board || symbol.on_board,
             |symbol| {
                 resolved_symbol_text_property_value(
-                    &project.schematics,
+                    inputs.schematics,
                     sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
+                    inputs.project,
+                    inputs.current_variant,
                     symbol,
                     "Reference",
                 )
@@ -1122,6 +1133,30 @@ pub(crate) fn collect_reduced_project_net_graph(
 }
 
 // Upstream parity: reduced local analogue for the project-wide `ConnectionGraph()->GetNetMap()`
+// owner boundary. This wrapper exists because `SchematicProject` is currently the main cached
+// graph owner, but the underlying reduced graph construction now accepts raw loaded inputs so
+// loader-side hierarchy passes can reuse the same owner path instead of rebuilding connectivity via
+// per-label current-sheet scans. Remaining divergence is the still-missing full subgraph object
+// model behind both callers.
+pub(crate) fn collect_reduced_project_net_graph(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    for_board: bool,
+) -> ReducedProjectNetGraph {
+    collect_reduced_project_net_graph_from_inputs(
+        ReducedProjectGraphInputs {
+            schematics,
+            sheet_paths,
+            project,
+            current_variant,
+        },
+        for_board,
+    )
+}
+
+// Upstream parity: reduced local analogue for the project-wide `ConnectionGraph()->GetNetMap()`
 // consumer path used by KiCad's net exporters. This is not a 1:1 graph owner because the Rust
 // tree still lacks real `CONNECTION_SUBGRAPH` objects and graph-owned item identity, but it now
 // reads through the shared reduced project net-graph owner instead of re-owning project net
@@ -1131,7 +1166,7 @@ pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
 ) -> Vec<ReducedProjectNetEntry> {
-    collect_reduced_project_net_graph(project, for_board).nets
+    project.reduced_project_net_graph(for_board).nets
 }
 
 fn reduced_project_pin_identity_key(
@@ -1192,12 +1227,12 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
                 sheet_path, symbol, at, pin_name,
             ))
         })
-        .cloned()
+        .map(|identity| identity.clone())
         .or_else(|| {
             graph
                 .pin_identities_by_location
                 .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
-                .cloned()
+                .map(|identity| identity.clone())
         })
 }
 
@@ -1209,13 +1244,11 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
 // re-deriving cross-sheet net names from local scans. Remaining divergence is fuller item identity
 // for labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_at(
-    project: &SchematicProject,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
-    for_board: bool,
 ) -> Option<ReducedProjectNetIdentity> {
-    project
-        .reduced_project_net_graph(for_board)
+    graph
         .point_identities
         .get(&reduced_project_point_identity_key(sheet_path, at))
         .cloned()
@@ -2138,7 +2171,8 @@ mod tests {
             .expect("root sheet path");
         let project = SchematicProject::from_load_result(loaded);
 
-        let net = resolve_reduced_project_net_at(&project, &sheet_path, [10.0, 0.0], false)
+        let graph = project.reduced_project_net_graph(false);
+        let net = resolve_reduced_project_net_at(&graph, &sheet_path, [10.0, 0.0])
             .expect("project net at label point");
 
         assert_eq!(net.name, "NET_A");

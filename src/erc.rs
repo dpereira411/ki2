@@ -364,7 +364,8 @@ fn resolved_point_net_name(
     sheet_path: &crate::loader::LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<String> {
-    resolve_reduced_project_net_at(project, sheet_path, at, false).map(|net| net.name)
+    let graph = project.reduced_project_net_graph(false);
+    resolve_reduced_project_net_at(&graph, sheet_path, at).map(|net| net.name)
 }
 
 fn is_driven_pin_type(pin_type: ReducedPinType) -> bool {

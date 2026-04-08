@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::connectivity::{
-    resolve_reduced_net_name_at, resolve_reduced_net_name_for_symbol_pin,
-    resolve_reduced_netclass_at,
+    ReducedProjectNetGraph, collect_reduced_project_net_graph, resolve_reduced_net_name_at,
+    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_netclass_at,
+    resolve_reduced_project_net_at,
 };
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
@@ -5107,6 +5108,33 @@ pub(crate) fn resolve_label_connectivity_text_var(
     label: &crate::model::Label,
     token: &str,
 ) -> Option<String> {
+    resolve_label_connectivity_text_var_with_graph(
+        schematics,
+        sheet_paths,
+        loaded_path,
+        project,
+        current_variant,
+        None,
+        label,
+        token,
+    )
+}
+
+// Upstream parity: reduced local analogue for the `SCH_LABEL_BASE::ResolveTextVar()` connectivity
+// branch on callers that already own a hierarchy-wide reduced graph snapshot. This helper exists so
+// intersheet-ref recompute can resolve `NET_*` tokens through one shared project graph pass instead
+// of rebuilding per-label current-sheet connectivity during the whole-hierarchy walk. Remaining
+// divergence is the same fuller graph/subgraph object model as the non-graph wrapper above.
+fn resolve_label_connectivity_text_var_with_graph(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
+    label: &crate::model::Label,
+    token: &str,
+) -> Option<String> {
     let token_upper = token.to_ascii_uppercase();
     if !matches!(
         token_upper.as_str(),
@@ -5129,16 +5157,22 @@ pub(crate) fn resolve_label_connectivity_text_var(
         label,
     );
 
-    let net_name =
-        resolve_reduced_net_name_at(schematic, label.at, Some(&sheet_path_prefix), |other| {
-            shown_label_text_without_connectivity(
-                schematics,
-                sheet_paths,
-                loaded_path,
-                project,
-                current_variant,
-                other,
-            )
+    let graph_net = reduced_graph
+        .and_then(|graph| resolve_reduced_project_net_at(graph, loaded_path, label.at));
+    let net_name = graph_net
+        .as_ref()
+        .map(|net| net.name.clone())
+        .or_else(|| {
+            resolve_reduced_net_name_at(schematic, label.at, Some(&sheet_path_prefix), |other| {
+                shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    other,
+                )
+            })
         })
         .or_else(|| {
             (!own_text.contains("${") && !own_text.starts_with('<') && !own_text.is_empty())
@@ -5148,15 +5182,21 @@ pub(crate) fn resolve_label_connectivity_text_var(
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),
         "SHORT_NET_NAME" => Some(short_net_name(&net_name)),
-        "NET_CLASS" => resolve_point_netclass_value(
-            schematics,
-            sheet_paths,
-            loaded_path,
-            project,
-            current_variant,
-            schematic,
-            label.at,
-        ),
+        "NET_CLASS" => graph_net
+            .as_ref()
+            .map(|net| net.class.clone())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                resolve_point_netclass_value(
+                    schematics,
+                    sheet_paths,
+                    loaded_path,
+                    project,
+                    current_variant,
+                    schematic,
+                    label.at,
+                )
+            }),
         _ => None,
     }
 }
@@ -5412,6 +5452,8 @@ pub(crate) fn build_intersheet_ref_maps(
 ) {
     let mut page_refs_map: HashMap<String, BTreeSet<usize>> = HashMap::new();
     let mut virtual_page_to_sheet_page = HashMap::new();
+    let reduced_graph =
+        collect_reduced_project_net_graph(schematics, sheet_paths, project, current_variant, false);
 
     for sheet_path in sheet_paths {
         virtual_page_to_sheet_page.insert(
@@ -5432,12 +5474,13 @@ pub(crate) fn build_intersheet_ref_maps(
         for item in &schematic.screen.items {
             if let SchItem::Label(label) = item {
                 if label.kind == crate::model::LabelKind::Global {
-                    let shown_text = shown_global_label_text(
+                    let shown_text = shown_global_label_text_with_graph(
                         schematics,
                         sheet_paths,
                         sheet_path,
                         project,
                         current_variant,
+                        Some(&reduced_graph),
                         label,
                     );
                     page_refs_map
@@ -5636,17 +5679,38 @@ pub(crate) fn shown_global_label_text(
     current_variant: Option<&str>,
     label: &crate::model::Label,
 ) -> String {
+    shown_global_label_text_with_graph(
+        schematics,
+        sheet_paths,
+        loaded_path,
+        project,
+        current_variant,
+        None,
+        label,
+    )
+}
+
+fn shown_global_label_text_with_graph(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
+    label: &crate::model::Label,
+) -> String {
     resolve_text_variables(
         &label.text,
         &|token| {
             let token_upper = token.to_ascii_uppercase();
 
-            if let Some(value) = resolve_label_connectivity_text_var(
+            if let Some(value) = resolve_label_connectivity_text_var_with_graph(
                 schematics,
                 sheet_paths,
                 loaded_path,
                 project,
                 current_variant,
+                reduced_graph,
                 label,
                 token,
             ) {

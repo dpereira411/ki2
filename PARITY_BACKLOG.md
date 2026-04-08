@@ -348,6 +348,9 @@ Current status:
     anchor point
   - ERC point-net lookup now reads only through the shared project graph owner instead of keeping a
     second current-sheet point-net fallback inside `src/erc.rs`
+  - intersheet-ref `NET_*` shown-text grouping now also builds one shared reduced project graph for
+    the whole hierarchy pass instead of resolving connectivity label-by-label through local
+    current-sheet reducers
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match
