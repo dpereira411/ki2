@@ -61,6 +61,28 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     apply_configured_rule_severities(project, diagnostics)
 }
 
+// Upstream parity: reduced local analogue for the top-level subgraph iteration inside
+// `CONNECTION_GRAPH::RunERC()`. This is not a 1:1 KiCad iterator because the Rust tree still lacks
+// live `CONNECTION_SUBGRAPH*` and absorbed-subgraph state, but it now preserves KiCad's
+// `seenDriverInstances` behavior by deduplicating graph-owned ERC passes on reused screens through
+// the shared reduced driver owner instead of sweeping every repeated subgraph independently.
+// Remaining divergence is the still-missing live subgraph/driver object model behind that owner.
+fn graph_run_erc_subgraphs(
+    project: &SchematicProject,
+) -> Vec<crate::connectivity::ReducedProjectSubgraphEntry> {
+    let mut seen_driver_identities = std::collections::BTreeSet::new();
+
+    collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .filter(|subgraph| {
+            subgraph
+                .driver_identity
+                .as_ref()
+                .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReducedPinType {
     Input = 0,
@@ -1701,7 +1723,9 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // not a 1:1 KiCad subgraph/item-marker pass because the Rust tree still lacks full
 // `CONNECTION_SUBGRAPH` objects and hier-port child-subgraph traversal. It now starts from shared
 // graph-owned no-connect-item identity plus same-name grouping instead of rebuilding the rule from
-// per-sheet connection components, and it covers both exercised upstream branches:
+// per-sheet connection components, and now also follows `RunERC()`-style reused-screen
+// de-duplication through the shared reduced driver owner. It covers both exercised upstream
+// branches:
 // - connected no-connect markers on same-name nets
 // - dangling no-connect markers with no pins or labels
 // instead of leaving the reduced ERC path on the older connected-only point-local check.
@@ -1710,6 +1734,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
     let mut seen = std::collections::BTreeSet::new();
+    let mut seen_driver_identities = std::collections::BTreeSet::new();
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -1725,6 +1750,14 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
             else {
                 continue;
             };
+
+            if subgraph
+                .driver_identity
+                .as_ref()
+                .is_some_and(|identity| !seen_driver_identities.insert(identity.clone()))
+            {
+                continue;
+            }
 
             if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
                 continue;
@@ -1835,7 +1868,9 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // neighbor walks, and live `SCH_TEXT::IsDangling()` state. It now consumes shared graph-owned
 // label-item identity plus shared reduced project subgraphs for pin counts and same-name neighbor
 // aggregation instead of grouping local component snapshots by ad-hoc `net_name` strings inside
-// ERC. The remaining divergence is the still-missing fuller bus-parent ownership plus the local
+// ERC. It now also follows `RunERC()`-style reused-screen de-duplication through the shared
+// reduced driver owner instead of sweeping every repeated driven subgraph independently. The
+// remaining divergence is the still-missing fuller bus-parent ownership plus the local
 // dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -1861,41 +1896,27 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         }
     }
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+    for subgraph in graph_run_erc_subgraphs(project) {
+        if subgraph.label_points.is_empty() {
             continue;
-        };
-
-        for label in schematic.screen.items.iter().filter_map(|item| match item {
-            SchItem::Label(label) => Some(label),
-            _ => None,
-        }) {
-            let Some(subgraph) =
-                resolve_reduced_project_subgraph_for_label(&graph, sheet_path, label)
-            else {
-                continue;
-            };
-
-            let pin_count = subgraph.base_pins.len();
-            let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
-                || subgraph
-                    .label_points
-                    .iter()
-                    .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
-
-            label_subgraphs.push((
-                subgraph.sheet_instance_path.clone(),
-                subgraph.subgraph_code,
-                subgraph.name.clone(),
-                pin_count,
-                subgraph.has_no_connect,
-                has_local_hierarchy,
-                vec![(
-                    crate::connectivity::PointKey(label.at[0].to_bits(), label.at[1].to_bits()),
-                    label.kind,
-                )],
-            ));
         }
+
+        let pin_count = subgraph.base_pins.len();
+        let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
+            || subgraph
+                .label_points
+                .iter()
+                .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
+
+        label_subgraphs.push((
+            subgraph.sheet_instance_path.clone(),
+            subgraph.subgraph_code,
+            subgraph.name.clone(),
+            pin_count,
+            subgraph.has_no_connect,
+            has_local_hierarchy,
+            subgraph.label_points.clone(),
+        ));
     }
 
     for (
@@ -2057,13 +2078,13 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
 // `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`. This is not a 1:1 KiCad endpoint-owner path
 // because the Rust tree still uses reduced stored wire-item endpoints instead of live dangling
 // flags on `SCH_LINE` / bus-entry items. It now runs on shared reduced project subgraphs instead
-// of rebuilding from a per-sheet point snapshot, so the graph owns the exercised wire-item
-// membership boundary for this rule. Remaining divergence is fuller bus-layer/item ownership
-// beyond the current reduced endpoint carrier.
+// of rebuilding from a per-sheet point snapshot, and now also follows `RunERC()`-style
+// reused-screen driver de-duplication through the shared graph owner. Remaining divergence is
+// fuller bus-layer/item ownership beyond the current reduced endpoint carrier.
 pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in collect_reduced_project_subgraphs(project, false)
+    for subgraph in graph_run_erc_subgraphs(project)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
@@ -2123,12 +2144,13 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 // `CONNECTION_GRAPH::ercCheckFloatingWires()`. This is not a 1:1 KiCad subgraph-driver pass
 // because the Rust tree still treats "floating" as a reduced shared subgraph with wire-item
 // membership but without a full graph-owned driver object. It now runs on shared reduced project
-// subgraphs instead of rebuilding wire components per sheet. Remaining divergence is fuller
+// subgraphs instead of rebuilding wire components per sheet, and now also follows `RunERC()`-style
+// reused-screen driver de-duplication through that shared owner. Remaining divergence is fuller
 // driver ownership and bus-layer semantics beyond the current reduced wire-item carrier.
 pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in collect_reduced_project_subgraphs(project, false)
+    for subgraph in graph_run_erc_subgraphs(project)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
@@ -2320,13 +2342,14 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
 // This is not a 1:1 KiCad subgraph/`SCH_CONNECTION` pass because the Rust tree still classifies
 // bus-vs-net ownership from line kinds and reduced shown-text instead of full bus-member
 // connections. It now flags connected bus/net mixes on shared reduced project subgraphs instead of
-// rebuilding per-sheet connection components. Remaining divergence is fuller member-aware bus
-// semantics.
+// rebuilding per-sheet connection components, and now also follows `RunERC()`-style reused-screen
+// driver de-duplication through the shared reduced graph owner. Remaining divergence is fuller
+// member-aware bus semantics.
 pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in collect_reduced_project_subgraphs(project, false)
+    for subgraph in graph_run_erc_subgraphs(project)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
@@ -2414,13 +2437,14 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // This is not a 1:1 KiCad bus-member connection pass because the Rust tree still expands only
 // reduced alias/vector members instead of full `SCH_CONNECTION::Members()` trees. It now flags bus
 // label/port pairs on shared reduced project subgraphs instead of rebuilding per-sheet connection
-// components. Remaining divergence is fuller nested bus-member semantics beyond this reduced
-// name-only overlap check.
+// components, and now also follows `RunERC()`-style reused-screen driver de-duplication through
+// the shared reduced graph owner. Remaining divergence is fuller nested bus-member semantics beyond
+// this reduced name-only overlap check.
 pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in collect_reduced_project_subgraphs(project, false) {
+    for subgraph in graph_run_erc_subgraphs(project) {
         let Some(sheet_path) = project
             .sheet_paths
             .iter()
@@ -2512,13 +2536,14 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
 // net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
 // ownership. It now mirrors the exercised KiCad flow on shared reduced project subgraphs instead
-// of rebuilding per-sheet connection components. Remaining divergence is fuller bus-object
-// ownership and cached subgraph driver state.
+// of rebuilding per-sheet connection components, and now also follows `RunERC()`-style
+// reused-screen driver de-duplication through the shared reduced graph owner. Remaining divergence
+// is fuller bus-object ownership and cached subgraph driver state.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in collect_reduced_project_subgraphs(project, false)
+    for subgraph in graph_run_erc_subgraphs(project)
         .into_iter()
         .filter(|subgraph| subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
@@ -2809,13 +2834,14 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckMultipleDrivers()`. This
 // is not a 1:1 KiCad subgraph-marker pass because the Rust tree still lacks full subgraph objects
 // and marker-owned item identity, but it now reads reduced strong-driver conflicts from the shared
-// project subgraph owner instead of rebuilding them from per-sheet connection components.
-// Remaining divergence is fuller bus/power subgraph coverage, driver-item identity, and exact
-// marker attachment.
+// project subgraph owner instead of rebuilding them from per-sheet connection components, and now
+// also follows `RunERC()`-style reused-screen driver de-duplication through the shared reduced
+// driver owner. Remaining divergence is fuller bus/power subgraph coverage, driver-item identity,
+// and exact marker attachment.
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in collect_reduced_project_subgraphs(project, false) {
+    for subgraph in graph_run_erc_subgraphs(project) {
         let primary_name = subgraph.driver_names.first().cloned().unwrap_or_default();
         let Some(secondary_name) = subgraph
             .driver_names

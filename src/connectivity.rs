@@ -123,6 +123,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) code: usize,
     pub(crate) name: String,
     pub(crate) driver_name: String,
+    pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) driver_names: Vec<String>,
     pub(crate) non_bus_driver_priority: Option<i32>,
     pub(crate) class: String,
@@ -137,6 +138,24 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) no_connect_points: Vec<PointKey>,
     pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ReducedProjectDriverIdentity {
+    Label {
+        schematic_path: std::path::PathBuf,
+        at: PointKey,
+        kind: u8,
+    },
+    SheetPin {
+        schematic_path: std::path::PathBuf,
+        at: PointKey,
+    },
+    SymbolPin {
+        schematic_path: std::path::PathBuf,
+        symbol_uuid: Option<String>,
+        at: PointKey,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -988,9 +1007,11 @@ where
 // identity is not collapsed before pin net/class ownership is assigned, item-to-net facts now
 // derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps,
 // whole-net views are derived from the shared subgraph owner instead of a second stored flattened
-// carrier, and reduced label/sheet-pin/no-connect membership now rides on the shared subgraph
-// owner for graph-side ERC rules instead of per-sheet component rescans. The outward reduced node
-// carrier is still narrower than a real `CONNECTION_SUBGRAPH` item owner.
+// carrier, reduced label/sheet-pin/no-connect membership now rides on the shared subgraph owner
+// for graph-side ERC rules instead of per-sheet component rescans, and reduced driver identity now
+// rides on that same owner so `RunERC()`-style reused-screen de-duplication can happen above the
+// shared graph boundary. The outward reduced node carrier is still narrower than a real
+// `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
@@ -998,6 +1019,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     struct PendingProjectSubgraph {
         name: String,
         driver_name: String,
+        driver_identity: Option<ReducedProjectDriverIdentity>,
         driver_names: Vec<String>,
         non_bus_driver_priority: Option<i32>,
         class: String,
@@ -1105,7 +1127,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 )
                 .expect("project reduced subgraph must keep its source component");
 
-                let driver_name = resolve_reduced_driver_name_on_component(
+                let driver_candidate = resolve_reduced_driver_name_candidate_on_component(
                     schematic,
                     &connected_component,
                     |label| {
@@ -1118,8 +1140,17 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                             label,
                         )
                     },
-                )
-                .unwrap_or_else(|| reduced_short_net_name(&entry.name));
+                );
+                let driver_name = driver_candidate
+                    .as_ref()
+                    .map(|candidate| candidate.text.clone())
+                    .unwrap_or_else(|| reduced_short_net_name(&entry.name));
+                let driver_identity = driver_candidate.as_ref().and_then(|candidate| {
+                    candidate
+                        .identity
+                        .as_ref()
+                        .map(|identity| identity.to_project_identity(&sheet_path.schematic_path))
+                });
                 let strong_drivers =
                     collect_reduced_strong_drivers(schematic, &connected_component, |label| {
                         shown_label_text_without_connectivity(
@@ -1149,6 +1180,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
                     driver_name,
+                    driver_identity,
                     driver_names,
                     non_bus_driver_priority,
                     class: class.clone(),
@@ -1266,6 +1298,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
                 driver_name: String::new(),
+                driver_identity: None,
                 driver_names: Vec::new(),
                 non_bus_driver_priority: None,
                 class: String::new(),
@@ -1348,6 +1381,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .map(|net| net.name.clone())
                 .unwrap_or_else(|| pending.name.clone()),
             driver_name: pending.driver_name.clone(),
+            driver_identity: pending.driver_identity.clone(),
             driver_names: pending.driver_names.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
             class: if pending.class.is_empty() {
@@ -2363,11 +2397,53 @@ enum ReducedNetNameSource {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+enum ReducedLocalDriverIdentity {
+    Label {
+        at: PointKey,
+        kind: u8,
+    },
+    SheetPin {
+        at: PointKey,
+    },
+    SymbolPin {
+        symbol_uuid: Option<String>,
+        at: PointKey,
+    },
+}
+
+impl ReducedLocalDriverIdentity {
+    fn to_project_identity(
+        &self,
+        schematic_path: &std::path::Path,
+    ) -> ReducedProjectDriverIdentity {
+        match self {
+            ReducedLocalDriverIdentity::Label { at, kind } => ReducedProjectDriverIdentity::Label {
+                schematic_path: schematic_path.to_path_buf(),
+                at: *at,
+                kind: *kind,
+            },
+            ReducedLocalDriverIdentity::SheetPin { at } => ReducedProjectDriverIdentity::SheetPin {
+                schematic_path: schematic_path.to_path_buf(),
+                at: *at,
+            },
+            ReducedLocalDriverIdentity::SymbolPin { symbol_uuid, at } => {
+                ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: schematic_path.to_path_buf(),
+                    symbol_uuid: symbol_uuid.clone(),
+                    at: *at,
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ReducedDriverNameCandidate {
     priority: i32,
     sheet_pin_rank: i32,
     text: String,
     source: ReducedNetNameSource,
+    identity: Option<ReducedLocalDriverIdentity>,
 }
 
 fn collect_reduced_strong_drivers<F>(
@@ -2451,6 +2527,8 @@ where
 //   before falling back to sheet-pin rank / name quality / alphabetical order
 // - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
 //   current reduced driver path does not recurse back into itself
+// - the winning reduced driver now also carries enough stable local identity for the shared
+//   project graph to mimic `RunERC()` driver-instance de-duplication across reused screens
 fn resolve_reduced_driver_name_candidate_on_component<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
@@ -2484,6 +2562,10 @@ where
                     sheet_pin_rank: 0,
                     text,
                     source,
+                    identity: Some(ReducedLocalDriverIdentity::Label {
+                        at: point_key(label.at),
+                        kind: reduced_label_kind_sort_key(label.kind),
+                    }),
                 })
             }
             SchItem::Sheet(sheet) => sheet
@@ -2500,6 +2582,9 @@ where
                     sheet_pin_rank: reduced_sheet_pin_driver_rank(pin.shape),
                     text: pin.name.clone(),
                     source: ReducedNetNameSource::SheetPin,
+                    identity: Some(ReducedLocalDriverIdentity::SheetPin {
+                        at: point_key(pin.at),
+                    }),
                 })
                 .max_by(|lhs, rhs| {
                     lhs.sheet_pin_rank
@@ -2542,6 +2627,10 @@ where
                                         sheet_pin_rank: 0,
                                         text,
                                         source,
+                                        identity: Some(ReducedLocalDriverIdentity::SymbolPin {
+                                            symbol_uuid: symbol.uuid.clone(),
+                                            at: point_key(pin.at),
+                                        }),
                                     }
                                 })
                             })
@@ -2552,6 +2641,10 @@ where
                                         sheet_pin_rank: 0,
                                         text,
                                         source: ReducedNetNameSource::SymbolPinDefault,
+                                        identity: Some(ReducedLocalDriverIdentity::SymbolPin {
+                                            symbol_uuid: symbol.uuid.clone(),
+                                            at: point_key(pin.at),
+                                        }),
                                     },
                                 )
                             })
@@ -2579,22 +2672,6 @@ where
     });
 
     candidates.into_iter().next()
-}
-
-fn resolve_reduced_driver_name_on_component<F>(
-    schematic: &Schematic,
-    connected_component: &ConnectionComponent,
-    shown_label_text: F,
-) -> Option<String>
-where
-    F: FnMut(&Label) -> String,
-{
-    resolve_reduced_driver_name_candidate_on_component(
-        schematic,
-        connected_component,
-        shown_label_text,
-    )
-    .map(|candidate| candidate.text)
 }
 
 fn resolve_reduced_net_name_on_component<F>(

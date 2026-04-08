@@ -3351,6 +3351,59 @@ fn erc_reports_dangling_directive_labels() {
 }
 
 #[test]
+fn erc_deduplicates_reused_screen_label_checks_by_driver_instance() {
+    let dir = env::temp_dir().join(format!(
+        "ki2_erc_reused_label_driver_{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dir).expect("mkdir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    let child_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73926000-0000-0000-0000-000000000101")
+  (paper "A4")
+  (global_label "SIG" (shape input) (at 5 0 0) (effects (font (size 1 1)))))"#;
+    let root_src = r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73926000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (sheet (at 0 0) (size 10 10) (uuid "73926000-0000-0000-0000-000000000002")
+    (property "Sheetname" "A")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet (at 20 0) (size 10 10) (uuid "73926000-0000-0000-0000-000000000003")
+    (property "Sheetname" "B")
+    (property "Sheetfile" "child.kicad_sch"))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/73926000-0000-0000-0000-000000000001/73926000-0000-0000-0000-000000000002" (page "2"))
+    (path "/73926000-0000-0000-0000-000000000001/73926000-0000-0000-0000-000000000003" (page "3"))))"#;
+
+    fs::write(&root_path, root_src).expect("write root");
+    fs::write(&child_path, child_src).expect("write child");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-label-not-connected")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "Label is not connected at 5, 0");
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_floating_wires_and_dangling_endpoints() {
     let path = temp_schematic(
         "erc_floating_wire",
