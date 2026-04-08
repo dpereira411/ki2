@@ -14,7 +14,7 @@ use crate::loader::{
     resolve_drawing_sheet_source_from_embedded_files, resolve_drawing_sheet_text_var,
     resolve_text_variables,
 };
-use crate::model::Schematic;
+use crate::model::{Schematic, Symbol};
 use crate::worksheet::{
     WorksheetTextItem, default_reduced_worksheet_text_items, parse_reduced_worksheet_text_items,
     replace_worksheet_backslash_sequences,
@@ -107,6 +107,29 @@ impl SchematicProject {
 
     pub fn current_variant(&self) -> Option<&str> {
         self.current_variant.as_deref()
+    }
+
+    // Upstream parity: project-facing wrapper around the loader-owned occurrence/variant-aware
+    // symbol text resolver used by KiCad callers that ask live symbols for `GetRef()` /
+    // `GetFieldText()` on a sheet path. This is not a 1:1 KiCad API because the Rust tree still
+    // routes through reduced loaded-path carriers instead of live `SCH_SHEET_PATH` / `SCH_SYMBOL`
+    // methods, but it keeps project/CLI callers on the same owner as loader and netlist export
+    // instead of re-reading raw parser-owned properties directly. Remaining divergence is the same
+    // reduced loaded-path carrier behind the loader helper.
+    pub fn resolved_symbol_property_value(
+        &self,
+        sheet_path: &LoadedSheetPath,
+        symbol: &Symbol,
+        field_name: &str,
+    ) -> Option<String> {
+        crate::loader::resolved_symbol_text_property_value(
+            &self.schematics,
+            sheet_path,
+            self.project.as_ref(),
+            self.current_variant(),
+            symbol,
+            field_name,
+        )
     }
 
     // Upstream parity: reduced local analogue for KiCad's current drawing-sheet source selection

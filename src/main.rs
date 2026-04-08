@@ -7,7 +7,6 @@ use ki2::diagnostic::Diagnostic;
 use ki2::diagnostic::Severity;
 use ki2::erc;
 use ki2::loader::load_schematic_tree;
-use ki2::model::Property;
 use ki2::model::SchItem;
 use ki2::netlist::{render_reduced_kicad_netlist, render_reduced_xml_netlist};
 use ki2::parser::parse_schematic_file;
@@ -432,8 +431,10 @@ fn run_netlist_command(args: Vec<String>) -> i32 {
 // Rust tree still lacks `SCH_REFERENCE_LIST` and its exact split/sort semantics, but it preserves
 // the exercised export-time warning trigger for unannotated references, invalid selected units,
 // duplicate same-unit references, differing unit-count references, and same-reference
-// different-value mismatches across the loaded hierarchy instead of leaving the netlist command
-// permanently silent before export.
+// different-value mismatches across the loaded hierarchy. It now also resolves `Reference` /
+// `Value` through the same occurrence-aware project/loader owner as netlist export instead of
+// re-reading raw parser-owned symbol properties, so selected variants and reused-sheet occurrences
+// participate in the warning path like the exporter output they precede.
 fn has_netlist_annotation_errors(project: &SchematicProject) -> bool {
     #[derive(Clone)]
     struct AnnotationEntry {
@@ -444,20 +445,6 @@ fn has_netlist_annotation_errors(project: &SchematicProject) -> bool {
     }
 
     let mut by_reference = BTreeMap::<String, Vec<AnnotationEntry>>::new();
-    let current_property_value = |properties: &[Property], field_name: &str| {
-        properties
-            .iter()
-            .find(|property| {
-                let property_key = if property.kind.is_mandatory() {
-                    property.kind.canonical_key()
-                } else {
-                    property.key.as_str()
-                };
-
-                property_key.eq_ignore_ascii_case(field_name)
-            })
-            .map(|property| property.value.clone())
-    };
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -473,7 +460,9 @@ fn has_netlist_annotation_errors(project: &SchematicProject) -> bool {
                 continue;
             }
 
-            let Some(reference) = current_property_value(&symbol.properties, "Reference") else {
+            let Some(reference) =
+                project.resolved_symbol_property_value(sheet_path, symbol, "Reference")
+            else {
                 continue;
             };
 
@@ -492,7 +481,9 @@ fn has_netlist_annotation_errors(project: &SchematicProject) -> bool {
                 return true;
             }
 
-            let value = current_property_value(&symbol.properties, "Value").unwrap_or_default();
+            let value = project
+                .resolved_symbol_property_value(sheet_path, symbol, "Value")
+                .unwrap_or_default();
 
             by_reference
                 .entry(reference.to_ascii_uppercase())

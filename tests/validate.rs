@@ -685,6 +685,105 @@ fn cli_netlist_warns_on_annotation_errors() {
 }
 
 #[test]
+fn cli_netlist_annotation_warning_uses_selected_variant_values() {
+    let path = temp_schematic(
+        "cli_netlist_annotation_variant_values",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "76000000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:U"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "U" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "U_1_1" (text "A" (at 0 0 0)))
+      (symbol "U_2_1" (text "B" (at 0 0 0)))))
+  (symbol
+    (lib_id "Device:U")
+    (uuid "76000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U?" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "seed" (at 0 2 0) (effects (font (size 1 1))))
+    (instances
+      (project "demo"
+        (path ""
+          (reference "U1")
+          (unit 1)
+          (value "AMP")
+          (variant
+            (name "ALT")
+            (field (name "Value") (value "AMP")))))))
+  (symbol
+    (lib_id "Device:U")
+    (uuid "76000000-0000-0000-0000-000000000011")
+    (at 20 0 0)
+    (unit 2)
+    (property "Reference" "U?" (at 20 0 0) (effects (font (size 1 1))))
+    (property "Value" "seed" (at 20 2 0) (effects (font (size 1 1))))
+    (instances
+      (project "demo"
+        (path ""
+          (reference "U1")
+          (unit 2)
+          (value "AMP")
+          (variant
+            (name "ALT")
+            (field (name "Value") (value "COMP"))))))))
+"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let base_output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
+        .output()
+        .expect("run base ki2 netlist");
+    assert!(
+        base_output.status.success(),
+        "base netlist must succeed: {}",
+        String::from_utf8_lossy(&base_output.stderr)
+    );
+    let base_stderr = String::from_utf8_lossy(&base_output.stderr);
+    assert!(
+        !base_stderr.contains("Warning: schematic has annotation errors"),
+        "{base_stderr}"
+    );
+
+    let variant_output = Command::new(ki2_binary())
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+            "--variant",
+            "ALT",
+        ])
+        .output()
+        .expect("run variant ki2 netlist");
+    assert!(
+        variant_output.status.success(),
+        "variant netlist must succeed: {}",
+        String::from_utf8_lossy(&variant_output.stderr)
+    );
+    let variant_stderr = String::from_utf8_lossy(&variant_output.stderr);
+    assert!(
+        variant_stderr.contains(
+            "Warning: schematic has annotation errors, please use the schematic editor to fix them"
+        ),
+        "{variant_stderr}"
+    );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_writes_reduced_xml_when_requested() {
     let path = temp_schematic(
         "cli_netlist_xml",

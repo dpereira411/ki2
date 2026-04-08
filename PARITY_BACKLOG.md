@@ -771,6 +771,7 @@ What is not yet explicitly tracked as complete:
   - exercised `--variant <name>` now applies the selected current variant before export
   - exercised duplicate-sheet-name warning now fires on the netlist command path before export
   - exercised annotation warning now fires on the netlist command path before export
+    through the same occurrence/variant-aware symbol text ownership used by export
 - exporter-base symbol/pin collection parity
 - remaining XML/KiCad netlist structure parity is now narrower:
   - exercised blank component `<value>` now follows KiCad `addSymbolFields()` by emitting `~`
