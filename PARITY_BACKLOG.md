@@ -681,6 +681,9 @@ Current status:
       - the non-test live subgraph payload no longer stores copied hierarchy/plain-parent reduced
         indexes for active propagation; those topology indexes are now seeded from the reduced
         graph only during live-handle attachment and rebuilt only at projection time
+      - the non-test live bus parent/neighbor link payload no longer stores copied reduced target
+        indexes for active propagation; those target indexes are now seeded only during
+        handle attachment and rebuilt only at projection time
       - live connection member trees, the active stale-member bag, stored live bus
         parent/neighbor links, the exercised active rematch helpers, active same-name recache
         updates, and active bus-driven promotion now use dedicated live local member/connection

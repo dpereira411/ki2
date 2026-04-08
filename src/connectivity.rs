@@ -1513,13 +1513,30 @@ impl Eq for LiveReducedSubgraphWireItem {}
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraphLink {
     member: LiveProjectBusMember,
+    #[cfg(test)]
     subgraph_index: usize,
     subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
 
+#[cfg(test)]
+fn live_reduced_subgraph_link_extra_projection_eq(
+    left: &LiveReducedSubgraphLink,
+    right: &LiveReducedSubgraphLink,
+) -> bool {
+    left.subgraph_index == right.subgraph_index
+}
+
+#[cfg(not(test))]
+fn live_reduced_subgraph_link_extra_projection_eq(
+    _left: &LiveReducedSubgraphLink,
+    _right: &LiveReducedSubgraphLink,
+) -> bool {
+    true
+}
+
 impl PartialEq for LiveReducedSubgraphLink {
     fn eq(&self, other: &Self) -> bool {
-        self.member == other.member && self.subgraph_index == other.subgraph_index
+        self.member == other.member && live_reduced_subgraph_link_extra_projection_eq(self, other)
     }
 }
 
@@ -1533,9 +1550,20 @@ impl PartialOrd for LiveReducedSubgraphLink {
 
 impl Ord for LiveReducedSubgraphLink {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.member
-            .cmp(&other.member)
-            .then(self.subgraph_index.cmp(&other.subgraph_index))
+        let member_cmp = self.member.cmp(&other.member);
+        if member_cmp != Ordering::Equal {
+            return member_cmp;
+        }
+
+        #[cfg(test)]
+        {
+            self.subgraph_index.cmp(&other.subgraph_index)
+        }
+
+        #[cfg(not(test))]
+        {
+            Ordering::Equal
+        }
     }
 }
 
@@ -1629,7 +1657,7 @@ fn build_live_reduced_subgraph_handles(
         .into_iter()
         .map(|subgraph| Rc::new(RefCell::new(subgraph)))
         .collect::<Vec<_>>();
-    attach_live_subgraph_links_to_handles(&handles);
+    attach_live_subgraph_links_to_handles(&handles, reduced_subgraphs);
     attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
     attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
     attach_live_connected_bus_items_to_handles(&handles);
@@ -1637,19 +1665,34 @@ fn build_live_reduced_subgraph_handles(
 }
 
 // Upstream parity: local bridge toward pointer-style bus parent/neighbor topology on the shared
-// live subgraph graph. This still resolves links from reduced indexes during construction, but the
-// active handle graph now keeps explicit live handle attachment on those links instead of treating
-// every bus relationship as a bare reduced index.
-fn attach_live_subgraph_links_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
-    for handle in live_subgraphs {
+// live subgraph graph. The non-test live payload no longer keeps copied reduced target indexes for
+// active traversal; handle attachment is seeded directly from the reduced graph during
+// construction and reduced indexes are rebuilt only when projecting back out.
+fn attach_live_subgraph_links_to_handles(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
+) {
+    for (index, handle) in live_subgraphs.iter().enumerate() {
         let mut subgraph = handle.borrow_mut();
 
-        for link in &mut subgraph.bus_neighbor_links {
-            link.subgraph_handle = live_subgraphs.get(link.subgraph_index).map(Rc::downgrade);
+        for (link, reduced_link) in subgraph
+            .bus_neighbor_links
+            .iter_mut()
+            .zip(reduced_subgraphs[index].bus_neighbor_links.iter())
+        {
+            link.subgraph_handle = live_subgraphs
+                .get(reduced_link.subgraph_index)
+                .map(Rc::downgrade);
         }
 
-        for link in &mut subgraph.bus_parent_links {
-            link.subgraph_handle = live_subgraphs.get(link.subgraph_index).map(Rc::downgrade);
+        for (link, reduced_link) in subgraph
+            .bus_parent_links
+            .iter_mut()
+            .zip(reduced_subgraphs[index].bus_parent_links.iter())
+        {
+            link.subgraph_handle = live_subgraphs
+                .get(reduced_link.subgraph_index)
+                .map(Rc::downgrade);
         }
     }
 }
@@ -1736,6 +1779,7 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|link| LiveReducedSubgraphLink {
                     member: link.member.into(),
+                    #[cfg(test)]
                     subgraph_index: link.subgraph_index,
                     subgraph_handle: None,
                 })
@@ -1746,6 +1790,7 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|link| LiveReducedSubgraphLink {
                     member: link.member.into(),
+                    #[cfg(test)]
                     subgraph_index: link.subgraph_index,
                     subgraph_handle: None,
                 })
@@ -1966,7 +2011,17 @@ fn reduced_project_bus_link_from_live(
             .as_ref()
             .and_then(Weak::upgrade)
             .map(|subgraph| subgraph.borrow().source_index)
-            .unwrap_or(link.subgraph_index),
+            .unwrap_or_else(|| {
+                #[cfg(test)]
+                {
+                    link.subgraph_index
+                }
+
+                #[cfg(not(test))]
+                {
+                    unreachable!("live bus link projection requires an attached subgraph handle")
+                }
+            }),
     }
 }
 
@@ -1975,12 +2030,22 @@ fn live_subgraph_link_index(link: &LiveReducedSubgraphLink) -> usize {
         .as_ref()
         .and_then(Weak::upgrade)
         .map(|subgraph| subgraph.borrow().source_index)
-        .unwrap_or(link.subgraph_index)
+        .unwrap_or_else(|| {
+            #[cfg(test)]
+            {
+                link.subgraph_index
+            }
+
+            #[cfg(not(test))]
+            {
+                unreachable!("active live bus link lookup requires an attached subgraph handle")
+            }
+        })
 }
 
 // Upstream parity: active live graph traversal should follow the attached live subgraph topology,
-// not copied reduced indexes. This helper is now handle-only on the active path; the stored
-// `subgraph_index` remains only as a reduced projection/debug carrier.
+// not copied reduced indexes. This helper is now handle-only on the active path; copied reduced
+// target indexes remain only in the test build and at projection boundaries.
 fn live_subgraph_handle_for_link(
     _live_subgraphs: &[LiveReducedSubgraphHandle],
     link: &LiveReducedSubgraphLink,
@@ -3859,7 +3924,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
             if let Some(parent_neighbor_member) = parent_snapshot
                 .bus_neighbor_links
                 .iter()
-                .find(|link| link.subgraph_index == child_index)
+                .find(|link| live_subgraph_link_index(link) == child_index)
                 .map(|link| link.member.clone())
             {
                 search_candidates.push(parent_neighbor_member);
@@ -3879,6 +3944,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
 
             refreshed_parent_links[child_index].push(LiveReducedSubgraphLink {
                 member: refreshed_member,
+                #[cfg(test)]
                 subgraph_index: parent_index,
                 subgraph_handle: Some(Rc::downgrade(&parent_handle)),
             });
@@ -3894,6 +3960,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
             let neighbor_index = live_subgraph_link_index(link);
             refreshed_neighbor_links[neighbor_index].push(LiveReducedSubgraphLink {
                 member: link.member.clone(),
+                #[cfg(test)]
                 subgraph_index: child_index,
                 subgraph_handle: live_subgraphs.get(child_index).map(Rc::downgrade),
             });
