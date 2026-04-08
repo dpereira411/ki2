@@ -699,6 +699,9 @@ Current status:
         per-subgraph wrapper state, so the remaining live item-wrapper gap is increasingly
         concentrated in labels, sheet pins, hierarchy ports, and the remaining projection identity
         edges
+      - active label links, sheet pins, and hierarchy ports are now also shared live item owners,
+        so the main remaining item-wrapper gap is the fuller shared item/pointer topology and the
+        `source_index`-style projection boundary rather than more copied active item wrappers
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

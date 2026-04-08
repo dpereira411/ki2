@@ -1476,6 +1476,7 @@ struct LiveReducedLabelLink {
     kind: LabelKind,
     connection: LiveReducedConnection,
 }
+type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LiveReducedHierSheetPinLink {
@@ -1483,12 +1484,14 @@ struct LiveReducedHierSheetPinLink {
     child_sheet_uuid: Option<String>,
     connection: LiveReducedConnection,
 }
+type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LiveReducedHierPortLink {
     at: PointKey,
     connection: LiveReducedConnection,
 }
+type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraphWireItem {
@@ -1593,9 +1596,9 @@ struct LiveReducedSubgraph {
     hier_child_handles: Vec<Weak<RefCell<LiveReducedSubgraph>>>,
     has_hier_pins: bool,
     has_hier_ports: bool,
-    label_links: Vec<LiveReducedLabelLink>,
-    hier_sheet_pins: Vec<LiveReducedHierSheetPinLink>,
-    hier_ports: Vec<LiveReducedHierPortLink>,
+    label_links: Vec<LiveReducedLabelLinkHandle>,
+    hier_sheet_pins: Vec<LiveReducedHierSheetPinLinkHandle>,
+    hier_ports: Vec<LiveReducedHierPortLinkHandle>,
     bus_items: Vec<LiveReducedSubgraphWireItem>,
     wire_items: Vec<LiveReducedSubgraphWireItemHandle>,
     dirty: bool,
@@ -1738,26 +1741,27 @@ fn attach_live_hierarchy_links_to_handles(
 
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
 // subgraph owner. This still mutates reduced live item carriers instead of real `SCH_ITEM`
-// pointers, but it keeps the active recursive graph build on one shared subgraph object graph.
+// pointers, but labels, sheet pins, hierarchy ports, and wire items now all sit on shared live
+// item owners under that subgraph graph instead of copied per-pass wrapper values.
 fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
     let driver_connection = handle.borrow().driver_connection.clone();
-    let mut subgraph = handle.borrow_mut();
+    let subgraph = handle.borrow_mut();
 
-    for link in &mut subgraph.label_links {
-        link.connection.clone_from(&driver_connection);
+    for link in &subgraph.label_links {
+        link.borrow_mut().connection.clone_from(&driver_connection);
     }
-    for pin in &mut subgraph.hier_sheet_pins {
-        pin.connection.clone_from(&driver_connection);
+    for pin in &subgraph.hier_sheet_pins {
+        pin.borrow_mut().connection.clone_from(&driver_connection);
     }
-    for port in &mut subgraph.hier_ports {
-        port.connection.clone_from(&driver_connection);
+    for port in &subgraph.hier_ports {
+        port.borrow_mut().connection.clone_from(&driver_connection);
     }
 }
 
 // Upstream parity: reduced local builder for live graph-owned text and hierarchy link connection
 // carriers. This is still not pointer-shared `SCH_ITEM` ownership, but it lets the live graph keep
-// per-item connection state instead of projecting every label/sheet-pin/hier-port from the chosen
-// subgraph driver only at the end of propagation.
+// per-item connection state on shared local item owners instead of projecting every
+// label/sheet-pin/hier-port from the chosen subgraph driver only at the end of propagation.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -1813,29 +1817,35 @@ fn build_live_reduced_subgraphs(
                 .label_links
                 .iter()
                 .cloned()
-                .map(|link| LiveReducedLabelLink {
-                    at: link.at,
-                    kind: link.kind,
-                    connection: LiveReducedConnection::new(link.connection),
+                .map(|link| {
+                    Rc::new(RefCell::new(LiveReducedLabelLink {
+                        at: link.at,
+                        kind: link.kind,
+                        connection: LiveReducedConnection::new(link.connection),
+                    }))
                 })
                 .collect(),
             hier_sheet_pins: subgraph
                 .hier_sheet_pins
                 .iter()
                 .cloned()
-                .map(|pin| LiveReducedHierSheetPinLink {
-                    at: pin.at,
-                    child_sheet_uuid: pin.child_sheet_uuid,
-                    connection: LiveReducedConnection::new(pin.connection),
+                .map(|pin| {
+                    Rc::new(RefCell::new(LiveReducedHierSheetPinLink {
+                        at: pin.at,
+                        child_sheet_uuid: pin.child_sheet_uuid,
+                        connection: LiveReducedConnection::new(pin.connection),
+                    }))
                 })
                 .collect(),
             hier_ports: subgraph
                 .hier_ports
                 .iter()
                 .cloned()
-                .map(|port| LiveReducedHierPortLink {
-                    at: port.at,
-                    connection: LiveReducedConnection::new(port.connection),
+                .map(|port| {
+                    Rc::new(RefCell::new(LiveReducedHierPortLink {
+                        at: port.at,
+                        connection: LiveReducedConnection::new(port.connection),
+                    }))
                 })
                 .collect(),
             bus_items: subgraph
@@ -2148,14 +2158,14 @@ fn reduced_project_hierarchy_indexes_from_live_subgraph(
 fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubgraph) {
     let driver_connection = subgraph.driver_connection.clone();
 
-    for link in &mut subgraph.label_links {
-        link.connection.clone_from(&driver_connection);
+    for link in &subgraph.label_links {
+        link.borrow_mut().connection.clone_from(&driver_connection);
     }
-    for pin in &mut subgraph.hier_sheet_pins {
-        pin.connection.clone_from(&driver_connection);
+    for pin in &subgraph.hier_sheet_pins {
+        pin.borrow_mut().connection.clone_from(&driver_connection);
     }
-    for port in &mut subgraph.hier_ports {
-        port.connection.clone_from(&driver_connection);
+    for port in &subgraph.hier_ports {
+        port.borrow_mut().connection.clone_from(&driver_connection);
     }
 }
 
@@ -2182,6 +2192,7 @@ fn apply_live_reduced_driver_connections(
         }
 
         for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
+            let source = source.borrow();
             clone_reduced_connection_into_live_connection(
                 &mut target.connection,
                 &source.connection.snapshot(),
@@ -2193,6 +2204,7 @@ fn apply_live_reduced_driver_connections(
             .iter_mut()
             .zip(live.hier_sheet_pins.iter())
         {
+            let source = source.borrow();
             clone_reduced_connection_into_live_connection(
                 &mut target.connection,
                 &source.connection.snapshot(),
@@ -2200,6 +2212,7 @@ fn apply_live_reduced_driver_connections(
         }
 
         for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
+            let source = source.borrow();
             clone_reduced_connection_into_live_connection(
                 &mut target.connection,
                 &source.connection.snapshot(),
@@ -2255,6 +2268,7 @@ fn apply_live_reduced_driver_connections_from_handles(
         }
 
         for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
+            let source = source.borrow();
             let source_connection = source.connection.borrow();
             clone_live_connection_owner_into_reduced_connection(
                 &mut target.connection,
@@ -2267,6 +2281,7 @@ fn apply_live_reduced_driver_connections_from_handles(
             .iter_mut()
             .zip(live.hier_sheet_pins.iter())
         {
+            let source = source.borrow();
             let source_connection = source.connection.borrow();
             clone_live_connection_owner_into_reduced_connection(
                 &mut target.connection,
@@ -2275,6 +2290,7 @@ fn apply_live_reduced_driver_connections_from_handles(
         }
 
         for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
+            let source = source.borrow();
             let source_connection = source.connection.borrow();
             clone_live_connection_owner_into_reduced_connection(
                 &mut target.connection,
@@ -8955,7 +8971,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             });
-            subgraph.label_links[0].connection =
+            subgraph.label_links[0].borrow_mut().connection =
                 LiveReducedConnection::new(ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
