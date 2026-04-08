@@ -119,6 +119,7 @@ pub struct LoadedSchematicSettings {
     pub variant_descriptions: BTreeMap<String, String>,
     pub netclasses: BTreeSet<String>,
     pub default_netclass: String,
+    pub erc_pin_map: Option<Vec<Vec<u8>>>,
 }
 
 impl Default for LoadedSchematicSettings {
@@ -130,6 +131,7 @@ impl Default for LoadedSchematicSettings {
             variant_descriptions: BTreeMap::new(),
             netclasses: BTreeSet::from(["Default".to_string()]),
             default_netclass: "Default".to_string(),
+            erc_pin_map: None,
         }
     }
 }
@@ -169,9 +171,10 @@ impl LoadedProjectSettings {
     // This is not a 1:1 KiCad settings object because the current tree still preserves raw
     // companion project JSON too, but loader/current-sheet refresh now reads one typed carrier for
     // the exercised `SCHEMATIC_SETTINGS` subset: intersheet refs, drawing-sheet source path,
-    // connection grid size, project text vars, schematic variant descriptions, and the reduced
-    // ERC-visible netclass-name set. Remaining divergence is the missing worksheet/page-layout
-    // object model behind that path.
+    // connection grid size, project text vars, schematic variant descriptions, reduced ERC pin-map
+    // overrides, and the reduced ERC-visible netclass-name set. Remaining divergence is the
+    // missing worksheet/page-layout object model behind that path plus the broader ERC settings
+    // surface beyond the typed pin-map slice.
     pub fn from_json(path: PathBuf, json: Value) -> Self {
         let mut schematic = LoadedSchematicSettings::default();
         let mut text_variables = BTreeMap::new();
@@ -252,6 +255,43 @@ impl LoadedProjectSettings {
             }
         }
 
+        if let Some(pin_map) = json
+            .get("erc")
+            .and_then(Value::as_object)
+            .and_then(|erc| erc.get("pin_map"))
+            .and_then(Value::as_array)
+            .filter(|rows| rows.len() == 12)
+        {
+            let mut parsed = Vec::new();
+
+            for row in pin_map {
+                let Some(columns) = row.as_array().filter(|columns| columns.len() == 12) else {
+                    parsed.clear();
+                    break;
+                };
+
+                let Some(values) = columns
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_u64()
+                            .and_then(|value| u8::try_from(value).ok())
+                            .filter(|value| *value <= 3)
+                    })
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    parsed.clear();
+                    break;
+                };
+
+                parsed.push(values);
+            }
+
+            if parsed.len() == 12 {
+                schematic.erc_pin_map = Some(parsed);
+            }
+        }
+
         if let Some(classes) = json
             .get("net_settings")
             .and_then(Value::as_object)
@@ -324,6 +364,15 @@ impl LoadedProjectSettings {
 
     pub fn has_netclass(&self, name: &str) -> bool {
         self.schematic.netclasses.contains(name)
+    }
+
+    pub fn erc_pin_map_value(&self, row: usize, column: usize) -> Option<u8> {
+        self.schematic
+            .erc_pin_map
+            .as_ref()
+            .and_then(|rows| rows.get(row))
+            .and_then(|row_values| row_values.get(column))
+            .copied()
     }
 }
 

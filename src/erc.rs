@@ -114,6 +114,49 @@ fn parse_reduced_pin_type(electrical_type: &str) -> Option<ReducedPinType> {
     })
 }
 
+fn pin_type_index(pin_type: ReducedPinType) -> usize {
+    match pin_type {
+        ReducedPinType::Input => 0,
+        ReducedPinType::Output => 1,
+        ReducedPinType::Bidirectional => 2,
+        ReducedPinType::TriState => 3,
+        ReducedPinType::Passive => 4,
+        ReducedPinType::Free => 5,
+        ReducedPinType::Unspecified => 6,
+        ReducedPinType::PowerIn => 7,
+        ReducedPinType::PowerOut => 8,
+        ReducedPinType::OpenCollector => 9,
+        ReducedPinType::OpenEmitter => 10,
+        ReducedPinType::NoConnect => 11,
+    }
+}
+
+// Upstream parity: reduced local helper for the `ERC_SETTINGS::GetPinMapValue()` branch used by
+// `ERC_TESTER::TestPinToPin()`. This is not a 1:1 KiCad ERC settings object because the Rust tree
+// still only carries the typed companion-project `erc.pin_map` matrix slice, but it keeps pin
+// conflict severity on the same project-owned override path instead of hard-coding the default
+// matrix for every project. Remaining divergence is the broader ERC settings surface and KiCad's
+// richer pin-mismatch ranking/marker policy.
+fn configured_pin_conflict(
+    project: &SchematicProject,
+    lhs: ReducedPinType,
+    rhs: ReducedPinType,
+) -> PinConflict {
+    let lhs_index = pin_type_index(lhs);
+    let rhs_index = pin_type_index(rhs);
+
+    match project
+        .project
+        .as_ref()
+        .and_then(|settings| settings.erc_pin_map_value(lhs_index, rhs_index))
+    {
+        Some(0) => PinConflict::Ok,
+        Some(1) => PinConflict::Warning,
+        Some(2 | 3) => PinConflict::Error,
+        Some(_) | None => pin_conflict(lhs, rhs),
+    }
+}
+
 fn pin_conflict(lhs: ReducedPinType, rhs: ReducedPinType) -> PinConflict {
     use PinConflict::{Error as Err, Ok, Warning as Warn};
 
@@ -2341,11 +2384,11 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestPinToPin()`. This is not a 1:1
-// KiCad pin-matrix runner because the Rust tree still lacks `ERC_SETTINGS`, graph-owned pin
-// contexts, marker placement heuristics, and the full connection graph. It exists so the current
-// ERC path can start using upstream default pin-type conflict semantics on reduced same-net
-// components instead of stopping at point-local checks. Remaining divergence is richer settings,
-// driver-missing reporting, and full subgraph ownership.
+// KiCad pin-matrix runner because the Rust tree still lacks full `ERC_SETTINGS`, graph-owned pin
+// contexts, marker placement heuristics, and the full connection graph. It now applies the typed
+// companion-project `erc.pin_map` override slice on top of the upstream default matrix instead of
+// hard-coding only the defaults. Remaining divergence is richer settings, driver-missing
+// reporting, and full subgraph ownership.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2390,7 +2433,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 
             for (index, (_at, lhs_type)) in pins.iter().enumerate() {
                 for (_, rhs_type) in pins.iter().skip(index + 1) {
-                    let conflict = pin_conflict(*lhs_type, *rhs_type);
+                    let conflict = configured_pin_conflict(project, *lhs_type, *rhs_type);
                     if conflict == PinConflict::Ok {
                         continue;
                     }

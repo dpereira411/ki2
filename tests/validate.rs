@@ -4477,6 +4477,84 @@ fn erc_reports_conflicting_pin_types_on_same_net() {
 }
 
 #[test]
+fn erc_uses_project_pin_map_overrides() {
+    let dir = temp_dir_path("erc_pin_map_override");
+    fs::create_dir_all(&dir).expect("create temp dir");
+    let schematic_path = dir.join("erc_pin_map_override.kicad_sch");
+    let project_path = dir.join("erc_pin_map_override.kicad_pro");
+
+    fs::write(
+        &schematic_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73930000-0000-0000-0000-000000000011")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:DRV"
+      (symbol "DRV_1_1"
+        (pin output line
+          (at 0 0 0)
+          (length 2.54)
+          (name "OUT")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:DRV")
+    (at 0 0 0)
+    (uuid "73930000-0000-0000-0000-000000000012"))
+  (symbol
+    (lib_id "Device:DRV")
+    (at 10 0 0)
+    (uuid "73930000-0000-0000-0000-000000000013"))
+  (wire (pts (xy 0 0) (xy 10 0)))
+)"#,
+    )
+    .expect("write schematic");
+
+    fs::write(
+        &project_path,
+        r#"{
+  "erc": {
+    "pin_map": [
+      [0,0,0,0,0,0,1,0,0,0,0,2],
+      [0,1,0,1,0,0,1,0,2,2,2,2],
+      [0,0,0,0,0,0,1,0,1,0,1,2],
+      [0,1,0,0,0,0,1,1,2,1,1,2],
+      [0,0,0,0,0,0,1,0,0,0,0,2],
+      [0,0,0,0,0,0,0,0,0,0,0,2],
+      [1,1,1,1,1,0,1,1,1,1,1,2],
+      [0,0,0,1,0,0,1,0,0,0,0,2],
+      [0,2,1,2,0,0,1,0,2,2,2,2],
+      [0,2,0,1,0,0,1,0,2,0,0,2],
+      [0,2,1,1,0,0,1,0,2,0,0,2],
+      [2,2,2,2,2,2,2,2,2,2,2,2]
+    ]
+  }
+}"#,
+    )
+    .expect("write project");
+
+    let load = load_schematic_tree(&schematic_path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-pin-to-pin-warning")
+    );
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+    );
+
+    let _ = fs::remove_file(schematic_path);
+    let _ = fs::remove_file(project_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_input_pins_without_driver() {
     let path = temp_schematic(
         "erc_missing_driver",
