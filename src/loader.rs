@@ -48,6 +48,54 @@ pub struct LoadedSheetPath {
     pub sheet_count: usize,
 }
 
+// Upstream parity: reduced local analogue for `SCH_SHEET_PATH::PathHumanReadable(true, false,
+// true)` on the net-name path. This is not a 1:1 KiCad sheet-path object because the Rust tree
+// still stores reduced loaded sheet paths instead of live `SCH_SHEET_PATH` nodes, but it keeps the
+// shared reduced connectivity/text/export stack on the same path-prefix format KiCad uses for
+// path-qualified net names: short root `/`, escaped sheet names, and a trailing `/`.
+pub(crate) fn reduced_net_name_sheet_path_prefix(
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+) -> String {
+    if loaded_path.instance_path.is_empty() {
+        return "/".to_string();
+    }
+
+    let mut prefix = String::from("/");
+    let mut cumulative = String::new();
+    let segments = loaded_path
+        .instance_path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+
+    for (index, segment) in segments.into_iter().enumerate() {
+        cumulative.push('/');
+        cumulative.push_str(segment);
+
+        // Upstream `SCH_SHEET_PATH::PathHumanReadable()` skips the virtual root entry before it
+        // starts appending sheet names. The loaded instance path keeps that synthetic root UUID as
+        // its first segment, so the reduced local helper must skip it instead of leaking it into
+        // full net names like `/root-uuid/Child/NET`.
+        if index == 0 {
+            continue;
+        }
+
+        let name = sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == cumulative)
+            .and_then(|sheet_path| sheet_path.sheet_name.as_deref())
+            .unwrap_or(segment)
+            .replace('/', "{slash}");
+
+        prefix.push_str(&name);
+        prefix.push('/');
+    }
+
+    prefix
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedProjectSettings {
     pub path: PathBuf,
@@ -4324,19 +4372,21 @@ pub(crate) fn resolve_point_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, loaded_path);
 
     match token_kind {
         SymbolPinTextVarKind::NetName | SymbolPinTextVarKind::ShortNetName => {
-            let net_name = resolve_reduced_net_name_at(schematic, at, |other| {
-                shown_label_text_without_connectivity(
-                    schematics,
-                    sheet_paths,
-                    loaded_path,
-                    project,
-                    current_variant,
-                    other,
-                )
-            })?;
+            let net_name =
+                resolve_reduced_net_name_at(schematic, at, Some(&sheet_path_prefix), |other| {
+                    shown_label_text_without_connectivity(
+                        schematics,
+                        sheet_paths,
+                        loaded_path,
+                        project,
+                        current_variant,
+                        other,
+                    )
+                })?;
 
             match token_kind {
                 SymbolPinTextVarKind::NetName => Some(net_name),
@@ -4388,10 +4438,15 @@ fn resolve_symbol_pin_text_var(
         let schematic = schematics
             .iter()
             .find(|schematic| schematic.path == candidate_path.schematic_path)?;
+        let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, candidate_path);
 
         return match token_kind {
-            SymbolPinTextVarKind::NetName => {
-                resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin_at, |other| {
+            SymbolPinTextVarKind::NetName => resolve_reduced_net_name_for_symbol_pin(
+                schematic,
+                symbol,
+                pin_at,
+                Some(&sheet_path_prefix),
+                |other| {
                     shown_label_text_without_connectivity(
                         schematics,
                         sheet_paths,
@@ -4400,11 +4455,15 @@ fn resolve_symbol_pin_text_var(
                         current_variant,
                         other,
                     )
-                })
-                .or_else(|| Some(String::new()))
-            }
-            SymbolPinTextVarKind::ShortNetName => {
-                resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin_at, |other| {
+                },
+            )
+            .or_else(|| Some(String::new())),
+            SymbolPinTextVarKind::ShortNetName => resolve_reduced_net_name_for_symbol_pin(
+                schematic,
+                symbol,
+                pin_at,
+                Some(&sheet_path_prefix),
+                |other| {
                     shown_label_text_without_connectivity(
                         schematics,
                         sheet_paths,
@@ -4413,10 +4472,10 @@ fn resolve_symbol_pin_text_var(
                         current_variant,
                         other,
                     )
-                })
-                .map(|net_name| short_net_name(&net_name))
-                .or_else(|| Some(String::new()))
-            }
+                },
+            )
+            .map(|net_name| short_net_name(&net_name))
+            .or_else(|| Some(String::new())),
             _ => resolve_point_connectivity_text_var(
                 schematics,
                 sheet_paths,
@@ -4454,6 +4513,7 @@ fn resolve_symbol_pin_text_var(
         else {
             continue;
         };
+        let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, alternate_path);
 
         for item in &schematic.screen.items {
             let SchItem::Symbol(candidate_symbol) = item else {
@@ -4498,6 +4558,7 @@ fn resolve_symbol_pin_text_var(
                         schematic,
                         candidate_symbol,
                         pin_at,
+                        Some(&sheet_path_prefix),
                         |other| {
                             shown_label_text_without_connectivity(
                                 schematics,
@@ -4514,6 +4575,7 @@ fn resolve_symbol_pin_text_var(
                         schematic,
                         candidate_symbol,
                         pin_at,
+                        Some(&sheet_path_prefix),
                         |other| {
                             shown_label_text_without_connectivity(
                                 schematics,
@@ -4954,6 +5016,7 @@ pub(crate) fn resolve_label_connectivity_text_var(
     let schematic = schematics
         .iter()
         .find(|schematic| schematic.path == loaded_path.schematic_path)?;
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, loaded_path);
 
     let own_text = shown_label_text_without_connectivity(
         schematics,
@@ -4964,20 +5027,21 @@ pub(crate) fn resolve_label_connectivity_text_var(
         label,
     );
 
-    let net_name = resolve_reduced_net_name_at(schematic, label.at, |other| {
-        shown_label_text_without_connectivity(
-            schematics,
-            sheet_paths,
-            loaded_path,
-            project,
-            current_variant,
-            other,
-        )
-    })
-    .or_else(|| {
-        (!own_text.contains("${") && !own_text.starts_with('<') && !own_text.is_empty())
-            .then_some(own_text)
-    })?;
+    let net_name =
+        resolve_reduced_net_name_at(schematic, label.at, Some(&sheet_path_prefix), |other| {
+            shown_label_text_without_connectivity(
+                schematics,
+                sheet_paths,
+                loaded_path,
+                project,
+                current_variant,
+                other,
+            )
+        })
+        .or_else(|| {
+            (!own_text.contains("${") && !own_text.starts_with('<') && !own_text.is_empty())
+                .then_some(own_text)
+        })?;
 
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),

@@ -507,9 +507,9 @@ fn cli_netlist_prefers_sorted_connected_label_name() {
 
     assert!(output.status.success(), "netlist must succeed");
     let report = fs::read_to_string(&report_path).expect("read netlist");
-    assert!(report.contains("name=\"A_NET\""), "{report}");
-    assert!(!report.contains("name=\"B_NET\""), "{report}");
-    assert!(report.contains("name=\"OUT\""), "{report}");
+    assert!(report.contains("name=\"/A_NET\""), "{report}");
+    assert!(!report.contains("name=\"/B_NET\""), "{report}");
+    assert!(report.contains("name=\"/OUT\""), "{report}");
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
@@ -568,7 +568,7 @@ fn cli_netlist_uses_power_symbol_value_as_net_name() {
     assert!(output.status.success(), "netlist must succeed");
     let report = fs::read_to_string(&report_path).expect("read netlist");
     assert!(report.contains("name=\"VCC\""), "{report}");
-    assert!(report.contains("name=\"OUT\""), "{report}");
+    assert!(report.contains("name=\"/OUT\""), "{report}");
     assert!(report.contains("<node ref=\"R1\" pin=\"1\""), "{report}");
 
     let _ = fs::remove_file(path);
@@ -9136,11 +9136,11 @@ fn intersheet_refs_group_global_labels_by_net_name() {
 
     let mut loaded = load_schematic_tree(&root_path).expect("load tree");
     assert_eq!(
-        loaded.intersheet_ref_pages_by_label.get("A"),
+        loaded.intersheet_ref_pages_by_label.get("/A/A"),
         Some(&BTreeSet::from([2]))
     );
     assert_eq!(
-        loaded.intersheet_ref_pages_by_label.get("B"),
+        loaded.intersheet_ref_pages_by_label.get("/B/B"),
         Some(&BTreeSet::from([3]))
     );
     assert!(
@@ -9283,12 +9283,12 @@ fn intersheet_refs_group_global_labels_by_sheet_pin_name() {
 
     let loaded = load_schematic_tree(&root_path).expect("load tree");
     assert!(
-        loaded.intersheet_ref_pages_by_label.contains_key("OUT_A"),
+        loaded.intersheet_ref_pages_by_label.contains_key("/OUT_A"),
         "{:?}",
         loaded.intersheet_ref_pages_by_label
     );
     assert!(
-        loaded.intersheet_ref_pages_by_label.contains_key("OUT_B"),
+        loaded.intersheet_ref_pages_by_label.contains_key("/OUT_B"),
         "{:?}",
         loaded.intersheet_ref_pages_by_label
     );
@@ -9665,11 +9665,15 @@ fn intersheet_refs_group_global_labels_by_rule_area_net_class() {
     let loaded = load_schematic_tree(&root_path).expect("load tree");
     assert_eq!(
         loaded.intersheet_ref_pages_by_label.get("A"),
-        Some(&BTreeSet::from([2]))
+        Some(&BTreeSet::from([2])),
+        "{:?}",
+        loaded.intersheet_ref_pages_by_label
     );
     assert_eq!(
         loaded.intersheet_ref_pages_by_label.get("B"),
-        Some(&BTreeSet::from([3]))
+        Some(&BTreeSet::from([3])),
+        "{:?}",
+        loaded.intersheet_ref_pages_by_label
     );
     assert!(
         !loaded
@@ -9751,11 +9755,11 @@ fn intersheet_refs_group_global_labels_by_symbol_pin_net_name() {
 
     let loaded = load_schematic_tree(&root_path).expect("load tree");
     assert_eq!(
-        loaded.intersheet_ref_pages_by_label.get("A"),
+        loaded.intersheet_ref_pages_by_label.get("/A/A"),
         Some(&BTreeSet::from([2]))
     );
     assert_eq!(
-        loaded.intersheet_ref_pages_by_label.get("B"),
+        loaded.intersheet_ref_pages_by_label.get("/B/B"),
         Some(&BTreeSet::from([3]))
     );
     assert!(

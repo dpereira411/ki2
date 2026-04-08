@@ -7,10 +7,10 @@ use crate::connectivity::{
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    collect_wire_segments, point_on_wire_segment, points_equal, resolve_cross_reference_text_var,
-    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
-    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
-    resolved_symbol_text_state,
+    collect_wire_segments, point_on_wire_segment, points_equal, reduced_net_name_sheet_path_prefix,
+    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
+    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
+    resolved_sheet_text_state, resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -1408,13 +1408,16 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
         for component in collect_connection_components(schematic) {
-            let Some(net_name) =
-                resolve_reduced_net_name_at(schematic, component.anchor, |label| {
-                    shown_label_text(project, sheet_path, label)
-                })
-            else {
+            let Some(net_name) = resolve_reduced_net_name_at(
+                schematic,
+                component.anchor,
+                Some(&sheet_path_prefix),
+                |label| shown_label_text(project, sheet_path, label),
+            ) else {
                 continue;
             };
 
@@ -1437,6 +1440,8 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
         for component in collect_connection_components(schematic) {
             if !component
@@ -1483,9 +1488,12 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            let net_name = resolve_reduced_net_name_at(schematic, component.anchor, |label| {
-                shown_label_text(project, sheet_path, label)
-            });
+            let net_name = resolve_reduced_net_name_at(
+                schematic,
+                component.anchor,
+                Some(&sheet_path_prefix),
+                |label| shown_label_text(project, sheet_path, label),
+            );
             let unique_pin_count = net_name
                 .as_ref()
                 .and_then(|name| unique_pins_by_net.get(name))
@@ -1528,10 +1536,14 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
-        for component in collect_reduced_label_component_snapshots(schematic, |label| {
-            shown_label_text(project, sheet_path, label)
-        }) {
+        for component in collect_reduced_label_component_snapshots(
+            schematic,
+            Some(&sheet_path_prefix),
+            |label| shown_label_text(project, sheet_path, label),
+        ) {
             if let Some(net_name) = component.net_name.clone().filter(|name| !name.is_empty()) {
                 components_by_net.entry(net_name).or_default().push((
                     sheet_path.schematic_path.clone(),
@@ -1638,10 +1650,14 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
-        for component in collect_reduced_label_component_snapshots(schematic, |label| {
-            shown_label_text(project, sheet_path, label)
-        }) {
+        for component in collect_reduced_label_component_snapshots(
+            schematic,
+            Some(&sheet_path_prefix),
+            |label| shown_label_text(project, sheet_path, label),
+        ) {
             for label in component
                 .labels
                 .iter()
@@ -2446,6 +2462,8 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
@@ -2481,11 +2499,14 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                     continue;
                 };
 
-                let net_name =
-                    resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin.at, |label| {
-                        shown_label_text(project, sheet_path, label)
-                    })
-                    .unwrap_or_default();
+                let net_name = resolve_reduced_net_name_for_symbol_pin(
+                    schematic,
+                    symbol,
+                    pin.at,
+                    Some(&sheet_path_prefix),
+                    |label| shown_label_text(project, sheet_path, label),
+                )
+                .unwrap_or_default();
                 let key = format!("{reference}:{pin_number}");
 
                 if let Some(existing_net) = pin_to_net.get(&key) {
@@ -2527,7 +2548,8 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -2556,11 +2578,14 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                     continue;
                 };
 
-                let net_name =
-                    resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin.at, |label| {
-                        shown_label_text(project, sheet_path, label)
-                    })
-                    .unwrap_or_default();
+                let net_name = resolve_reduced_net_name_for_symbol_pin(
+                    schematic,
+                    symbol,
+                    pin.at,
+                    Some(&sheet_path_prefix),
+                    |label| shown_label_text(project, sheet_path, label),
+                )
+                .unwrap_or_default();
 
                 pins_by_number
                     .entry(pin_number)
@@ -2632,7 +2657,6 @@ pub fn check_single_global_labels(project: &SchematicProject) -> Vec<Diagnostic>
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
         for item in &schematic.screen.items {
             let SchItem::Label(label) = item else {
                 continue;
@@ -2701,7 +2725,6 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
         for item in &schematic.screen.items {
             match item {
                 SchItem::Label(label)
@@ -2850,7 +2873,6 @@ pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnost
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
         for item in &schematic.screen.items {
             let SchItem::Label(label) = item else {
                 continue;
@@ -2905,7 +2927,6 @@ pub fn check_footprint_filters(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -2978,7 +2999,6 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -3026,6 +3046,8 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
+        let sheet_path_prefix =
+            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
 
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
@@ -3044,11 +3066,14 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     continue;
                 }
 
-                let net_name =
-                    resolve_reduced_net_name_for_symbol_pin(schematic, symbol, pin.at, |label| {
-                        shown_label_text(project, sheet_path, label)
-                    })
-                    .unwrap_or_default();
+                let net_name = resolve_reduced_net_name_for_symbol_pin(
+                    schematic,
+                    symbol,
+                    pin.at,
+                    Some(&sheet_path_prefix),
+                    |label| shown_label_text(project, sheet_path, label),
+                )
+                .unwrap_or_default();
                 let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
 
                 if net_is_ground {

@@ -884,6 +884,7 @@ fn label_is_dangling_on_component(
 // component facts to ERC instead of rebuilding them inside another local label scan.
 pub(crate) fn collect_reduced_label_component_snapshots<F>(
     schematic: &Schematic,
+    sheet_path_prefix: Option<&str>,
     mut shown_label_text: F,
 ) -> Vec<ReducedLabelComponentSnapshot>
 where
@@ -926,6 +927,7 @@ where
                 net_name: resolve_reduced_net_name_at(
                     schematic,
                     connected_component.anchor,
+                    sheet_path_prefix,
                     |label| shown_label_text(label),
                 ),
                 pin_count: connected_component
@@ -1194,6 +1196,17 @@ struct ReducedStrongDriver {
     name: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReducedNetNameSource {
+    GlobalLabel,
+    LocalLabel,
+    HierarchicalLabel,
+    SheetPin,
+    GlobalPowerPin,
+    LocalPowerPin,
+    SymbolPinDefault,
+}
+
 fn collect_reduced_strong_drivers<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
@@ -1278,6 +1291,7 @@ where
 fn resolve_reduced_net_name_on_component<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
+    sheet_path_prefix: Option<&str>,
     mut shown_label_text: F,
 ) -> Option<String>
 where
@@ -1297,7 +1311,13 @@ where
                     }) =>
             {
                 let text = shown_label_text(label);
-                Some((reduced_label_driver_priority(label), 0, text))
+                let source = match label.kind {
+                    LabelKind::Global => ReducedNetNameSource::GlobalLabel,
+                    LabelKind::Local => ReducedNetNameSource::LocalLabel,
+                    LabelKind::Hierarchical => ReducedNetNameSource::HierarchicalLabel,
+                    LabelKind::Directive => return None,
+                };
+                Some((reduced_label_driver_priority(label), 0, text, source))
             }
             SchItem::Sheet(sheet) => sheet
                 .pins
@@ -1313,6 +1333,7 @@ where
                         0,
                         reduced_sheet_pin_driver_rank(pin.shape),
                         pin.name.clone(),
+                        ReducedNetNameSource::SheetPin,
                     )
                 })
                 .max_by(|lhs, rhs| lhs.1.cmp(&rhs.1).then_with(|| rhs.2.cmp(&lhs.2))),
@@ -1336,22 +1357,37 @@ where
                     .find_map(|pin| {
                         reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
                             .and_then(|priority| {
-                                symbol_value_text(symbol).map(|text| (priority, 0, text))
+                                symbol_value_text(symbol).map(|text| {
+                                    let source = if symbol
+                                        .lib_symbol
+                                        .as_ref()
+                                        .is_some_and(|lib_symbol| lib_symbol.local_power)
+                                    {
+                                        ReducedNetNameSource::LocalPowerPin
+                                    } else {
+                                        ReducedNetNameSource::GlobalPowerPin
+                                    };
+
+                                    (priority, 0, text, source)
+                                })
                             })
                             .or_else(|| {
-                                reduced_symbol_pin_default_net_name(symbol, &pin, &unit_pins)
-                                    .map(|text| (1, 0, text))
+                                reduced_symbol_pin_default_net_name(symbol, &pin, &unit_pins).map(
+                                    |text| (1, 0, text, ReducedNetNameSource::SymbolPinDefault),
+                                )
                             })
                     })
             }
             _ => None,
         })
-        .filter(|(_, _, text)| !text.is_empty() && !text.contains("${") && !text.starts_with('<'))
+        .filter(|(_, _, text, _)| {
+            !text.is_empty() && !text.contains("${") && !text.starts_with('<')
+        })
         .collect::<Vec<_>>();
 
     candidates.sort_by(
-        |(lhs_priority, lhs_sheet_pin_rank, lhs_text),
-         (rhs_priority, rhs_sheet_pin_rank, rhs_text)| {
+        |(lhs_priority, lhs_sheet_pin_rank, lhs_text, _),
+         (rhs_priority, rhs_sheet_pin_rank, rhs_text, _)| {
             let lhs_low_quality_name = lhs_text.contains("-Pad");
             let rhs_low_quality_name = rhs_text.contains("-Pad");
 
@@ -1363,19 +1399,52 @@ where
         },
     );
 
-    candidates.into_iter().map(|(_, _, text)| text).next()
+    candidates
+        .into_iter()
+        .map(|(_, _, text, source)| {
+            let prepend_path = matches!(
+                source,
+                ReducedNetNameSource::LocalLabel
+                    | ReducedNetNameSource::HierarchicalLabel
+                    | ReducedNetNameSource::SheetPin
+                    | ReducedNetNameSource::LocalPowerPin
+            );
+
+            if prepend_path {
+                match sheet_path_prefix {
+                    Some(prefix) => format!("{prefix}{text}"),
+                    None => text,
+                }
+            } else {
+                text
+            }
+        })
+        .next()
 }
 
+// Upstream parity: reduced local analogue for the current-sheet `CONNECTION_GRAPH::GetSubgraphForItem()`
+// + `SCH_CONNECTION::Name(false)` path used by label text, ERC, and exporters. This is not a 1:1
+// KiCad owner because the Rust tree still lacks real `CONNECTION_SUBGRAPH` / `SCH_CONNECTION`
+// objects, but the shared reduced owner now distinguishes path-qualified full net names from short
+// driver names using the same driver-kind split KiCad applies in `SCH_CONNECTION::recacheName()`.
+// Remaining divergence is fuller bus/subgraph/item identity beyond the current reduced component
+// carrier.
 pub(crate) fn resolve_reduced_net_name_at<F>(
     schematic: &Schematic,
     at: [f64; 2],
+    sheet_path_prefix: Option<&str>,
     shown_label_text: F,
 ) -> Option<String>
 where
     F: FnMut(&Label) -> String,
 {
     let connected_component = connection_component_at(schematic, at)?;
-    resolve_reduced_net_name_on_component(schematic, &connected_component, shown_label_text)
+    resolve_reduced_net_name_on_component(
+        schematic,
+        &connected_component,
+        sheet_path_prefix,
+        shown_label_text,
+    )
 }
 
 // Upstream parity: reduced local analogue for the symbol-pin item lookup half of
@@ -1387,13 +1456,19 @@ pub(crate) fn resolve_reduced_net_name_for_symbol_pin<F>(
     schematic: &Schematic,
     symbol: &Symbol,
     at: [f64; 2],
+    sheet_path_prefix: Option<&str>,
     shown_label_text: F,
 ) -> Option<String>
 where
     F: FnMut(&Label) -> String,
 {
     let connected_component = connection_component_for_symbol_pin(schematic, symbol, at)?;
-    resolve_reduced_net_name_on_component(schematic, &connected_component, shown_label_text)
+    resolve_reduced_net_name_on_component(
+        schematic,
+        &connected_component,
+        sheet_path_prefix,
+        shown_label_text,
+    )
 }
 
 // Upstream parity: reduced local analogue for the strong-driver conflict part of

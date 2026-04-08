@@ -423,7 +423,8 @@ Current status:
   remaining graph-owned passes without local analogues:
   - fuller shared connection/subgraph ownership for strict 1:1 net naming and export:
     - item-to-subgraph identity
-    - stable connection-owned net naming
+    - fuller item-owned connection naming beyond the now-shared `Name()`-style
+      full-vs-short/path-qualified reduced net naming split
     - netcode-style ownership
     - richer bus-member objects beyond reduced expansion
 
