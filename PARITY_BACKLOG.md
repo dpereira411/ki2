@@ -678,9 +678,10 @@ Current status:
       - connected-bus-item ownership now reaches the shared live subgraph graph for bus entries,
         but still not all the way to fuller live item / connection pointer topology across every
         attached item kind
-      - live bus members and link/member payloads are still reduced structs carried inside the live
-        graph, not fuller live member/connection objects that can be recached in place without
-        round-tripping through reduced snapshots
+      - live connection member trees now use a dedicated live local member payload, but stale bus
+        replay and stored bus link/member ownership still collapse those members back to reduced
+        snapshots instead of keeping one fuller live member/pointer graph through propagation and
+        final projection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
@@ -689,10 +690,12 @@ Current status:
       3. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time
-      4. replace the current reduced live subgraph handle payload with a fuller local
+      4. move stale-member bags and stored bus link/member payloads onto the new live member
+         payload instead of `ReducedBusMember` snapshots
+      5. replace the current reduced live subgraph handle payload with a fuller local
          `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
          live item owners stay on one shared object graph instead of reduced wrapper structs
-      5. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
+      6. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
          promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
