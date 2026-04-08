@@ -2,7 +2,8 @@ use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
     collect_reduced_label_component_snapshots, projected_symbol_pin_info,
     resolve_reduced_driver_conflict_at, resolve_reduced_net_name_at,
-    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_at,
+    resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -166,6 +167,29 @@ fn resolved_pin_net_name(
         |label| shown_label_text(project, sheet_path, label),
     )
     .unwrap_or_default()
+}
+
+// Upstream parity: reduced local helper for the generic connection-point net lookup that the
+// graph-owned ERC marker passes use through `CONNECTION_GRAPH::GetResolvedSubgraphName()`. This is
+// not a 1:1 KiCad subgraph owner because the Rust tree still lacks live item-owned
+// `CONNECTION_SUBGRAPH`s, so it prefers the shared project-level reduced graph identity and falls
+// back to the older current-sheet point-net resolver where that reduced point identity is still
+// incomplete. The helper exists to keep that temporary divergence in one place while the backlog
+// drives the remaining item-to-subgraph parity work.
+fn resolved_point_net_name(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+    schematic: &crate::model::Schematic,
+    at: [f64; 2],
+) -> Option<String> {
+    if let Some(net) = resolve_reduced_project_net_at(project, sheet_path, at, false) {
+        return Some(net.name);
+    }
+
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
+    resolve_reduced_net_name_at(schematic, at, Some(&sheet_path_prefix), |label| {
+        shown_label_text(project, sheet_path, label)
+    })
 }
 
 fn is_driven_pin_type(pin_type: ReducedPinType) -> bool {
@@ -1428,9 +1452,10 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckNoConnects()`. This is
 // not a 1:1 KiCad subgraph/item-marker pass because the Rust tree still lacks full
 // `CONNECTION_SUBGRAPH` objects, hier-port child-subgraph traversal, and live item identity. It
-// is needed so no-connect markers now participate in shared net-name grouping instead of only
-// point-local checks, which lets the current ERC runner catch same-name disconnected subgraphs that
-// KiCad treats as one net. Remaining divergence is the fuller hier-pin and marker attachment path.
+// now prefers the shared project-level reduced graph owner for connection-point net identity
+// before falling back to the older local point-net resolver, which keeps no-connect markers on the
+// same cross-sheet net-name grouping path instead of only point-local checks. Remaining
+// divergence is the fuller hier-pin and marker attachment path.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut unique_pins_by_net =
@@ -1440,16 +1465,10 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
         for component in collect_connection_components(schematic) {
-            let Some(net_name) = resolve_reduced_net_name_at(
-                schematic,
-                component.anchor,
-                Some(&sheet_path_prefix),
-                |label| shown_label_text(project, sheet_path, label),
-            ) else {
+            let Some(net_name) =
+                resolved_point_net_name(project, sheet_path, schematic, component.anchor)
+            else {
                 continue;
             };
 
@@ -1472,9 +1491,6 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
         for component in collect_connection_components(schematic) {
             if !component
                 .members
@@ -1520,12 +1536,8 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            let net_name = resolve_reduced_net_name_at(
-                schematic,
-                component.anchor,
-                Some(&sheet_path_prefix),
-                |label| shown_label_text(project, sheet_path, label),
-            );
+            let net_name =
+                resolved_point_net_name(project, sheet_path, schematic, component.anchor);
             let unique_pin_count = net_name
                 .as_ref()
                 .and_then(|name| unique_pins_by_net.get(name))

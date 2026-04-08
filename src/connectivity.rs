@@ -986,6 +986,107 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     None
 }
 
+// Upstream parity: reduced local analogue for the connection-point half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` / `GetResolvedSubgraphName()` on the project graph
+// path. This is not a 1:1 KiCad item map because the Rust tree still keys the lookup by `(sheet
+// instance path, reduced subgraph anchor)` instead of a live item-owned `CONNECTION_SUBGRAPH`,
+// but it gives ERC one shared project-net owner for non-pin connection points instead of
+// re-deriving cross-sheet net names from local scans. Remaining divergence is fuller item identity
+// for labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_net_at(
+    project: &SchematicProject,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    for_board: bool,
+) -> Option<ReducedProjectNetIdentity> {
+    let identities = collect_reduced_project_net_map(project, for_board)
+        .into_iter()
+        .map(|entry| {
+            (
+                entry.name.clone(),
+                ReducedProjectNetIdentity {
+                    code: entry.code,
+                    name: entry.name,
+                    class: entry.class,
+                    has_no_connect: entry.has_no_connect,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for project_sheet_path in &project.sheet_paths {
+        if for_board
+            && !resolved_sheet_text_state(
+                &project.schematics,
+                &project.sheet_paths,
+                project_sheet_path,
+                project.current_variant(),
+            )
+            .map(|state| state.on_board)
+            .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let Some(schematic) = project.schematic(&project_sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for entry in collect_reduced_net_map(
+            schematic,
+            &project_sheet_path.instance_path,
+            |point| {
+                resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    project_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    point,
+                    SymbolPinTextVarKind::NetName,
+                )
+            },
+            |point| {
+                resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    project_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    point,
+                    SymbolPinTextVarKind::NetClass,
+                )
+            },
+            |candidate_symbol| !for_board || candidate_symbol.on_board,
+            |candidate_symbol| {
+                resolved_symbol_text_property_value(
+                    &project.schematics,
+                    project_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    candidate_symbol,
+                    "Reference",
+                )
+            },
+        ) {
+            let Some(identity) = identities.get(&entry.name) else {
+                continue;
+            };
+
+            if project_sheet_path.instance_path == sheet_path.instance_path
+                && entry
+                    .subgraphs
+                    .iter()
+                    .any(|subgraph| point_key(subgraph.anchor) == point_key(at))
+            {
+                return Some(identity.clone());
+            }
+        }
+    }
+
+    None
+}
+
 fn label_is_dangling_on_component(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
