@@ -1,7 +1,7 @@
 use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
     collect_reduced_label_component_snapshots, projected_symbol_pin_info, reduced_bus_members,
-    reduced_text_is_bus, resolve_reduced_driver_conflict_at, resolve_reduced_net_name_at,
+    reduced_text_is_bus, resolve_reduced_driver_conflict_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_at,
     resolve_reduced_project_net_for_symbol_pin,
 };
@@ -355,24 +355,16 @@ fn resolved_pin_net_name(
 // Upstream parity: reduced local helper for the generic connection-point net lookup that the
 // graph-owned ERC marker passes use through `CONNECTION_GRAPH::GetResolvedSubgraphName()`. This is
 // not a 1:1 KiCad subgraph owner because the Rust tree still lacks live item-owned
-// `CONNECTION_SUBGRAPH`s, so it prefers the shared project-level reduced graph identity and falls
-// back to the older current-sheet point-net resolver where that reduced point identity is still
-// incomplete. The helper exists to keep that temporary divergence in one place while the backlog
-// drives the remaining item-to-subgraph parity work.
+// `CONNECTION_SUBGRAPH`s, but ERC now reads current point-net identity from the shared
+// project-level reduced graph owner instead of carrying a second current-sheet fallback resolver.
+// Remaining divergence is the still-missing fuller item/subgraph object model, not duplicate
+// point-net ownership inside ERC.
 fn resolved_point_net_name(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
-    schematic: &crate::model::Schematic,
     at: [f64; 2],
 ) -> Option<String> {
-    if let Some(net) = resolve_reduced_project_net_at(project, sheet_path, at, false) {
-        return Some(net.name);
-    }
-
-    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-    resolve_reduced_net_name_at(schematic, at, Some(&sheet_path_prefix), |label| {
-        shown_label_text(project, sheet_path, label)
-    })
+    resolve_reduced_project_net_at(project, sheet_path, at, false).map(|net| net.name)
 }
 
 fn is_driven_pin_type(pin_type: ReducedPinType) -> bool {
@@ -1561,8 +1553,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         };
         for component in collect_connection_components(schematic) {
-            let Some(net_name) =
-                resolved_point_net_name(project, sheet_path, schematic, component.anchor)
+            let Some(net_name) = resolved_point_net_name(project, sheet_path, component.anchor)
             else {
                 continue;
             };
@@ -1631,8 +1622,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            let net_name =
-                resolved_point_net_name(project, sheet_path, schematic, component.anchor);
+            let net_name = resolved_point_net_name(project, sheet_path, component.anchor);
             let unique_pin_count = net_name
                 .as_ref()
                 .and_then(|name| unique_pins_by_net.get(name))
