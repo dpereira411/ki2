@@ -764,6 +764,8 @@ What is already covered indirectly:
 - reduced project graph now also preserves per-sheet reduced subgraphs plus
   `FindSubgraphByName()` / `FindFirstSubgraphByName()`-style lookup boundaries instead of
   flattening directly to whole-net identities only
+- reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
+  symbol pins instead of flattening those lookups straight to whole-net identity
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`
   power/virtual-symbol node filter, including skipped power-only nets without renumbering later
   emitted net codes

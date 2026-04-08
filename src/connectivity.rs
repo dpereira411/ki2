@@ -153,6 +153,9 @@ pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
     subgraphs_by_sheet_and_driver_name: BTreeMap<(String, String), usize>,
+    pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
+    pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
+    point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
     pin_identities: BTreeMap<ReducedNetBasePinKey, ReducedProjectNetIdentity>,
     pin_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectNetIdentity>,
     point_identities: BTreeMap<ReducedProjectPointIdentityKey, ReducedProjectNetIdentity>,
@@ -1170,6 +1173,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut reduced_subgraphs = Vec::new();
     let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
     let mut subgraphs_by_sheet_and_driver_name = BTreeMap::<(String, String), usize>::new();
+    let mut pin_subgraph_identities = BTreeMap::new();
+    let mut pin_subgraph_identities_by_location = BTreeMap::new();
+    let mut point_subgraph_identities = BTreeMap::new();
     let mut pin_identities = BTreeMap::new();
     let mut pin_identities_by_location = BTreeMap::new();
     let mut point_identities = BTreeMap::new();
@@ -1243,6 +1249,26 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             ),
             index,
         );
+        for base_pin in &net_identity.base_pins {
+            pin_subgraph_identities.insert(base_pin.clone(), index);
+            pin_subgraph_identities_by_location.insert(
+                ReducedProjectPinIdentityKey {
+                    sheet_instance_path: base_pin.sheet_instance_path.clone(),
+                    symbol_uuid: base_pin.symbol_uuid.clone(),
+                    at: base_pin.at,
+                },
+                index,
+            );
+        }
+        for point in &net_identity.points {
+            point_subgraph_identities.insert(
+                ReducedProjectPointIdentityKey {
+                    sheet_instance_path: net_identity.sheet_instance_path.clone(),
+                    at: *point,
+                },
+                index,
+            );
+        }
         reduced_subgraphs.push(net_identity);
     }
 
@@ -1251,6 +1277,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraphs: reduced_subgraphs,
         subgraphs_by_name,
         subgraphs_by_sheet_and_driver_name,
+        pin_subgraph_identities,
+        pin_subgraph_identities_by_location,
+        point_subgraph_identities,
         pin_identities,
         pin_identities_by_location,
         point_identities,
@@ -1330,6 +1359,24 @@ pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
         .and_then(|index| graph.subgraphs.get(*index))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the connection-point half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
+// item map because the Rust tree still keys lookups by `(sheet instance path, point)` instead of
+// live item pointers, but it preserves shared item-to-subgraph identity instead of flattening
+// directly to whole-net identity. Remaining divergence is fuller item ownership for labels, wires,
+// and markers plus the still-missing live `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .point_subgraph_identities
+        .get(&reduced_project_point_identity_key(sheet_path, at))
+        .and_then(|index| graph.subgraphs.get(*index))
+}
+
 fn reduced_project_pin_identity_key(
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
@@ -1391,6 +1438,37 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
                 .pin_identities_by_location
                 .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
                 .map(|identity| identity.clone())
+        })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the symbol-pin half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
+// item map because the Rust tree still uses `(sheet instance path, symbol uuid, projected pin
+// point)` instead of a live `SCH_PIN*`, but it preserves shared pin-to-subgraph identity instead
+// of flattening all pin lookups straight to whole-net identity. Remaining divergence is fuller
+// item ownership for non-pin items and the still-missing live `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    pin_name
+        .and_then(|pin_name| {
+            graph
+                .pin_subgraph_identities
+                .get(&reduced_project_base_pin_key(
+                    sheet_path, symbol, at, pin_name,
+                ))
+        })
+        .and_then(|index| graph.subgraphs.get(*index))
+        .or_else(|| {
+            graph
+                .pin_subgraph_identities_by_location
+                .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
+                .and_then(|index| graph.subgraphs.get(*index))
         })
 }
 
@@ -2232,9 +2310,11 @@ mod tests {
     use super::{
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         resolve_reduced_net_name_at, resolve_reduced_project_net_at,
+        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_symbol_pin,
     };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
+    use crate::model::SchItem;
     use crate::parser::parse_schematic_file;
     use std::env;
     use std::fs;
@@ -2436,6 +2516,32 @@ mod tests {
             .expect("sheet-local subgraph");
         assert_eq!(by_sheet.driver_name, "SIG");
         assert_eq!(by_sheet.name, "/Child/SIG");
+
+        let by_point = resolve_reduced_project_subgraph_at(&graph, child_sheet, [10.0, 0.0])
+            .expect("point subgraph");
+        assert_eq!(by_point.name, "/Child/SIG");
+
+        let child_schematic = project
+            .schematic(&child_sheet.schematic_path)
+            .expect("child schematic");
+        let child_symbol = child_schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("child symbol");
+        let by_pin = resolve_reduced_project_subgraph_for_symbol_pin(
+            &graph,
+            child_sheet,
+            child_symbol,
+            [0.0, 0.0],
+            Some("~"),
+        )
+        .expect("pin subgraph");
+        assert_eq!(by_pin.name, "/Child/SIG");
 
         let by_full_name = find_first_reduced_project_subgraph_by_name(&graph, "/Child/SIG")
             .expect("full-name subgraph");
