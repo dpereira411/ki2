@@ -713,6 +713,7 @@ What is already covered indirectly:
     - `ki_fp_filters`
     - `duplicate_pin_numbers_are_jumpers`
     - `jumper_pin_groups`
+      - exercised pin-name order now follows KiCad's sorted-set group ownership
   - reduced component-local variant diffs on `<comp><variants>`
   - reduced KiCad-format root `<groups>` export
   - reduced KiCad-format root `<variants>` export

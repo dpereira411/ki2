@@ -1201,6 +1201,50 @@ fn cli_netlist_exports_component_metadata_properties() {
 }
 
 #[test]
+fn cli_netlist_sorts_jumper_group_pins() {
+    let path = temp_schematic(
+        "cli_netlist_jumper_group_pin_order",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:JUMPER"
+      (duplicate_pin_numbers_are_jumpers yes)
+      (jumper_pin_groups ("B" "A"))
+      (property "Reference" "JP" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "JUMPER" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "JUMPER_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:JUMPER")
+    (at 0 0 0)
+    (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "JUMPER" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    let pin_a = report.find("<pin>A</pin>").expect("group pin A");
+    let pin_b = report.find("<pin>B</pin>").expect("group pin B");
+    assert!(pin_a < pin_b, "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_collapses_multi_unit_components() {
     let path = temp_schematic(
         "cli_netlist_multi_unit_component",

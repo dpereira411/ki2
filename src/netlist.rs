@@ -1102,7 +1102,11 @@ fn symbol_to_xml_component(
                 lib_symbol
                     .jumper_pin_groups
                     .iter()
-                    .map(|group| group.iter().cloned().collect())
+                    .map(|group| {
+                        let mut pins = group.iter().cloned().collect::<Vec<_>>();
+                        pins.sort();
+                        pins
+                    })
                     .collect()
             })
             .unwrap_or_default(),
