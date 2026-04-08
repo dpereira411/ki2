@@ -1315,6 +1315,14 @@ fn reduced_project_bus_link_from_live(
     }
 }
 
+fn live_subgraph_link_index(link: &LiveReducedSubgraphLink) -> usize {
+    link.subgraph_handle
+        .as_ref()
+        .and_then(Weak::upgrade)
+        .map(|subgraph| subgraph.borrow().source_index)
+        .unwrap_or(link.subgraph_index)
+}
+
 // Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
 // KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
 // wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
@@ -2559,21 +2567,28 @@ fn collect_live_reduced_propagation_component_from_handles(
             }
         }
 
-        for parent_index in snapshot.bus_parent_indexes {
+        for parent_index in snapshot
+            .bus_parent_links
+            .iter()
+            .map(live_subgraph_link_index)
+            .chain(snapshot.bus_parent_indexes.into_iter())
+        {
             if visited.insert(parent_index) {
                 queue.push_back(parent_index);
             }
         }
 
         for link in snapshot.bus_parent_links {
-            if visited.insert(link.subgraph_index) {
-                queue.push_back(link.subgraph_index);
+            let parent_index = live_subgraph_link_index(&link);
+            if visited.insert(parent_index) {
+                queue.push_back(parent_index);
             }
         }
 
         for link in snapshot.bus_neighbor_links {
-            if visited.insert(link.subgraph_index) {
-                queue.push_back(link.subgraph_index);
+            let neighbor_index = live_subgraph_link_index(&link);
+            if visited.insert(neighbor_index) {
+                queue.push_back(neighbor_index);
             }
         }
     }
@@ -2826,7 +2841,8 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_indexes(
         let parent_links = child_snapshot.bus_parent_links.clone();
 
         for link in parent_links {
-            let parent_snapshot = live_subgraphs[link.subgraph_index].borrow().clone();
+            let parent_index = live_subgraph_link_index(&link);
+            let parent_snapshot = live_subgraphs[parent_index].borrow().clone();
             if child_connection.sheet_instance_path != child_sheet_instance_path
                 && child_connection.sheet_instance_path != parent_snapshot.sheet_instance_path
             {
@@ -2844,7 +2860,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_indexes(
             };
 
             if match_reduced_bus_member(
-                &live_subgraphs[link.subgraph_index]
+                &live_subgraphs[parent_index]
                     .borrow()
                     .driver_connection
                     .borrow()
@@ -2857,7 +2873,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_indexes(
             }
 
             let changed = {
-                let parent = live_subgraphs[link.subgraph_index].borrow();
+                let parent = live_subgraphs[parent_index].borrow();
                 let mut parent_connection = parent.driver_connection.borrow_mut();
                 let Some(member) =
                     match_reduced_bus_member_mut(&mut parent_connection.members, &link.member)
@@ -2870,7 +2886,7 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_indexes(
             };
 
             if changed {
-                live_subgraphs[link.subgraph_index].borrow_mut().dirty = true;
+                live_subgraphs[parent_index].borrow_mut().dirty = true;
             }
         }
     }
@@ -2933,7 +2949,14 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
         let child_connection = child_snapshot.driver_connection.snapshot();
         let existing_parent_links = child_snapshot.bus_parent_links.clone();
 
-        for &parent_index in &child_snapshot.bus_parent_indexes {
+        let parent_indexes = child_snapshot
+            .bus_parent_links
+            .iter()
+            .map(live_subgraph_link_index)
+            .chain(child_snapshot.bus_parent_indexes.iter().copied())
+            .collect::<BTreeSet<_>>();
+
+        for parent_index in parent_indexes {
             let parent_snapshot = live_subgraphs[parent_index].borrow().clone();
             let mut search_candidates = Vec::new();
 
