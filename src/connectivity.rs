@@ -139,6 +139,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) code: usize,
     pub(crate) name: String,
     pub(crate) driver_name: String,
+    pub(crate) driver_full_name: String,
     pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) driver_names: Vec<String>,
     pub(crate) driver_full_names: Vec<String>,
@@ -1288,6 +1289,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     struct PendingProjectSubgraph {
         name: String,
         driver_name: String,
+        driver_full_name: String,
         driver_identity: Option<ReducedProjectDriverIdentity>,
         driver_names: Vec<String>,
         driver_full_names: Vec<String>,
@@ -1442,6 +1444,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     .as_ref()
                     .map(|candidate| candidate.text.clone())
                     .unwrap_or_else(|| reduced_short_net_name(&entry.name));
+                let driver_full_name = driver_candidate
+                    .as_ref()
+                    .map(|candidate| {
+                        reduced_driver_candidate_full_name(candidate, &sheet_path_prefix)
+                    })
+                    .unwrap_or_else(|| entry.name.clone());
                 let driver_identity = driver_candidate.as_ref().and_then(|candidate| {
                     candidate
                         .identity
@@ -1523,6 +1531,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
                     driver_name,
+                    driver_full_name,
                     driver_identity,
                     driver_names,
                     driver_full_names,
@@ -1649,6 +1658,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
                 driver_name: String::new(),
+                driver_full_name: String::new(),
                 driver_identity: None,
                 driver_names: Vec::new(),
                 driver_full_names: Vec::new(),
@@ -1737,6 +1747,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .map(|net| net.name.clone())
                 .unwrap_or_else(|| pending.name.clone()),
             driver_name: pending.driver_name.clone(),
+            driver_full_name: pending.driver_full_name.clone(),
             driver_identity: pending.driver_identity.clone(),
             driver_names: pending.driver_names.clone(),
             driver_full_names: pending.driver_full_names.clone(),
@@ -2935,6 +2946,29 @@ enum ReducedNetNameSource {
     SymbolPinDefault,
 }
 
+fn reduced_driver_candidate_full_name(
+    candidate: &ReducedDriverNameCandidate,
+    sheet_path_prefix: &str,
+) -> String {
+    let prepend_path = matches!(
+        candidate.source,
+        ReducedNetNameSource::LocalLabel
+            | ReducedNetNameSource::HierarchicalLabel
+            | ReducedNetNameSource::SheetPin
+            | ReducedNetNameSource::LocalPowerPin
+    );
+
+    if prepend_path {
+        if candidate.text.starts_with('/') {
+            candidate.text.clone()
+        } else {
+            format!("{sheet_path_prefix}{}", candidate.text)
+        }
+    } else {
+        candidate.text.clone()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ReducedLocalDriverIdentity {
     Label {
@@ -3291,19 +3325,8 @@ where
         shown_sheet_pin_text,
     )
     .map(|candidate| {
-        let prepend_path = matches!(
-            candidate.source,
-            ReducedNetNameSource::LocalLabel
-                | ReducedNetNameSource::HierarchicalLabel
-                | ReducedNetNameSource::SheetPin
-                | ReducedNetNameSource::LocalPowerPin
-        );
-
-        if prepend_path {
-            match sheet_path_prefix {
-                Some(prefix) => format!("{prefix}{}", candidate.text),
-                None => candidate.text,
-            }
+        if let Some(prefix) = sheet_path_prefix {
+            reduced_driver_candidate_full_name(&candidate, prefix)
         } else {
             candidate.text
         }
@@ -4118,6 +4141,7 @@ mod tests {
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.driver_name, child_sheet.instance_path);
+        assert_eq!(by_point.driver_full_name, child_sheet.instance_path);
         assert!(
             by_point
                 .driver_names

@@ -2606,8 +2606,8 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 test_names.push(name.clone());
             }
         }
-        if test_names.is_empty() && !subgraph.driver_name.is_empty() {
-            test_names.push(subgraph.name.clone());
+        if test_names.is_empty() && !subgraph.driver_full_name.is_empty() {
+            test_names.push(subgraph.driver_full_name.clone());
         }
 
         let suppress_conflict = subgraph
@@ -2625,10 +2625,13 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             continue;
         }
 
-        let net_name = test_names
-            .first()
-            .cloned()
-            .unwrap_or_else(|| subgraph.name.clone());
+        let net_name = test_names.first().cloned().unwrap_or_else(|| {
+            if subgraph.driver_full_name.is_empty() {
+                subgraph.name.clone()
+            } else {
+                subgraph.driver_full_name.clone()
+            }
+        });
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             code: "erc-bus-entry-conflict",
