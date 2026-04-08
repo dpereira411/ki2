@@ -347,7 +347,51 @@ fn cli_erc_filters_reported_severities() {
 }
 
 #[test]
-fn cli_netlist_writes_reduced_xml_by_default() {
+fn cli_netlist_defaults_to_kicad_output() {
+    let path = temp_schematic(
+        "cli_netlist_default_kicad",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73000000-0000-0000-0000-000000000010")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("net");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains(report_path.to_str().expect("report path")));
+
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(report.contains("<export version=\"E\">"), "{report}");
+    assert!(report.contains("<groups>"), "{report}");
+    assert!(report.contains("<variants>"), "{report}");
+    assert!(report.contains("<libraries>"), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_netlist_writes_reduced_xml_when_requested() {
     let path = temp_schematic(
         "cli_netlist_xml",
         r#"(kicad_sch
@@ -395,7 +439,12 @@ fn cli_netlist_writes_reduced_xml_by_default() {
     .expect("write project");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -542,7 +591,12 @@ fn cli_netlist_uses_schematic_lib_name_in_libsource() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -589,7 +643,12 @@ fn cli_netlist_sorts_libpart_pins_by_str_num_cmp() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -641,7 +700,12 @@ fn cli_netlist_prefers_sorted_connected_label_name() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -701,7 +765,12 @@ fn cli_netlist_uses_power_symbol_value_as_net_name() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -765,7 +834,12 @@ fn cli_netlist_skips_power_only_nets_without_renumbering_remaining_codes() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -818,7 +892,12 @@ fn cli_netlist_uses_default_symbol_pin_net_name() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -863,7 +942,12 @@ fn cli_netlist_prefers_user_net_for_duplicate_pin_numbers() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -910,7 +994,12 @@ fn cli_netlist_expands_stacked_pin_notation() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -964,7 +1053,12 @@ fn cli_netlist_marks_single_no_connect_nodes() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1002,7 +1096,12 @@ fn cli_netlist_marks_stacked_no_connect_nodes() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1052,7 +1151,12 @@ fn cli_netlist_omits_pinfunction_for_single_unnamed_pins() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1107,7 +1211,12 @@ fn cli_netlist_sorts_components_and_nets_with_strnumcmp_ordering() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1167,7 +1276,12 @@ fn cli_netlist_exports_component_metadata_properties() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1336,7 +1450,12 @@ fn cli_netlist_sorts_jumper_group_pins() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1388,7 +1507,12 @@ fn cli_netlist_collapses_multi_unit_components() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1474,7 +1598,12 @@ fn cli_netlist_exports_component_variant_diffs() {
     .expect("write schematic");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", schematic_path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            schematic_path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1557,7 +1686,12 @@ fn cli_netlist_preserves_library_unit_order_on_components() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1737,7 +1871,12 @@ fn cli_netlist_exports_component_classes() {
 
     let report_path = path.with_extension("xml");
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -1820,7 +1959,12 @@ fn cli_kicad_netlist_filters_excluded_board_symbols() {
     .expect("write schematic");
 
     let xml_output = Command::new(ki2_binary())
-        .args(["netlist", schematic_path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            schematic_path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 xml netlist");
     assert!(
@@ -1922,7 +2066,12 @@ fn cli_netlist_uses_human_readable_component_sheet_paths() {
     .expect("write child schematic");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", root_path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            root_path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -2003,7 +2152,12 @@ fn cli_netlist_exports_parent_sheet_properties_on_components() {
     .expect("write child schematic");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", root_path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            root_path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -2075,7 +2229,12 @@ fn cli_netlist_merges_multi_unit_fields_by_unit_order() {
 
     let report_path = path.with_extension("xml");
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -2140,7 +2299,12 @@ fn cli_netlist_keeps_lowest_unit_empty_user_field() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -2193,7 +2357,12 @@ fn cli_netlist_prefers_non_pad_default_driver_names() {
 
     let report_path = path.with_extension("xml");
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 
@@ -2245,7 +2414,12 @@ fn cli_netlist_groups_same_named_subgraphs_under_one_net() {
     let report_path = path.with_extension("xml");
 
     let output = Command::new(ki2_binary())
-        .args(["netlist", path.to_str().expect("path string")])
+        .args([
+            "netlist",
+            path.to_str().expect("path string"),
+            "--format",
+            "xml",
+        ])
         .output()
         .expect("run ki2 netlist");
 

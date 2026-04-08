@@ -145,7 +145,7 @@ fn print_usage_and_exit() -> ! {
         "               [--severity-all] [--severity-error] [--severity-warning] [--severity-exclusions]"
     );
     eprintln!("               [--exit-code-violations]");
-    eprintln!("       ki2 netlist <path> [--output <path>] [--format <xml|kicad>]");
+    eprintln!("       ki2 netlist <path> [--output <path>] [--format <kicad|xml>]");
     std::process::exit(2);
 }
 
@@ -329,12 +329,12 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 // Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobExportNetlist()`. This
 // is not a 1:1 KiCad jobs/exporter path because the local CLI still exposes only reduced XML and
 // reduced KiCad-format netlist slices instead of the full common exporter base and all exporter
-// backends, but it keeps command-owned path/output/format handling on a real netlist subcommand
-// instead of burying exporter work in test-only helpers.
+// backends, but it now follows KiCad's default `KICADSEXPR` format/output-path branch instead of
+// defaulting to the reduced XML path from repo-local convenience.
 fn run_netlist_command(args: Vec<String>) -> i32 {
     let mut path = None;
     let mut output = None;
-    let mut format = NetlistOutputFormat::Xml;
+    let mut format = NetlistOutputFormat::Kicad;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
