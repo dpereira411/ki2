@@ -2038,79 +2038,57 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for the wire/bus-entry part of
 // `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`. This is not a 1:1 KiCad endpoint-owner path
-// because the Rust tree still uses the shared reduced point snapshot instead of live dangling flags
-// on `SCH_LINE` / bus-entry items. It exists so ERC now checks unconnected wire endpoints on the
-// same shared connectivity carrier as the other graph-owned wire rules. Remaining divergence is
-// fuller bus-layer ownership beyond the current shared segment carrier.
+// because the Rust tree still uses reduced stored wire-item endpoints instead of live dangling
+// flags on `SCH_LINE` / bus-entry items. It now runs on shared reduced project subgraphs instead
+// of rebuilding from a per-sheet point snapshot, so the graph owns the exercised wire-item
+// membership boundary for this rule. Remaining divergence is fuller bus-layer/item ownership
+// beyond the current reduced endpoint carrier.
 pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+    for subgraph in collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .filter(|subgraph| !subgraph.wire_items.is_empty())
+    {
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
             continue;
         };
-        let points = collect_connection_points(schematic);
 
-        for item in &schematic.screen.items {
-            let (endpoints, is_bus_entry) = match item {
-                SchItem::Wire(line) => (
-                    [line.points.first().copied(), line.points.last().copied()]
-                        .into_iter()
-                        .flatten()
-                        .collect::<Vec<_>>(),
-                    false,
-                ),
-                SchItem::BusEntry(entry) => (
-                    vec![
-                        entry.at,
-                        [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]],
-                    ],
-                    true,
-                ),
-                _ => continue,
-            };
+        for wire_item in &subgraph.wire_items {
+            for endpoint in [wire_item.start, wire_item.end] {
+                let endpoint_has_owner = subgraph
+                    .base_pins
+                    .iter()
+                    .any(|base_pin| base_pin.at == endpoint)
+                    || subgraph
+                        .label_points
+                        .iter()
+                        .any(|(point, _kind)| *point == endpoint)
+                    || subgraph.sheet_pin_points.contains(&endpoint)
+                    || subgraph.no_connect_points.contains(&endpoint);
+                let endpoint_wire_count = subgraph
+                    .wire_items
+                    .iter()
+                    .filter(|other| other.start == endpoint || other.end == endpoint)
+                    .count();
 
-            for endpoint in endpoints {
-                let is_dangling = points
-                    .values()
-                    .find(|point| points_equal(point.at, endpoint))
-                    .is_some_and(|point| {
-                        !point.members.iter().any(|member| {
-                            !matches!(
-                                member.kind,
-                                ConnectionMemberKind::Wire | ConnectionMemberKind::BusEntry
-                            ) || point
-                                .members
-                                .iter()
-                                .filter(|member| {
-                                    matches!(
-                                        member.kind,
-                                        ConnectionMemberKind::Wire | ConnectionMemberKind::BusEntry
-                                    ) && points_equal(member.at, endpoint)
-                                })
-                                .count()
-                                > 1
-                        })
-                    });
-
-                if !is_dangling {
+                if endpoint_has_owner || endpoint_wire_count > 1 {
                     continue;
                 }
 
+                let at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-unconnected-wire-endpoint",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: if is_bus_entry {
-                        format!(
-                            "Unconnected wire to bus entry at {}, {}",
-                            endpoint[0], endpoint[1]
-                        )
+                    message: if wire_item.is_bus_entry {
+                        format!("Unconnected wire to bus entry at {}, {}", at[0], at[1])
                     } else {
-                        format!(
-                            "Unconnected wire endpoint at {}, {}",
-                            endpoint[0], endpoint[1]
-                        )
+                        format!("Unconnected wire endpoint at {}, {}", at[0], at[1])
                     },
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
@@ -2126,59 +2104,47 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 
 // Upstream parity: reduced local analogue for the wire/bus-entry part of
 // `CONNECTION_GRAPH::ercCheckFloatingWires()`. This is not a 1:1 KiCad subgraph-driver pass
-// because the Rust tree still treats "floating" as a shared connected wire component with no
-// attached pins, labels, sheet pins, or no-connect markers rather than a full graph-owned driver
-// object. It exists so the current ERC runner now flags reduced floating wire components instead of
-// stopping at point-local endpoint warnings. Remaining divergence is fuller driver ownership and
-// bus-layer semantics beyond the current shared segment carrier.
+// because the Rust tree still treats "floating" as a reduced shared subgraph with wire-item
+// membership but without a full graph-owned driver object. It now runs on shared reduced project
+// subgraphs instead of rebuilding wire components per sheet. Remaining divergence is fuller
+// driver ownership and bus-layer semantics beyond the current reduced wire-item carrier.
 pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+    for subgraph in collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .filter(|subgraph| !subgraph.wire_items.is_empty())
+    {
+        if !subgraph.base_pins.is_empty()
+            || !subgraph.sheet_pin_points.is_empty()
+            || !subgraph.label_points.is_empty()
+            || !subgraph.no_connect_points.is_empty()
+        {
+            continue;
+        }
+
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
             continue;
         };
+        let anchor = [
+            f64::from_bits(subgraph.anchor.0),
+            f64::from_bits(subgraph.anchor.1),
+        ];
 
-        for component in collect_connection_components(schematic) {
-            let has_wire = component.members.iter().any(|member| {
-                matches!(
-                    member.kind,
-                    ConnectionMemberKind::Wire | ConnectionMemberKind::BusEntry
-                )
-            });
-
-            if !has_wire {
-                continue;
-            }
-
-            let has_connection_owner = component.members.iter().any(|member| {
-                matches!(
-                    member.kind,
-                    ConnectionMemberKind::SymbolPin
-                        | ConnectionMemberKind::SheetPin
-                        | ConnectionMemberKind::Label
-                        | ConnectionMemberKind::NoConnectMarker
-                )
-            });
-
-            if has_connection_owner {
-                continue;
-            }
-
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-wire-dangling",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Floating wire component at {}, {}",
-                    component.anchor[0], component.anchor[1]
-                ),
-                path: Some(sheet_path.schematic_path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-wire-dangling",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!("Floating wire component at {}, {}", anchor[0], anchor[1]),
+            path: Some(sheet_path.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics

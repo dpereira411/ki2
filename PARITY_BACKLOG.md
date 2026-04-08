@@ -462,7 +462,11 @@ Current status:
 - reduced wire-only coverage is now live for:
   - `CONNECTION_GRAPH::ercCheckFloatingWires()`
   - `CONNECTION_GRAPH::ercCheckDanglingWireEndpoints()`
+  - floating-wire and dangling-endpoint iteration now starts from shared reduced subgraph
+    wire-item membership instead of per-sheet connection-point/component rescans
 - reduced bus-entry participation is now also live for that cluster through the shared segment owner
+- unnamed wire/bus-entry-only local components now survive into the shared reduced project graph
+  instead of disappearing before the graph-owned wire ERC passes run
 - current remaining gap in that cluster is fuller bus conflict/subgraph semantics, not absence of
   the wire/bus-entry floating-endpoint rules
 - reduced `CONNECTION_GRAPH::ercCheckBusToNetConflicts()` coverage is now live through:
@@ -821,6 +825,8 @@ What is already covered indirectly:
   consumers instead of forcing those callers back through per-sheet component scans
 - reduced project graph now also keeps unnamed no-connect-only subgraphs instead of requiring a
   resolved net-map entry before a local subgraph can exist
+- reduced project graph now also keeps unnamed wire/bus-entry-only local subgraphs instead of
+  requiring a resolved net-map entry before graph-owned wire ERC can see them
 - XML/KiCad net export now aggregates `nets` from the shared reduced subgraph owner instead of
   consuming only the already-flattened whole-net carrier
 - XML net writing now also rebuilds write-time net records from shared reduced subgraphs in the
