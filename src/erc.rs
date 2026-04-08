@@ -2570,8 +2570,10 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
 // ownership. It now mirrors the exercised KiCad flow on shared reduced project subgraphs instead
 // of rebuilding per-sheet connection components, and now also follows `RunERC()`-style
-// reused-screen driver de-duplication through the shared reduced graph owner. Remaining divergence
-// is fuller bus-object ownership and cached subgraph driver state.
+// reused-screen driver de-duplication through the shared reduced graph owner. It now also warns
+// once from the shared subgraph driver name after membership testing against the reduced driver
+// set, instead of sweeping every non-bus shown-text on the subgraph independently. Remaining
+// divergence is fuller bus-object ownership and cached subgraph driver state.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2593,7 +2595,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 
         let mut bus_name = None::<String>;
         let mut bus_members = None::<Vec<String>>;
-        let mut net_names = Vec::<String>::new();
+        let mut non_bus_sheet_pin_names = Vec::<String>::new();
         let mut entry_at = subgraph
             .wire_items
             .iter()
@@ -2615,7 +2617,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 bus_name.get_or_insert(shown.clone());
                 bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
             } else {
-                net_names.push(shown);
+                non_bus_sheet_pin_names.push(shown);
                 entry_at = label.at;
             }
         }
@@ -2642,7 +2644,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                     bus_name.get_or_insert(shown.clone());
                     bus_members.get_or_insert_with(|| reduced_bus_members(schematic, &shown));
                 } else {
-                    net_names.push(shown);
+                    non_bus_sheet_pin_names.push(shown);
                     entry_at = pin.at;
                 }
             }
@@ -2651,34 +2653,53 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let (Some(bus_name), Some(bus_members)) = (bus_name, bus_members) else {
             continue;
         };
+        let mut test_names = subgraph
+            .driver_names
+            .iter()
+            .filter(|name| !reduced_text_is_bus(schematic, name))
+            .cloned()
+            .collect::<Vec<_>>();
+        for name in non_bus_sheet_pin_names {
+            if !test_names.iter().any(|existing| existing == &name) {
+                test_names.push(name);
+            }
+        }
+        if test_names.is_empty() && !subgraph.driver_name.is_empty() {
+            test_names.push(subgraph.driver_name.clone());
+        }
 
         let suppress_conflict = subgraph
             .non_bus_driver_priority
             .is_some_and(|priority| priority >= 6);
 
-        for net_name in net_names {
-            if bus_members.iter().any(|member| member == &net_name) {
-                continue;
-            }
-
-            if suppress_conflict {
-                continue;
-            }
-
-            diagnostics.push(Diagnostic {
-                severity: Severity::Warning,
-                code: "erc-bus-entry-conflict",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
-                    entry_at[0], entry_at[1]
-                ),
-                path: Some(sheet_path.schematic_path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
+        if test_names
+            .iter()
+            .any(|name| bus_members.iter().any(|member| member == name))
+        {
+            continue;
         }
+
+        if suppress_conflict {
+            continue;
+        }
+
+        let net_name = test_names
+            .first()
+            .cloned()
+            .unwrap_or_else(|| subgraph.driver_name.clone());
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            code: "erc-bus-entry-conflict",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!(
+                "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
+                entry_at[0], entry_at[1]
+            ),
+            path: Some(sheet_path.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics

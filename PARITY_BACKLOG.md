@@ -482,11 +482,13 @@ Current status:
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
   - shared reduced project subgraphs
   - shared reduced bus-entry line membership
-  - reduced bus-member expansion plus reduced non-bus driver names
+  - reduced bus-member expansion plus reduced shared non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
   - nested bus-group text expansion like `USB{PAIR{DP DM} AUX}`
   - KiCad-style suppression when a higher-priority global label or power pin overrides the bus
     member driver
+  - KiCad-style single-warning flow from the shared subgraph driver name instead of one warning
+    per non-bus shown-text on the same subgraph
 - the named graph-owned bus conflict trio is now covered in the reduced graph
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced `ercCheckMultipleDrivers()` now reads strong-driver conflicts from the shared reduced

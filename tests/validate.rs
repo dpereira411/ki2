@@ -3837,6 +3837,39 @@ fn erc_allows_bus_alias_member_entries() {
 }
 
 #[test]
+fn erc_reports_one_bus_entry_conflict_from_driver_name() {
+    let path = temp_schematic(
+        "erc_bus_entry_driver_name_conflict",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -10 5) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (bus_entry (at 0 0) (size -5 5))
+  (label "ADDR9" (at -10 5 0) (effects (font (size 1 1))))
+  (label "ALT9" (at -5 5 0) (effects (font (size 1 1))))
+  (global_label "DATA[0..7]" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    let conflicts = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "erc-bus-entry-conflict")
+        .collect::<Vec<_>>();
+    assert_eq!(conflicts.len(), 1, "{diagnostics:#?}");
+    assert_eq!(
+        conflicts[0].message,
+        "Net ADDR9 is graphically connected to bus DATA[0..7] but is not a member of that bus at -5, 5"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_does_not_count_buses_as_four_way_junction_items() {
     let path = temp_schematic(
         "erc_four_way_excludes_bus",
