@@ -471,6 +471,9 @@ Current status:
 - the named graph-owned bus conflict trio is now covered in the reduced graph
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
+- reduced `TestPinToPin()` now iterates the shared reduced project net map like upstream `m_nets`
+  instead of per-sheet connection components, while still using shared physical `base_pins` so
+  same-reference physical pin multiplicity survives node flattening
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
   - `${REF:NET_NAME(pin)}`
   - `${REF:SHORT_NET_NAME(pin)}`

@@ -1,6 +1,7 @@
 use crate::connectivity::{
-    ConnectionMemberKind, collect_connection_components, collect_connection_points,
-    collect_reduced_label_component_snapshots, projected_symbol_pin_info, reduced_bus_members,
+    ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_components,
+    collect_connection_points, collect_reduced_label_component_snapshots,
+    collect_reduced_project_net_map, projected_symbol_pin_info, reduced_bus_members,
     reduced_text_is_bus, resolve_reduced_driver_conflict_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_non_bus_driver_priority_at,
     resolve_reduced_project_net_at, resolve_reduced_project_net_for_symbol_pin,
@@ -115,6 +116,35 @@ fn parse_reduced_pin_type(electrical_type: &str) -> Option<ReducedPinType> {
         "no_connect" => ReducedPinType::NoConnect,
         _ => return None,
     })
+}
+
+fn resolve_base_pin_type(
+    project: &SchematicProject,
+    base_pin: &ReducedNetBasePinKey,
+) -> Option<ReducedPinType> {
+    let sheet_path = project
+        .sheet_paths
+        .iter()
+        .find(|sheet_path| sheet_path.instance_path == base_pin.sheet_instance_path)?;
+    let schematic = project.schematic(&sheet_path.schematic_path)?;
+    let symbol = schematic.screen.items.iter().find_map(|item| match item {
+        SchItem::Symbol(symbol) if symbol.uuid == base_pin.symbol_uuid => Some(symbol),
+        _ => None,
+    })?;
+
+    projected_symbol_pin_info(symbol)
+        .into_iter()
+        .find(|pin| {
+            pin.at[0].to_bits() == base_pin.at.0
+                && pin.at[1].to_bits() == base_pin.at.1
+                && match (&base_pin.name, &pin.name) {
+                    (Some(base_name), Some(pin_name)) => pin_name == base_name,
+                    (Some(base_name), None) => base_name == "~",
+                    _ => true,
+                }
+        })
+        .and_then(|pin| pin.electrical_type)
+        .and_then(|electrical_type| parse_reduced_pin_type(&electrical_type))
 }
 
 fn pin_type_index(pin_type: ReducedPinType) -> usize {
@@ -2481,109 +2511,89 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestPinToPin()`. This is not a 1:1
 // KiCad pin-matrix runner because the Rust tree still lacks full `ERC_SETTINGS`, graph-owned pin
-// contexts, marker placement heuristics, and the full connection graph. It now applies the typed
-// companion-project `erc.pin_map` override slice on top of the upstream default matrix instead of
-// hard-coding only the defaults. Remaining divergence is richer settings, driver-missing
-// reporting, and full subgraph ownership.
+// contexts, marker placement heuristics, and the full connection graph. It now runs over the
+// shared reduced project net map like upstream `m_nets` instead of per-sheet connection
+// components, and applies the typed companion-project `erc.pin_map` override slice on top of the
+// upstream default matrix instead of hard-coding only the defaults. Remaining divergence is richer
+// settings, driver-missing reporting, and full subgraph ownership.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project
-            .schematics
+    for net in collect_reduced_project_net_map(project, false) {
+        let pins = net
+            .base_pins
             .iter()
-            .find(|schematic| schematic.path == sheet_path.schematic_path)
-        else {
+            .filter_map(|base_pin| resolve_base_pin_type(project, base_pin))
+            .collect::<Vec<_>>();
+
+        if pins.len() < 2 {
             continue;
-        };
+        }
 
-        for component in collect_connection_components(schematic) {
-            let pins = component
-                .members
-                .iter()
-                .filter(|member| member.kind == ConnectionMemberKind::SymbolPin)
-                .filter_map(|member| {
-                    parse_reduced_pin_type(member.electrical_type.as_deref()?)
-                        .map(|pin_type| (member.at, pin_type))
-                })
-                .collect::<Vec<_>>();
-
-            if pins.len() < 2 {
-                continue;
+        let is_power_net = pins.contains(&ReducedPinType::PowerIn);
+        let has_driver = pins.iter().any(|pin_type| {
+            if is_power_net {
+                is_power_driver_pin_type(*pin_type)
+            } else {
+                is_normal_driver_pin_type(*pin_type)
             }
+        });
+        let anchor = net
+            .base_pins
+            .first()
+            .map(|base_pin| [f64::from_bits(base_pin.at.0), f64::from_bits(base_pin.at.1)])
+            .unwrap_or([0.0, 0.0]);
 
-            let is_power_net = pins
-                .iter()
-                .any(|(_, pin_type)| *pin_type == ReducedPinType::PowerIn);
-            let has_driver = pins.iter().any(|(_, pin_type)| {
-                if is_power_net {
-                    is_power_driver_pin_type(*pin_type)
-                } else {
-                    is_normal_driver_pin_type(*pin_type)
+        for (index, lhs_type) in pins.iter().enumerate() {
+            for rhs_type in pins.iter().skip(index + 1) {
+                let conflict = configured_pin_conflict(project, *lhs_type, *rhs_type);
+                if conflict == PinConflict::Ok {
+                    continue;
                 }
-            });
-            let has_noconnect = component
-                .members
-                .iter()
-                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker);
-
-            for (index, (_at, lhs_type)) in pins.iter().enumerate() {
-                for (_, rhs_type) in pins.iter().skip(index + 1) {
-                    let conflict = configured_pin_conflict(project, *lhs_type, *rhs_type);
-                    if conflict == PinConflict::Ok {
-                        continue;
-                    }
-
-                    diagnostics.push(Diagnostic {
-                        severity: match conflict {
-                            PinConflict::Warning => Severity::Warning,
-                            PinConflict::Error => Severity::Error,
-                            PinConflict::Ok => continue,
-                        },
-                        code: match conflict {
-                            PinConflict::Warning => "erc-pin-to-pin-warning",
-                            PinConflict::Error => "erc-pin-to-pin-error",
-                            PinConflict::Ok => continue,
-                        },
-                        kind: crate::diagnostic::DiagnosticKind::Validation,
-                        message: format!(
-                            "Conflicting pins connected at {}, {}",
-                            component.anchor[0], component.anchor[1]
-                        ),
-                        path: Some(schematic.path.clone()),
-                        span: None,
-                        line: None,
-                        column: None,
-                    });
-                    break;
-                }
-            }
-
-            if has_driver || has_noconnect {
-                continue;
-            }
-
-            if let Some((_, pin_type)) = pins
-                .iter()
-                .find(|(_, pin_type)| is_driven_pin_type(*pin_type))
-            {
-                let article = if *pin_type == ReducedPinType::PowerIn {
-                    "Power input pin is not driven"
-                } else {
-                    "Input pin is not driven"
-                };
 
                 diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    code: "erc-missing-driver",
+                    severity: match conflict {
+                        PinConflict::Warning => Severity::Warning,
+                        PinConflict::Error => Severity::Error,
+                        PinConflict::Ok => continue,
+                    },
+                    code: match conflict {
+                        PinConflict::Warning => "erc-pin-to-pin-warning",
+                        PinConflict::Error => "erc-pin-to-pin-error",
+                        PinConflict::Ok => continue,
+                    },
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: article.to_string(),
-                    path: Some(schematic.path.clone()),
+                    message: format!("Conflicting pins connected at {}, {}", anchor[0], anchor[1]),
+                    path: Some(project.root_path.clone()),
                     span: None,
                     line: None,
                     column: None,
                 });
+                break;
             }
+        }
+
+        if has_driver || net.has_no_connect {
+            continue;
+        }
+
+        if let Some(pin_type) = pins.iter().find(|pin_type| is_driven_pin_type(**pin_type)) {
+            let article = if *pin_type == ReducedPinType::PowerIn {
+                "Power input pin is not driven"
+            } else {
+                "Input pin is not driven"
+            };
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "erc-missing-driver",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: article.to_string(),
+                path: Some(project.root_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 
