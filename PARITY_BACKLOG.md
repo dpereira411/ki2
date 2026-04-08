@@ -202,6 +202,12 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
      - exporter-visible net ownership
    - once a shared graph owner exists for an exercised fact, keep moving callers onto that owner
      instead of adding more local one-off scans in ERC/export helpers
+   - current phase pivot:
+     - the reduced graph has absorbed most of the honest static/shared ownership work
+     - the next primary phase is the fuller live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH`
+       analogue
+     - do not keep extending snapshot-only propagation logic once the remaining gap is live
+       mutation / clone / recache behavior
 2. Remaining connection-backed shown-text exactness
    - reduced connection-backed shown-text is live for the exercised ERC slice
    - remaining work is fuller KiCad settings/subgraph exactness, not missing variable support
@@ -602,6 +608,39 @@ Current status:
         live item / connection pointers
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
+  - architectural direction from this point:
+    - keep the reduced graph as the shared caller-facing owner for now
+    - begin replacing its snapshot-only propagation core with fuller live connection/subgraph
+      objects
+    - expected reusable reduced-graph pieces:
+      - item/subgraph indexing
+      - driver identity data
+      - bus member parsing/tree structure
+      - parent/neighbor relationships
+      - caller-facing graph queries and many existing tests
+    - expected transitional pieces:
+      - snapshot settle/fixpoint passes
+      - snapshot clone helpers
+      - reduced recache logic where upstream mutates live objects recursively
+  - next live-graph queue:
+    1. add a local `SCH_CONNECTION` analogue with:
+       - type
+       - local/full-local/resolved names
+       - net code
+       - member tree
+       - sheet ownership
+       - clone/recache support
+    2. add a local live `CONNECTION_SUBGRAPH` analogue with:
+       - dirty state
+       - driver connection
+       - parent/child / bus-neighbor links
+       - connected-bus-item ownership
+    3. port one upstream live propagation path at a time:
+       - `propagateToNeighbors()`
+       - stale bus-member replay
+       - in-place driver connection replacement
+       - `recacheSubgraphName()`
+    4. keep ERC/export on the existing shared graph query surface while replacing the internals
 
 ## Net Naming / CLI Requirements
 

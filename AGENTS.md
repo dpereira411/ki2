@@ -84,6 +84,10 @@ Strict mode is the default for parity work in this repository.
 20. When strict ERC/net naming/export parity is the active goal, ERC and export patches should
     primarily remove connection-graph or settings ownership mismatches. Do not let feature-count
     growth replace the graph-owned work that still blocks strict parity.
+21. Once the reduced graph has absorbed the honest static/shared ownership work, move priority to
+    the fuller live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` analogue instead of continuing to
+    expand snapshot-only propagation helpers. Treat the reduced graph as transitional scaffolding,
+    not the destination architecture.
 
 ## Parser-Only Parity Strategy
 
