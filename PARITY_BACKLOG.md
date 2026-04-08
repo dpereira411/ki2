@@ -847,6 +847,8 @@ What is already covered indirectly:
   whole-net code space
 - reduced project subgraphs now keep local driver names from the shared driver-selection owner
   instead of deriving them by stripping the full resolved net name
+- shared reduced `driver_names` now also keep connected sheet-pin drivers instead of limiting the
+  subgraph driver set to labels and power pins only
 - reduced project subgraphs now also keep strong-driver name sets for graph-owned ERC conflict
   consumers instead of forcing those callers back through per-sheet component scans
 - reduced project graph now also keeps unnamed no-connect-only subgraphs instead of requiring a

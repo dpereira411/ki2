@@ -2528,6 +2528,24 @@ where
                     name: text,
                 })
             }
+            SchItem::Sheet(sheet) => sheet
+                .pins
+                .iter()
+                .filter(|pin| {
+                    connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::SheetPin
+                            && points_equal(member.at, pin.at)
+                    })
+                })
+                .map(|pin| ReducedStrongDriver {
+                    priority: reduced_sheet_pin_driver_rank(pin.shape),
+                    name: pin.name.clone(),
+                })
+                .max_by(|lhs, rhs| {
+                    lhs.priority
+                        .cmp(&rhs.priority)
+                        .then_with(|| rhs.name.cmp(&lhs.name))
+                }),
             SchItem::Symbol(symbol) => {
                 let unit_pins = projected_symbol_pin_info(symbol);
 
@@ -2567,7 +2585,7 @@ where
 
 // Upstream parity: reduced local analogue for the connected-driver naming part of
 // `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `driverName()/GetNameForDriver()`. This is not a
-// 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, sheet pins, power-pin
+// 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, fuller power-pin
 // drivers, and cached `SCH_CONNECTION` objects. It exists so loader shown-text and export paths do
 // not each pick the "first connected label" independently. The current reduced driver ranking is
 // limited to the driver kinds the Rust tree can already model on one sheet:
@@ -3351,6 +3369,67 @@ mod tests {
         assert_eq!(by_first.subgraph_code, first_by_point.subgraph_code);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_subgraph_driver_names_include_sheet_pins() {
+        let dir = env::temp_dir().join(format!(
+            "ki2_connectivity_sheet_pin_drivers_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("mkdir");
+        let root_path = dir.join("root.kicad_sch");
+        let child_path = dir.join("child.kicad_sch");
+
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4"))"#,
+        )
+        .expect("write child");
+
+        fs::write(
+            &root_path,
+            format!(
+                r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (uuid "73050000-0000-0000-0000-000000000301")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "SIG" input (at 0 5 180) (uuid "73050000-0000-0000-0000-000000000302")))
+  (wire (pts (xy 0 5) (xy 10 5))))"#,
+                child_path.display()
+            ),
+        )
+        .expect("write root");
+
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let by_point =
+            resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
+        assert_eq!(by_point.driver_name, "SIG");
+        assert!(by_point.driver_names.iter().any(|name| name == "SIG"));
+
+        let _ = fs::remove_file(root_path);
+        let _ = fs::remove_file(child_path);
+        let _ = fs::remove_dir(dir);
     }
 
     #[test]
