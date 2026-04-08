@@ -865,6 +865,8 @@ What is already covered indirectly:
   owner instead of reconstructing path-qualified names inside ERC
 - reduced project subgraphs now also keep strong-driver name sets for graph-owned ERC conflict
   consumers instead of forcing those callers back through per-sheet component scans
+- reduced driver selection now also compares bus supersets/subsets through shared direct
+  bus-member objects instead of reparsing flattened member strings at the ranking site
 - reduced project graph now also keeps unnamed no-connect-only subgraphs instead of requiring a
   resolved net-map entry before a local subgraph can exist
 - reduced project graph now also keeps unnamed wire/bus-entry-only local subgraphs instead of

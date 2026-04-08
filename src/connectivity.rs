@@ -712,6 +712,11 @@ pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<Stri
     reduced_bus_members_inner(schematic, text, &mut BTreeSet::new())
 }
 
+// Upstream parity: reduced local analogue for the bus-superset ranking branch inside
+// `CONNECTION_SUBGRAPH::ResolveDrivers()`. This is not a 1:1 `SCH_CONNECTION::IsSubsetOf()` call
+// because the Rust tree still compares reduced member objects built from text instead of live
+// connection objects, but it now compares direct shared member identities instead of reparsing
+// flattened leaf strings at the driver-ranking site.
 fn reduced_bus_subset_cmp(schematic: &Schematic, lhs: &str, rhs: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
 
@@ -719,19 +724,29 @@ fn reduced_bus_subset_cmp(schematic: &Schematic, lhs: &str, rhs: &str) -> std::c
         return Ordering::Equal;
     }
 
-    let lhs_members = reduced_bus_members(schematic, lhs);
-    let rhs_members = reduced_bus_members(schematic, rhs);
+    let lhs_members =
+        collect_reduced_bus_member_objects_inner(schematic, lhs, "", "", &mut BTreeSet::new());
+    let rhs_members =
+        collect_reduced_bus_member_objects_inner(schematic, rhs, "", "", &mut BTreeSet::new());
+    let lhs_member_names = lhs_members
+        .iter()
+        .map(|member| member.full_local_name.clone())
+        .collect::<Vec<_>>();
+    let rhs_member_names = rhs_members
+        .iter()
+        .map(|member| member.full_local_name.clone())
+        .collect::<Vec<_>>();
 
-    if lhs_members.is_empty() || rhs_members.is_empty() {
+    if lhs_member_names.is_empty() || rhs_member_names.is_empty() {
         return Ordering::Equal;
     }
 
-    let lhs_is_subset = lhs_members
+    let lhs_is_subset = lhs_member_names
         .iter()
-        .all(|member| rhs_members.contains(member));
-    let rhs_is_subset = rhs_members
+        .all(|member| rhs_member_names.contains(member));
+    let rhs_is_subset = rhs_member_names
         .iter()
-        .all(|member| lhs_members.contains(member));
+        .all(|member| lhs_member_names.contains(member));
 
     match (lhs_is_subset, rhs_is_subset) {
         (true, false) => Ordering::Greater,
@@ -3557,6 +3572,41 @@ mod tests {
         assert_eq!(members[0].members[1].full_local_name, "USB.PAIR.DM");
         assert_eq!(members[1].kind, ReducedBusMemberKind::Net);
         assert_eq!(members[1].full_local_name, "USB.AUX");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_subset_cmp_uses_direct_member_objects() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_subset_cmp_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000072")
+  (paper "A4")
+)"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+
+        assert_eq!(
+            super::reduced_bus_subset_cmp(&schematic, "USB{PAIR{DP DM} AUX}", "USB{PAIR{DP DM}}"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            super::reduced_bus_subset_cmp(&schematic, "USB{PAIR{DP DM}}", "USB{PAIR{DP DM} AUX}"),
+            std::cmp::Ordering::Greater
+        );
 
         let _ = fs::remove_file(path);
     }
