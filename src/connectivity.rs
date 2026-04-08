@@ -744,6 +744,99 @@ fn reduced_subgraph_driver_connection(
         .unwrap_or_else(|| subgraph.resolved_connection.clone())
 }
 
+fn clone_reduced_bus_member_into_live_member(
+    target: &mut ReducedBusMember,
+    source: &ReducedBusMember,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_vector_index = target.vector_index;
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.name = source.name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    target.kind = source.kind.clone();
+
+    if matches!(target.kind, ReducedBusMemberKind::Bus)
+        && matches!(source.kind, ReducedBusMemberKind::Bus)
+    {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = source.members.clone();
+
+            for member in &mut target.members {
+                if let Some(existing) = match_reduced_bus_member(&existing_members, member) {
+                    if !existing.local_name.is_empty() {
+                        member.local_name = existing.local_name.clone();
+                    }
+                    if existing.vector_index.is_some() {
+                        member.vector_index = existing.vector_index;
+                    }
+                }
+            }
+        }
+    } else {
+        target.members = source.members.clone();
+    }
+
+    if existing_vector_index.is_some() {
+        target.vector_index = existing_vector_index;
+    }
+}
+
+fn clone_reduced_connection_into_live_connection(
+    target: &mut ReducedProjectConnection,
+    source: &ReducedProjectConnection,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.connection_type = source.connection_type.clone();
+    target.name = source.name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    target.sheet_instance_path = source.sheet_instance_path.clone();
+
+    if matches!(
+        target.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) && matches!(
+        source.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = existing_members.clone();
+
+            let clone_limit = target.members.len().min(source.members.len());
+            for index in 0..clone_limit {
+                clone_reduced_bus_member_into_live_member(
+                    &mut target.members[index],
+                    &source.members[index],
+                );
+            }
+
+            if target.members.len() > source.members.len() {
+                target.members.truncate(source.members.len());
+            } else if target.members.len() < source.members.len() {
+                target
+                    .members
+                    .extend(source.members[target.members.len()..].iter().cloned());
+            }
+        }
+    } else {
+        target.members = source.members.clone();
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedConnection {
     connection: ReducedProjectConnection,
@@ -754,13 +847,12 @@ impl LiveReducedConnection {
         Self { connection }
     }
 
-    // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This is not a 1:1
-    // live KiCad connection because the Rust tree still wraps a reduced connection carrier rather
-    // than mutating the real `SCH_CONNECTION` object graph, but it starts moving propagation onto
-    // a dedicated live owner with in-place clone semantics instead of cloning reduced snapshots at
-    // every caller. Remaining divergence is fuller member-pointer sharing and live item ownership.
+    // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This still operates
+    // on a reduced local connection carrier, but it now preserves existing local bus-member
+    // identity details instead of replacing the whole reduced connection snapshot on every clone.
+    // Remaining divergence is shared pointer identity for members/items across the live graph.
     fn clone_from(&mut self, other: &LiveReducedConnection) {
-        self.connection = other.connection.clone();
+        clone_reduced_connection_into_live_connection(&mut self.connection, &other.connection);
     }
 
     fn name(&self) -> &str {
@@ -6402,6 +6494,53 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn live_reduced_connection_clone_preserves_existing_bus_member_identity() {
+        let mut target = LiveReducedConnection::new(ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "/OLD".to_string(),
+            local_name: "OLD".to_string(),
+            full_local_name: "/OLD".to_string(),
+            sheet_instance_path: String::new(),
+            members: vec![ReducedBusMember {
+                net_code: 0,
+                name: "OLD1".to_string(),
+                local_name: "OLD1".to_string(),
+                full_local_name: "/OLD1".to_string(),
+                vector_index: Some(1),
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            }],
+        });
+        let source = LiveReducedConnection::new(ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "/RENAMED".to_string(),
+            local_name: "RENAMED".to_string(),
+            full_local_name: "/RENAMED".to_string(),
+            sheet_instance_path: "/child".to_string(),
+            members: vec![ReducedBusMember {
+                net_code: 7,
+                name: "RENAMED1".to_string(),
+                local_name: "RENAMED1".to_string(),
+                full_local_name: "/RENAMED1".to_string(),
+                vector_index: None,
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            }],
+        });
+
+        target.clone_from(&source);
+
+        assert_eq!(target.connection.name, "/RENAMED");
+        assert_eq!(target.connection.local_name, "OLD");
+        assert_eq!(target.connection.sheet_instance_path, "/child");
+        assert_eq!(target.connection.members[0].name, "RENAMED1");
+        assert_eq!(target.connection.members[0].local_name, "OLD1");
+        assert_eq!(target.connection.members[0].vector_index, Some(1));
     }
 
     #[test]
