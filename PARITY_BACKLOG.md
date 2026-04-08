@@ -594,11 +594,15 @@ Current status:
       - reduced stale-member refresh from final child connections
       - reduced repeated settle/fixpoint passes instead of one static propagation step
       - reduced bus-entry connected-bus ownership on shared subgraph indexes
+      - first live `propagateToNeighbors()` slices on shared subgraph wrappers for:
+        - hierarchy-chain best-driver selection
+        - direct bus-neighbor driver/member cloning before reduced cleanup
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
-      - no live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with pointer
-        identity; the reduced graph now settles to a fixpoint, but it still does not mutate and
-        revisit the same live subgraph objects KiCad does
+      - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
+        pointer identity; the reduced graph now has the first live hierarchy and bus-neighbor
+        slices, but it still does not mutate and revisit the same shared live subgraph objects
+        across the full propagation walk KiCad uses
       - no live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be replayed
         across the visited bus subgraphs after hierarchy propagation; the reduced pass only
         converges cloned snapshots
