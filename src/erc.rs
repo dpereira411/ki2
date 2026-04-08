@@ -2,7 +2,8 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_points,
     collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
     collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
-    projected_symbol_pin_info, reduced_bus_member_full_local_names, reduced_text_is_bus,
+    projected_symbol_pin_info, reduced_bus_member_full_local_names,
+    reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_text_is_bus,
     resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_at,
     resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
 };
@@ -1890,6 +1891,73 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // remaining divergence is the still-missing fuller bus-parent ownership plus the local
 // dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
+    fn subgraph_has_local_hierarchy_via_bus_parents(
+        graph: &crate::connectivity::ReducedProjectNetGraph,
+        subgraph_index: usize,
+    ) -> bool {
+        let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+            return false;
+        };
+
+        subgraph.bus_parent_indexes.iter().any(|parent_index| {
+            let Some(parent) = reduced_project_subgraph_by_index(graph, *parent_index) else {
+                return false;
+            };
+
+            parent.sheet_instance_path == subgraph.sheet_instance_path
+                && (!parent.sheet_pin_points.is_empty()
+                    || parent
+                        .label_points
+                        .iter()
+                        .any(|(_point, kind)| *kind == LabelKind::Hierarchical))
+        })
+    }
+
+    fn subgraph_has_no_connect_via_parent_chain(
+        graph: &crate::connectivity::ReducedProjectNetGraph,
+        subgraph_index: usize,
+    ) -> bool {
+        let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+            return false;
+        };
+        let mut pending = subgraph.bus_parent_indexes.clone();
+        let mut seen = std::collections::BTreeSet::new();
+
+        while let Some(parent_index) = pending.pop() {
+            if !seen.insert(parent_index) {
+                continue;
+            }
+
+            let Some(parent) = reduced_project_subgraph_by_index(graph, parent_index) else {
+                continue;
+            };
+
+            if parent.has_no_connect {
+                return true;
+            }
+
+            let mut hier_parent_index = parent.hier_parent_index;
+
+            while let Some(index) = hier_parent_index {
+                if !seen.insert(index) {
+                    break;
+                }
+
+                let Some(hier_parent) = reduced_project_subgraph_by_index(graph, index) else {
+                    break;
+                };
+
+                if hier_parent.has_no_connect {
+                    return true;
+                }
+
+                hier_parent_index = hier_parent.hier_parent_index;
+            }
+        }
+
+        false
+    }
+
     let mut diagnostics = Vec::new();
     let mut dangling_labels = BTreeMap::<(String, crate::connectivity::PointKey, u8), bool>::new();
     let graph = project.reduced_project_net_graph(false);
@@ -1918,19 +1986,26 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         }
 
+        let subgraph_index = reduced_project_subgraph_index(&graph, &subgraph);
+
         let pin_count = subgraph.base_pins.len();
         let has_local_hierarchy = !subgraph.sheet_pin_points.is_empty()
             || subgraph
                 .label_points
                 .iter()
-                .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
+                .any(|(_point, kind)| *kind == LabelKind::Hierarchical)
+            || subgraph_index
+                .is_some_and(|index| subgraph_has_local_hierarchy_via_bus_parents(&graph, index));
+        let has_no_connect = subgraph.has_no_connect
+            || subgraph_index
+                .is_some_and(|index| subgraph_has_no_connect_via_parent_chain(&graph, index));
 
         label_subgraphs.push((
             subgraph.sheet_instance_path.clone(),
             subgraph.subgraph_code,
             subgraph.name.clone(),
             pin_count,
-            subgraph.has_no_connect,
+            has_no_connect,
             has_local_hierarchy,
             subgraph.label_points.clone(),
         ));

@@ -133,6 +133,19 @@ pub(crate) struct ReducedBusMember {
     pub(crate) members: Vec<ReducedBusMember>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedHierSheetPinLink {
+    pub(crate) child_sheet_uuid: Option<String>,
+    pub(crate) name: String,
+    pub(crate) is_bus: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedHierPortLink {
+    pub(crate) name: String,
+    pub(crate) is_bus: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) subgraph_code: usize,
@@ -154,6 +167,8 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) label_points: Vec<(PointKey, LabelKind)>,
     pub(crate) sheet_pin_points: Vec<PointKey>,
     pub(crate) no_connect_points: Vec<PointKey>,
+    pub(crate) hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
+    pub(crate) hier_ports: Vec<ReducedHierPortLink>,
     pub(crate) label_bus_members: Vec<ReducedBusMember>,
     pub(crate) port_bus_members: Vec<ReducedBusMember>,
     pub(crate) bus_members: Vec<ReducedBusMember>,
@@ -162,6 +177,9 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) non_bus_full_names: Vec<String>,
     pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
+    pub(crate) bus_parent_indexes: Vec<usize>,
+    pub(crate) hier_parent_index: Option<usize>,
+    pub(crate) hier_child_indexes: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1304,6 +1322,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         label_points: Vec<(PointKey, LabelKind)>,
         sheet_pin_points: Vec<PointKey>,
         no_connect_points: Vec<PointKey>,
+        hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
+        hier_ports: Vec<ReducedHierPortLink>,
         label_bus_members: Vec<ReducedBusMember>,
         port_bus_members: Vec<ReducedBusMember>,
         bus_members: Vec<ReducedBusMember>,
@@ -1511,6 +1531,15 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 };
                 let (label_points, sheet_pin_points, no_connect_points, bus_items, wire_items) =
                     collect_reduced_subgraph_local_membership(schematic, &connected_component);
+                let (hier_sheet_pins, hier_ports) = collect_reduced_subgraph_hierarchy_membership(
+                    inputs.schematics,
+                    inputs.sheet_paths,
+                    sheet_path,
+                    schematic,
+                    inputs.project,
+                    inputs.current_variant,
+                    &connected_component,
+                );
                 let (
                     label_bus_members,
                     port_bus_members,
@@ -1546,6 +1575,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     label_points,
                     sheet_pin_points,
                     no_connect_points,
+                    hier_sheet_pins,
+                    hier_ports,
                     label_bus_members,
                     port_bus_members,
                     bus_members,
@@ -1654,6 +1685,15 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 
             let (label_points, sheet_pin_points, no_connect_points, bus_items, wire_items) =
                 collect_reduced_subgraph_local_membership(schematic, &connected_component);
+            let (hier_sheet_pins, hier_ports) = collect_reduced_subgraph_hierarchy_membership(
+                inputs.schematics,
+                inputs.sheet_paths,
+                sheet_path,
+                schematic,
+                inputs.project,
+                inputs.current_variant,
+                &connected_component,
+            );
 
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
@@ -1679,6 +1719,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 label_points,
                 sheet_pin_points,
                 no_connect_points,
+                hier_sheet_pins,
+                hier_ports,
                 label_bus_members: Vec::new(),
                 port_bus_members: Vec::new(),
                 bus_members: Vec::new(),
@@ -1768,6 +1810,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             label_points: pending.label_points.clone(),
             sheet_pin_points: pending.sheet_pin_points.clone(),
             no_connect_points: pending.no_connect_points.clone(),
+            hier_sheet_pins: pending.hier_sheet_pins.clone(),
+            hier_ports: pending.hier_ports.clone(),
             label_bus_members: pending.label_bus_members.clone(),
             port_bus_members: pending.port_bus_members.clone(),
             bus_members: pending.bus_members.clone(),
@@ -1776,6 +1820,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             non_bus_full_names: pending.non_bus_full_names.clone(),
             bus_items: pending.bus_items.clone(),
             wire_items: pending.wire_items.clone(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
         };
 
         let index = reduced_subgraphs.len();
@@ -1837,6 +1884,116 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             );
         }
         reduced_subgraphs.push(net_identity);
+    }
+
+    let subgraphs_by_sheet = reduced_subgraphs.iter().enumerate().fold(
+        BTreeMap::<String, Vec<usize>>::new(),
+        |mut acc, (index, subgraph)| {
+            acc.entry(subgraph.sheet_instance_path.clone())
+                .or_default()
+                .push(index);
+            acc
+        },
+    );
+    let child_sheet_by_parent_and_uuid = inputs
+        .sheet_paths
+        .iter()
+        .filter_map(|sheet_path| {
+            let sheet_uuid = sheet_path.sheet_uuid.clone()?;
+            let parent_symbol_path = sheet_path
+                .symbol_path
+                .rsplit_once('/')
+                .map(|(parent, _)| parent)
+                .unwrap_or_default();
+            let parent_instance_path = inputs
+                .sheet_paths
+                .iter()
+                .filter(|candidate| {
+                    parent_symbol_path == candidate.symbol_path
+                        || parent_symbol_path.starts_with(&(candidate.symbol_path.clone() + "/"))
+                })
+                .max_by_key(|candidate| candidate.symbol_path.len())
+                .map(|candidate| candidate.instance_path.clone())
+                .unwrap_or_default();
+
+            Some((
+                (parent_instance_path, sheet_uuid),
+                sheet_path.instance_path.clone(),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut hier_parent_indexes = vec![None; reduced_subgraphs.len()];
+    let mut hier_child_indexes = vec![BTreeSet::<usize>::new(); reduced_subgraphs.len()];
+    let mut bus_parent_indexes = vec![BTreeSet::<usize>::new(); reduced_subgraphs.len()];
+
+    for (parent_index, subgraph) in reduced_subgraphs.iter().enumerate() {
+        for hier_pin in &subgraph.hier_sheet_pins {
+            let Some(child_sheet_uuid) = hier_pin.child_sheet_uuid.clone() else {
+                continue;
+            };
+            let Some(child_sheet_instance_path) = child_sheet_by_parent_and_uuid
+                .get(&(subgraph.sheet_instance_path.clone(), child_sheet_uuid))
+            else {
+                continue;
+            };
+            let Some(child_indexes) = subgraphs_by_sheet.get(child_sheet_instance_path) else {
+                continue;
+            };
+
+            for child_index in child_indexes {
+                let child = &reduced_subgraphs[*child_index];
+
+                if !child
+                    .hier_ports
+                    .iter()
+                    .any(|port| port.name == hier_pin.name && port.is_bus == hier_pin.is_bus)
+                {
+                    continue;
+                }
+
+                hier_parent_indexes[*child_index].get_or_insert(parent_index);
+                hier_child_indexes[parent_index].insert(*child_index);
+            }
+        }
+    }
+
+    for (parent_index, subgraph) in reduced_subgraphs.iter().enumerate() {
+        if subgraph.bus_members.is_empty() {
+            continue;
+        }
+
+        let Some(same_sheet_indexes) = subgraphs_by_sheet.get(&subgraph.sheet_instance_path) else {
+            continue;
+        };
+        let member_names = reduced_bus_member_full_local_names(&subgraph.bus_members);
+
+        for child_index in same_sheet_indexes {
+            if *child_index == parent_index {
+                continue;
+            }
+
+            let child = &reduced_subgraphs[*child_index];
+            let mut child_names = child.non_bus_full_names.clone();
+
+            if !child.driver_full_name.is_empty() {
+                child_names.push(child.driver_full_name.clone());
+            } else if !child.name.is_empty() {
+                child_names.push(child.name.clone());
+            }
+
+            if child_names
+                .iter()
+                .any(|name| member_names.iter().any(|member| member == name))
+            {
+                bus_parent_indexes[*child_index].insert(parent_index);
+            }
+        }
+    }
+
+    for (index, subgraph) in reduced_subgraphs.iter_mut().enumerate() {
+        subgraph.hier_parent_index = hier_parent_indexes[index];
+        subgraph.hier_child_indexes = hier_child_indexes[index].iter().copied().collect();
+        subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
     ReducedProjectNetGraph {
@@ -2032,6 +2189,35 @@ pub(crate) fn collect_reduced_project_subgraphs(
     for_board: bool,
 ) -> Vec<ReducedProjectSubgraphEntry> {
     project.reduced_project_net_graph(for_board).subgraphs
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for indexing into `CONNECTION_GRAPH` subgraph storage.
+// This is not a 1:1 pointer owner because the Rust tree still stores cloned reduced subgraphs
+// instead of live `CONNECTION_SUBGRAPH*`, but it keeps parent/child relation consumers on the
+// shared graph owner instead of exposing the private storage directly. Remaining divergence is the
+// still-missing live subgraph object model.
+pub(crate) fn reduced_project_subgraph_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+) -> Option<&ReducedProjectSubgraphEntry> {
+    graph.subgraphs.get(index)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
+// graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
+// reduced `(sheet instance path, subgraph code)` snapshots, but it keeps parent-link consumers on
+// the shared graph owner instead of re-enumerating private storage. Remaining divergence is the
+// still-missing live subgraph object model.
+pub(crate) fn reduced_project_subgraph_index(
+    graph: &ReducedProjectNetGraph,
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<usize> {
+    graph.subgraphs.iter().position(|candidate| {
+        candidate.sheet_instance_path == subgraph.sheet_instance_path
+            && candidate.subgraph_code == subgraph.subgraph_code
+    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -2515,6 +2701,92 @@ fn collect_reduced_subgraph_bus_membership(
         non_bus_names,
         non_bus_full_names,
     )
+}
+
+// Upstream parity: reduced local helper for the hierarchical pin/port membership caches KiCad
+// keeps on `CONNECTION_SUBGRAPH`. This is not a 1:1 item-owner cache because the Rust tree still
+// stores reduced shown-text snapshots instead of live `SCH_SHEET_PIN*` / `SCH_HIERLABEL*`, but it
+// preserves the owning graph boundary where parent-child hierarchy relations can be derived once
+// on the shared subgraph owner instead of inside ERC. Remaining divergence is fuller item-pointer
+// identity and live connection-type ownership.
+fn collect_reduced_subgraph_hierarchy_membership(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    parent_sheet_path: &LoadedSheetPath,
+    schematic: &Schematic,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    connected_component: &ConnectionComponent,
+) -> (Vec<ReducedHierSheetPinLink>, Vec<ReducedHierPortLink>) {
+    let mut hier_sheet_pins = Vec::<ReducedHierSheetPinLink>::new();
+    let mut hier_ports = Vec::<ReducedHierPortLink>::new();
+
+    for item in &schematic.screen.items {
+        match item {
+            SchItem::Sheet(sheet) => {
+                let Some(child_sheet_path) =
+                    child_sheet_path_for_sheet(sheet_paths, parent_sheet_path, sheet)
+                else {
+                    continue;
+                };
+
+                for pin in &sheet.pins {
+                    if !connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::SheetPin
+                            && points_equal(member.at, pin.at)
+                    }) {
+                        continue;
+                    }
+
+                    let shown = shown_sheet_pin_text(
+                        schematics,
+                        sheet_paths,
+                        parent_sheet_path,
+                        child_sheet_path,
+                        project,
+                        current_variant,
+                        None,
+                        pin,
+                    );
+
+                    hier_sheet_pins.push(ReducedHierSheetPinLink {
+                        child_sheet_uuid: sheet.uuid.clone(),
+                        is_bus: reduced_text_is_bus(schematic, &shown),
+                        name: shown,
+                    });
+                }
+            }
+            SchItem::Label(label)
+                if label.kind == LabelKind::Hierarchical
+                    && connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::Label
+                            && points_equal(member.at, label.at)
+                    }) =>
+            {
+                let shown = shown_label_text_without_connectivity(
+                    schematics,
+                    sheet_paths,
+                    parent_sheet_path,
+                    project,
+                    current_variant,
+                    label,
+                );
+
+                hier_ports.push(ReducedHierPortLink {
+                    is_bus: reduced_text_is_bus(schematic, &shown),
+                    name: shown,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    hier_sheet_pins.sort();
+    hier_sheet_pins.dedup();
+    hier_ports.sort();
+    hier_ports.dedup();
+
+    (hier_sheet_pins, hier_ports)
 }
 
 fn reduced_project_base_pin_key(
@@ -4147,6 +4419,108 @@ mod tests {
                 .driver_names
                 .iter()
                 .any(|name| name == &child_sheet.instance_path)
+        );
+
+        let _ = fs::remove_file(root_path);
+        let _ = fs::remove_file(child_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn reduced_project_subgraphs_link_hierarchical_parent_chains() {
+        let dir = env::temp_dir().join(format!(
+            "ki2_connectivity_hier_parent_links_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("mkdir");
+        let root_path = dir.join("root.kicad_sch");
+        let child_path = dir.join("child.kicad_sch");
+
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "SIG" (shape input) (at 0 5 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 5) (xy 10 5)))
+  (label "SIG" (at 10 5 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write child");
+
+        fs::write(
+            &root_path,
+            format!(
+                r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (uuid "73050000-0000-0000-0000-000000000321")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "SIG" input (at 0 5 180) (uuid "73050000-0000-0000-0000-000000000322")))
+  (wire (pts (xy 0 5) (xy 10 5)))
+  (label "SIG" (at 10 5 0) (effects (font (size 1 1)))))"#,
+                child_path.display()
+            ),
+        )
+        .expect("write root");
+
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let child_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path != root_sheet.instance_path)
+            .expect("child sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let root_subgraph = resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0])
+            .expect("root subgraph");
+        let child_subgraph = resolve_reduced_project_subgraph_at(&graph, child_sheet, [0.0, 5.0])
+            .expect("child subgraph");
+        let root_index = graph
+            .subgraphs
+            .iter()
+            .position(|candidate| {
+                candidate.subgraph_code == root_subgraph.subgraph_code
+                    && candidate.sheet_instance_path == root_subgraph.sheet_instance_path
+            })
+            .expect("root index");
+        let child_index = graph
+            .subgraphs
+            .iter()
+            .position(|candidate| {
+                candidate.subgraph_code == child_subgraph.subgraph_code
+                    && candidate.sheet_instance_path == child_subgraph.sheet_instance_path
+            })
+            .expect("child index");
+
+        assert_eq!(
+            graph.subgraphs[child_index].hier_parent_index,
+            Some(root_index),
+            "root hier_sheet_pins={:?} child hier_ports={:?} child sheet path={} root sheet path={}",
+            graph.subgraphs[root_index].hier_sheet_pins,
+            graph.subgraphs[child_index].hier_ports,
+            graph.subgraphs[child_index].sheet_instance_path,
+            graph.subgraphs[root_index].sheet_instance_path,
+        );
+        assert!(
+            graph.subgraphs[root_index]
+                .hier_child_indexes
+                .iter()
+                .any(|index| *index == child_index)
         );
 
         let _ = fs::remove_file(root_path);

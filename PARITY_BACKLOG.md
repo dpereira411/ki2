@@ -488,6 +488,8 @@ Current status:
     ERC comparison site
   - shared reduced non-bus connection-name caches on subgraphs
   - reduced bus-member expansion plus reduced shared non-bus driver names
+  - shared singular full driver-name ownership on subgraphs, so the bus-entry warning fallback no
+    longer guesses from the resolved whole-net name when upstream uses the driver connection name
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
   - nested bus-group text expansion like `USB{PAIR{DP DM} AUX}`
   - KiCad-style suppression when a higher-priority global label or power pin overrides the bus
@@ -549,12 +551,26 @@ Current status:
     branches no longer count buses through the old collapsed `Wire` member kind
   - hierarchy-side sheet-pin shown-text now uses a reduced `SCH_SHEET_PIN::GetShownText()` owner:
     - connection-backed tokens resolve from the parent sheet-pin connection point
+    - shared graph driver-name selection and current-sheet `Name(false)` lookup now also consume
+      that shown-text owner instead of raw sheet-pin names, including unlabeled nets driven only
+      by sheet-pin shown text
     - remaining sheet/project text vars recurse through the child sheet path like the upstream
       parent-sheet branch
     - `ercCheckHierSheets()` plus the exercised bus conflict checks now compare parent sheet pins
       through that owner instead of raw names
   - remaining gap is broader sheet-pin item ownership beyond the now-live shown-text path, not the
     old raw-name comparison branch
+  - current concrete blocker for the next strict graph step is the missing reduced bus-parent /
+    hierarchy-parent relation on shared subgraphs:
+    - local bus ERC still cannot walk `m_bus_parents` / `m_hier_parent`-style neighbors the way
+      upstream `ercCheckLabels()` / `ercCheckBusToNetConflicts()` / `ercCheckBusToBusEntryConflicts()`
+      do
+    - unblock path:
+      1. add reduced parent-subgraph links on the shared project graph for bus parents and
+         hierarchical parent chains
+      2. preserve those links through same-name/reused-screen subgraph dedup
+      3. move the remaining bus/label neighbor checks onto those shared parent links instead of
+         local item-kind inference
 
 ## Net Naming / CLI Requirements
 
