@@ -164,6 +164,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) driver_name: String,
     pub(crate) driver_full_name: String,
     pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
+    pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
     pub(crate) driver_names: Vec<String>,
     pub(crate) driver_full_names: Vec<String>,
     pub(crate) non_bus_driver_priority: Option<i32>,
@@ -209,6 +210,21 @@ pub(crate) enum ReducedProjectDriverIdentity {
         symbol_uuid: Option<String>,
         at: PointKey,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ReducedProjectDriverKind {
+    Label,
+    SheetPin,
+    PowerPin,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedProjectStrongDriver {
+    pub(crate) kind: ReducedProjectDriverKind,
+    pub(crate) priority: i32,
+    pub(crate) name: String,
+    pub(crate) full_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1320,6 +1336,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         driver_name: String,
         driver_full_name: String,
         driver_identity: Option<ReducedProjectDriverIdentity>,
+        drivers: Vec<ReducedProjectStrongDriver>,
         driver_names: Vec<String>,
         driver_full_names: Vec<String>,
         non_bus_driver_priority: Option<i32>,
@@ -1535,8 +1552,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 };
                 let driver_full_names = {
                     let mut names = strong_drivers
-                        .into_iter()
-                        .map(|driver| driver.full_name)
+                        .iter()
+                        .map(|driver| driver.full_name.clone())
                         .collect::<Vec<_>>();
                     names.dedup();
                     names
@@ -1588,6 +1605,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     driver_name,
                     driver_full_name,
                     driver_identity,
+                    drivers: strong_drivers.clone(),
                     driver_names,
                     driver_full_names,
                     non_bus_driver_priority,
@@ -1741,6 +1759,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 driver_name: String::new(),
                 driver_full_name: String::new(),
                 driver_identity: None,
+                drivers: Vec::new(),
                 driver_names: Vec::new(),
                 driver_full_names: Vec::new(),
                 non_bus_driver_priority: None,
@@ -1833,6 +1852,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             driver_name: pending.driver_name.clone(),
             driver_full_name: pending.driver_full_name.clone(),
             driver_identity: pending.driver_identity.clone(),
+            drivers: pending.drivers.clone(),
             driver_names: pending.driver_names.clone(),
             driver_full_names: pending.driver_full_names.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
@@ -3293,13 +3313,6 @@ fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
         || text.contains("CONNECTION_TYPE")
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ReducedStrongDriver {
-    priority: i32,
-    name: String,
-    full_name: String,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReducedNetNameSource {
     GlobalLabel,
@@ -3388,15 +3401,17 @@ struct ReducedDriverNameCandidate {
 // `CONNECTION_SUBGRAPH::ResolveDrivers()`. This is not a 1:1 KiCad driver cache because the Rust
 // tree still lacks live `SCH_CONNECTION` objects and full subgraph ownership, but it now keeps
 // the shared graph's strong-driver names on the same shown-text owner KiCad uses for labels and
-// sheet pins instead of leaving sheet-pin drivers on raw parser text. Remaining divergence is the
-// still-missing live connection object plus fuller power/bus-parent driver ownership.
+// sheet pins instead of leaving sheet-pin drivers on raw parser text, and now also preserves the
+// reduced driver kind the shared graph needs for `ercCheckMultipleDrivers()`-style filtering
+// instead of collapsing every strong driver to bare names. Remaining divergence is the still-
+// missing live connection object plus fuller power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
     sheet_path_prefix: &str,
     mut shown_label_text: FLabel,
     mut shown_sheet_pin_text: FSheet,
-) -> Vec<ReducedStrongDriver>
+) -> Vec<ReducedProjectStrongDriver>
 where
     FLabel: FnMut(&Label) -> String,
     FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
@@ -3422,7 +3437,8 @@ where
                     }
                     LabelKind::Directive => return None,
                 };
-                Some(ReducedStrongDriver {
+                Some(ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
                     priority: reduced_label_driver_priority(label),
                     name: text,
                     full_name,
@@ -3440,7 +3456,8 @@ where
                 .map(|pin| {
                     let shown = shown_sheet_pin_text(sheet, pin);
 
-                    ReducedStrongDriver {
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::SheetPin,
                         priority: reduced_sheet_pin_driver_rank(pin.shape),
                         name: shown.clone(),
                         full_name: format!("{sheet_path_prefix}{shown}"),
@@ -3466,7 +3483,8 @@ where
                     .find_map(|pin| {
                         reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
                             .and_then(|priority| {
-                                symbol_value_text(symbol).map(|text| ReducedStrongDriver {
+                                symbol_value_text(symbol).map(|text| ReducedProjectStrongDriver {
+                                    kind: ReducedProjectDriverKind::PowerPin,
                                     priority,
                                     full_name: if symbol
                                         .lib_symbol

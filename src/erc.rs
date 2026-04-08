@@ -1,11 +1,12 @@
 use crate::connectivity::{
-    ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_points,
-    collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
-    projected_symbol_pin_info, reduced_bus_member_full_local_names,
-    reduced_project_subgraph_by_index, reduced_project_subgraph_index,
-    resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_at,
-    resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
+    ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind,
+    collect_connection_points, collect_reduced_label_component_snapshots,
+    collect_reduced_project_net_map, collect_reduced_project_subgraphs,
+    collect_reduced_project_subgraphs_by_name, projected_symbol_pin_info,
+    reduced_bus_member_full_local_names, reduced_project_subgraph_by_index,
+    reduced_project_subgraph_index, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
+    resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2861,24 +2862,28 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckMultipleDrivers()`. This
 // is not a 1:1 KiCad subgraph-marker pass because the Rust tree still lacks full subgraph objects
 // and marker-owned item identity, but it now reads reduced strong-driver conflicts from the shared
-// project subgraph owner instead of rebuilding them from per-sheet connection components, and now
-// also follows `RunERC()`-style reused-screen driver de-duplication through the shared reduced
-// driver owner. Remaining divergence is fuller bus/power subgraph coverage, driver-item identity,
-// and exact marker attachment.
+// project subgraph owner instead of rebuilding them from per-sheet connection components, now also
+// preserves KiCad's "labels and power pins only" secondary-driver filter instead of warning on
+// sheet-pin-only name differences, and now also follows `RunERC()`-style reused-screen driver
+// de-duplication through the shared reduced driver owner. Remaining divergence is fuller bus/power
+// subgraph coverage, driver-item identity, and exact marker attachment.
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     for subgraph in graph_run_erc_subgraphs(project) {
-        let primary_name = subgraph.driver_names.first().cloned().unwrap_or_default();
-        let Some(secondary_name) = subgraph
-            .driver_names
-            .iter()
-            .skip(1)
-            .find(|name| **name != primary_name)
-            .cloned()
-        else {
+        let Some(primary_driver) = subgraph.drivers.first() else {
             continue;
         };
+        let Some(secondary_driver) = subgraph.drivers.iter().skip(1).find(|driver| {
+            matches!(
+                driver.kind,
+                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+            ) && driver.name != primary_driver.name
+        }) else {
+            continue;
+        };
+        let primary_name = primary_driver.name.clone();
+        let secondary_name = secondary_driver.name.clone();
         let path = project
             .sheet_paths
             .iter()

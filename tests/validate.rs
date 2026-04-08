@@ -3088,6 +3088,60 @@ fn erc_reports_connected_driver_conflicts() {
 }
 
 #[test]
+fn erc_ignores_sheet_pin_only_secondary_driver_names() {
+    let dir = temp_dir_path("erc_sheet_pin_secondary_driver");
+    fs::create_dir_all(&dir).expect("create temp dir");
+    let root_path = dir.join("root.kicad_sch");
+    let child_path = dir.join("child.kicad_sch");
+
+    fs::write(
+        &child_path,
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (hierarchical_label "PARENT_NET" (shape input) (at 0 5 0) (effects (font (size 1 1)))))"#,
+    )
+    .expect("write child");
+
+    fs::write(
+        &root_path,
+        format!(
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (uuid "83050000-0000-0000-0000-000000000321")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "PARENT_NET" input (at 0 5 180) (uuid "83050000-0000-0000-0000-000000000322")))
+  (wire (pts (xy 0 5) (xy 10 5)))
+  (label "LOCAL_NET" (at 10 5 0) (effects (font (size 1 1)))))"#,
+            child_path.display()
+        ),
+    )
+    .expect("write root");
+
+    let loaded = load_schematic_tree(&root_path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-driver-conflict"),
+        "sheet-pin-only secondary drivers should not emit driver conflicts"
+    );
+
+    let _ = fs::remove_file(root_path);
+    let _ = fs::remove_file(child_path);
+    let _ = fs::remove_dir(dir);
+}
+
+#[test]
 fn erc_reports_single_global_labels() {
     let path = temp_schematic(
         "erc_single_global_label",

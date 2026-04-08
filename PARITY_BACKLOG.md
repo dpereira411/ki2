@@ -568,6 +568,9 @@ Current status:
   - `ercCheckLabels()` now walks shared parent links for no-connect and local-hierarchy state
   - `ercCheckBusToNetConflicts()` and `ercCheckBusToBusConflicts()` now classify text items from
     shared subgraph ownership instead of rescanning labels and sheet pins out of the schematic
+  - shared reduced strong-driver ownership now also preserves reduced driver kind:
+    - `ercCheckMultipleDrivers()` now mirrors KiCad's exercised "labels and power pins only"
+      secondary-driver filter instead of warning on sheet-pin-only name differences
   - current concrete blocker for the next strict graph step is no longer missing parent links; it
     is the still-reduced connection object model behind those links:
     - no reduced analogue yet for fuller `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` parent-neighbor
