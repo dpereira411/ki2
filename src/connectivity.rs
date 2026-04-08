@@ -1551,10 +1551,13 @@ struct LiveReducedSubgraph {
     sheet_instance_path: String,
     bus_neighbor_links: Vec<LiveReducedSubgraphLink>,
     bus_parent_links: Vec<LiveReducedSubgraphLink>,
+    #[cfg(test)]
     bus_parent_indexes: Vec<usize>,
     bus_parent_handles: Vec<Weak<RefCell<LiveReducedSubgraph>>>,
     base_pin_count: usize,
+    #[cfg(test)]
     hier_parent_index: Option<usize>,
+    #[cfg(test)]
     hier_child_indexes: Vec<usize>,
     hier_parent_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
     hier_child_handles: Vec<Weak<RefCell<LiveReducedSubgraph>>>,
@@ -1566,6 +1569,24 @@ struct LiveReducedSubgraph {
     bus_items: Vec<LiveReducedSubgraphWireItem>,
     wire_items: Vec<LiveReducedSubgraphWireItem>,
     dirty: bool,
+}
+
+#[cfg(test)]
+fn live_reduced_subgraph_extra_projection_eq(
+    left: &LiveReducedSubgraph,
+    right: &LiveReducedSubgraph,
+) -> bool {
+    left.bus_parent_indexes == right.bus_parent_indexes
+        && left.hier_parent_index == right.hier_parent_index
+        && left.hier_child_indexes == right.hier_child_indexes
+}
+
+#[cfg(not(test))]
+fn live_reduced_subgraph_extra_projection_eq(
+    _left: &LiveReducedSubgraph,
+    _right: &LiveReducedSubgraph,
+) -> bool {
+    true
 }
 
 impl PartialEq for LiveReducedSubgraph {
@@ -1580,10 +1601,8 @@ impl PartialEq for LiveReducedSubgraph {
             && self.sheet_instance_path == other.sheet_instance_path
             && self.bus_neighbor_links == other.bus_neighbor_links
             && self.bus_parent_links == other.bus_parent_links
-            && self.bus_parent_indexes == other.bus_parent_indexes
+            && live_reduced_subgraph_extra_projection_eq(self, other)
             && self.base_pin_count == other.base_pin_count
-            && self.hier_parent_index == other.hier_parent_index
-            && self.hier_child_indexes == other.hier_child_indexes
             && self.has_hier_pins == other.has_hier_pins
             && self.has_hier_ports == other.has_hier_ports
             && self.label_links == other.label_links
@@ -1611,9 +1630,8 @@ fn build_live_reduced_subgraph_handles(
         .map(|subgraph| Rc::new(RefCell::new(subgraph)))
         .collect::<Vec<_>>();
     attach_live_subgraph_links_to_handles(&handles);
-    attach_live_bus_parent_handles_to_handles(&handles);
-    attach_live_hierarchy_links_to_handles(&handles);
-    clear_reduced_topology_indexes_from_live_handles(&handles);
+    attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
+    attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
 }
@@ -1639,10 +1657,13 @@ fn attach_live_subgraph_links_to_handles(live_subgraphs: &[LiveReducedSubgraphHa
 // Upstream parity: local bridge toward pointer-style plain bus-parent topology on the shared live
 // subgraph graph. This still seeds from reduced parent indexes during construction, but the active
 // traversal can now follow attached parent-bus handles even when no current member link exists.
-fn attach_live_bus_parent_handles_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
-    for handle in live_subgraphs {
+fn attach_live_bus_parent_handles_to_handles(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
+) {
+    for (index, handle) in live_subgraphs.iter().enumerate() {
         let mut subgraph = handle.borrow_mut();
-        subgraph.bus_parent_handles = subgraph
+        subgraph.bus_parent_handles = reduced_subgraphs[index]
             .bus_parent_indexes
             .iter()
             .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
@@ -1653,29 +1674,20 @@ fn attach_live_bus_parent_handles_to_handles(live_subgraphs: &[LiveReducedSubgra
 // Upstream parity: local bridge toward pointer-style hierarchy topology on the shared live
 // subgraph graph. This still seeds from reduced hierarchy indexes during construction, but the
 // active live traversal can now follow attached parent/child handles instead of copied indexes.
-fn attach_live_hierarchy_links_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
-    for handle in live_subgraphs {
+fn attach_live_hierarchy_links_to_handles(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
+) {
+    for (index, handle) in live_subgraphs.iter().enumerate() {
         let mut subgraph = handle.borrow_mut();
-        subgraph.hier_parent_handle = subgraph
+        subgraph.hier_parent_handle = reduced_subgraphs[index]
             .hier_parent_index
             .and_then(|index| live_subgraphs.get(index).map(Rc::downgrade));
-        subgraph.hier_child_handles = subgraph
+        subgraph.hier_child_handles = reduced_subgraphs[index]
             .hier_child_indexes
             .iter()
             .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
             .collect();
-    }
-}
-
-// Upstream parity: local bridge toward keeping active live topology on shared handles instead of
-// duplicated reduced indexes. After handle attachment, the active live graph no longer needs the
-// copied hierarchy/plain-parent indexes to drive propagation.
-fn clear_reduced_topology_indexes_from_live_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
-    for handle in live_subgraphs {
-        let mut subgraph = handle.borrow_mut();
-        subgraph.bus_parent_indexes.clear();
-        subgraph.hier_parent_index = None;
-        subgraph.hier_child_indexes.clear();
     }
 }
 
@@ -1738,10 +1750,13 @@ fn build_live_reduced_subgraphs(
                     subgraph_handle: None,
                 })
                 .collect(),
+            #[cfg(test)]
             bus_parent_indexes: subgraph.bus_parent_indexes.clone(),
             bus_parent_handles: Vec::new(),
             base_pin_count: subgraph.base_pins.len(),
+            #[cfg(test)]
             hier_parent_index: subgraph.hier_parent_index,
+            #[cfg(test)]
             hier_child_indexes: subgraph.hier_child_indexes.clone(),
             hier_parent_handle: None,
             hier_child_handles: Vec::new(),
@@ -1974,8 +1989,8 @@ fn live_subgraph_handle_for_link(
 }
 
 // Upstream parity: active hierarchy traversal should follow the shared live parent handle. The
-// copied reduced parent index is cleared after handle attachment and only reconstructed during the
-// final reduced projection.
+// non-test live payload now keeps that topology only on attached handles; reduced parent indexes
+// are reconstructed only at the projection boundary.
 fn live_subgraph_parent_handle(
     _live_subgraphs: &[LiveReducedSubgraphHandle],
     subgraph: &LiveReducedSubgraph,
@@ -1983,8 +1998,9 @@ fn live_subgraph_parent_handle(
     subgraph.hier_parent_handle.as_ref().and_then(Weak::upgrade)
 }
 
-// Upstream parity: active hierarchy traversal now follows shared live child handles instead of
-// copied reduced child indexes. The reduced child index list is projection-only after graph build.
+// Upstream parity: active hierarchy traversal now follows shared live child handles. The non-test
+// live payload no longer needs copied reduced child indexes; reduced child indexes are only
+// reconstructed when projecting the live graph back out.
 fn live_subgraph_child_handles(
     _live_subgraphs: &[LiveReducedSubgraphHandle],
     subgraph: &LiveReducedSubgraph,
@@ -1996,9 +2012,9 @@ fn live_subgraph_child_handles(
         .collect()
 }
 
-// Upstream parity: active plain bus-parent traversal now follows shared live parent handles
-// instead of copied reduced parent indexes. The reduced parent index list is reconstructed only
-// when projecting the live graph back into the reduced shared graph view.
+// Upstream parity: active plain bus-parent traversal now follows shared live parent handles. The
+// non-test live payload no longer needs copied reduced parent indexes; those are reconstructed
+// only when projecting the live graph back into the reduced shared graph view.
 fn live_subgraph_bus_parent_handles(
     _live_subgraphs: &[LiveReducedSubgraphHandle],
     subgraph: &LiveReducedSubgraph,
@@ -10792,7 +10808,7 @@ mod tests {
 
         assert!(Rc::ptr_eq(&bus_neighbor, &handles[1]));
         assert!(Rc::ptr_eq(&net_parent, &handles[0]));
-        assert!(net.bus_parent_indexes.is_empty());
+        assert_eq!(net.bus_parent_handles.len(), 1);
     }
 
     #[test]
@@ -10912,8 +10928,6 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![0, 1]);
-        assert!(handles[0].borrow().hier_child_indexes.is_empty());
-        assert!(handles[1].borrow().hier_parent_index.is_none());
         let child_parent = handles[1]
             .borrow()
             .hier_parent_handle
@@ -11016,13 +11030,10 @@ mod tests {
         ];
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
-        handles[1].borrow_mut().bus_parent_indexes.clear();
-
         let mut component = collect_live_reduced_propagation_component_from_handles(1, &handles);
         component.sort_unstable();
 
         assert_eq!(component, vec![0, 1]);
-        assert!(handles[1].borrow().bus_parent_indexes.is_empty());
         let child_parent = handles[1]
             .borrow()
             .bus_parent_handles

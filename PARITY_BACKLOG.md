@@ -678,6 +678,9 @@ Current status:
       - connected-bus-item ownership now reaches the shared live subgraph graph for bus entries,
         but still not all the way to fuller live item / connection pointer topology across every
         attached item kind
+      - the non-test live subgraph payload no longer stores copied hierarchy/plain-parent reduced
+        indexes for active propagation; those topology indexes are now seeded from the reduced
+        graph only during live-handle attachment and rebuilt only at projection time
       - live connection member trees, the active stale-member bag, stored live bus
         parent/neighbor links, the exercised active rematch helpers, active same-name recache
         updates, and active bus-driven promotion now use dedicated live local member/connection
