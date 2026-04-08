@@ -1,10 +1,10 @@
 use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_components,
     collect_connection_points, collect_reduced_label_component_snapshots,
-    collect_reduced_project_net_map, projected_symbol_pin_info, reduced_bus_members,
-    reduced_text_is_bus, resolve_reduced_driver_conflict_at,
-    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_non_bus_driver_priority_at,
-    resolve_reduced_project_net_at, resolve_reduced_project_net_for_symbol_pin,
+    collect_reduced_project_net_map, collect_reduced_project_subgraphs, projected_symbol_pin_info,
+    reduced_bus_members, reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
+    resolve_reduced_non_bus_driver_priority_at, resolve_reduced_project_net_at,
+    resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2806,40 +2806,43 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckMultipleDrivers()`. This
 // is not a 1:1 KiCad subgraph-marker pass because the Rust tree still lacks full subgraph objects
-// and marker-owned item identity, but it reports the exercised connection-graph rule: when two
-// different strong driver names resolve on one connected component, the winning shared driver name
-// is reported and the lower-priority name is flagged. Remaining divergence is fuller bus/power
-// subgraph coverage and exact marker attachment.
+// and marker-owned item identity, but it now reads reduced strong-driver conflicts from the shared
+// project subgraph owner instead of rebuilding them from per-sheet connection components.
+// Remaining divergence is fuller bus/power subgraph coverage, driver-item identity, and exact
+// marker attachment.
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+    for subgraph in collect_reduced_project_subgraphs(project, false) {
+        let primary_name = subgraph.driver_names.first().cloned().unwrap_or_default();
+        let Some(secondary_name) = subgraph
+            .driver_names
+            .iter()
+            .skip(1)
+            .find(|name| **name != primary_name)
+            .cloned()
+        else {
             continue;
         };
+        let path = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+            .map(|sheet_path| sheet_path.schematic_path.clone())
+            .unwrap_or_else(|| project.root_path.clone());
 
-        for component in collect_connection_components(schematic) {
-            let Some((primary_name, secondary_name)) =
-                resolve_reduced_driver_conflict_at(schematic, component.anchor, |label| {
-                    shown_label_text(project, sheet_path, label)
-                })
-            else {
-                continue;
-            };
-
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-driver-conflict",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Both {primary_name} and {secondary_name} are attached to the same items; {primary_name} will be used in the netlist"
-                ),
-                path: Some(schematic.path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-driver-conflict",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!(
+                "Both {primary_name} and {secondary_name} are attached to the same items; {primary_name} will be used in the netlist"
+            ),
+            path: Some(path),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics

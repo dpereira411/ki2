@@ -470,6 +470,10 @@ Current status:
     member driver
 - the named graph-owned bus conflict trio is now covered in the reduced graph
 - reduced `ercCheckMultipleDrivers()` coverage is now live for the exercised strong-driver slice
+- reduced `ercCheckMultipleDrivers()` now reads strong-driver conflicts from the shared reduced
+  project subgraph owner instead of rebuilding them from per-sheet connection components
+- reduced shared subgraph ownership now preserves node-less driver subgraphs so pure connected-label
+  strong-driver conflicts survive into the graph-owned ERC path
 - reduced pin-to-pin coverage is now live on top of the upstream default pin matrix
 - reduced `TestPinToPin()` now iterates the shared reduced project net map like upstream `m_nets`
   instead of per-sheet connection components, while still using shared physical `base_pins` so
@@ -798,8 +802,12 @@ What is already covered indirectly:
   whole-net code space
 - reduced project subgraphs now keep local driver names from the shared driver-selection owner
   instead of deriving them by stripping the full resolved net name
+- reduced project subgraphs now also keep strong-driver name sets for graph-owned ERC conflict
+  consumers instead of forcing those callers back through per-sheet component scans
 - XML/KiCad net export now aggregates `nets` from the shared reduced subgraph owner instead of
   consuming only the already-flattened whole-net carrier
+- shared whole-net map canonicalization now prefers user-named `(ref,pin)` ownership before final
+  netcode assignment, so discarded duplicate-pin auto nets do not leave stale code gaps in export
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`
   power/virtual-symbol node filter, including skipped power-only nets without renumbering later
   emitted net codes

@@ -128,6 +128,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) code: usize,
     pub(crate) name: String,
     pub(crate) driver_name: String,
+    pub(crate) driver_names: Vec<String>,
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
     pub(crate) sheet_instance_path: String,
@@ -824,8 +825,10 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
 // KiCad's XML/KiCad exporters consume. This is not a 1:1 `CONNECTION_GRAPH` port because the Rust
 // tree still lacks real `CONNECTION_SUBGRAPH` objects, graph-owned netcodes, and cached driver
 // item identity, but it preserves one shared reduced net-map owner instead of rebuilding net
-// grouping inside each exporter. Remaining divergence is the missing full subgraph object model and
-// graph-owned netcode allocation beyond these grouped reduced subgraphs.
+// grouping inside each exporter. It now also keeps node-less driver subgraphs instead of dropping
+// them before the shared graph owner sees them, matching KiCad's graph-owned subgraph coverage
+// more closely. Remaining divergence is the missing full subgraph object model and graph-owned
+// netcode allocation beyond these grouped reduced subgraphs.
 pub(crate) fn collect_reduced_net_map<FName, FClass, FAllow, FReference>(
     schematic: &Schematic,
     sheet_instance_path: &str,
@@ -915,10 +918,6 @@ where
             }
         }
 
-        if nodes.is_empty() {
-            continue;
-        }
-
         net_map
             .entry(net_name)
             .or_default()
@@ -974,6 +973,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     struct PendingProjectSubgraph {
         name: String,
         driver_name: String,
+        driver_names: Vec<String>,
         class: String,
         has_no_connect: bool,
         sheet_instance_path: String,
@@ -1067,13 +1067,15 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     ..
                 } = subgraph;
 
+                let connected_component = connection_component_at(
+                    schematic,
+                    [f64::from_bits(points[0].0), f64::from_bits(points[0].1)],
+                )
+                .expect("project reduced subgraph must keep its source component");
+
                 let driver_name = resolve_reduced_driver_name_on_component(
                     schematic,
-                    &connection_component_at(
-                        schematic,
-                        [f64::from_bits(points[0].0), f64::from_bits(points[0].1)],
-                    )
-                    .expect("project reduced subgraph must keep its source component"),
+                    &connected_component,
                     |label| {
                         shown_label_text_without_connectivity(
                             inputs.schematics,
@@ -1086,16 +1088,47 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     },
                 )
                 .unwrap_or_else(|| reduced_short_net_name(&entry.name));
+                let driver_names = {
+                    let mut names =
+                        collect_reduced_strong_drivers(schematic, &connected_component, |label| {
+                            shown_label_text_without_connectivity(
+                                inputs.schematics,
+                                inputs.sheet_paths,
+                                sheet_path,
+                                inputs.project,
+                                inputs.current_variant,
+                                label,
+                            )
+                        })
+                        .into_iter()
+                        .map(|driver| driver.name)
+                        .collect::<Vec<_>>();
+                    names.dedup();
+                    names
+                };
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
                     driver_name,
+                    driver_names,
                     class: class.clone(),
                     has_no_connect,
                     sheet_instance_path: sheet_path.instance_path.clone(),
                     points: points.clone(),
                     nodes: nodes.clone(),
                     base_pins: base_pins.clone(),
+                });
+
+                nets.entry(entry.name.clone()).or_insert_with(|| {
+                    (
+                        class.clone(),
+                        has_no_connect,
+                        BTreeMap::new(),
+                        all_base_pins_by_net
+                            .get(&entry.name)
+                            .cloned()
+                            .unwrap_or_default(),
+                    )
                 });
 
                 all_base_pins_by_net
@@ -1209,6 +1242,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     code: net.code,
                     name: net.name.clone(),
                     driver_name: pending.driver_name.clone(),
+                    driver_names: pending.driver_names.clone(),
                     class: if pending.class.is_empty() {
                         net.class.clone()
                     } else {
@@ -1313,6 +1347,17 @@ pub(crate) fn collect_reduced_project_net_map(
             Vec<ReducedNetBasePinKey>,
         ),
     >::new();
+    let mut candidates = BTreeMap::<
+        (String, String),
+        (
+            usize,
+            String,
+            String,
+            bool,
+            ReducedNetNode,
+            Option<ReducedNetBasePinKey>,
+        ),
+    >::new();
 
     for subgraph in project.reduced_project_net_graph(for_board).subgraphs {
         let entry = grouped
@@ -1333,10 +1378,46 @@ pub(crate) fn collect_reduced_project_net_map(
         entry.1 |= subgraph.has_no_connect;
 
         for node in subgraph.nodes {
-            entry
-                .2
-                .entry((node.reference.clone(), node.pin.clone()))
-                .or_insert(node);
+            let base_pin_key = subgraph
+                .base_pins
+                .iter()
+                .find(|base_pin| {
+                    base_pin.symbol_uuid.is_some()
+                        && node
+                            .pinfunction
+                            .as_ref()
+                            .map(|pinfunction| {
+                                base_pin
+                                    .name
+                                    .as_ref()
+                                    .is_some_and(|name| pinfunction.starts_with(name))
+                            })
+                            .unwrap_or(base_pin.name.is_none())
+                })
+                .cloned()
+                .or_else(|| subgraph.base_pins.first().cloned());
+            let key = (node.reference.clone(), node.pin.clone());
+            let candidate = (
+                subgraph.code,
+                subgraph.name.clone(),
+                subgraph.class.clone(),
+                subgraph.has_no_connect,
+                node,
+                base_pin_key,
+            );
+
+            match candidates.get(&key) {
+                Some(existing)
+                    if is_auto_generated_net_name(&existing.1)
+                        && !is_auto_generated_net_name(&candidate.1) =>
+                {
+                    candidates.insert(key, candidate);
+                }
+                None => {
+                    candidates.insert(key, candidate);
+                }
+                _ => {}
+            }
         }
 
         for base_pin in subgraph.base_pins {
@@ -1346,15 +1427,43 @@ pub(crate) fn collect_reduced_project_net_map(
         }
     }
 
+    for ((_reference, _pin), (code, name, class, has_no_connect, node, base_pin_key)) in candidates
+    {
+        let entry = grouped
+            .entry((code, name))
+            .or_insert_with(|| (class.clone(), has_no_connect, BTreeMap::new(), Vec::new()));
+
+        if entry.0.is_empty() && !class.is_empty() {
+            entry.0 = class;
+        }
+
+        entry.1 |= has_no_connect;
+        entry
+            .2
+            .insert((node.reference.clone(), node.pin.clone()), node);
+        if let Some(base_pin_key) = base_pin_key {
+            if !entry.3.contains(&base_pin_key) {
+                entry.3.push(base_pin_key);
+            }
+        }
+    }
+
     grouped
         .into_iter()
+        .filter_map(
+            |((_code, name), (class, has_no_connect, nodes, base_pins))| {
+                let nodes = nodes.into_values().collect::<Vec<_>>();
+                (!nodes.is_empty()).then_some((name, class, has_no_connect, nodes, base_pins))
+            },
+        )
+        .enumerate()
         .map(
-            |((code, name), (class, has_no_connect, nodes, base_pins))| ReducedProjectNetEntry {
-                code,
+            |(index, (name, class, has_no_connect, nodes, base_pins))| ReducedProjectNetEntry {
+                code: index + 1,
                 name,
                 class,
                 has_no_connect,
-                nodes: nodes.into_values().collect(),
+                nodes,
                 base_pins,
             },
         )
@@ -2261,31 +2370,6 @@ where
         sheet_path_prefix,
         shown_label_text,
     )
-}
-
-// Upstream parity: reduced local analogue for the strong-driver conflict part of
-// `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `ercCheckMultipleDrivers()`. This is not a 1:1
-// KiCad subgraph conflict owner because the Rust tree still lacks full subgraphs, cached driver
-// item identity, and marker placement. It exists so ERC can report the exercised case where two
-// different strong driver names are attached to one reduced connected component and one wins the
-// net name according to the shared driver ranking.
-pub(crate) fn resolve_reduced_driver_conflict_at<F>(
-    schematic: &Schematic,
-    at: [f64; 2],
-    shown_label_text: F,
-) -> Option<(String, String)>
-where
-    F: FnMut(&Label) -> String,
-{
-    let connected_component = connection_component_at(schematic, at)?;
-    let drivers = collect_reduced_strong_drivers(schematic, &connected_component, shown_label_text);
-    let primary = drivers.first()?;
-    let secondary = drivers
-        .iter()
-        .skip(1)
-        .find(|driver| driver.name != primary.name)?;
-
-    Some((primary.name.clone(), secondary.name.clone()))
 }
 
 // Upstream parity: reduced local analogue for the driver-netclass lookup side of
