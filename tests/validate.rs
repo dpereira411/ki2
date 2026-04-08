@@ -1218,8 +1218,11 @@ fn cli_netlist_exports_component_metadata_properties() {
     let jumper_pin_groups = report
         .find("<jumper_pin_groups>")
         .expect("jumper_pin_groups");
+    let fields = report.find("      <fields>\n").expect("component fields");
+    let libsource = report.find("<libsource ").expect("libsource");
     let sheetpath = report.find("<sheetpath ").expect("sheetpath");
     let units = report.find("<units>").expect("units");
+    assert!(fields < libsource, "{report}");
     assert!(mpn < exclude_from_bom, "{report}");
     assert!(exclude_from_bom < exclude_from_board, "{report}");
     assert!(exclude_from_board < dnp, "{report}");

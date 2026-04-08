@@ -1544,6 +1544,20 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             ));
         }
 
+        if !component.fields.is_empty() {
+            xml.push_str("      <fields>\n");
+
+            for (name, value) in component.fields {
+                xml.push_str(&format!(
+                    "        <field name=\"{}\">{}</field>\n",
+                    escape_xml(&name),
+                    escape_xml(&value)
+                ));
+            }
+
+            xml.push_str("      </fields>\n");
+        }
+
         xml.push_str("      <libsource");
         xml.push_str(&format!(" lib=\"{}\"", escape_xml(&component.lib)));
         xml.push_str(&format!(" part=\"{}\"", escape_xml(&component.part)));
@@ -1686,20 +1700,6 @@ fn render_reduced_netlist(project: &SchematicProject, include_kicad_sections: bo
             }
 
             xml.push_str("      </units>\n");
-        }
-
-        if !component.fields.is_empty() {
-            xml.push_str("      <fields>\n");
-
-            for (name, value) in component.fields {
-                xml.push_str(&format!(
-                    "        <field name=\"{}\">{}</field>\n",
-                    escape_xml(&name),
-                    escape_xml(&value)
-                ));
-            }
-
-            xml.push_str("      </fields>\n");
         }
 
         xml.push_str("    </comp>\n");

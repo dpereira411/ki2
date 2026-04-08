@@ -736,6 +736,8 @@ What is already covered indirectly:
     - canonical `Footprint`
     - canonical `Datasheet`
     - canonical `Description`
+    - exercised component `<fields>` now emit before `<libsource>`, matching `addSymbolFields()`
+      ownership inside `makeSymbols()` more closely
   - reduced `sheetpath names` / `tstamps` from loaded hierarchy paths
   - reduced `tstamps`
   - reduced per-lib-unit pin export on `<units>`
