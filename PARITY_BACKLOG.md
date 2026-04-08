@@ -352,15 +352,9 @@ Current status:
     the whole hierarchy pass instead of resolving connectivity label-by-label through local
     current-sheet reducers
   - intersheet-ref cross-reference pin `NET_NAME` / `SHORT_NET_NAME` now also read through that
-    same shared graph pass; remaining divergence in that slice is narrower and limited to
-    `NET_CLASS(pin)`, which still falls back to the older point-netclass resolver in at least one
-    reused-sheet symbol-pin case even after reduced component netclass ownership was widened from
-    the anchor point to the full reduced component
-  - likely remaining cause for that reused-sheet pin-class miss:
-    - project graph node candidates still collapse by `(reference, pin)` instead of fuller
-      occurrence/item identity
-    - next unblock path is to widen that candidate key (or the node carrier) so reused-sheet
-      symbol-pin lookups do not lose per-occurrence netclass ownership
+    same shared graph pass, including `${REF:NET_CLASS(pin)}` after project-graph candidate
+    ownership was widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
+    lookups no longer lose per-occurrence netclass ownership before identity assignment
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match

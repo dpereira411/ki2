@@ -4593,17 +4593,6 @@ fn resolve_symbol_pin_text_var(
                 .as_ref()
                 .map(|net| net.class.clone())
                 .filter(|value| !value.is_empty())
-                .or_else(|| {
-                    resolve_point_connectivity_text_var(
-                        schematics,
-                        sheet_paths,
-                        candidate_path,
-                        project,
-                        current_variant,
-                        pin_at,
-                        token_kind,
-                    )
-                })
                 .or_else(|| Some(String::new())),
             _ => resolve_point_connectivity_text_var(
                 schematics,
@@ -4756,17 +4745,6 @@ fn resolve_symbol_pin_text_var(
                         })
                         .map(|net| net.class)
                         .filter(|value| !value.is_empty())
-                        .or_else(|| {
-                            resolve_point_connectivity_text_var(
-                                schematics,
-                                sheet_paths,
-                                alternate_path,
-                                project,
-                                current_variant,
-                                pin_at,
-                                token_kind,
-                            )
-                        })
                         .or_else(|| Some(String::new())),
                     _ => resolve_point_connectivity_text_var(
                         schematics,
@@ -4792,7 +4770,8 @@ fn resolve_symbol_pin_text_var(
 // hierarchy resolver stack and full connection graph. It is needed so `${ref:FIELD[:VARIANT]}` and
 // the exercised `${ref:NET_NAME(pin)}` / `${ref:SHORT_NET_NAME(pin)}` / `${ref:PIN_NAME(pin)}`
 // slice can follow loaded symbol/sheet occurrence state instead of staying stuck on raw tokens.
-// Remaining divergence is the broader resolver surface, including `${ref:NET_CLASS(pin)}`.
+// Remaining divergence is the broader resolver surface beyond the exercised direct field and pin
+// connectivity tokens, not the shared graph-owned `${ref:NET_CLASS(pin)}` path itself.
 pub(crate) fn resolve_cross_reference_text_var(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],

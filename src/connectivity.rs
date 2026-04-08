@@ -918,16 +918,17 @@ where
 // still lacks real `CONNECTION_SUBGRAPH` objects, driver objects, and live item pointers, but it
 // now owns one shared reduced project net map plus item lookup indexes instead of making ERC and
 // export rebuild those facts independently. Remaining divergence is the missing full subgraph
-// object model and graph-owned resolved-name caches beyond this reduced project graph; the current
-// node-candidate collapse still keys by `(reference, pin)` rather than a fuller occurrence/item
-// identity, which is why one reused-sheet symbol-pin netclass path still needs a fallback.
+// object model and graph-owned resolved-name caches beyond this reduced project graph; candidate
+// ownership is now widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
+// identity is not collapsed before pin net/class ownership is assigned, but the outward reduced
+// node carrier is still narrower than a real `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
 ) -> ReducedProjectNetGraph {
     let mut all_base_pins_by_net = BTreeMap::<String, Vec<ReducedNetBasePinKey>>::new();
     let mut candidates = BTreeMap::<
-        (String, String),
+        (String, String, String),
         (String, String, bool, ReducedNetNode, ReducedNetBasePinKey),
     >::new();
     let mut point_keys_by_net = BTreeMap::<String, Vec<ReducedProjectPointIdentityKey>>::new();
@@ -1016,7 +1017,11 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     .extend(base_pins.iter().cloned());
 
                 for node in nodes {
-                    let key = (node.reference.clone(), node.pin.clone());
+                    let key = (
+                        sheet_path.instance_path.clone(),
+                        node.reference.clone(),
+                        node.pin.clone(),
+                    );
                     let base_pin_key = base_pins
                         .iter()
                         .find(|base_pin| {
@@ -1071,8 +1076,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         }
     }
 
-    for ((reference, pin_number), (net_name, net_class, has_no_connect, node, base_pin_key)) in
-        candidates
+    for (
+        (_sheet_instance_path, reference, pin_number),
+        (net_name, net_class, has_no_connect, node, base_pin_key),
+    ) in candidates
     {
         let net_nodes = nets.entry(net_name.clone()).or_insert_with(|| {
             (
