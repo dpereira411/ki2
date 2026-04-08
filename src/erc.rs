@@ -1853,9 +1853,9 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // reduced label links plus shared reduced hierarchy pin/port links for local hierarchy state, and
 // shared reduced project subgraphs for pin counts and same-name neighbor aggregation instead of
 // grouping local component snapshots by ad-hoc `net_name` strings inside ERC. It now also follows
-// `RunERC()`-style reused-screen de-duplication through the shared reduced driver owner instead of
-// sweeping every repeated driven subgraph independently. The remaining divergence is the still-
-// missing fuller bus-parent ownership plus the local dangling-label probe.
+// `RunERC()`-style reused-screen de-duplication through the shared reduced driver owner, and now
+// walks reduced member-keyed bus-parent links instead of bare parent index lists. Remaining
+// divergence is fuller live bus-neighbor connection ownership plus the local dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     fn subgraph_has_local_hierarchy_via_bus_parents(
         graph: &crate::connectivity::ReducedProjectNetGraph,
@@ -1865,8 +1865,9 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             return false;
         };
 
-        subgraph.bus_parent_indexes.iter().any(|parent_index| {
-            let Some(parent) = reduced_project_subgraph_by_index(graph, *parent_index) else {
+        subgraph.bus_parent_links.iter().any(|parent_link| {
+            let Some(parent) = reduced_project_subgraph_by_index(graph, parent_link.subgraph_index)
+            else {
                 return false;
             };
 
@@ -1882,7 +1883,11 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
             return false;
         };
-        let mut pending = subgraph.bus_parent_indexes.clone();
+        let mut pending = subgraph
+            .bus_parent_links
+            .iter()
+            .map(|link| link.subgraph_index)
+            .collect::<Vec<_>>();
         let mut seen = std::collections::BTreeSet::new();
 
         while let Some(parent_index) = pending.pop() {

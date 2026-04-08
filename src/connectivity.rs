@@ -150,6 +150,12 @@ pub(crate) struct ReducedProjectConnection {
     pub(crate) members: Vec<ReducedBusMember>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedProjectBusNeighborLink {
+    pub(crate) member: ReducedBusMember,
+    pub(crate) subgraph_index: usize,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedLabelLink {
     pub(crate) at: PointKey,
@@ -199,6 +205,8 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) bus_members: Vec<ReducedBusMember>,
     pub(crate) bus_items: Vec<ReducedSubgraphWireItem>,
     pub(crate) wire_items: Vec<ReducedSubgraphWireItem>,
+    pub(crate) bus_neighbor_links: Vec<ReducedProjectBusNeighborLink>,
+    pub(crate) bus_parent_links: Vec<ReducedProjectBusNeighborLink>,
     pub(crate) bus_parent_indexes: Vec<usize>,
     pub(crate) hier_parent_index: Option<usize>,
     pub(crate) hier_child_indexes: Vec<usize>,
@@ -527,6 +535,23 @@ pub(crate) fn reduced_bus_member_full_local_names(members: &[ReducedBusMember]) 
 
     collect(members, &mut names);
     names
+}
+
+fn reduced_bus_member_leaf_objects(members: &[ReducedBusMember]) -> Vec<ReducedBusMember> {
+    let mut leaves = Vec::new();
+
+    fn collect(members: &[ReducedBusMember], leaves: &mut Vec<ReducedBusMember>) {
+        for member in members {
+            if member.kind == ReducedBusMemberKind::Bus {
+                collect(&member.members, leaves);
+            } else {
+                leaves.push(member.clone());
+            }
+        }
+    }
+
+    collect(members, &mut leaves);
+    leaves
 }
 
 fn make_reduced_bus_member(
@@ -1936,6 +1961,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             bus_members: pending.bus_members.clone(),
             bus_items: pending.bus_items.clone(),
             wire_items: pending.wire_items.clone(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
             hier_parent_index: None,
             hier_child_indexes: Vec::new(),
@@ -2041,6 +2068,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut hier_parent_indexes = vec![None; reduced_subgraphs.len()];
     let mut hier_child_indexes = vec![BTreeSet::<usize>::new(); reduced_subgraphs.len()];
     let mut bus_parent_indexes = vec![BTreeSet::<usize>::new(); reduced_subgraphs.len()];
+    let mut bus_neighbor_links =
+        vec![BTreeSet::<ReducedProjectBusNeighborLink>::new(); reduced_subgraphs.len()];
+    let mut bus_parent_links =
+        vec![BTreeSet::<ReducedProjectBusNeighborLink>::new(); reduced_subgraphs.len()];
 
     for (parent_index, subgraph) in reduced_subgraphs.iter().enumerate() {
         for hier_pin in &subgraph.hier_sheet_pins {
@@ -2081,7 +2112,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         let Some(same_sheet_indexes) = subgraphs_by_sheet.get(&subgraph.sheet_instance_path) else {
             continue;
         };
-        let member_names = reduced_bus_member_full_local_names(&subgraph.bus_members);
+        let member_leaves = reduced_bus_member_leaf_objects(&subgraph.bus_members);
 
         for child_index in same_sheet_indexes {
             if *child_index == parent_index {
@@ -2107,11 +2138,21 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 child_names.push(child.resolved_connection.name.clone());
             }
 
-            if child_names
-                .iter()
-                .any(|name| member_names.iter().any(|member| member == name))
-            {
-                bus_parent_indexes[*child_index].insert(parent_index);
+            for member in &member_leaves {
+                if child_names
+                    .iter()
+                    .any(|name| name == &member.full_local_name)
+                {
+                    bus_parent_indexes[*child_index].insert(parent_index);
+                    bus_neighbor_links[parent_index].insert(ReducedProjectBusNeighborLink {
+                        member: member.clone(),
+                        subgraph_index: *child_index,
+                    });
+                    bus_parent_links[*child_index].insert(ReducedProjectBusNeighborLink {
+                        member: member.clone(),
+                        subgraph_index: parent_index,
+                    });
+                }
             }
         }
     }
@@ -2119,6 +2160,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     for (index, subgraph) in reduced_subgraphs.iter_mut().enumerate() {
         subgraph.hier_parent_index = hier_parent_indexes[index];
         subgraph.hier_child_indexes = hier_child_indexes[index].iter().copied().collect();
+        subgraph.bus_neighbor_links = bus_neighbor_links[index].iter().cloned().collect();
+        subgraph.bus_parent_links = bus_parent_links[index].iter().cloned().collect();
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
@@ -4875,6 +4918,54 @@ mod tests {
 
         assert_eq!(gnd_pin.name, "VCC");
         assert_eq!(agnd_pin.name, "GND");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_subgraphs_track_bus_neighbor_links() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_neighbor_links_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000701")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (label "DATA[1..0]" (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 20) (xy 10 20)))
+  (label "DATA0" (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("bus subgraph");
+        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+            .expect("net subgraph");
+
+        assert!(bus.bus_neighbor_links.iter().any(|link| {
+            link.member.full_local_name == "/DATA0" && link.subgraph_index == net.subgraph_code - 1
+        }));
+        assert!(net.bus_parent_links.iter().any(|link| {
+            link.member.full_local_name == "/DATA0" && link.subgraph_index == bus.subgraph_code - 1
+        }));
 
         let _ = fs::remove_file(path);
     }
