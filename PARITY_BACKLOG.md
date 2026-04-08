@@ -478,12 +478,14 @@ Current status:
   - shared reduced subgraph-owned bus-member caches for label/port members
   - reduced bus-member expansion from aliases and bracketed vectors
   - nested bus-group text expansion with brace-depth-aware member splitting
+  - shared reduced direct-member objects with `Name()`-style local naming on subgraphs
   - reduced shared-member overlap acceptance for connected bus label/port pairs
   - shared reduced label/port ownership on project subgraphs
 - reduced `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()` coverage is now live through:
   - shared reduced project subgraphs
   - shared reduced bus-entry line membership
-  - shared reduced full-local bus-member caches on subgraphs
+  - shared reduced bus-member objects with flattened `FullLocalName()`-style comparison only at the
+    ERC comparison site
   - shared reduced non-bus connection-name caches on subgraphs
   - reduced bus-member expansion plus reduced shared non-bus driver names
   - prefixed bus-group members like `USB{DP DM}` -> `USB.DP` / `USB.DM`
@@ -542,7 +544,7 @@ Current status:
       full-vs-short/path-qualified reduced net naming split
     - netcode-style ownership beyond the now-live shared graph code preservation on the reduced
       whole-net map
-    - richer bus-member objects beyond the now-live nested text expansion
+    - fuller resolved member-object ownership beyond the now-live reduced bus-member tree
   - shared connection points now keep bus segments distinct from wire segments, so wire-only ERC
     branches no longer count buses through the old collapsed `Wire` member kind
   - hierarchy-side sheet-pin shown-text now uses a reduced `SCH_SHEET_PIN::GetShownText()` owner:

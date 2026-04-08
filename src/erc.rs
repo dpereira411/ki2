@@ -2,9 +2,9 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_points,
     collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
     collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
-    projected_symbol_pin_info, reduced_text_is_bus, resolve_reduced_project_net_for_symbol_pin,
-    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
-    resolve_reduced_project_subgraph_for_no_connect,
+    projected_symbol_pin_info, reduced_bus_member_full_local_names, reduced_text_is_bus,
+    resolve_reduced_project_net_for_symbol_pin, resolve_reduced_project_subgraph_at,
+    resolve_reduced_project_subgraph_for_label, resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2466,12 +2466,12 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusConflicts()`.
 // This is not a 1:1 KiCad bus-member connection pass because the Rust tree still expands only
-// reduced alias/vector members instead of full `SCH_CONNECTION::Members()` trees. It now flags bus
-// label/port pairs on shared reduced project subgraphs instead of rebuilding per-sheet connection
-// components, now compares reduced full-local member names instead of bare member text, and now
-// also follows `RunERC()`-style reused-screen driver de-duplication through the shared reduced
-// graph owner. Remaining divergence is fuller nested bus-member semantics beyond this reduced
-// full-local-name overlap check.
+// alias/vector members instead of full live `SCH_CONNECTION` objects. It now flags bus label/port
+// pairs on shared reduced project subgraphs instead of rebuilding per-sheet connection components,
+// and now compares direct shared member `Name()` values from reduced bus-member objects instead of
+// bare repo-local string rescans. It also follows `RunERC()`-style reused-screen driver
+// de-duplication through the shared reduced graph owner. Remaining divergence is fuller resolved
+// member-object ownership beyond this reduced direct-member-name overlap check.
 pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2492,10 +2492,22 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
             continue;
         };
         if !subgraph.label_bus_members.is_empty() {
-            label_members = Some(subgraph.label_bus_members.clone());
+            label_members = Some(
+                subgraph
+                    .label_bus_members
+                    .iter()
+                    .map(|member| member.name.clone())
+                    .collect(),
+            );
         }
         if !subgraph.port_bus_members.is_empty() {
-            port_members = Some(subgraph.port_bus_members.clone());
+            port_members = Some(
+                subgraph
+                    .port_bus_members
+                    .iter()
+                    .map(|member| member.name.clone())
+                    .collect(),
+            );
         }
         if label_members.is_some() {
             label_at = subgraph_labels(&graph, sheet_path, schematic, &subgraph)
@@ -2539,15 +2551,15 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
 // This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still derives bus members and
-// net drivers from reduced shown-text carriers instead of `SCH_CONNECTION` plus connected-bus-item
+// net drivers from reduced graph carriers instead of live `SCH_CONNECTION` plus connected-bus-item
 // ownership. It now mirrors the exercised KiCad flow on shared reduced project subgraphs instead
-// of rebuilding per-sheet connection components, and now also follows `RunERC()`-style
-// reused-screen driver de-duplication through the shared reduced graph owner. It now also warns
-// once from the shared subgraph full-name driver after membership testing against reduced
-// full-local bus members and the shared driver set, instead of sweeping every non-bus shown-text
-// on the subgraph independently, and now anchors the reduced report location at the shared
-// bus-entry item position instead of the old repo-local net-label point. Remaining divergence is
-// fuller bus-object ownership and cached subgraph driver state.
+// of rebuilding per-sheet connection components, now tests shared bus-member objects by flattened
+// `FullLocalName()`-style names, and now also follows `RunERC()`-style reused-screen driver
+// de-duplication through the shared reduced graph owner. It still warns once from the shared
+// subgraph full-name driver after membership testing against the shared driver set, and now
+// anchors the reduced report location at the shared bus-entry item position instead of the old
+// repo-local net-label point. Remaining divergence is fuller resolved bus-object ownership and
+// cached subgraph driver state.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2575,7 +2587,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let Some(bus_name) = subgraph.bus_name.clone() else {
             continue;
         };
-        let bus_members = &subgraph.full_local_bus_members;
+        let bus_members = reduced_bus_member_full_local_names(&subgraph.bus_members);
         if bus_members.is_empty() {
             continue;
         }

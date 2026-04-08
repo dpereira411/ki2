@@ -118,6 +118,21 @@ pub(crate) struct ReducedProjectNetIdentity {
     pub(crate) has_no_connect: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ReducedBusMemberKind {
+    Net,
+    Bus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedBusMember {
+    pub(crate) name: String,
+    pub(crate) local_name: String,
+    pub(crate) full_local_name: String,
+    pub(crate) kind: ReducedBusMemberKind,
+    pub(crate) members: Vec<ReducedBusMember>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) subgraph_code: usize,
@@ -138,9 +153,9 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) label_points: Vec<(PointKey, LabelKind)>,
     pub(crate) sheet_pin_points: Vec<PointKey>,
     pub(crate) no_connect_points: Vec<PointKey>,
-    pub(crate) label_bus_members: Vec<String>,
-    pub(crate) port_bus_members: Vec<String>,
-    pub(crate) full_local_bus_members: Vec<String>,
+    pub(crate) label_bus_members: Vec<ReducedBusMember>,
+    pub(crate) port_bus_members: Vec<ReducedBusMember>,
+    pub(crate) bus_members: Vec<ReducedBusMember>,
     pub(crate) bus_name: Option<String>,
     pub(crate) non_bus_names: Vec<String>,
     pub(crate) non_bus_full_names: Vec<String>,
@@ -314,49 +329,218 @@ fn reduced_bus_members_inner(
     text: &str,
     active_aliases: &mut BTreeSet<String>,
 ) -> Vec<String> {
-    fn split_group_members(inner: &str) -> Vec<String> {
-        let mut members = Vec::new();
-        let mut current = String::new();
-        let mut depth = 0usize;
-        let mut escaped = false;
+    reduced_bus_member_full_local_names(&collect_reduced_bus_member_objects_inner(
+        schematic,
+        text,
+        "",
+        "",
+        active_aliases,
+    ))
+}
 
-        for ch in inner.chars() {
-            if escaped {
+fn split_reduced_bus_group_members(inner: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+    let mut escaped = false;
+
+    for ch in inner.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+
+        match ch {
+            '\\' => {
                 current.push(ch);
-                escaped = false;
-                continue;
+                escaped = true;
             }
-
-            match ch {
-                '\\' => {
-                    current.push(ch);
-                    escaped = true;
-                }
-                '{' => {
-                    depth += 1;
-                    current.push(ch);
-                }
-                '}' => {
-                    depth = depth.saturating_sub(1);
-                    current.push(ch);
-                }
-                _ if ch.is_whitespace() && depth == 0 => {
-                    if !current.is_empty() {
-                        members.push(current);
-                        current = String::new();
-                    }
-                }
-                _ => current.push(ch),
+            '{' => {
+                depth += 1;
+                current.push(ch);
             }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                current.push(ch);
+            }
+            _ if ch.is_whitespace() && depth == 0 => {
+                if !current.is_empty() {
+                    members.push(current);
+                    current = String::new();
+                }
+            }
+            _ => current.push(ch),
         }
-
-        if !current.is_empty() {
-            members.push(current);
-        }
-
-        members
     }
 
+    if !current.is_empty() {
+        members.push(current);
+    }
+
+    members
+}
+
+fn reduced_bus_vector_members(text: &str) -> Option<Vec<String>> {
+    let (prefix, suffix) = text.split_once('[')?;
+    let range = suffix.strip_suffix(']')?;
+    let (start, end) = range.split_once("..")?;
+    let start = start.parse::<i32>().ok()?;
+    let end = end.parse::<i32>().ok()?;
+    let step = if start <= end { 1 } else { -1 };
+    let mut members = Vec::new();
+    let mut current = start;
+
+    loop {
+        members.push(format!("{prefix}{current}"));
+
+        if current == end {
+            break;
+        }
+
+        current += step;
+    }
+
+    Some(members)
+}
+
+pub(crate) fn reduced_bus_member_full_local_names(members: &[ReducedBusMember]) -> Vec<String> {
+    let mut names = Vec::new();
+
+    fn collect(members: &[ReducedBusMember], names: &mut Vec<String>) {
+        for member in members {
+            if member.kind == ReducedBusMemberKind::Bus {
+                collect(&member.members, names);
+            } else {
+                names.push(member.full_local_name.clone());
+            }
+        }
+    }
+
+    collect(members, &mut names);
+    names
+}
+
+fn make_reduced_bus_member(
+    text: &str,
+    local_prefix: &str,
+    sheet_prefix: &str,
+    kind: ReducedBusMemberKind,
+    members: Vec<ReducedBusMember>,
+) -> ReducedBusMember {
+    let local_name = format!("{local_prefix}{text}");
+
+    ReducedBusMember {
+        name: text.to_string(),
+        local_name: local_name.clone(),
+        full_local_name: format!("{sheet_prefix}{local_name}"),
+        kind,
+        members,
+    }
+}
+
+fn parse_reduced_bus_member_object(
+    schematic: &Schematic,
+    text: &str,
+    local_prefix: &str,
+    sheet_prefix: &str,
+    active_aliases: &mut BTreeSet<String>,
+) -> ReducedBusMember {
+    if let Some(members) = reduced_bus_vector_members(text) {
+        return make_reduced_bus_member(
+            text,
+            local_prefix,
+            sheet_prefix,
+            ReducedBusMemberKind::Bus,
+            members
+                .into_iter()
+                .map(|member| {
+                    make_reduced_bus_member(
+                        &member,
+                        local_prefix,
+                        sheet_prefix,
+                        ReducedBusMemberKind::Net,
+                        Vec::new(),
+                    )
+                })
+                .collect(),
+        );
+    }
+
+    if let Some(inner) = text
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+    {
+        let members = split_reduced_bus_group_members(inner)
+            .into_iter()
+            .filter(|member| !member.is_empty())
+            .flat_map(|member| {
+                expand_reduced_bus_member_entry(
+                    schematic,
+                    &member,
+                    local_prefix,
+                    sheet_prefix,
+                    active_aliases,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        return make_reduced_bus_member(
+            text,
+            local_prefix,
+            sheet_prefix,
+            ReducedBusMemberKind::Bus,
+            members,
+        );
+    }
+
+    if let Some((prefix, suffix)) = text.split_once('{')
+        && let Some(inner) = suffix.strip_suffix('}')
+    {
+        let child_prefix = if prefix.is_empty() {
+            local_prefix.to_string()
+        } else {
+            format!("{local_prefix}{prefix}.")
+        };
+        let members = split_reduced_bus_group_members(inner)
+            .into_iter()
+            .filter(|member| !member.is_empty())
+            .flat_map(|member| {
+                expand_reduced_bus_member_entry(
+                    schematic,
+                    &member,
+                    &child_prefix,
+                    sheet_prefix,
+                    active_aliases,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        return make_reduced_bus_member(
+            text,
+            local_prefix,
+            sheet_prefix,
+            ReducedBusMemberKind::Bus,
+            members,
+        );
+    }
+
+    make_reduced_bus_member(
+        text,
+        local_prefix,
+        sheet_prefix,
+        ReducedBusMemberKind::Net,
+        Vec::new(),
+    )
+}
+
+fn expand_reduced_bus_member_entry(
+    schematic: &Schematic,
+    text: &str,
+    local_prefix: &str,
+    sheet_prefix: &str,
+    active_aliases: &mut BTreeSet<String>,
+) -> Vec<ReducedBusMember> {
     if let Some(alias) = schematic
         .screen
         .bus_aliases
@@ -373,13 +557,13 @@ fn reduced_bus_members_inner(
             .members
             .iter()
             .flat_map(|member| {
-                let expanded = reduced_bus_members_inner(schematic, member, active_aliases);
-
-                if expanded.is_empty() {
-                    vec![member.clone()]
-                } else {
-                    expanded
-                }
+                expand_reduced_bus_member_entry(
+                    schematic,
+                    member,
+                    local_prefix,
+                    sheet_prefix,
+                    active_aliases,
+                )
             })
             .collect::<Vec<_>>();
 
@@ -387,83 +571,143 @@ fn reduced_bus_members_inner(
         return members;
     }
 
+    if reduced_text_is_bus(schematic, text) {
+        return vec![parse_reduced_bus_member_object(
+            schematic,
+            text,
+            local_prefix,
+            sheet_prefix,
+            active_aliases,
+        )];
+    }
+
+    vec![make_reduced_bus_member(
+        text,
+        local_prefix,
+        sheet_prefix,
+        ReducedBusMemberKind::Net,
+        Vec::new(),
+    )]
+}
+
+fn collect_reduced_bus_member_objects_inner(
+    schematic: &Schematic,
+    text: &str,
+    local_prefix: &str,
+    sheet_prefix: &str,
+    active_aliases: &mut BTreeSet<String>,
+) -> Vec<ReducedBusMember> {
+    if let Some(alias) = schematic
+        .screen
+        .bus_aliases
+        .iter()
+        .find(|alias| alias.name.eq_ignore_ascii_case(text))
+    {
+        let alias_key = alias.name.to_ascii_uppercase();
+
+        if !active_aliases.insert(alias_key.clone()) {
+            return Vec::new();
+        }
+
+        let members = alias
+            .members
+            .iter()
+            .flat_map(|member| {
+                expand_reduced_bus_member_entry(
+                    schematic,
+                    member,
+                    local_prefix,
+                    sheet_prefix,
+                    active_aliases,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        active_aliases.remove(&alias_key);
+        return members;
+    }
+
+    if let Some(members) = reduced_bus_vector_members(text) {
+        return members
+            .into_iter()
+            .map(|member| {
+                make_reduced_bus_member(
+                    &member,
+                    local_prefix,
+                    sheet_prefix,
+                    ReducedBusMemberKind::Net,
+                    Vec::new(),
+                )
+            })
+            .collect();
+    }
+
     if let Some(inner) = text
         .strip_prefix('{')
         .and_then(|value| value.strip_suffix('}'))
     {
-        return split_group_members(inner)
+        return split_reduced_bus_group_members(inner)
             .into_iter()
             .filter(|member| !member.is_empty())
+            .flat_map(|member| {
+                expand_reduced_bus_member_entry(
+                    schematic,
+                    &member,
+                    local_prefix,
+                    sheet_prefix,
+                    active_aliases,
+                )
+            })
             .collect();
     }
 
-    if let Some((prefix, suffix)) = text.split_once('{') {
-        if let Some(inner) = suffix.strip_suffix('}') {
-            return split_group_members(inner)
-                .into_iter()
-                .filter(|member| !member.is_empty())
-                .flat_map(|member| {
-                    let expanded = reduced_bus_members_inner(schematic, &member, active_aliases);
+    if let Some((prefix, suffix)) = text.split_once('{')
+        && let Some(inner) = suffix.strip_suffix('}')
+    {
+        let child_prefix = if prefix.is_empty() {
+            local_prefix.to_string()
+        } else {
+            format!("{local_prefix}{prefix}.")
+        };
 
-                    if expanded.is_empty() {
-                        let name = if prefix.is_empty() {
-                            member.to_string()
-                        } else {
-                            format!("{prefix}.{member}")
-                        };
-                        vec![name]
-                    } else if prefix.is_empty() {
-                        expanded
-                    } else {
-                        expanded
-                            .into_iter()
-                            .map(|expanded_member| format!("{prefix}.{expanded_member}"))
-                            .collect::<Vec<_>>()
-                    }
-                })
-                .collect();
-        }
+        return split_reduced_bus_group_members(inner)
+            .into_iter()
+            .filter(|member| !member.is_empty())
+            .flat_map(|member| {
+                expand_reduced_bus_member_entry(
+                    schematic,
+                    &member,
+                    &child_prefix,
+                    sheet_prefix,
+                    active_aliases,
+                )
+            })
+            .collect();
     }
 
-    let Some((prefix, suffix)) = text.split_once('[') else {
-        return Vec::new();
-    };
-    let Some(range) = suffix.strip_suffix(']') else {
-        return Vec::new();
-    };
-    let Some((start, end)) = range.split_once("..") else {
-        return Vec::new();
-    };
-    let Ok(start) = start.parse::<i32>() else {
-        return Vec::new();
-    };
-    let Ok(end) = end.parse::<i32>() else {
-        return Vec::new();
-    };
+    expand_reduced_bus_member_entry(schematic, text, local_prefix, sheet_prefix, active_aliases)
+}
 
-    let step = if start <= end { 1 } else { -1 };
-    let mut members = Vec::new();
-    let mut current = start;
-
-    loop {
-        members.push(format!("{prefix}{current}"));
-
-        if current == end {
-            break;
-        }
-
-        current += step;
-    }
-
-    members
+// Upstream parity: reduced local analogue for the direct child objects KiCad exposes through
+// `SCH_CONNECTION::Members()` after `ConfigureFromLabel()`. This is still narrower than a real
+// `SCH_CONNECTION` tree because the Rust path builds from raw text plus aliases instead of cloned
+// connection objects, but the shared graph owner now preserves member kind plus local/full-local
+// naming instead of collapsing immediately to flat strings. Remaining divergence is fuller resolved
+// `Name()` / `Clone()` ownership beyond this reduced member tree.
+#[cfg(test)]
+pub(crate) fn reduced_bus_member_objects(
+    schematic: &Schematic,
+    text: &str,
+) -> Vec<ReducedBusMember> {
+    collect_reduced_bus_member_objects_inner(schematic, text, "", "", &mut BTreeSet::new())
 }
 
 // Upstream parity: reduced local analogue for the member expansion KiCad exposes through
 // `SCH_CONNECTION::Members()` after `ConfigureFromLabel()`. This is not a 1:1 member-object walk
 // because the Rust tree still expands from raw text and bus aliases instead of live
-// `SCH_CONNECTION` members, but the shared connectivity owner now reuses the same recursive alias,
-// vector, and group expansion for ERC, driver naming, and export tie-breaking. Remaining
-// divergence is fuller nested/member object ownership beyond reduced string expansion.
+// `SCH_CONNECTION` members. The shared connectivity owner now flattens from reduced member objects
+// only at the comparison sites that still need name lists. Remaining divergence is fuller resolved
+// member object ownership beyond this reduced tree.
 pub(crate) fn reduced_bus_members(schematic: &Schematic, text: &str) -> Vec<String> {
     reduced_bus_members_inner(schematic, text, &mut BTreeSet::new())
 }
@@ -1043,9 +1287,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         label_points: Vec<(PointKey, LabelKind)>,
         sheet_pin_points: Vec<PointKey>,
         no_connect_points: Vec<PointKey>,
-        label_bus_members: Vec<String>,
-        port_bus_members: Vec<String>,
-        full_local_bus_members: Vec<String>,
+        label_bus_members: Vec<ReducedBusMember>,
+        port_bus_members: Vec<ReducedBusMember>,
+        bus_members: Vec<ReducedBusMember>,
         bus_name: Option<String>,
         non_bus_names: Vec<String>,
         non_bus_full_names: Vec<String>,
@@ -1211,7 +1455,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 let (
                     label_bus_members,
                     port_bus_members,
-                    full_local_bus_members,
+                    bus_members,
                     bus_name,
                     non_bus_names,
                     non_bus_full_names,
@@ -1244,7 +1488,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     no_connect_points,
                     label_bus_members,
                     port_bus_members,
-                    full_local_bus_members,
+                    bus_members,
                     bus_name,
                     non_bus_names,
                     non_bus_full_names,
@@ -1376,7 +1620,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 no_connect_points,
                 label_bus_members: Vec::new(),
                 port_bus_members: Vec::new(),
-                full_local_bus_members: Vec::new(),
+                bus_members: Vec::new(),
                 bus_name: None,
                 non_bus_names: Vec::new(),
                 non_bus_full_names: Vec::new(),
@@ -1464,7 +1708,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             no_connect_points: pending.no_connect_points.clone(),
             label_bus_members: pending.label_bus_members.clone(),
             port_bus_members: pending.port_bus_members.clone(),
-            full_local_bus_members: pending.full_local_bus_members.clone(),
+            bus_members: pending.bus_members.clone(),
             bus_name: pending.bus_name.clone(),
             non_bus_names: pending.non_bus_names.clone(),
             non_bus_full_names: pending.non_bus_full_names.clone(),
@@ -2063,6 +2307,12 @@ fn child_sheet_path_for_sheet<'a>(
         .find(|candidate| candidate.sheet_uuid == sheet.uuid)
 }
 
+// Upstream parity: reduced local helper for the bus-member state KiCad keeps on
+// `SCH_CONNECTION` / `CONNECTION_SUBGRAPH`. This is not a 1:1 upstream routine because the Rust
+// tree still derives member objects from shown text plus aliases instead of live cloned
+// `SCH_CONNECTION` trees, but it now preserves reduced member kind plus local/full-local naming on
+// the shared subgraph owner instead of collapsing immediately to flat member strings. Remaining
+// divergence is fuller resolved member-object ownership beyond this reduced tree.
 fn collect_reduced_subgraph_bus_membership(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -2072,17 +2322,17 @@ fn collect_reduced_subgraph_bus_membership(
     current_variant: Option<&str>,
     connected_component: &ConnectionComponent,
 ) -> (
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
+    Vec<ReducedBusMember>,
+    Vec<ReducedBusMember>,
+    Vec<ReducedBusMember>,
     Option<String>,
     Vec<String>,
     Vec<String>,
 ) {
     let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, parent_sheet_path);
-    let mut label_bus_members = Vec::<String>::new();
-    let mut port_bus_members = Vec::<String>::new();
-    let mut full_local_bus_members = Vec::<String>::new();
+    let mut label_bus_members = Vec::<ReducedBusMember>::new();
+    let mut port_bus_members = Vec::<ReducedBusMember>::new();
+    let mut bus_members = Vec::<ReducedBusMember>::new();
     let mut bus_name = None::<String>;
     let mut non_bus_names = Vec::<String>::new();
     let mut non_bus_full_names = Vec::<String>::new();
@@ -2115,18 +2365,18 @@ fn collect_reduced_subgraph_bus_membership(
                     continue;
                 }
 
-                let members = reduced_bus_members(schematic, &shown);
-                let prepend_path = label.kind != LabelKind::Global;
-                let full_members = members
-                    .iter()
-                    .map(|member| {
-                        if prepend_path {
-                            format!("{sheet_path_prefix}{member}")
-                        } else {
-                            member.clone()
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                let member_sheet_prefix = if label.kind == LabelKind::Global {
+                    ""
+                } else {
+                    &sheet_path_prefix
+                };
+                let members = collect_reduced_bus_member_objects_inner(
+                    schematic,
+                    &shown,
+                    "",
+                    member_sheet_prefix,
+                    &mut BTreeSet::new(),
+                );
 
                 if matches!(label.kind, LabelKind::Local | LabelKind::Global) {
                     label_bus_members.extend(members.iter().cloned());
@@ -2134,7 +2384,7 @@ fn collect_reduced_subgraph_bus_membership(
                     port_bus_members.extend(members.iter().cloned());
                 }
 
-                full_local_bus_members.extend(full_members);
+                bus_members.extend(members);
                 bus_name.get_or_insert(shown);
             }
             SchItem::Sheet(sheet) => {
@@ -2168,13 +2418,15 @@ fn collect_reduced_subgraph_bus_membership(
                         continue;
                     }
 
-                    let members = reduced_bus_members(schematic, &shown);
-                    port_bus_members.extend(members.iter().cloned());
-                    full_local_bus_members.extend(
-                        members
-                            .iter()
-                            .map(|member| format!("{sheet_path_prefix}{member}")),
+                    let members = collect_reduced_bus_member_objects_inner(
+                        schematic,
+                        &shown,
+                        "",
+                        &sheet_path_prefix,
+                        &mut BTreeSet::new(),
                     );
+                    port_bus_members.extend(members.iter().cloned());
+                    bus_members.extend(members);
                     bus_name.get_or_insert(shown);
                 }
             }
@@ -2186,8 +2438,8 @@ fn collect_reduced_subgraph_bus_membership(
     label_bus_members.dedup();
     port_bus_members.sort();
     port_bus_members.dedup();
-    full_local_bus_members.sort();
-    full_local_bus_members.dedup();
+    bus_members.sort();
+    bus_members.dedup();
     non_bus_names.sort();
     non_bus_names.dedup();
     non_bus_full_names.sort();
@@ -2196,7 +2448,7 @@ fn collect_reduced_subgraph_bus_membership(
     (
         label_bus_members,
         port_bus_members,
-        full_local_bus_members,
+        bus_members,
         bus_name,
         non_bus_names,
         non_bus_full_names,
@@ -3183,7 +3435,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
+        ReducedBusMemberKind, find_first_reduced_project_subgraph_by_name,
+        find_reduced_project_subgraph_by_name, reduced_bus_member_objects,
         resolve_reduced_net_name_at, resolve_reduced_project_net_at,
         resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
@@ -3267,6 +3520,43 @@ mod tests {
             super::reduced_bus_members(&schematic, "USB{PAIR{DP DM} AUX}"),
             vec!["USB.PAIR.DP", "USB.PAIR.DM", "USB.AUX"]
         );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_member_objects_keep_nested_bus_children() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_member_objects_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000071")
+  (paper "A4")
+  (bus_alias "PAIR" (members DP DM))
+)"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let members = reduced_bus_member_objects(&schematic, "USB{PAIR{DP DM} AUX}");
+
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].kind, ReducedBusMemberKind::Bus);
+        assert_eq!(members[0].local_name, "USB.PAIR{DP DM}");
+        assert_eq!(members[0].members.len(), 2);
+        assert_eq!(members[0].members[0].full_local_name, "USB.PAIR.DP");
+        assert_eq!(members[0].members[1].full_local_name, "USB.PAIR.DM");
+        assert_eq!(members[1].kind, ReducedBusMemberKind::Net);
+        assert_eq!(members[1].full_local_name, "USB.AUX");
 
         let _ = fs::remove_file(path);
     }
