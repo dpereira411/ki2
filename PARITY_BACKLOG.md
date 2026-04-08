@@ -678,20 +678,21 @@ Current status:
       - connected-bus-item ownership now reaches the shared live subgraph graph for bus entries,
         but still not all the way to fuller live item / connection pointer topology across every
         attached item kind
-      - live connection member trees and the active stale-member bag now use a dedicated live local
-        member payload, but stored bus link/member ownership still collapses those members back to
-        reduced snapshots instead of keeping one fuller live member/pointer graph through
-        propagation and final projection
+      - live connection member trees, the active stale-member bag, and stored live bus
+        parent/neighbor links now use a dedicated live local member payload, but search/rematch
+        keys and final projection still round-trip through reduced member snapshots instead of
+        keeping one fuller live member/pointer graph through propagation and projection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
-      2. move live name recache and the remaining bus-link/member ownership onto that same
-         connection/member owner instead of cloning reduced snapshots through recursive revisits
+      2. move live name recache and the remaining bus-member search/rematch ownership onto that
+         same connection/member owner instead of cloning reduced snapshots through recursive
+         revisits
       3. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time
-      4. move stored bus link/member payloads onto the new live member payload instead of
-         `ReducedBusMember` snapshots
+      4. remove the remaining reduced search/rematch adapters around the new live member payload
+         so propagation and link refresh stop rebuilding `ReducedBusMember` keys on the active path
       5. replace the current reduced live subgraph handle payload with a fuller local
          `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
          live item owners stay on one shared object graph instead of reduced wrapper structs
