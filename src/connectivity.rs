@@ -5,6 +5,7 @@ use crate::loader::{
     LoadedProjectSettings, LoadedSheetPath, SymbolPinTextVarKind, collect_wire_segments,
     point_on_wire_segment, points_equal, resolve_point_connectivity_text_var,
     resolved_sheet_text_state, resolved_symbol_text_property_value,
+    shown_label_text_without_connectivity,
 };
 use crate::model::{
     Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, SheetPinShape, Symbol,
@@ -1068,9 +1069,29 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     ..
                 } = subgraph;
 
+                let driver_name = resolve_reduced_driver_name_on_component(
+                    schematic,
+                    &connection_component_at(
+                        schematic,
+                        [f64::from_bits(points[0].0), f64::from_bits(points[0].1)],
+                    )
+                    .expect("project reduced subgraph must keep its source component"),
+                    |label| {
+                        shown_label_text_without_connectivity(
+                            inputs.schematics,
+                            inputs.sheet_paths,
+                            sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            label,
+                        )
+                    },
+                )
+                .unwrap_or_else(|| reduced_short_net_name(&entry.name));
+
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
-                    driver_name: reduced_short_net_name(&entry.name),
+                    driver_name,
                     class: class.clone(),
                     has_no_connect,
                     sheet_instance_path: sheet_path.instance_path.clone(),
@@ -1858,6 +1879,14 @@ enum ReducedNetNameSource {
     SymbolPinDefault,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ReducedDriverNameCandidate {
+    priority: i32,
+    sheet_pin_rank: i32,
+    text: String,
+    source: ReducedNetNameSource,
+}
+
 fn collect_reduced_strong_drivers<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
@@ -1962,12 +1991,11 @@ where
 //   before falling back to sheet-pin rank / name quality / alphabetical order
 // - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
 //   current reduced driver path does not recurse back into itself
-fn resolve_reduced_net_name_on_component<F>(
+fn resolve_reduced_driver_name_candidate_on_component<F>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
-    sheet_path_prefix: Option<&str>,
     mut shown_label_text: F,
-) -> Option<String>
+) -> Option<ReducedDriverNameCandidate>
 where
     F: FnMut(&Label) -> String,
 {
@@ -1991,7 +2019,12 @@ where
                     LabelKind::Hierarchical => ReducedNetNameSource::HierarchicalLabel,
                     LabelKind::Directive => return None,
                 };
-                Some((reduced_label_driver_priority(label), 0, text, source))
+                Some(ReducedDriverNameCandidate {
+                    priority: reduced_label_driver_priority(label),
+                    sheet_pin_rank: 0,
+                    text,
+                    source,
+                })
             }
             SchItem::Sheet(sheet) => sheet
                 .pins
@@ -2002,15 +2035,17 @@ where
                             && points_equal(member.at, pin.at)
                     })
                 })
-                .map(|pin| {
-                    (
-                        0,
-                        reduced_sheet_pin_driver_rank(pin.shape),
-                        pin.name.clone(),
-                        ReducedNetNameSource::SheetPin,
-                    )
+                .map(|pin| ReducedDriverNameCandidate {
+                    priority: 0,
+                    sheet_pin_rank: reduced_sheet_pin_driver_rank(pin.shape),
+                    text: pin.name.clone(),
+                    source: ReducedNetNameSource::SheetPin,
                 })
-                .max_by(|lhs, rhs| lhs.1.cmp(&rhs.1).then_with(|| rhs.2.cmp(&lhs.2))),
+                .max_by(|lhs, rhs| {
+                    lhs.sheet_pin_rank
+                        .cmp(&rhs.sheet_pin_rank)
+                        .then_with(|| rhs.text.cmp(&lhs.text))
+                }),
             SchItem::Symbol(symbol) => {
                 let unit_pins = projected_symbol_pin_info(symbol);
 
@@ -2042,59 +2077,98 @@ where
                                         ReducedNetNameSource::GlobalPowerPin
                                     };
 
-                                    (priority, 0, text, source)
+                                    ReducedDriverNameCandidate {
+                                        priority,
+                                        sheet_pin_rank: 0,
+                                        text,
+                                        source,
+                                    }
                                 })
                             })
                             .or_else(|| {
                                 reduced_symbol_pin_default_net_name(symbol, &pin, &unit_pins).map(
-                                    |text| (1, 0, text, ReducedNetNameSource::SymbolPinDefault),
+                                    |text| ReducedDriverNameCandidate {
+                                        priority: 1,
+                                        sheet_pin_rank: 0,
+                                        text,
+                                        source: ReducedNetNameSource::SymbolPinDefault,
+                                    },
                                 )
                             })
                     })
             }
             _ => None,
         })
-        .filter(|(_, _, text, _)| {
-            !text.is_empty() && !text.contains("${") && !text.starts_with('<')
+        .filter(|candidate| {
+            !candidate.text.is_empty()
+                && !candidate.text.contains("${")
+                && !candidate.text.starts_with('<')
         })
         .collect::<Vec<_>>();
 
-    candidates.sort_by(
-        |(lhs_priority, lhs_sheet_pin_rank, lhs_text, _),
-         (rhs_priority, rhs_sheet_pin_rank, rhs_text, _)| {
-            let lhs_low_quality_name = lhs_text.contains("-Pad");
-            let rhs_low_quality_name = rhs_text.contains("-Pad");
+    candidates.sort_by(|lhs, rhs| {
+        let lhs_low_quality_name = lhs.text.contains("-Pad");
+        let rhs_low_quality_name = rhs.text.contains("-Pad");
 
-            rhs_priority
-                .cmp(lhs_priority)
-                .then_with(|| reduced_bus_subset_cmp(schematic, lhs_text, rhs_text))
-                .then_with(|| rhs_sheet_pin_rank.cmp(lhs_sheet_pin_rank))
-                .then_with(|| lhs_low_quality_name.cmp(&rhs_low_quality_name))
-                .then_with(|| lhs_text.cmp(rhs_text))
-        },
-    );
+        rhs.priority
+            .cmp(&lhs.priority)
+            .then_with(|| reduced_bus_subset_cmp(schematic, &lhs.text, &rhs.text))
+            .then_with(|| rhs.sheet_pin_rank.cmp(&lhs.sheet_pin_rank))
+            .then_with(|| lhs_low_quality_name.cmp(&rhs_low_quality_name))
+            .then_with(|| lhs.text.cmp(&rhs.text))
+    });
 
-    candidates
-        .into_iter()
-        .map(|(_, _, text, source)| {
-            let prepend_path = matches!(
-                source,
-                ReducedNetNameSource::LocalLabel
-                    | ReducedNetNameSource::HierarchicalLabel
-                    | ReducedNetNameSource::SheetPin
-                    | ReducedNetNameSource::LocalPowerPin
-            );
+    candidates.into_iter().next()
+}
 
-            if prepend_path {
-                match sheet_path_prefix {
-                    Some(prefix) => format!("{prefix}{text}"),
-                    None => text,
-                }
-            } else {
-                text
+fn resolve_reduced_driver_name_on_component<F>(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+    shown_label_text: F,
+) -> Option<String>
+where
+    F: FnMut(&Label) -> String,
+{
+    resolve_reduced_driver_name_candidate_on_component(
+        schematic,
+        connected_component,
+        shown_label_text,
+    )
+    .map(|candidate| candidate.text)
+}
+
+fn resolve_reduced_net_name_on_component<F>(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+    sheet_path_prefix: Option<&str>,
+    shown_label_text: F,
+) -> Option<String>
+where
+    F: FnMut(&Label) -> String,
+{
+    resolve_reduced_driver_name_candidate_on_component(
+        schematic,
+        connected_component,
+        shown_label_text,
+    )
+    .map(|candidate| {
+        let prepend_path = matches!(
+            candidate.source,
+            ReducedNetNameSource::LocalLabel
+                | ReducedNetNameSource::HierarchicalLabel
+                | ReducedNetNameSource::SheetPin
+                | ReducedNetNameSource::LocalPowerPin
+        );
+
+        if prepend_path {
+            match sheet_path_prefix {
+                Some(prefix) => format!("{prefix}{}", candidate.text),
+                None => candidate.text,
             }
-        })
-        .next()
+        } else {
+            candidate.text
+        }
+    })
 }
 
 // Upstream parity: reduced local analogue for the current-sheet `CONNECTION_GRAPH::GetSubgraphForItem()`

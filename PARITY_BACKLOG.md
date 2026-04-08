@@ -768,6 +768,8 @@ What is already covered indirectly:
   symbol pins instead of flattening those lookups straight to whole-net identity
 - reduced project subgraphs now keep their own stable subgraph codes instead of reusing only the
   whole-net code space
+- reduced project subgraphs now keep local driver names from the shared driver-selection owner
+  instead of deriving them by stripping the full resolved net name
 - XML/KiCad net export now aggregates `nets` from the shared reduced subgraph owner instead of
   consuming only the already-flattened whole-net carrier
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`

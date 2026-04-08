@@ -5153,7 +5153,7 @@ fn resolve_point_netclass_value(
 // KiCad's fuller connectivity-backed resolver stack, but it is needed so the reduced net snapshot
 // can still see sheet/project/cross-reference text on connected labels instead of only raw tokens.
 // Remaining divergence is limited to the still-blocked connectivity-backed variables.
-fn shown_label_text_without_connectivity(
+pub(crate) fn shown_label_text_without_connectivity(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
     loaded_path: &LoadedSheetPath,
