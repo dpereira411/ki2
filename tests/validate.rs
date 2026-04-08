@@ -471,6 +471,18 @@ fn cli_netlist_writes_reduced_xml_by_default() {
         report.contains("<pin num=\"2\" name=\"~\" type=\"passive\" />"),
         "{report}"
     );
+    assert!(
+        report.contains("<field name=\"Footprint\">Resistor_SMD:R_0603</field>"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<field name=\"Datasheet\"></field>"),
+        "{report}"
+    );
+    assert!(
+        report.contains("<field name=\"Description\"></field>"),
+        "{report}"
+    );
     assert!(report.contains("<nets>"), "{report}");
     assert!(report.contains("name=\"NET_IN\""), "{report}");
     assert!(report.contains("name=\"NET_OUT\""), "{report}");

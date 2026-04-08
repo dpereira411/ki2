@@ -718,7 +718,11 @@ What is already covered indirectly:
   - reduced `GNL_OPT_KICAD` board-mode filtering for symbols and net nodes
   - reduced parent-sheet `<property>` export on components
   - reduced multi-unit field/value merge by unit order
-  - reduced user-field export
+  - reduced component `<fields>` now mirrors the exercised `addSymbolFields()` slice:
+    - user fields
+    - canonical `Footprint`
+    - canonical `Datasheet`
+    - canonical `Description`
   - reduced `sheetpath names` / `tstamps` from loaded hierarchy paths
   - reduced `tstamps`
   - reduced per-lib-unit pin export on `<units>`

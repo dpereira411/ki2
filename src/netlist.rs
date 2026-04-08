@@ -783,6 +783,22 @@ fn symbol_to_xml_component(
     symbol: &Symbol,
     extra_symbols: &[&Symbol],
 ) -> Option<NetlistComponent> {
+    fn upsert_component_field(
+        fields: &mut Vec<(String, (i32, String))>,
+        key: &str,
+        unit: i32,
+        value: String,
+    ) {
+        match fields.iter_mut().find(|(field_key, _)| field_key == key) {
+            Some((_, (field_unit, field_value))) if *field_unit <= unit => {}
+            Some((_, (field_unit, field_value))) => {
+                *field_unit = unit;
+                *field_value = value;
+            }
+            None => fields.push((key.to_string(), (unit, value))),
+        }
+    }
+
     let state =
         resolved_symbol_text_state(symbol, &sheet_path.instance_path, project.current_variant());
     let base_state = resolved_symbol_text_state(symbol, &sheet_path.instance_path, None);
@@ -908,7 +924,7 @@ fn symbol_to_xml_component(
                 (symbol.unit.unwrap_or(1), property.value.clone()),
             )
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<Vec<_>>();
 
     if symbol
         .lib_symbol
@@ -991,21 +1007,22 @@ fn symbol_to_xml_component(
                         continue;
                     }
 
-                    match fields.get(&property.key) {
-                        Some((field_unit, _)) if *field_unit <= candidate_unit => {}
-                        _ => {
-                            fields.insert(
-                                property.key.clone(),
-                                (candidate_unit, property.value.clone()),
-                            );
-                        }
-                    }
+                    upsert_component_field(
+                        &mut fields,
+                        &property.key,
+                        candidate_unit,
+                        property.value.clone(),
+                    );
                 }
 
                 min_unit = min_unit.min(candidate_unit);
             }
         }
     }
+
+    upsert_component_field(&mut fields, "Footprint", i32::MAX, footprint.clone());
+    upsert_component_field(&mut fields, "Datasheet", i32::MAX, datasheet.clone());
+    upsert_component_field(&mut fields, "Description", i32::MAX, description.clone());
 
     Some(NetlistComponent {
         reference,
