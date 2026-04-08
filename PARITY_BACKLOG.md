@@ -698,6 +698,7 @@ What is already covered indirectly:
   - reduced multi-unit component collapse by reference
   - reference/value/footprint/datasheet/description export
   - reduced `libsource`
+    - exercised schematic `lib_name` / non-`UseLibIdLookup()` branch is now live
   - reduced component metadata properties:
     - `exclude_from_bom`
     - `exclude_from_board`

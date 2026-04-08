@@ -755,7 +755,9 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
 // full libpart/groups/variants export stack, but it keeps the first XML export slice on the same
 // occurrence-aware symbol text state instead of serializing raw parser-owned fields directly. It
 // now also carries the representable `addSymbolFields()` multi-unit field scavenging plus the
-// `makeSymbols()` unit/tstamp data so same-reference units can collapse onto one component owner.
+// `makeSymbols()` unit/tstamp data and exercised `UseLibIdLookup()` / schematic `lib_name` split
+// so same-reference units can collapse onto one component owner without losing the KiCad
+// `<libsource>` branch choice.
 fn symbol_to_xml_component(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
@@ -791,11 +793,14 @@ fn symbol_to_xml_component(
     let mut datasheet = resolved_property_value(&state.properties, "Datasheet").unwrap_or_default();
     let mut description =
         resolved_property_value(&state.properties, "Description").unwrap_or_default();
-    let (lib, part) = symbol
-        .lib_id
-        .split_once(':')
-        .map(|(lib, part)| (lib.to_string(), part.to_string()))
-        .unwrap_or_else(|| (String::new(), symbol.lib_id.clone()));
+    let (lib, part) = match symbol.lib_name.as_deref() {
+        Some(lib_name) if !lib_name.is_empty() => (String::new(), lib_name.to_string()),
+        _ => symbol
+            .lib_id
+            .split_once(':')
+            .map(|(lib, part)| (lib.to_string(), part.to_string()))
+            .unwrap_or_else(|| (String::new(), symbol.lib_id.clone())),
+    };
     let component_classes =
         collect_component_class_names_for_all_symbol_units(project, symbol, sheet_path, &reference);
     let variants = symbol

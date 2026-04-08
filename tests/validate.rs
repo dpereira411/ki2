@@ -468,6 +468,58 @@ fn cli_netlist_writes_reduced_xml_by_default() {
 }
 
 #[test]
+fn cli_netlist_uses_schematic_lib_name_in_libsource() {
+    let path = temp_schematic(
+        "cli_netlist_lib_name_libsource",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "LOCAL"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "LOCAL_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (wire (pts (xy -5 0) (xy 0 0)))
+  (wire (pts (xy 10 0) (xy 15 0)))
+  (label "NET_IN" (at -5 0 0) (effects (font (size 1 1))))
+  (label "NET_OUT" (at 15 0 0) (effects (font (size 1 1))))
+  (symbol
+    (lib_id "Device:R")
+    (lib_name "LOCAL")
+    (at 5 0 0)
+    (property "Reference" "R1" (at 5 -2 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 5 2 0) (effects (font (size 1 1))))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert!(
+        report.contains("<libsource lib=\"\" part=\"LOCAL\""),
+        "{report}"
+    );
+    assert!(
+        report.contains("<libpart lib=\"Device\" part=\"R\">"),
+        "{report}"
+    );
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn cli_netlist_prefers_sorted_connected_label_name() {
     let path = temp_schematic(
         "cli_netlist_label_driver_order",
