@@ -2646,16 +2646,16 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
 // owner. This still falls back to reduced indexes where live handle attachment is not present, but
 // the active recursion now prefers the same live handle graph across both hierarchy and bus-linked
 // subgraphs instead of limiting stale replay to hierarchy-only slices.
-fn collect_live_reduced_propagation_component_from_handles(
+fn collect_live_reduced_propagation_component_handles_from_handles(
     start: usize,
     live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> Vec<usize> {
+) -> Vec<LiveReducedSubgraphHandle> {
     let mut queue = VecDeque::from([start]);
     let mut visited = BTreeSet::from([start]);
     let mut component = Vec::new();
 
     while let Some(index) = queue.pop_front() {
-        component.push(index);
+        component.push(live_subgraphs[index].clone());
         let snapshot = live_subgraphs[index].borrow().clone();
 
         if let Some(parent_handle) = live_subgraph_parent_handle(live_subgraphs, &snapshot) {
@@ -2698,8 +2698,19 @@ fn collect_live_reduced_propagation_component_from_handles(
         }
     }
 
-    component.sort_unstable();
+    component.sort_by_key(|handle| handle.borrow().source_index);
     component
+}
+
+#[cfg(test)]
+fn collect_live_reduced_propagation_component_from_handles(
+    start: usize,
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+) -> Vec<usize> {
+    collect_live_reduced_propagation_component_handles_from_handles(start, live_subgraphs)
+        .into_iter()
+        .map(|handle| handle.borrow().source_index)
+        .collect()
 }
 
 // Upstream parity: local bridge for the global-secondary-driver promotion branch on the shared
@@ -2760,13 +2771,14 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle_index(
     promoted
 }
 
-fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_indexes(
+fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_component(
     live_subgraphs: &[LiveReducedSubgraphHandle],
-    indexes: &[usize],
+    component: &[LiveReducedSubgraphHandle],
     force: bool,
 ) {
-    for &start in indexes {
-        let snapshot = live_subgraphs[start].borrow().clone();
+    for handle in component {
+        let start = handle.borrow().source_index;
+        let snapshot = handle.borrow().clone();
         if !snapshot.dirty {
             continue;
         }
@@ -2789,16 +2801,17 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_indexe
     }
 }
 
-fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
+fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
     live_subgraphs: &[LiveReducedSubgraphHandle],
-    indexes: &[usize],
+    component: &[LiveReducedSubgraphHandle],
     stale_members: &mut Vec<ReducedBusMember>,
 ) {
     // Upstream parity: local live-handle analogue for the bus-neighbor driver/member propagation
     // KiCad runs through connected `CONNECTION_SUBGRAPH` neighbors. This still keeps reduced
     // member snapshots, but active traversal now prefers the attached live neighbor handle.
-    for &parent_index in indexes {
-        let parent_snapshot = live_subgraphs[parent_index].borrow().clone();
+    for parent_handle in component {
+        let parent_index = parent_handle.borrow().source_index;
+        let parent_snapshot = parent_handle.borrow().clone();
         if !parent_snapshot.dirty {
             continue;
         }
@@ -2932,16 +2945,33 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
     }
 }
 
-fn refresh_reduced_live_bus_parent_members_on_handles_for_indexes(
+#[cfg(test)]
+fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     indexes: &[usize],
+    stale_members: &mut Vec<ReducedBusMember>,
+) {
+    let component = indexes
+        .iter()
+        .filter_map(|index| live_subgraphs.get(*index).cloned())
+        .collect::<Vec<_>>();
+    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
+        live_subgraphs,
+        &component,
+        stale_members,
+    );
+}
+
+fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    component: &[LiveReducedSubgraphHandle],
 ) {
     // Upstream parity: local live-handle analogue for refreshing parent bus members from a dirty
     // child net. This still stores reduced bus members on the live subgraph owner, but it now
     // follows the attached live parent handle instead of recovering the parent through copied
     // source indexes first.
-    for &child_index in indexes {
-        let child_snapshot = live_subgraphs[child_index].borrow().clone();
+    for child_handle in component {
+        let child_snapshot = child_handle.borrow().clone();
         if !child_snapshot.dirty {
             continue;
         }
@@ -3003,15 +3033,14 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_indexes(
     }
 }
 
-fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    indexes: &[usize],
+fn replay_reduced_live_stale_bus_members_on_handles_for_component(
+    component: &[LiveReducedSubgraphHandle],
     stale_members: &[ReducedBusMember],
 ) {
     for stale_member in stale_members {
-        for &index in indexes {
+        for handle in component {
             let is_bus = {
-                let subgraph = live_subgraphs[index].borrow();
+                let subgraph = handle.borrow();
                 let connection = subgraph.driver_connection.borrow();
                 matches!(
                     connection.connection_type,
@@ -3023,7 +3052,7 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
             }
 
             let changed = {
-                let subgraph = live_subgraphs[index].borrow();
+                let subgraph = handle.borrow();
                 let mut connection = subgraph.driver_connection.borrow_mut();
                 let Some(member) =
                     match_reduced_bus_member_mut(&mut connection.members, stale_member)
@@ -3042,15 +3071,28 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
             };
 
             if changed {
-                live_subgraphs[index].borrow_mut().dirty = true;
+                handle.borrow_mut().dirty = true;
             }
         }
     }
 }
 
-fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
+#[cfg(test)]
+fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     indexes: &[usize],
+    stale_members: &[ReducedBusMember],
+) {
+    let component = indexes
+        .iter()
+        .filter_map(|index| live_subgraphs.get(*index).cloned())
+        .collect::<Vec<_>>();
+    replay_reduced_live_stale_bus_members_on_handles_for_component(&component, stale_members);
+}
+
+fn refresh_reduced_live_bus_link_members_on_handles_for_component(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    component: &[LiveReducedSubgraphHandle],
 ) {
     // Upstream parity: local live-handle analogue for rematching bus parent/neighbor links after
     // propagation. This still projects reduced member snapshots into link state, but active
@@ -3058,8 +3100,9 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
     let mut refreshed_parent_links =
         vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
 
-    for &child_index in indexes {
-        let child_snapshot = live_subgraphs[child_index].borrow().clone();
+    for child_handle in component {
+        let child_index = child_handle.borrow().source_index;
+        let child_snapshot = child_handle.borrow().clone();
         let child_connection = child_snapshot.driver_connection.snapshot();
         let existing_parent_links = child_snapshot.bus_parent_links.clone();
 
@@ -3136,7 +3179,8 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
     let mut refreshed_neighbor_links =
         vec![Vec::<LiveReducedSubgraphLink>::new(); live_subgraphs.len()];
 
-    for &child_index in indexes {
+    for child_handle in component {
+        let child_index = child_handle.borrow().source_index;
         for link in &refreshed_parent_links[child_index] {
             let neighbor_index = live_subgraph_link_index(link);
             refreshed_neighbor_links[neighbor_index].push(LiveReducedSubgraphLink {
@@ -3147,8 +3191,9 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
         }
     }
 
-    for &index in indexes {
-        let mut live = live_subgraphs[index].borrow_mut();
+    for handle in component {
+        let index = handle.borrow().source_index;
+        let mut live = handle.borrow_mut();
         live.bus_parent_links = refreshed_parent_links[index].clone();
         live.bus_parent_links.sort();
         live.bus_parent_links.dedup();
@@ -3156,6 +3201,17 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
         live.bus_neighbor_links.sort();
         live.bus_neighbor_links.dedup();
     }
+}
+
+fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    indexes: &[usize],
+) {
+    let component = indexes
+        .iter()
+        .filter_map(|index| live_subgraphs.get(*index).cloned())
+        .collect::<Vec<_>>();
+    refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &component);
 }
 
 fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
@@ -3358,25 +3414,22 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
         }
     }
 
-    let active = collect_live_reduced_propagation_component_from_handles(start, live_subgraphs);
+    let active =
+        collect_live_reduced_propagation_component_handles_from_handles(start, live_subgraphs);
 
-    propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_indexes(
+    propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_component(
         live_subgraphs,
         &active,
         force,
     );
-    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
+    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
         live_subgraphs,
         &active,
         stale_members,
     );
-    refresh_reduced_live_bus_parent_members_on_handles_for_indexes(live_subgraphs, &active);
-    replay_reduced_live_stale_bus_members_on_handles_for_indexes(
-        live_subgraphs,
-        &active,
-        stale_members,
-    );
-    refresh_reduced_live_bus_link_members_on_handles_for_indexes(live_subgraphs, &active);
+    refresh_reduced_live_bus_parent_members_on_handles_for_component(live_subgraphs, &active);
+    replay_reduced_live_stale_bus_members_on_handles_for_component(&active, stale_members);
+    refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &active);
 
     let start_changed = {
         let start_after = live_subgraphs[start].borrow().clone();
