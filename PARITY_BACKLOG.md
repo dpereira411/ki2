@@ -660,6 +660,12 @@ Do not treat exporter parity as complete until all of these have been audited ex
 1. common exporter base
 - symbol filtering
 - multi-unit collection
+- reduced ordered-symbol primary selection is now live on the XML/KiCad path:
+  - same-reference symbols now choose a primary before component construction
+  - later multi-unit duplicates now skip through one shared exporter-base-style walk
+- reduced `addSymbolFields()` multi-unit field scavenging is now live on the XML/KiCad path:
+  - value / footprint / datasheet / description
+  - non-mandatory user fields
 - duplicate-pin erasure is now live on the reduced XML exporter path; full common-exporter ownership
   still remains
 

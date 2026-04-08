@@ -1036,7 +1036,7 @@ fn cli_netlist_collapses_multi_unit_components() {
     assert_eq!(report.matches("<comp ref=\"U1\">").count(), 1, "{report}");
     assert!(
         report.contains(
-            "<tstamps>73000000-0000-0000-0000-000000000001 73000000-0000-0000-0000-000000000010</tstamps>"
+            "<tstamps>73000000-0000-0000-0000-000000000010 73000000-0000-0000-0000-000000000001</tstamps>"
         ),
         "{report}"
     );

@@ -115,6 +115,12 @@ pub struct NetlistVariant {
     pub description: String,
 }
 
+struct OrderedNetlistSymbol<'a> {
+    sheet_path: &'a crate::loader::LoadedSheetPath,
+    symbol: &'a Symbol,
+    extra_symbols: Vec<&'a Symbol>,
+}
+
 fn resolved_property_value(properties: &[Property], token: &str) -> Option<String> {
     let canonical = token.to_ascii_uppercase();
     properties
@@ -532,21 +538,20 @@ fn str_num_cmp(a: &str, b: &str, ignore_case: bool) -> std::cmp::Ordering {
     }
 }
 
-// Upstream parity: reduced local analogue for the symbol iteration portion of
-// `NETLIST_EXPORTER_XML::makeSymbols()`. This is not a 1:1 exporter-base walk because the Rust
-// tree still omits libparts and resolved nets, but it preserves the current occurrence-aware
-// component filtering, reference/value/footprint exposure, and `LIB_ID` split needed by the first
-// live netlist CLI slice. Remaining divergence is the fuller KiCad duplicate-unit / variant /
-// libpart walk, but reference ordering now follows the upstream `StrNumCmp` path instead of plain
-// lexical sorting, the current component metadata carrier now includes the exercised
-// lib/jumper/placement flags KiCad emits on `<comp>`, and the `for_board` flag now mirrors the
-// `GNL_OPT_KICAD` exclusion path for symbol/sheet `on_board` state. Remaining divergence is the
-// still-missing fuller sheet exclusion ownership outside the current loaded sheet-state carrier.
-pub fn collect_xml_components(
-    project: &SchematicProject,
+// Upstream parity: reduced local helper for the `findNextSymbol()` + `makeSymbols()` ordered
+// symbol walk in KiCad's common netlist exporter base. This is not a 1:1 exporter-base iterator
+// because the Rust tree still lacks live `SCH_SYMBOL*` / libpart pointer ownership, but it now
+// picks one primary symbol per same-reference group before component/libpart export, keeps the
+// lowest-UUID symbol as the primary within each ordered per-sheet reference bucket, and skips
+// later multi-unit duplicates through one shared exporter-base-style pass instead of repairing that
+// ownership after raw component collection. Remaining divergence is the still-missing shared
+// libpart usage cache and fuller exporter-base symbol filters beyond the exercised XML/KiCad path.
+fn collect_ordered_netlist_symbols<'a>(
+    project: &'a SchematicProject,
     for_board: bool,
-) -> Vec<NetlistComponent> {
-    let mut components = Vec::new();
+) -> Vec<OrderedNetlistSymbol<'a>> {
+    let mut ordered = Vec::new();
+    let mut seen_multi_unit_refs = BTreeMap::<String, ()>::new();
 
     for sheet_path in &project.sheet_paths {
         if for_board
@@ -566,6 +571,9 @@ pub fn collect_xml_components(
             continue;
         };
 
+        let mut primary_symbols =
+            BTreeMap::<String, (String, String, &'a Symbol, Vec<&'a Symbol>)>::new();
+
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -579,160 +587,122 @@ pub fn collect_xml_components(
                 continue;
             }
 
-            let Some(component) = symbol_to_xml_component(project, sheet_path, symbol) else {
+            if symbol.lib_symbol.is_none() {
+                continue;
+            }
+
+            let Some(reference) = resolved_symbol_text_property_value(
+                &project.schematics,
+                sheet_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                symbol,
+                "Reference",
+            ) else {
                 continue;
             };
 
+            if reference.starts_with('#') {
+                continue;
+            }
+
+            let key = reference.to_ascii_uppercase();
+            let uuid = symbol.uuid.clone().unwrap_or_default();
+
+            match primary_symbols.get_mut(&key) {
+                Some((_, current_uuid, current_symbol, extra_symbols)) => {
+                    if uuid < *current_uuid {
+                        extra_symbols.push(*current_symbol);
+                        *current_uuid = uuid.clone();
+                        *current_symbol = symbol;
+                    } else {
+                        extra_symbols.push(symbol);
+                    }
+                }
+                None => {
+                    primary_symbols.insert(key, (reference, uuid, symbol, Vec::new()));
+                }
+            }
+        }
+
+        let mut primaries = primary_symbols.into_values().collect::<Vec<_>>();
+        primaries.sort_by(|(lhs_ref, ..), (rhs_ref, ..)| str_num_cmp(lhs_ref, rhs_ref, true));
+
+        for (reference, _uuid, symbol, extra_symbols) in primaries {
+            let unit_count = symbol
+                .lib_symbol
+                .as_ref()
+                .map(|lib_symbol| lib_symbol.units.len())
+                .unwrap_or(0);
+
+            if unit_count > 1 && seen_multi_unit_refs.contains_key(&reference.to_ascii_uppercase())
+            {
+                continue;
+            }
+
+            if unit_count > 1 {
+                seen_multi_unit_refs.insert(reference.to_ascii_uppercase(), ());
+            }
+
+            ordered.push(OrderedNetlistSymbol {
+                sheet_path,
+                symbol,
+                extra_symbols,
+            });
+        }
+    }
+
+    ordered
+}
+
+// Upstream parity: reduced local analogue for the symbol iteration portion of
+// `NETLIST_EXPORTER_XML::makeSymbols()`. This is not a 1:1 exporter-base walk because the Rust
+// tree still omits the full libpart pointer cache and full connection-graph-backed symbol state,
+// but it now shares one exporter-base-style ordered symbol pass, chooses same-reference primaries
+// before component construction, and preserves the current occurrence-aware
+// reference/value/footprint exposure and `LIB_ID` split needed by the live netlist CLI slice.
+// Remaining divergence is the fuller KiCad variant/libpart walk and broader sheet/symbol filter
+// ownership outside the current loaded sheet-state carrier.
+pub fn collect_xml_components(
+    project: &SchematicProject,
+    for_board: bool,
+) -> Vec<NetlistComponent> {
+    let mut components = Vec::new();
+
+    for ordered_symbol in collect_ordered_netlist_symbols(project, for_board) {
+        if let Some(component) = symbol_to_xml_component(
+            project,
+            ordered_symbol.sheet_path,
+            ordered_symbol.symbol,
+            &ordered_symbol.extra_symbols,
+        ) {
             components.push(component);
         }
     }
 
-    components.sort_by(|lhs, rhs| str_num_cmp(&lhs.reference, &rhs.reference, true));
-
-    let mut deduped = Vec::<NetlistComponent>::new();
-
-    for component in components {
-        if let Some(existing) = deduped.iter_mut().find(|existing| {
-            existing
-                .reference
-                .eq_ignore_ascii_case(&component.reference)
-        }) {
-            let candidate_classes = component.component_classes.clone();
-            let candidate_unit = component.unit_number;
-            let current_uuid = existing.tstamps.last().cloned();
-            let candidate_uuid = component.tstamps.last().cloned();
-            let mut combined_tstamps = existing.tstamps.clone();
-            combined_tstamps.extend(component.tstamps.clone());
-            combined_tstamps.sort();
-            combined_tstamps.dedup();
-
-            match (&current_uuid, &candidate_uuid) {
-                (Some(current_uuid), Some(candidate_uuid)) if candidate_uuid < current_uuid => {
-                    let previous = existing.clone();
-                    *existing = component;
-                    existing.tstamps = combined_tstamps;
-                    if !previous.value.is_empty()
-                        && (existing.unit_number > previous.unit_number
-                            || existing.value.is_empty())
-                    {
-                        existing.value = previous.value;
-                    }
-                    if !previous.footprint.is_empty()
-                        && (existing.unit_number > previous.unit_number
-                            || existing.footprint.is_empty())
-                    {
-                        existing.footprint = previous.footprint;
-                    }
-                    if !previous.datasheet.is_empty()
-                        && (existing.unit_number > previous.unit_number
-                            || existing.datasheet.is_empty())
-                    {
-                        existing.datasheet = previous.datasheet;
-                    }
-                    if !previous.description.is_empty()
-                        && (existing.unit_number > previous.unit_number
-                            || existing.description.is_empty())
-                    {
-                        existing.description = previous.description;
-                    }
-
-                    let mut properties =
-                        previous.properties.into_iter().collect::<BTreeMap<_, _>>();
-                    for (name, value) in existing.properties.clone() {
-                        if candidate_unit <= previous.unit_number || !properties.contains_key(&name)
-                        {
-                            properties.insert(name, value);
-                        }
-                    }
-                    existing.properties = properties.into_iter().collect();
-                }
-                _ => {
-                    existing.tstamps = combined_tstamps;
-                    if !component.value.is_empty()
-                        && (candidate_unit < existing.unit_number || existing.value.is_empty())
-                    {
-                        existing.value = component.value.clone();
-                    }
-                    if !component.footprint.is_empty()
-                        && (candidate_unit < existing.unit_number || existing.footprint.is_empty())
-                    {
-                        existing.footprint = component.footprint.clone();
-                    }
-                    if !component.datasheet.is_empty()
-                        && (candidate_unit < existing.unit_number || existing.datasheet.is_empty())
-                    {
-                        existing.datasheet = component.datasheet.clone();
-                    }
-                    if !component.description.is_empty()
-                        && (candidate_unit < existing.unit_number
-                            || existing.description.is_empty())
-                    {
-                        existing.description = component.description.clone();
-                    }
-
-                    let mut properties = existing
-                        .properties
-                        .clone()
-                        .into_iter()
-                        .collect::<BTreeMap<_, _>>();
-                    for (name, value) in component.properties.clone() {
-                        if candidate_unit < existing.unit_number || !properties.contains_key(&name)
-                        {
-                            properties.insert(name, value);
-                        }
-                    }
-                    existing.properties = properties.into_iter().collect();
-                    existing.unit_number = existing.unit_number.min(candidate_unit);
-                }
-            }
-
-            let mut combined_classes = existing.component_classes.clone();
-            combined_classes.extend(candidate_classes);
-            combined_classes.sort();
-            combined_classes.dedup();
-            existing.component_classes = combined_classes;
-
-            continue;
-        }
-
-        deduped.push(component);
-    }
-
-    deduped
+    components
 }
 
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeLibParts()`. This is not
 // a 1:1 KiCad libpart exporter because the Rust tree still sources libparts only from the
 // schematic-linked lib-symbol snapshots instead of the full library adapter stack, but it
-// preserves the exercised unique-libpart collection, reduced field/docs/footprint export, and
-// duplicate-pin-number erasure needed by the first live XML netlist slice.
+// now shares the same exporter-base-style symbol walk used by component export before collecting
+// unique libparts. Remaining divergence is the still-missing full library adapter stack beyond the
+// current reduced field/docs/footprint and duplicate-pin-number export slice.
 pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
     let mut libparts = BTreeMap::<String, NetlistLibPart>::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+    for ordered_symbol in collect_ordered_netlist_symbols(project, false) {
+        let symbol = ordered_symbol.symbol;
+        let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
             continue;
         };
 
-        for item in &schematic.screen.items {
-            let SchItem::Symbol(symbol) = item else {
-                continue;
-            };
+        let key = symbol.lib_id.clone();
 
-            if !symbol.in_netlist {
-                continue;
-            }
-
-            let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
-                continue;
-            };
-
-            let key = symbol.lib_id.clone();
-
-            libparts
-                .entry(key)
-                .or_insert_with(|| lib_symbol_to_xml_libpart(symbol.lib_id.as_str(), lib_symbol));
-        }
+        libparts
+            .entry(key)
+            .or_insert_with(|| lib_symbol_to_xml_libpart(symbol.lib_id.as_str(), lib_symbol));
     }
 
     libparts.into_values().collect()
@@ -784,12 +754,13 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
 // `makeSymbols()`. This is not a 1:1 KiCad field resolver because the Rust tree still lacks the
 // full libpart/groups/variants export stack, but it keeps the first XML export slice on the same
 // occurrence-aware symbol text state instead of serializing raw parser-owned fields directly. It
-// now also carries the representable `makeSymbols()` unit/tstamp data so multi-unit refs can be
-// collapsed onto one component owner.
+// now also carries the representable `addSymbolFields()` multi-unit field scavenging plus the
+// `makeSymbols()` unit/tstamp data so same-reference units can collapse onto one component owner.
 fn symbol_to_xml_component(
     project: &SchematicProject,
     sheet_path: &crate::loader::LoadedSheetPath,
     symbol: &Symbol,
+    extra_symbols: &[&Symbol],
 ) -> Option<NetlistComponent> {
     let state =
         resolved_symbol_text_state(symbol, &sheet_path.instance_path, project.current_variant());
@@ -815,11 +786,11 @@ fn symbol_to_xml_component(
         .map(|base| base.in_pos_files)
         .unwrap_or(symbol.in_pos_files);
     let reference = resolved_property_value(&state.properties, "Reference")?;
-    let value =
-        resolved_property_value(&state.properties, "Value").unwrap_or_else(|| "~".to_string());
-    let footprint = resolved_property_value(&state.properties, "Footprint").unwrap_or_default();
-    let datasheet = resolved_property_value(&state.properties, "Datasheet").unwrap_or_default();
-    let description = resolved_property_value(&state.properties, "Description").unwrap_or_default();
+    let mut value = resolved_property_value(&state.properties, "Value").unwrap_or_default();
+    let mut footprint = resolved_property_value(&state.properties, "Footprint").unwrap_or_default();
+    let mut datasheet = resolved_property_value(&state.properties, "Datasheet").unwrap_or_default();
+    let mut description =
+        resolved_property_value(&state.properties, "Description").unwrap_or_default();
     let (lib, part) = symbol
         .lib_id
         .split_once(':')
@@ -903,20 +874,123 @@ fn symbol_to_xml_component(
         })
         .unwrap_or_default();
 
-    let mut fields = BTreeMap::new();
+    let mut fields = state
+        .properties
+        .iter()
+        .filter(|property| !property.kind.is_mandatory() && !property.is_private)
+        .map(|property| {
+            (
+                property.key.clone(),
+                (symbol.unit.unwrap_or(1), property.value.clone()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
 
-    for property in &state.properties {
-        if property.kind.is_mandatory() || property.is_private {
-            continue;
+    if symbol
+        .lib_symbol
+        .as_ref()
+        .map(|lib_symbol| lib_symbol.units.len() > 1)
+        .unwrap_or(false)
+    {
+        let mut min_unit = symbol.unit.unwrap_or(1);
+
+        for candidate_path in &project.sheet_paths {
+            let Some(schematic) = project.schematic(&candidate_path.schematic_path) else {
+                continue;
+            };
+
+            for item in &schematic.screen.items {
+                let SchItem::Symbol(candidate_symbol) = item else {
+                    continue;
+                };
+
+                let Some(candidate_reference) = resolved_symbol_text_property_value(
+                    &project.schematics,
+                    candidate_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    candidate_symbol,
+                    "Reference",
+                ) else {
+                    continue;
+                };
+
+                if !candidate_reference.eq_ignore_ascii_case(&reference) {
+                    continue;
+                }
+
+                let candidate_unit = candidate_symbol.unit.unwrap_or(1);
+                let candidate_state = resolved_symbol_text_state(
+                    candidate_symbol,
+                    &candidate_path.instance_path,
+                    project.current_variant(),
+                );
+
+                let candidate_value = resolved_property_value(&candidate_state.properties, "Value")
+                    .unwrap_or_default();
+                if !candidate_value.is_empty() && (candidate_unit < min_unit || value.is_empty()) {
+                    value = candidate_value;
+                }
+
+                let candidate_footprint =
+                    resolved_property_value(&candidate_state.properties, "Footprint")
+                        .unwrap_or_default();
+                if !candidate_footprint.is_empty()
+                    && (candidate_unit < min_unit || footprint.is_empty())
+                {
+                    footprint = candidate_footprint;
+                }
+
+                let candidate_datasheet =
+                    resolved_property_value(&candidate_state.properties, "Datasheet")
+                        .unwrap_or_default();
+                if !candidate_datasheet.is_empty()
+                    && (candidate_unit < min_unit || datasheet.is_empty())
+                {
+                    datasheet = candidate_datasheet;
+                }
+
+                let candidate_description =
+                    resolved_property_value(&candidate_state.properties, "Description")
+                        .unwrap_or_default();
+                if !candidate_description.is_empty()
+                    && (candidate_unit < min_unit || description.is_empty())
+                {
+                    description = candidate_description;
+                }
+
+                for property in &candidate_state.properties {
+                    if property.kind.is_mandatory()
+                        || property.is_private
+                        || property.value.is_empty()
+                    {
+                        continue;
+                    }
+
+                    match fields.get(&property.key) {
+                        Some((field_unit, _)) if *field_unit <= candidate_unit => {}
+                        _ => {
+                            fields.insert(
+                                property.key.clone(),
+                                (candidate_unit, property.value.clone()),
+                            );
+                        }
+                    }
+                }
+
+                min_unit = min_unit.min(candidate_unit);
+            }
         }
-
-        fields.insert(property.key.clone(), property.value.clone());
     }
 
     Some(NetlistComponent {
         reference,
         unit_number: symbol.unit.unwrap_or(1),
-        value,
+        value: if value.is_empty() {
+            "~".to_string()
+        } else {
+            value
+        },
         footprint,
         datasheet,
         description,
@@ -924,7 +998,16 @@ fn symbol_to_xml_component(
         part,
         path_names: human_component_sheet_path(project, sheet_path),
         path: sheet_path.instance_path.clone(),
-        tstamps: symbol.uuid.clone().into_iter().collect(),
+        tstamps: {
+            let mut tstamps = extra_symbols
+                .iter()
+                .filter_map(|extra_symbol| extra_symbol.uuid.clone())
+                .collect::<Vec<_>>();
+            if let Some(uuid) = symbol.uuid.clone() {
+                tstamps.push(uuid);
+            }
+            tstamps
+        },
         units: symbol
             .lib_symbol
             .as_ref()
@@ -984,7 +1067,10 @@ fn symbol_to_xml_component(
             .unwrap_or_default(),
         component_classes,
         variants,
-        properties: fields.into_iter().collect(),
+        properties: fields
+            .into_iter()
+            .map(|(key, (_unit, value))| (key, value))
+            .collect(),
     })
 }
 
