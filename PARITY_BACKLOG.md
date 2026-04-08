@@ -612,34 +612,42 @@ Current status:
           - hierarchy-chain propagation
           - bus propagation
           - exercised post-propagation item updates
+        - dirty-worklist propagation over connected live hierarchy/bus components instead of
+          whole-graph live repeat sweeps
+        - global secondary-driver promotion now runs on the shared live subgraph owner inside that
+          worklist instead of on reduced snapshots before the live graph runs
         - one shared stale-member bag across the combined live propagation pass, including
           cross-bus member replay beyond the earlier same-bus-only refresh
+        - live stale-member replay is now scoped to the active connected live component instead of
+          the whole graph
         - hierarchy-chain propagation now reruns inside that shared live loop instead of only once
           before bus propagation, so bus-driven changes can feed back into hierarchy selection on
           the same live owner
         - the combined live loop now preserves and propagates dirty-state instead of resetting the
           whole live graph on every pass
+        - the exercised multiple-bus-parent rename / same-name recache step now runs after live
+          propagation, closer to KiCad's post-`propagateToNeighbors()` ordering, before item
+          connection updates
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
-      - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
-        pointer identity; the reduced graph now has the first live hierarchy, bus, and
-        post-propagation item-connection slices, but it still does not mutate and revisit one
-        shared visited object set across the full propagation walk KiCad uses
+      - no full live per-visited-subgraph recursive `propagateToNeighbors()` walk yet; the local
+        graph now has a dirty worklist over connected live components, but it still does not
+        recurse neighbor-by-neighbor on one visited object set the way KiCad does
       - no full live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be
-        replayed across all visited bus subgraphs after hierarchy propagation; the reduced graph
-        now replays stale same-bus links during the live fixpoint, but cross-subgraph replay still
-        falls back to reduced convergence
+        replayed across all visited bus subgraphs after hierarchy propagation; the local graph now
+        scopes stale replay to the active live component, but it still clones reduced connection
+        snapshots rather than replaying live connection objects through recursive revisits
       - no live cached driver connection object that can be cloned and recached in place across
         labels, pins, sheet pins, and connected items via a shared `recacheSubgraphName()`-style
         owner
       - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
         live item / connection pointers
     - concrete next unblock path:
-      1. replace the current split live hierarchy pass plus live bus fixpoint with one
-         `propagateToNeighbors()`-style walk over a shared visited set of live subgraphs
-      2. carry one live stale-member bag across that walk instead of replaying only within the
-         local same-bus fixpoint
-      3. move live name recache into that same walk so renames and revisits happen on one owner
+      1. replace the current dirty component worklist with a true recursive
+         `propagateToNeighbors()`-style visited walk over the same live subgraph objects
+      2. carry one live stale-member bag across that recursive walk instead of replaying through
+         component waves
+      3. move live name recache and neighbor revisits into that same recursive owner
       4. only after that, revisit live item/connection pointer ownership and connected-bus-item
          promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
