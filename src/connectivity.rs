@@ -1749,7 +1749,6 @@ fn refresh_reduced_live_bus_propagation_fixpoint(
 // projected back. Remaining divergence is the still-missing single visited/stale-member walk.
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
 
     let max_passes = reduced_subgraphs.len().saturating_add(1).max(1);
 
@@ -1757,6 +1756,11 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
         let before = live_subgraphs.clone();
         let mut stale_members = Vec::new();
 
+        for live in &mut live_subgraphs {
+            live.dirty = true;
+        }
+
+        refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
         refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
             &mut live_subgraphs,
             &mut stale_members,

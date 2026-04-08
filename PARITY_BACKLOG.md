@@ -614,6 +614,9 @@ Current status:
           - exercised post-propagation item updates
         - one shared stale-member bag across the combined live propagation pass, including
           cross-bus member replay beyond the earlier same-bus-only refresh
+        - hierarchy-chain propagation now reruns inside that shared live loop instead of only once
+          before bus propagation, so bus-driven changes can feed back into hierarchy selection on
+          the same live owner
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
