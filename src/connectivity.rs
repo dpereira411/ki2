@@ -1542,79 +1542,51 @@ fn live_subgraph_link_index(link: &LiveReducedSubgraphLink) -> usize {
         .unwrap_or(link.subgraph_index)
 }
 
+// Upstream parity: active live graph traversal should follow the attached live subgraph topology,
+// not copied reduced indexes. This helper is now handle-only on the active path; the stored
+// `subgraph_index` remains only as a reduced projection/debug carrier.
 fn live_subgraph_handle_for_link(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
+    _live_subgraphs: &[LiveReducedSubgraphHandle],
     link: &LiveReducedSubgraphLink,
 ) -> Option<LiveReducedSubgraphHandle> {
-    link.subgraph_handle
-        .as_ref()
-        .and_then(Weak::upgrade)
-        .or_else(|| live_subgraphs.get(link.subgraph_index).cloned())
+    link.subgraph_handle.as_ref().and_then(Weak::upgrade)
 }
 
+// Upstream parity: active hierarchy traversal should follow the shared live parent handle. The
+// copied reduced parent index is cleared after handle attachment and only reconstructed during the
+// final reduced projection.
 fn live_subgraph_parent_handle(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
+    _live_subgraphs: &[LiveReducedSubgraphHandle],
     subgraph: &LiveReducedSubgraph,
 ) -> Option<LiveReducedSubgraphHandle> {
-    subgraph
-        .hier_parent_handle
-        .as_ref()
-        .and_then(Weak::upgrade)
-        .or_else(|| {
-            subgraph
-                .hier_parent_index
-                .and_then(|index| live_subgraphs.get(index).cloned())
-        })
+    subgraph.hier_parent_handle.as_ref().and_then(Weak::upgrade)
 }
 
+// Upstream parity: active hierarchy traversal now follows shared live child handles instead of
+// copied reduced child indexes. The reduced child index list is projection-only after graph build.
 fn live_subgraph_child_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
+    _live_subgraphs: &[LiveReducedSubgraphHandle],
     subgraph: &LiveReducedSubgraph,
 ) -> Vec<LiveReducedSubgraphHandle> {
-    let mut children = subgraph
+    subgraph
         .hier_child_handles
         .iter()
         .filter_map(Weak::upgrade)
-        .collect::<Vec<_>>();
-
-    for child_index in &subgraph.hier_child_indexes {
-        if let Some(child_handle) = live_subgraphs.get(*child_index).cloned() {
-            let child_source_index = child_handle.borrow().source_index;
-            if !children
-                .iter()
-                .any(|candidate| candidate.borrow().source_index == child_source_index)
-            {
-                children.push(child_handle);
-            }
-        }
-    }
-
-    children
+        .collect()
 }
 
+// Upstream parity: active plain bus-parent traversal now follows shared live parent handles
+// instead of copied reduced parent indexes. The reduced parent index list is reconstructed only
+// when projecting the live graph back into the reduced shared graph view.
 fn live_subgraph_bus_parent_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
+    _live_subgraphs: &[LiveReducedSubgraphHandle],
     subgraph: &LiveReducedSubgraph,
 ) -> Vec<LiveReducedSubgraphHandle> {
-    let mut parents = subgraph
+    subgraph
         .bus_parent_handles
         .iter()
         .filter_map(Weak::upgrade)
-        .collect::<Vec<_>>();
-
-    for parent_index in &subgraph.bus_parent_indexes {
-        if let Some(parent_handle) = live_subgraphs.get(*parent_index).cloned() {
-            let parent_source_index = parent_handle.borrow().source_index;
-            if !parents
-                .iter()
-                .any(|candidate| candidate.borrow().source_index == parent_source_index)
-            {
-                parents.push(parent_handle);
-            }
-        }
-    }
-
-    parents
+        .collect()
 }
 
 fn live_subgraph_has_hierarchy_handles(subgraph: &LiveReducedSubgraph) -> bool {
