@@ -354,6 +354,12 @@ fn reduced_text_is_bus(schematic: &crate::model::Schematic, text: &str) -> bool 
             .any(|alias| alias.name.eq_ignore_ascii_case(text))
 }
 
+// Upstream parity: reduced local analogue for the member expansion KiCad does through
+// `SCH_CONNECTION::Members()` on the bus-conflict path. This is not a 1:1 connection-object walk
+// because the Rust tree still expands from raw label text and bus aliases instead of live
+// `SCH_CONNECTION` members, but it now covers aliases, bracketed vectors, anonymous groups, and
+// prefixed bus groups like `USB{DP DM}`. Remaining divergence is fuller nested/member object
+// ownership beyond reduced string expansion.
 fn reduced_bus_members(schematic: &crate::model::Schematic, text: &str) -> Vec<String> {
     if let Some(alias) = schematic
         .screen
@@ -373,6 +379,22 @@ fn reduced_bus_members(schematic: &crate::model::Schematic, text: &str) -> Vec<S
             .filter(|member| !member.is_empty())
             .map(|member| member.to_string())
             .collect();
+    }
+
+    if let Some((prefix, suffix)) = text.split_once('{') {
+        if let Some(inner) = suffix.strip_suffix('}') {
+            return inner
+                .split_whitespace()
+                .filter(|member| !member.is_empty())
+                .map(|member| {
+                    if prefix.is_empty() {
+                        member.to_string()
+                    } else {
+                        format!("{prefix}.{member}")
+                    }
+                })
+                .collect();
+        }
     }
 
     let Some((prefix, suffix)) = text.split_once('[') else {
