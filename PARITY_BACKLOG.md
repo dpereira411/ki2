@@ -662,10 +662,10 @@ Current status:
       - the recursive walk now has local shared live connection owners, but it still does not have
         a full live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph with pointer identity
         shared across all items, subgraphs, and attached bus items
-      - the active stale-member bag now uses the live local member payload, but replay still
-        rematches those members by reduced search keys and still does not replay one fuller shared
-        live connection/member object graph across all visited bus subgraphs after hierarchy
-        propagation
+      - the active stale-member bag now uses the live local member payload and the exercised
+        active rematch helpers now match live-to-live, but replay still does not carry one fuller
+        shared live connection/member object graph across all visited bus subgraphs after
+        hierarchy propagation
       - no full live cached driver/item connection topology that can be recached in place across
         labels, pins, sheet pins, bus entries, and connected items by pointer identity via a
         `recacheSubgraphName()`-style owner; the local live connection owners now exist, but item
@@ -680,9 +680,9 @@ Current status:
         attached item kind
       - live connection member trees, the active stale-member bag, stored live bus
         parent/neighbor links, and the exercised active rematch helpers now use a dedicated live
-        local member payload, but some search/projection boundaries still round-trip through
-        reduced member snapshots instead of keeping one fuller live member/pointer graph through
-        propagation and projection
+        local member payload, but projection and remaining boundary adapters still round-trip
+        through reduced member snapshots instead of keeping one fuller live member/pointer graph
+        through propagation and projection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
