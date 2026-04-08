@@ -1392,9 +1392,10 @@ fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(
     }
 }
 
-fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
+fn propagate_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
     live_subgraphs: &mut [LiveReducedSubgraph],
     indexes: &[usize],
+    force: bool,
 ) {
     for &start in indexes {
         if !live_subgraphs[start].dirty {
@@ -1409,13 +1410,7 @@ fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
             continue;
         }
 
-        propagate_reduced_live_hierarchy_chain(start, live_subgraphs, false);
-    }
-
-    for &start in indexes {
-        if live_subgraphs[start].dirty {
-            propagate_reduced_live_hierarchy_chain(start, live_subgraphs, true);
-        }
+        propagate_reduced_live_hierarchy_chain(start, live_subgraphs, force);
     }
 }
 
@@ -2166,73 +2161,110 @@ fn refresh_reduced_live_bus_propagation_fixpoint(
     apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
 }
 
+fn propagate_reduced_live_graph_neighbors(
+    start: usize,
+    live_subgraphs: &mut [LiveReducedSubgraph],
+    force: bool,
+    visiting: &mut BTreeSet<usize>,
+    stale_members: &mut Vec<ReducedBusMember>,
+) {
+    if !live_subgraphs[start].dirty || !visiting.insert(start) {
+        return;
+    }
+
+    refresh_reduced_live_global_secondary_driver_promotions_for_index(start, live_subgraphs);
+
+    let active = collect_live_reduced_propagation_component(start, live_subgraphs);
+
+    propagate_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
+        live_subgraphs,
+        &active,
+        force,
+    );
+    refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
+        live_subgraphs,
+        &active,
+        stale_members,
+    );
+    refresh_reduced_live_bus_parent_members_on_live_subgraphs_for_indexes(live_subgraphs, &active);
+    replay_reduced_live_stale_bus_members_on_live_subgraphs_for_indexes(
+        live_subgraphs,
+        &active,
+        stale_members,
+    );
+    refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(live_subgraphs, &active);
+
+    let recurse_targets = active
+        .iter()
+        .copied()
+        .filter(|index| *index != start && live_subgraphs[*index].dirty)
+        .collect::<Vec<_>>();
+
+    for index in recurse_targets {
+        propagate_reduced_live_graph_neighbors(
+            index,
+            live_subgraphs,
+            force,
+            visiting,
+            stale_members,
+        );
+    }
+
+    visiting.remove(&start);
+}
+
 // Upstream parity: reduced local bridge toward one live `propagateToNeighbors()` owner during
-// graph build. This now runs from a dirty worklist over connected hierarchy/bus components and
-// leaves the multiple-bus-parent rename/recache step for the post-propagation phase, matching the
-// exercised KiCad ordering more closely before item connections are updated. Remaining divergence
-// is the still-missing single visited/stale-member recursion on live connection objects.
+// graph build. This now follows KiCad's two-pass caller shape more closely by recursively
+// traversing dirty live subgraphs with a shared stale-member bag per root before running the
+// post-propagation multi-parent rename and item-update steps. Remaining divergence is the
+// still-missing pointer-owned live connection/subgraph layer behind that recursion.
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    let mut queued = vec![true; live_subgraphs.len()];
-    let mut worklist = live_subgraphs
-        .iter()
-        .enumerate()
-        .map(|(index, _)| index)
-        .collect::<VecDeque<_>>();
-    let max_waves = live_subgraphs
+    let max_roots = live_subgraphs
         .len()
         .saturating_mul(live_subgraphs.len().max(1));
-    let mut waves = 0;
+    let mut roots = 0;
 
-    while let Some(start) = worklist.pop_front() {
-        queued[start] = false;
-
+    for start in 0..live_subgraphs.len() {
         if !live_subgraphs[start].dirty {
             continue;
         }
 
-        waves += 1;
-        if waves > max_waves {
+        roots += 1;
+        if roots > max_roots {
             break;
         }
 
-        refresh_reduced_live_global_secondary_driver_promotions_for_index(
+        let mut stale_members = Vec::new();
+        let mut visiting = BTreeSet::new();
+        propagate_reduced_live_graph_neighbors(
             start,
             &mut live_subgraphs,
-        );
-
-        let active = collect_live_reduced_propagation_component(start, &live_subgraphs);
-        let mut stale_members = Vec::new();
-
-        refresh_reduced_hierarchy_driver_chains_on_live_subgraphs_for_indexes(
-            &mut live_subgraphs,
-            &active,
-        );
-        refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs_for_indexes(
-            &mut live_subgraphs,
-            &active,
+            false,
+            &mut visiting,
             &mut stale_members,
         );
-        refresh_reduced_live_bus_parent_members_on_live_subgraphs_for_indexes(
-            &mut live_subgraphs,
-            &active,
-        );
-        replay_reduced_live_stale_bus_members_on_live_subgraphs_for_indexes(
-            &mut live_subgraphs,
-            &active,
-            &stale_members,
-        );
-        refresh_reduced_live_bus_link_members_on_live_subgraphs_for_indexes(
-            &mut live_subgraphs,
-            &active,
-        );
+    }
 
-        for (index, subgraph) in live_subgraphs.iter().enumerate() {
-            if subgraph.dirty && !queued[index] {
-                queued[index] = true;
-                worklist.push_back(index);
-            }
+    for start in 0..live_subgraphs.len() {
+        if !live_subgraphs[start].dirty {
+            continue;
         }
+
+        roots += 1;
+        if roots > max_roots {
+            break;
+        }
+
+        let mut stale_members = Vec::new();
+        let mut visiting = BTreeSet::new();
+        propagate_reduced_live_graph_neighbors(
+            start,
+            &mut live_subgraphs,
+            true,
+            &mut visiting,
+            &mut stale_members,
+        );
     }
 
     refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
