@@ -121,6 +121,19 @@ pub(crate) struct ReducedProjectNetIdentity {
     pub(crate) has_no_connect: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedProjectSubgraphEntry {
+    pub(crate) code: usize,
+    pub(crate) name: String,
+    pub(crate) driver_name: String,
+    pub(crate) class: String,
+    pub(crate) has_no_connect: bool,
+    pub(crate) sheet_instance_path: String,
+    pub(crate) points: Vec<PointKey>,
+    pub(crate) nodes: Vec<ReducedNetNode>,
+    pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct ReducedProjectPinIdentityKey {
     sheet_instance_path: String,
@@ -137,6 +150,9 @@ struct ReducedProjectPointIdentityKey {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectNetGraph {
     nets: Vec<ReducedProjectNetEntry>,
+    subgraphs: Vec<ReducedProjectSubgraphEntry>,
+    subgraphs_by_name: BTreeMap<String, Vec<usize>>,
+    subgraphs_by_sheet_and_driver_name: BTreeMap<(String, String), usize>,
     pin_identities: BTreeMap<ReducedNetBasePinKey, ReducedProjectNetIdentity>,
     pin_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectNetIdentity>,
     point_identities: BTreeMap<ReducedProjectPointIdentityKey, ReducedProjectNetIdentity>,
@@ -213,6 +229,14 @@ fn expand_stacked_pin_notation(pin: &str) -> (Vec<String>, bool) {
 
 fn is_auto_generated_net_name(net_name: &str) -> bool {
     net_name.starts_with("unconnected-(") || net_name.starts_with("Net-(")
+}
+
+fn reduced_short_net_name(net_name: &str) -> String {
+    net_name
+        .rsplit(['.', '/'])
+        .next()
+        .unwrap_or(net_name)
+        .to_string()
 }
 
 // Upstream parity: reduced local analogue for the bus-kind discrimination KiCad gets from
@@ -943,7 +967,19 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
 ) -> ReducedProjectNetGraph {
+    struct PendingProjectSubgraph {
+        name: String,
+        driver_name: String,
+        class: String,
+        has_no_connect: bool,
+        sheet_instance_path: String,
+        points: Vec<PointKey>,
+        nodes: Vec<ReducedNetNode>,
+        base_pins: Vec<ReducedNetBasePinKey>,
+    }
+
     let mut all_base_pins_by_net = BTreeMap::<String, Vec<ReducedNetBasePinKey>>::new();
+    let mut pending_subgraphs = Vec::<PendingProjectSubgraph>::new();
     let mut candidates = BTreeMap::<
         (String, String, String),
         (String, String, bool, ReducedNetNode, ReducedNetBasePinKey),
@@ -1027,6 +1063,17 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     base_pins,
                     ..
                 } = subgraph;
+
+                pending_subgraphs.push(PendingProjectSubgraph {
+                    name: entry.name.clone(),
+                    driver_name: reduced_short_net_name(&entry.name),
+                    class: class.clone(),
+                    has_no_connect,
+                    sheet_instance_path: sheet_path.instance_path.clone(),
+                    points: points.clone(),
+                    nodes: nodes.clone(),
+                    base_pins: base_pins.clone(),
+                });
 
                 all_base_pins_by_net
                     .entry(entry.name.clone())
@@ -1120,6 +1167,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     nets.sort_by(|(a_name, _), (b_name, _)| reduced_str_num_cmp(a_name, b_name));
 
     let mut reduced_nets = Vec::new();
+    let mut reduced_subgraphs = Vec::new();
+    let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
+    let mut subgraphs_by_sheet_and_driver_name = BTreeMap::<(String, String), usize>::new();
     let mut pin_identities = BTreeMap::new();
     let mut pin_identities_by_location = BTreeMap::new();
     let mut point_identities = BTreeMap::new();
@@ -1158,8 +1208,49 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         });
     }
 
+    for pending in pending_subgraphs {
+        let Some(net_identity) = reduced_nets
+            .iter()
+            .find(|net| net.name == pending.name)
+            .map(|net| ReducedProjectSubgraphEntry {
+                code: net.code,
+                name: net.name.clone(),
+                driver_name: pending.driver_name.clone(),
+                class: if pending.class.is_empty() {
+                    net.class.clone()
+                } else {
+                    pending.class.clone()
+                },
+                has_no_connect: pending.has_no_connect,
+                sheet_instance_path: pending.sheet_instance_path.clone(),
+                points: pending.points.clone(),
+                nodes: pending.nodes.clone(),
+                base_pins: pending.base_pins.clone(),
+            })
+        else {
+            continue;
+        };
+
+        let index = reduced_subgraphs.len();
+        subgraphs_by_name
+            .entry(net_identity.name.clone())
+            .or_default()
+            .push(index);
+        subgraphs_by_sheet_and_driver_name.insert(
+            (
+                net_identity.sheet_instance_path.clone(),
+                net_identity.driver_name.clone(),
+            ),
+            index,
+        );
+        reduced_subgraphs.push(net_identity);
+    }
+
     ReducedProjectNetGraph {
         nets: reduced_nets,
+        subgraphs: reduced_subgraphs,
+        subgraphs_by_name,
+        subgraphs_by_sheet_and_driver_name,
         pin_identities,
         pin_identities_by_location,
         point_identities,
@@ -1201,6 +1292,42 @@ pub(crate) fn collect_reduced_project_net_map(
     for_board: bool,
 ) -> Vec<ReducedProjectNetEntry> {
     project.reduced_project_net_graph(for_board).nets
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::FindSubgraphByName()`. This is
+// not a 1:1 graph lookup because the Rust tree still lacks live `CONNECTION_SUBGRAPH` ownership
+// and uses `(sheet instance path, short driver name)` as the reduced local key, but it preserves
+// the owner boundary where graph callers ask the shared project graph for the current sheet's
+// local subgraph instead of re-scanning reduced net names ad hoc. Remaining divergence is the
+// fuller subgraph object model and exact driver-connection caching.
+pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    net_name: &str,
+    sheet_path: &LoadedSheetPath,
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .subgraphs_by_sheet_and_driver_name
+        .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
+        .and_then(|index| graph.subgraphs.get(*index))
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::FindFirstSubgraphByName()`. This
+// is not a 1:1 global lookup because the Rust tree still stores reduced subgraphs in the shared
+// project graph instead of live `CONNECTION_SUBGRAPH*` objects, but it restores the owner
+// boundary where graph/export/ERC callers can ask for the first resolved subgraph by full net name
+// instead of flattening to whole-net facts only. Remaining divergence is the fuller subgraph
+// object model and graph-owned resolved-name caches.
+pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    net_name: &str,
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .subgraphs_by_name
+        .get(net_name)
+        .and_then(|indexes| indexes.first())
+        .and_then(|index| graph.subgraphs.get(*index))
 }
 
 fn reduced_project_pin_identity_key(
@@ -2102,7 +2229,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_reduced_net_name_at, resolve_reduced_project_net_at};
+    use super::{
+        find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
+        resolve_reduced_net_name_at, resolve_reduced_project_net_at,
+    };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
     use crate::parser::parse_schematic_file;
@@ -2232,5 +2362,88 @@ mod tests {
         assert_eq!(net.name, "NET_A");
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_subgraph_lookup_keeps_sheet_local_driver_names() {
+        let dir = env::temp_dir().join(format!(
+            "ki2_connectivity_project_subgraphs_{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("mkdir");
+        let root_path = dir.join("root.kicad_sch");
+        let child_path = dir.join("child.kicad_sch");
+
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "R" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73050000-0000-0000-0000-000000000014")
+    (at 0 0 0)
+    (property "Reference" "R1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "10k" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (label "SIG" (at 10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write child");
+
+        fs::write(
+            &root_path,
+            format!(
+                r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (sheet
+    (at 0 0)
+    (size 20 10)
+    (uuid "73050000-0000-0000-0000-000000000013")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1)))))
+  (sheet_instances
+    (path "" (page "1"))
+    (path "/73050000-0000-0000-0000-000000000013" (page "2"))))"#,
+                child_path.display()
+            ),
+        )
+        .expect("write root");
+
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let child_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| !sheet_path.instance_path.is_empty())
+            .expect("child sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let by_sheet = find_reduced_project_subgraph_by_name(&graph, "SIG", child_sheet)
+            .expect("sheet-local subgraph");
+        assert_eq!(by_sheet.driver_name, "SIG");
+        assert_eq!(by_sheet.name, "/Child/SIG");
+
+        let by_full_name = find_first_reduced_project_subgraph_by_name(&graph, "/Child/SIG")
+            .expect("full-name subgraph");
+        assert_eq!(by_full_name.sheet_instance_path, child_sheet.instance_path);
+        assert_eq!(by_full_name.driver_name, "SIG");
+
+        let _ = fs::remove_file(root_path);
+        let _ = fs::remove_file(child_path);
+        let _ = fs::remove_dir(dir);
     }
 }

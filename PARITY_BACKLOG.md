@@ -761,6 +761,9 @@ What is already covered indirectly:
 - reduced graph-side net grouping now flows through one shared `GetNetMap()` analogue before XML /
   KiCad export formatting
 - reduced project-wide net grouping now owns cross-sheet merge plus sorted netcode allocation
+- reduced project graph now also preserves per-sheet reduced subgraphs plus
+  `FindSubgraphByName()` / `FindFirstSubgraphByName()`-style lookup boundaries instead of
+  flattening directly to whole-net identities only
 - XML/KiCad net writing now also mirrors the exercised `makeListOfNets()` write-time `#...`
   power/virtual-symbol node filter, including skipped power-only nets without renumbering later
   emitted net codes
