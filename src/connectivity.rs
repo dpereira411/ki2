@@ -926,6 +926,15 @@ struct LiveReducedHierPortLink {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct LiveReducedSubgraphWireItem {
+    start: PointKey,
+    end: PointKey,
+    is_bus_entry: bool,
+    connected_bus_subgraph_index: Option<usize>,
+    connected_bus_connection: Option<LiveReducedConnection>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct LiveReducedSubgraph {
     source_index: usize,
     driver_connection: LiveReducedConnection,
@@ -946,6 +955,8 @@ struct LiveReducedSubgraph {
     label_links: Vec<LiveReducedLabelLink>,
     hier_sheet_pins: Vec<LiveReducedHierSheetPinLink>,
     hier_ports: Vec<LiveReducedHierPortLink>,
+    bus_items: Vec<LiveReducedSubgraphWireItem>,
+    wire_items: Vec<LiveReducedSubgraphWireItem>,
     dirty: bool,
 }
 
@@ -956,7 +967,7 @@ struct LiveReducedSubgraph {
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
-    reduced_subgraphs
+    let mut live_subgraphs = reduced_subgraphs
         .iter()
         .enumerate()
         .map(|(index, subgraph)| LiveReducedSubgraph {
@@ -1007,9 +1018,98 @@ fn build_live_reduced_subgraphs(
                     connection: LiveReducedConnection::new(port.connection),
                 })
                 .collect(),
+            bus_items: subgraph
+                .bus_items
+                .iter()
+                .cloned()
+                .map(|item| LiveReducedSubgraphWireItem {
+                    start: item.start,
+                    end: item.end,
+                    is_bus_entry: item.is_bus_entry,
+                    connected_bus_subgraph_index: item.connected_bus_subgraph_index,
+                    connected_bus_connection: None,
+                })
+                .collect(),
+            wire_items: subgraph
+                .wire_items
+                .iter()
+                .cloned()
+                .map(|item| LiveReducedSubgraphWireItem {
+                    start: item.start,
+                    end: item.end,
+                    is_bus_entry: item.is_bus_entry,
+                    connected_bus_subgraph_index: item.connected_bus_subgraph_index,
+                    connected_bus_connection: None,
+                })
+                .collect(),
             dirty: true,
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    attach_live_connected_bus_items(&mut live_subgraphs);
+    live_subgraphs
+}
+
+// Upstream parity: reduced local analogue for the bus-entry connected-bus item owner during live
+// graph build. This still identifies the attached bus from reduced wire geometry and stores a live
+// local connection owner plus subgraph index instead of real `SCH_LINE*` item pointers, but it
+// moves connected-bus ownership onto the live graph objects so later live graph updates can follow
+// the attached bus connection owner directly.
+fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
+    let bus_subgraphs = live_subgraphs
+        .iter()
+        .enumerate()
+        .filter(|(_, subgraph)| !subgraph.bus_items.is_empty())
+        .map(|(index, subgraph)| {
+            (
+                index,
+                subgraph.sheet_instance_path.clone(),
+                subgraph.bus_items.clone(),
+                subgraph.driver_connection.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for subgraph in live_subgraphs.iter_mut() {
+        for item in &mut subgraph.wire_items {
+            if !item.is_bus_entry {
+                continue;
+            }
+
+            let attached_bus = bus_subgraphs
+                .iter()
+                .find(|(_, sheet_instance_path, bus_items, _)| {
+                    *sheet_instance_path == subgraph.sheet_instance_path
+                        && bus_items.iter().any(|bus_item| {
+                            point_on_wire_segment(
+                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            ) || point_on_wire_segment(
+                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            )
+                        })
+                })
+                .map(|(index, _, _, connection)| (*index, connection.clone()));
+
+            item.connected_bus_subgraph_index = attached_bus.as_ref().map(|(index, _)| *index);
+            item.connected_bus_connection = attached_bus.map(|(_, connection)| connection);
+        }
+    }
 }
 
 // Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
@@ -1079,6 +1179,9 @@ fn apply_live_reduced_driver_connections(
         reduced.bus_neighbor_links = live.bus_neighbor_links.clone();
         reduced.bus_parent_links = live.bus_parent_links.clone();
         reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
+        for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
+            target.connected_bus_subgraph_index = source.connected_bus_subgraph_index;
+        }
     }
 }
 
@@ -8195,6 +8298,8 @@ mod tests {
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
                 dirty: true,
             },
             LiveReducedSubgraph {
@@ -8225,6 +8330,8 @@ mod tests {
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
                 dirty: true,
             },
         ];
@@ -8293,6 +8400,8 @@ mod tests {
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
                 dirty: true,
             },
             LiveReducedSubgraph {
@@ -8331,6 +8440,8 @@ mod tests {
                 label_links: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
                 dirty: true,
             },
         ];
