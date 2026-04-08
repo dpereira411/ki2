@@ -300,6 +300,8 @@ Current status:
   - reduced point-netclass ownership now also lives there instead of being rebuilt in loader
     geometry scans
   - reduced driver-label `Netclass` fields now also feed the shared netclass owner
+  - reduced net-map grouping for XML/KiCad export now also lives there instead of being rebuilt
+    inside `src/netlist.rs`
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match
@@ -644,8 +646,10 @@ What is already covered indirectly:
   - reduced per-lib-unit pin export on `<units>`
   - reduced `libparts`
   - reduced libpart pin lists from schematic-linked lib-symbol snapshots
-  - reduced `nets`
-  - reduced node lists from the current point-net resolver
+- reduced `nets`
+- reduced node lists from the current point-net resolver
+- reduced graph-side net grouping now flows through one shared `GetNetMap()` analogue before XML /
+  KiCad export formatting
 
 What is not yet explicitly tracked as complete:
 - fuller KiCad/default `kicad` netlist CLI surface

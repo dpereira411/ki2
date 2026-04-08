@@ -1739,6 +1739,58 @@ fn cli_netlist_prefers_non_pad_default_driver_names() {
 }
 
 #[test]
+fn cli_netlist_groups_same_named_subgraphs_under_one_net() {
+    let path = temp_schematic(
+        "cli_netlist_same_named_subgraphs",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:IN"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "IN" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "IN_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "IN" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:IN")
+    (at 0 0 0)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "IN" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "Device:IN")
+    (at 50 0 0)
+    (property "Reference" "U2" (at 50 0 0) (effects (font (size 1 1))))
+    (property "Value" "IN" (at 50 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (global_label "SHARED" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 40 0) (xy 50 0)))
+  (global_label "SHARED" (shape input) (at 40 0 0) (effects (font (size 1 1)))))"#,
+    );
+    let report_path = path.with_extension("xml");
+
+    let output = Command::new(ki2_binary())
+        .args(["netlist", path.to_str().expect("path string")])
+        .output()
+        .expect("run ki2 netlist");
+
+    assert!(output.status.success(), "netlist must succeed");
+    let report = fs::read_to_string(&report_path).expect("read netlist");
+    assert_eq!(report.matches("<net code=").count(), 1, "{report}");
+    assert!(
+        report.contains("<net code=\"1\" name=\"SHARED\""),
+        "{report}"
+    );
+    assert!(report.contains("<node ref=\"U1\" pin=\"1\""), "{report}");
+    assert!(report.contains("<node ref=\"U2\" pin=\"1\""), "{report}");
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(report_path);
+}
+
+#[test]
 fn erc_reports_symbol_and_sheet_field_name_whitespace() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_field_name_whitespace_{}",

@@ -65,6 +65,36 @@ pub(crate) struct ProjectedSymbolPin {
     pub(crate) electrical_type: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedNetNode {
+    pub(crate) reference: String,
+    pub(crate) pin: String,
+    pub(crate) pinfunction: Option<String>,
+    pub(crate) pintype: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedNetBasePinKey {
+    pub(crate) symbol_uuid: Option<String>,
+    pub(crate) at: PointKey,
+    pub(crate) name: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ReducedNetSubgraph {
+    pub(crate) anchor: [f64; 2],
+    pub(crate) class: String,
+    pub(crate) has_no_connect: bool,
+    pub(crate) nodes: Vec<ReducedNetNode>,
+    pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ReducedNetMapEntry {
+    pub(crate) name: String,
+    pub(crate) subgraphs: Vec<ReducedNetSubgraph>,
+}
+
 fn connection_component_at(schematic: &Schematic, at: [f64; 2]) -> Option<ConnectionComponent> {
     collect_connection_components(schematic)
         .into_iter()
@@ -87,6 +117,28 @@ fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
         (point[0] * cos) - (point[1] * sin),
         (point[0] * sin) + (point[1] * cos),
     ]
+}
+
+fn expand_stacked_pin_notation(pin: &str) -> (Vec<String>, bool) {
+    let trimmed = pin.trim();
+
+    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+        return (vec![pin.to_string()], false);
+    }
+
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let numbers = inner
+        .split(',')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    if numbers.is_empty() {
+        (vec![pin.to_string()], false)
+    } else {
+        (numbers, true)
+    }
 }
 
 // Upstream parity: reduced local analogue for the placed-symbol `SCH_PIN` projection KiCad uses
@@ -433,6 +485,124 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
     }
 
     groups.into_values().collect()
+}
+
+// Upstream parity: reduced local analogue for the `ConnectionGraph()->GetNetMap()` ownership that
+// KiCad's XML/KiCad exporters consume. This is not a 1:1 `CONNECTION_GRAPH` port because the Rust
+// tree still lacks real `CONNECTION_SUBGRAPH` objects, graph-owned netcodes, and cached driver
+// item identity, but it preserves one shared reduced net-map owner instead of rebuilding net
+// grouping inside each exporter. Remaining divergence is the missing full subgraph object model and
+// graph-owned netcode allocation beyond these grouped reduced subgraphs.
+pub(crate) fn collect_reduced_net_map<FName, FClass, FAllow, FReference>(
+    schematic: &Schematic,
+    mut resolve_net_name: FName,
+    mut resolve_net_class: FClass,
+    mut allow_symbol: FAllow,
+    mut symbol_reference: FReference,
+) -> Vec<ReducedNetMapEntry>
+where
+    FName: FnMut([f64; 2]) -> Option<String>,
+    FClass: FnMut([f64; 2]) -> Option<String>,
+    FAllow: FnMut(&Symbol) -> bool,
+    FReference: FnMut(&Symbol) -> Option<String>,
+{
+    let mut net_map = BTreeMap::<String, Vec<ReducedNetSubgraph>>::new();
+
+    for component in collect_connection_components(schematic) {
+        let Some(net_name) = resolve_net_name(component.anchor).filter(|name| !name.is_empty())
+        else {
+            continue;
+        };
+
+        let mut nodes = BTreeMap::<(String, String), ReducedNetNode>::new();
+        let mut base_pins = Vec::new();
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            if !symbol.in_netlist || !allow_symbol(symbol) {
+                continue;
+            }
+
+            let Some(reference) = symbol_reference(symbol) else {
+                continue;
+            };
+
+            for pin in projected_symbol_pin_info(symbol) {
+                let Some(base_pin_number) = pin.number.clone() else {
+                    continue;
+                };
+
+                if !component.members.iter().any(|member| {
+                    member.kind == ConnectionMemberKind::SymbolPin
+                        && member.symbol_uuid == symbol.uuid
+                        && points_equal(member.at, pin.at)
+                }) {
+                    continue;
+                }
+
+                let pinfunction_base = pin.name.clone().and_then(|name| {
+                    let trimmed = name.trim();
+                    (!trimmed.is_empty() && trimmed != "~").then_some(name)
+                });
+                let (expanded_numbers, _) = expand_stacked_pin_notation(&base_pin_number);
+                let base_pin_key = ReducedNetBasePinKey {
+                    symbol_uuid: symbol.uuid.clone(),
+                    at: point_key(pin.at),
+                    name: pin.name.clone(),
+                };
+                let emits_expanded_pinfunction =
+                    pinfunction_base.is_some() || expanded_numbers.len() > 1;
+
+                for pin_number in expanded_numbers {
+                    let pinfunction = if emits_expanded_pinfunction {
+                        match pinfunction_base.as_ref() {
+                            Some(base_name) => Some(format!("{base_name}_{pin_number}")),
+                            None => Some(pin_number.clone()),
+                        }
+                    } else {
+                        None
+                    };
+
+                    nodes
+                        .entry((reference.clone(), pin_number.clone()))
+                        .or_insert_with(|| ReducedNetNode {
+                            reference: reference.clone(),
+                            pin: pin_number,
+                            pinfunction,
+                            pintype: pin.electrical_type.clone().unwrap_or_default(),
+                        });
+                }
+
+                base_pins.push(base_pin_key);
+            }
+        }
+
+        if nodes.is_empty() {
+            continue;
+        }
+
+        net_map
+            .entry(net_name)
+            .or_default()
+            .push(ReducedNetSubgraph {
+                anchor: component.anchor,
+                class: resolve_net_class(component.anchor).unwrap_or_default(),
+                has_no_connect: component
+                    .members
+                    .iter()
+                    .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker),
+                nodes: nodes.into_values().collect(),
+                base_pins,
+            });
+    }
+
+    net_map
+        .into_iter()
+        .map(|(name, subgraphs)| ReducedNetMapEntry { name, subgraphs })
+        .collect()
 }
 
 fn label_is_dangling_on_component(

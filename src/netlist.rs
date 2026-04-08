@@ -1,13 +1,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::connectivity::{
-    ConnectionMemberKind, collect_connection_components, projected_symbol_pin_info,
-};
+use crate::connectivity::{ReducedNetBasePinKey, collect_reduced_net_map};
 use crate::core::SchematicProject;
 use crate::loader::{
-    SymbolPinTextVarKind, points_equal, resolve_point_connectivity_text_var,
-    resolve_schematic_text_var, resolve_sheet_text_var, resolve_text_variables,
+    SymbolPinTextVarKind, resolve_point_connectivity_text_var, resolve_schematic_text_var,
+    resolve_sheet_text_var, resolve_text_variables,
     resolved_label_text_property_value_without_connectivity, resolved_sheet_text_state,
     resolved_symbol_text_property_value, resolved_symbol_text_state,
 };
@@ -124,14 +122,7 @@ struct NetNodeCandidate {
     net_class: String,
     has_no_connect: bool,
     node: NetlistNode,
-    base_pin_key: NetNodeBasePinKey,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct NetNodeBasePinKey {
-    symbol_uuid: Option<String>,
-    at: (u64, u64),
-    name: Option<String>,
+    base_pin_key: ReducedNetBasePinKey,
 }
 
 fn resolved_property_value(properties: &[Property], token: &str) -> Option<String> {
@@ -763,15 +754,21 @@ pub fn collect_xml_libparts(project: &SchematicProject) -> Vec<NetlistLibPart> {
 
 // Upstream parity: reduced local analogue for `NETLIST_EXPORTER_XML::makeListOfNets()`. This is
 // not a 1:1 KiCad net exporter because the Rust tree still derives net nodes from the reduced
-// shared connectivity carrier instead of full `CONNECTION_GRAPH` subgraphs, but it preserves the
-// exercised current-sheet node grouping, per-net net/class lookup, exporter-base duplicate
-// ref/pin erasure with user-net preference over auto-generated nets, stacked-pin expansion,
-// single-node/all-stacked `+no_connect` marking, and the `GNL_OPT_KICAD` `on_board` filter path
-// needed by the first live XML/KiCad netlist slices. Remaining divergence is the fuller KiCad
-// subgraph object model and graph-owned netcode/name caches. Net ordering now follows the
-// upstream `StrNumCmp` path instead of the old lexical `BTreeMap` order.
+// shared reduced `GetNetMap()` analogue instead of full `CONNECTION_GRAPH` subgraphs, but it now
+// preserves one graph-side net grouping owner before exporter formatting. The remaining divergence
+// is the fuller KiCad subgraph object model and graph-owned netcode/name caches. Net ordering now
+// follows the upstream `StrNumCmp` path instead of the old lexical `BTreeMap` order.
 pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<NetlistNet> {
     let mut candidates = BTreeMap::<(String, String), NetNodeCandidate>::new();
+    let mut nets = BTreeMap::<
+        String,
+        (
+            String,
+            bool,
+            BTreeMap<(String, String), NetlistNode>,
+            Vec<ReducedNetBasePinKey>,
+        ),
+    >::new();
 
     for sheet_path in &project.sheet_paths {
         if for_board
@@ -791,139 +788,91 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
             continue;
         };
 
-        for component in collect_connection_components(schematic) {
-            let net_name = resolve_point_connectivity_text_var(
-                &project.schematics,
-                &project.sheet_paths,
-                sheet_path,
-                project.project.as_ref(),
-                project.current_variant(),
-                component.anchor,
-                SymbolPinTextVarKind::NetName,
-            )
-            .unwrap_or_default();
-
-            if net_name.is_empty() {
-                continue;
-            }
-
-            let net_class = resolve_point_connectivity_text_var(
-                &project.schematics,
-                &project.sheet_paths,
-                sheet_path,
-                project.project.as_ref(),
-                project.current_variant(),
-                component.anchor,
-                SymbolPinTextVarKind::NetClass,
-            )
-            .unwrap_or_default();
-
-            let has_no_connect = component
-                .members
-                .iter()
-                .any(|member| member.kind == ConnectionMemberKind::NoConnectMarker);
-
-            for item in &schematic.screen.items {
-                let SchItem::Symbol(symbol) = item else {
-                    continue;
-                };
-
-                if !symbol.in_netlist {
-                    continue;
-                }
-
-                if for_board && !symbol.on_board {
-                    continue;
-                }
-
+        for entry in collect_reduced_net_map(
+            schematic,
+            |at| {
+                resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    at,
+                    SymbolPinTextVarKind::NetName,
+                )
+            },
+            |at| {
+                resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    at,
+                    SymbolPinTextVarKind::NetClass,
+                )
+            },
+            |symbol| !for_board || symbol.on_board,
+            |symbol| {
                 let state = resolved_symbol_text_state(
                     symbol,
                     &sheet_path.instance_path,
                     project.current_variant(),
                 );
-                let Some(reference) = resolved_property_value(&state.properties, "Reference")
-                else {
-                    continue;
-                };
-
-                for pin in projected_symbol_pin_info(symbol) {
-                    let Some(base_pin_number) = pin.number.clone() else {
-                        continue;
+                resolved_property_value(&state.properties, "Reference")
+            },
+        ) {
+            for subgraph in entry.subgraphs {
+                for node in subgraph.nodes {
+                    let key = (node.reference.clone(), node.pin.clone());
+                    let base_pin_key = subgraph
+                        .base_pins
+                        .iter()
+                        .find(|base_pin| {
+                            base_pin.symbol_uuid.is_some()
+                                && node
+                                    .pinfunction
+                                    .as_ref()
+                                    .map(|pinfunction| {
+                                        base_pin
+                                            .name
+                                            .as_ref()
+                                            .is_some_and(|name| pinfunction.starts_with(name))
+                                    })
+                                    .unwrap_or(base_pin.name.is_none())
+                        })
+                        .cloned()
+                        .or_else(|| subgraph.base_pins.first().cloned())
+                        .expect("shared reduced net map must keep base pin identity");
+                    let candidate = NetNodeCandidate {
+                        net_name: entry.name.clone(),
+                        net_class: subgraph.class.clone(),
+                        has_no_connect: subgraph.has_no_connect,
+                        node: NetlistNode {
+                            reference: node.reference,
+                            pin: node.pin,
+                            pinfunction: node.pinfunction,
+                            pintype: node.pintype,
+                        },
+                        base_pin_key,
                     };
 
-                    if !component.members.iter().any(|member| {
-                        member.kind == ConnectionMemberKind::SymbolPin
-                            && member.symbol_uuid == symbol.uuid
-                            && points_equal(member.at, pin.at)
-                    }) {
-                        continue;
-                    }
-
-                    let pinfunction_base = pin.name.clone().and_then(|name| {
-                        let trimmed = name.trim();
-                        (!trimmed.is_empty() && trimmed != "~").then_some(name)
-                    });
-                    let (expanded_numbers, _) = expand_stacked_pin_notation(&base_pin_number);
-                    let base_pin_key = NetNodeBasePinKey {
-                        symbol_uuid: symbol.uuid.clone(),
-                        at: (pin.at[0].to_bits(), pin.at[1].to_bits()),
-                        name: pin.name.clone(),
-                    };
-                    let emits_expanded_pinfunction =
-                        pinfunction_base.is_some() || expanded_numbers.len() > 1;
-
-                    for pin_number in expanded_numbers {
-                        let pinfunction = if emits_expanded_pinfunction {
-                            match pinfunction_base.as_ref() {
-                                Some(base_name) => Some(format!("{base_name}_{pin_number}")),
-                                None => Some(pin_number.clone()),
-                            }
-                        } else {
-                            None
-                        };
-
-                        let node = NetlistNode {
-                            reference: reference.clone(),
-                            pin: pin_number.clone(),
-                            pinfunction,
-                            pintype: pin.electrical_type.clone().unwrap_or_default(),
-                        };
-                        let candidate = NetNodeCandidate {
-                            net_name: net_name.clone(),
-                            net_class: net_class.clone(),
-                            has_no_connect,
-                            node,
-                            base_pin_key: base_pin_key.clone(),
-                        };
-                        let key = (reference.clone(), pin_number);
-
-                        match candidates.get(&key) {
-                            Some(existing)
-                                if is_auto_generated_net_name(&existing.net_name)
-                                    && !is_auto_generated_net_name(&candidate.net_name) =>
-                            {
-                                candidates.insert(key, candidate);
-                            }
-                            None => {
-                                candidates.insert(key, candidate);
-                            }
-                            _ => {}
+                    match candidates.get(&key) {
+                        Some(existing)
+                            if is_auto_generated_net_name(&existing.net_name)
+                                && !is_auto_generated_net_name(&candidate.net_name) =>
+                        {
+                            candidates.insert(key, candidate);
                         }
+                        None => {
+                            candidates.insert(key, candidate);
+                        }
+                        _ => {}
                     }
                 }
             }
         }
     }
-
-    let mut nets = BTreeMap::<
-        String,
-        (
-            String,
-            bool,
-            BTreeMap<(String, String), NetlistNode>,
-            Vec<NetNodeBasePinKey>,
-        ),
-    >::new();
 
     for ((reference, pin_number), candidate) in candidates {
         let net_nodes = nets.entry(candidate.net_name).or_insert_with(|| {
@@ -934,6 +883,9 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
                 Vec::new(),
             )
         });
+        if net_nodes.0.is_empty() && !candidate.net_class.is_empty() {
+            net_nodes.0 = candidate.net_class.clone();
+        }
         net_nodes.1 |= candidate.has_no_connect;
         net_nodes.2.insert((reference, pin_number), candidate.node);
         net_nodes.3.push(candidate.base_pin_key);
