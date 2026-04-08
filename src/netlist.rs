@@ -1034,7 +1034,10 @@ fn symbol_to_xml_component(
         .lib_symbol
         .as_ref()
         .map(|lib_symbol| lib_symbol.fp_filters.clone())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|filter| !filter.is_empty())
+        .collect::<Vec<_>>();
     if !fp_filters.is_empty() {
         metadata_properties.push(("ki_fp_filters".to_string(), Some(fp_filters.join(" "))));
     }
@@ -1213,7 +1216,12 @@ fn lib_symbol_to_xml_libpart(lib_id: &str, lib_symbol: &crate::model::LibSymbol)
         description,
         docs,
         fields,
-        footprints: lib_symbol.fp_filters.clone(),
+        footprints: lib_symbol
+            .fp_filters
+            .iter()
+            .filter(|filter| !filter.is_empty())
+            .cloned()
+            .collect(),
         pins,
     }
 }

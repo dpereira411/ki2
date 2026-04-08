@@ -17,6 +17,7 @@ use ki2::model::{
     ShapeKind, SheetPinShape, SheetSide, SimLibraryKind, SimLibrarySource, SimModelOrigin,
     SimValueBinding, StrokeStyle, TextHJustify, TextKind, TextVJustify,
 };
+use ki2::netlist::render_reduced_xml_netlist;
 use ki2::parser::parse_schematic_file;
 use ki2::sim::{
     SimLibraryContent, classify_symbol_sim_library_kind, collect_symbol_sim_library_sources,
@@ -1199,6 +1200,63 @@ fn cli_netlist_exports_component_metadata_properties() {
 
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(report_path);
+}
+
+#[test]
+fn cli_netlist_skips_blank_footprint_filters() {
+    let path = temp_schematic(
+        "cli_netlist_blank_fp_filters",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:JUMPER"
+      (property "Reference" "JP" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "JUMPER" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "JUMPER_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:JUMPER")
+    (at 0 0 0)
+    (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "JUMPER" (at 0 0 0) (effects (font (size 1 1))))))"#,
+    );
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let mut project = SchematicProject::from_load_result(loaded);
+    project.schematics[0]
+        .screen
+        .lib_symbols
+        .iter_mut()
+        .find(|lib_symbol| lib_symbol.lib_id == "Device:JUMPER")
+        .expect("linked lib symbol")
+        .fp_filters = vec!["SOIC*".to_string(), String::new()];
+    let placed_symbol = project.schematics[0]
+        .screen
+        .items
+        .iter_mut()
+        .find_map(|item| match item {
+            SchItem::Symbol(symbol) => Some(symbol),
+            _ => None,
+        })
+        .expect("placed symbol");
+    placed_symbol
+        .lib_symbol
+        .as_mut()
+        .expect("placed linked lib symbol")
+        .fp_filters = vec!["SOIC*".to_string(), String::new()];
+
+    let report = render_reduced_xml_netlist(&project);
+    assert!(
+        report.contains("<property name=\"ki_fp_filters\" value=\"SOIC*\" />"),
+        "{report}"
+    );
+    assert!(!report.contains("value=\"SOIC* \""), "{report}");
+    assert!(!report.contains("<fp></fp>"), "{report}");
+
+    let _ = fs::remove_file(path);
 }
 
 #[test]

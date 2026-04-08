@@ -712,6 +712,7 @@ What is already covered indirectly:
     - `dnp`
     - `ki_keywords`
     - `ki_fp_filters`
+      - exercised blank filter entries are now skipped like KiCad's joined/trimmed export path
     - `duplicate_pin_numbers_are_jumpers`
     - `jumper_pin_groups`
       - exercised pin-name order now follows KiCad's sorted-set group ownership
@@ -740,6 +741,7 @@ What is already covered indirectly:
     - exercised libpart field order now follows linked library-field order instead of repo-local
       key sorting
     - exercised full libpart field-list export is now live
+    - exercised blank `<footprints><fp>` entries are now skipped
     - exercised pin `type` emission is now live
     - exercised libpart pin ordering now follows `StrNumCmp`
   - reduced root `<libraries>` section is now live after `<libparts>`
