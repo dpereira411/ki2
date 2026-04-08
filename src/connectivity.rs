@@ -1415,8 +1415,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 ) -> ReducedProjectNetGraph {
     struct PendingProjectSubgraph {
         name: String,
-        driver_name: String,
-        driver_full_name: String,
+        driver_connection: Option<ReducedProjectConnection>,
         driver_identity: Option<ReducedProjectDriverIdentity>,
         drivers: Vec<ReducedProjectStrongDriver>,
         non_bus_driver_priority: Option<i32>,
@@ -1562,16 +1561,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         )
                     },
                 );
-                let driver_name = driver_candidate
-                    .as_ref()
-                    .map(|candidate| candidate.text.clone())
-                    .unwrap_or_else(|| reduced_short_net_name(&entry.name));
-                let driver_full_name = driver_candidate
-                    .as_ref()
-                    .map(|candidate| {
-                        reduced_driver_candidate_full_name(candidate, &sheet_path_prefix)
-                    })
-                    .unwrap_or_else(|| entry.name.clone());
                 let driver_identity = driver_candidate.as_ref().and_then(|candidate| {
                     candidate
                         .identity
@@ -1671,11 +1660,23 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 );
                 bus_members.sort();
                 bus_members.dedup();
+                let driver_connection = driver_candidate.as_ref().map(|candidate| {
+                    build_reduced_project_connection(
+                        schematic,
+                        entry.name.clone(),
+                        candidate.text.clone(),
+                        reduced_driver_candidate_full_name(candidate, &sheet_path_prefix),
+                        if reduced_text_is_bus(schematic, &candidate.text) {
+                            bus_members.clone()
+                        } else {
+                            Vec::new()
+                        },
+                    )
+                });
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
-                    driver_name,
-                    driver_full_name,
+                    driver_connection,
                     driver_identity,
                     drivers: strong_drivers.clone(),
                     non_bus_driver_priority,
@@ -1813,8 +1814,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
-                driver_name: String::new(),
-                driver_full_name: String::new(),
+                driver_connection: None,
                 driver_identity: None,
                 drivers: Vec::new(),
                 non_bus_driver_priority: None,
@@ -1905,8 +1905,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         let resolved_name = net_identity
             .map(|net| net.name.clone())
             .unwrap_or_else(|| pending.name.clone());
-        let resolved_local_name = if !pending.driver_name.is_empty() {
-            pending.driver_name.clone()
+        let resolved_local_name = if let Some(driver_connection) = &pending.driver_connection {
+            driver_connection.local_name.clone()
         } else if let Some(connection) = pending
             .label_links
             .iter()
@@ -1924,8 +1924,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         } else {
             reduced_short_net_name(&resolved_name)
         };
-        let resolved_full_local_name = if !pending.driver_full_name.is_empty() {
-            pending.driver_full_name.clone()
+        let resolved_full_local_name = if let Some(driver_connection) = &pending.driver_connection {
+            driver_connection.full_local_name.clone()
         } else if !resolved_name.is_empty() {
             resolved_name.clone()
         } else {
@@ -1938,22 +1938,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             resolved_full_local_name,
             pending.bus_members.clone(),
         );
-        let driver_connection =
-            (!pending.driver_name.is_empty() || !pending.driver_full_name.is_empty()).then(|| {
-                build_reduced_project_connection(
-                    subgraph_sheet,
-                    resolved_name.clone(),
-                    pending.driver_name.clone(),
-                    pending.driver_full_name.clone(),
-                    pending.bus_members.clone(),
-                )
-            });
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
-            driver_connection,
+            driver_connection: pending.driver_connection.clone(),
             driver_identity: pending.driver_identity.clone(),
             drivers: pending.drivers.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
