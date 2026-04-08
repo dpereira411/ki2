@@ -830,6 +830,8 @@ What is already covered indirectly:
 - XML net writing now also starts from the shared reduced whole-net owner instead of carrying a
   second exporter-local net regroup alongside it
 - reduced project-wide net grouping now owns cross-sheet merge plus sorted netcode allocation
+- reduced project-wide net grouping now assigns reduced whole-net codes by first seen full net
+  name at the shared graph boundary instead of lexically sorting names before code allocation
 - reduced project graph now also preserves per-sheet reduced subgraphs plus
   `FindSubgraphByName()` / `FindFirstSubgraphByName()`-style lookup boundaries instead of
   flattening directly to whole-net identities only

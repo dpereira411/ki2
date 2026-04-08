@@ -496,62 +496,6 @@ fn reduced_bus_subset_cmp(schematic: &Schematic, lhs: &str, rhs: &str) -> std::c
     }
 }
 
-fn reduced_str_num_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-
-    let mut a_chars = a.chars().peekable();
-    let mut b_chars = b.chars().peekable();
-
-    loop {
-        match (a_chars.peek(), b_chars.peek()) {
-            (None, None) => return Ordering::Equal,
-            (None, Some(_)) => return Ordering::Less,
-            (Some(_), None) => return Ordering::Greater,
-            (Some(a_ch), Some(b_ch)) if a_ch.is_ascii_digit() && b_ch.is_ascii_digit() => {
-                let mut a_num = String::new();
-                let mut b_num = String::new();
-
-                while let Some(ch) = a_chars.peek() {
-                    if !ch.is_ascii_digit() {
-                        break;
-                    }
-
-                    a_num.push(*ch);
-                    a_chars.next();
-                }
-
-                while let Some(ch) = b_chars.peek() {
-                    if !ch.is_ascii_digit() {
-                        break;
-                    }
-
-                    b_num.push(*ch);
-                    b_chars.next();
-                }
-
-                let a_trimmed = a_num.trim_start_matches('0');
-                let b_trimmed = b_num.trim_start_matches('0');
-                let a_cmp = if a_trimmed.is_empty() { "0" } else { a_trimmed };
-                let b_cmp = if b_trimmed.is_empty() { "0" } else { b_trimmed };
-                let ordering = a_cmp.len().cmp(&b_cmp.len()).then_with(|| a_cmp.cmp(b_cmp));
-
-                if ordering != Ordering::Equal {
-                    return ordering;
-                }
-            }
-            (Some(a_ch), Some(b_ch)) => {
-                let ordering = a_ch.cmp(b_ch);
-                a_chars.next();
-                b_chars.next();
-
-                if ordering != Ordering::Equal {
-                    return ordering;
-                }
-            }
-        }
-    }
-}
-
 // Upstream parity: reduced local analogue for the placed-symbol `SCH_PIN` projection KiCad uses
 // across ERC and export code. This is not a 1:1 live-pin object path because the Rust tree still
 // stores pins only on linked lib draw items, but it preserves the exercised unit/body-style pin
@@ -921,9 +865,10 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
 // grouping inside each exporter. It now also keeps node-less driver subgraphs instead of dropping
 // them before the shared graph owner sees them, matching KiCad's graph-owned subgraph coverage
 // more closely, and it keeps shared base-pin identity even for symbols excluded from node emission
-// so graph item lookup stays available for ERC power-pin paths. Remaining divergence is the
-// missing full subgraph object model and graph-owned netcode allocation beyond these grouped
-// reduced subgraphs.
+// so graph item lookup stays available for ERC power-pin paths. It now also preserves first-seen
+// net-name encounter order instead of reordering reduced subgraphs by net name before the shared
+// graph owner assigns whole-net codes. Remaining divergence is the missing full subgraph object
+// model and graph-owned netcode allocation beyond these grouped reduced subgraphs.
 pub(crate) fn collect_reduced_net_map<FName, FClass, FAllow, FReference>(
     schematic: &Schematic,
     sheet_instance_path: &str,
@@ -939,12 +884,16 @@ where
     FReference: FnMut(&Symbol) -> Option<String>,
 {
     let mut net_map = BTreeMap::<String, Vec<ReducedNetSubgraph>>::new();
+    let mut net_name_order = Vec::<String>::new();
 
     for component in collect_connection_components(schematic) {
         let Some(net_name) = resolve_net_name(component.anchor).filter(|name| !name.is_empty())
         else {
             continue;
         };
+        if !net_map.contains_key(&net_name) {
+            net_name_order.push(net_name.clone());
+        }
 
         let mut nodes = BTreeMap::<(String, String), ReducedNetNode>::new();
         let mut base_pins = Vec::new();
@@ -1048,9 +997,13 @@ where
             });
     }
 
-    net_map
+    net_name_order
         .into_iter()
-        .map(|(name, subgraphs)| ReducedNetMapEntry { name, subgraphs })
+        .filter_map(|name| {
+            net_map
+                .remove(&name)
+                .map(|subgraphs| ReducedNetMapEntry { name, subgraphs })
+        })
         .collect()
 }
 
@@ -1456,9 +1409,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         }
     }
 
-    let mut nets = nets.into_iter().collect::<Vec<_>>();
-    nets.sort_by(|(a_name, _), (b_name, _)| reduced_str_num_cmp(a_name, b_name));
-
     let mut reduced_subgraphs = Vec::new();
     let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
     let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
@@ -1469,20 +1419,21 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut no_connect_subgraph_identities = BTreeMap::new();
     let mut net_identities_by_name = BTreeMap::<String, ReducedProjectNetIdentity>::new();
 
-    for (index, (name, (class, has_no_connect, _nodes, _base_pins))) in nets.into_iter().enumerate()
-    {
-        net_identities_by_name.insert(
-            name.clone(),
-            ReducedProjectNetIdentity {
-                code: index + 1,
-                name: name.clone(),
-                class: class.clone(),
-                has_no_connect,
-            },
-        );
-    }
-
     for (subgraph_index, pending) in pending_subgraphs.into_iter().enumerate() {
+        if !pending.name.is_empty() && !net_identities_by_name.contains_key(&pending.name) {
+            let (class, has_no_connect, _nodes, _base_pins) =
+                nets.get(&pending.name).cloned().unwrap_or_default();
+            let code = net_identities_by_name.len() + 1;
+            net_identities_by_name.insert(
+                pending.name.clone(),
+                ReducedProjectNetIdentity {
+                    code,
+                    name: pending.name.clone(),
+                    class,
+                    has_no_connect,
+                },
+            );
+        }
         let net_identity = net_identities_by_name.get(&pending.name);
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
@@ -3713,6 +3664,52 @@ mod tests {
 
         assert_eq!(by_prefix.subgraph_code, by_full_name.subgraph_code);
         assert_eq!(by_prefix.name, by_full_name.name);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_net_codes_follow_first_seen_net_name_order() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_net_code_order_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "NET10" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 20) (xy 10 20)))
+  (global_label "NET2" (shape input) (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let root_sheet = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+
+        let first_net =
+            resolve_reduced_project_net_at(&graph, &root_sheet, [10.0, 0.0]).expect("first net");
+        let second_net =
+            resolve_reduced_project_net_at(&graph, &root_sheet, [10.0, 20.0]).expect("second net");
+
+        assert_eq!(first_net.name, "NET10");
+        assert_eq!(second_net.name, "NET2");
+        assert_eq!(first_net.code, 1);
+        assert_eq!(second_net.code, 2);
 
         let _ = fs::remove_file(path);
     }
