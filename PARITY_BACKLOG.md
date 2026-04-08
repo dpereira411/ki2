@@ -802,6 +802,8 @@ What is already covered indirectly:
   KiCad export formatting
 - XML/KiCad net export now also consumes that shared reduced `GetNetMap()` view directly instead of
   regrouping subgraphs inside the exporter
+- XML net writing now also starts from the shared reduced whole-net owner instead of carrying a
+  second exporter-local net regroup alongside it
 - reduced project-wide net grouping now owns cross-sheet merge plus sorted netcode allocation
 - reduced project graph now also preserves per-sheet reduced subgraphs plus
   `FindSubgraphByName()` / `FindFirstSubgraphByName()`-style lookup boundaries instead of
