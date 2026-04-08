@@ -608,6 +608,10 @@ Current status:
         - live graph-name cache owner for same-name subgraph recache on renamed live subgraphs
         - one shared live bus fixpoint object set across those bus sub-passes instead of rebuilding
           fresh live wrappers between each sub-pass
+        - one combined live graph-propagation owner in graph build across:
+          - hierarchy-chain propagation
+          - bus propagation
+          - exercised post-propagation item updates
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
