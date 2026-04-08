@@ -580,17 +580,23 @@ Current status:
     - the shared reduced graph does carry reduced connection objects with:
       - connection type
       - local/full-local/resolved names
+      - current connection sheet ownership
       - member trees
       - vector-member indexes plus reduced `matchBusMember()`-style matching
       - link-owned label/sheet-pin/hier-port connections
       - member-keyed reduced bus parent/neighbor links
+      - reduced stale-member refresh from final child connections
+      - reduced repeated settle/fixpoint passes instead of one static propagation step
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
-      - no reduced equivalent yet for upstream clone/update behavior when parent-bus propagation
-        changes the effective member connection
-      - reduced `matchBusMember()`-style remap is now present, but only as a static link refresh,
-        not as a live connection-object mutation path
-      - no live cached driver connection object that can be refreshed in place
+      - no live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with pointer
+        identity; the reduced graph now settles to a fixpoint, but it still does not mutate and
+        revisit the same live subgraph objects KiCad does
+      - no live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be replayed
+        across the visited bus subgraphs after hierarchy propagation; the reduced pass only
+        converges cloned snapshots
+      - no live cached driver connection object that can be cloned and recached in place across
+        labels, pins, and connected items
       - connected-bus-item ownership is still keyed by reduced member snapshots, not live item /
         connection pointers
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
