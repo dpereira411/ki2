@@ -7,7 +7,7 @@ use std::process::Command;
 use crate::connectivity::{
     ReducedProjectNetGraph, collect_reduced_project_net_graph, resolve_reduced_net_name_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_netclass_at,
-    resolve_reduced_project_net_at,
+    resolve_reduced_project_net_at, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
@@ -4514,6 +4514,7 @@ fn resolve_symbol_pin_text_var(
     loaded_path: &LoadedSheetPath,
     project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
     resolved_reference: &str,
     field_name: &str,
     symbol: &Symbol,
@@ -4532,43 +4533,78 @@ fn resolve_symbol_pin_text_var(
             .iter()
             .find(|schematic| schematic.path == candidate_path.schematic_path)?;
         let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, candidate_path);
+        let graph_net = reduced_graph.and_then(|graph| {
+            resolve_reduced_project_net_for_symbol_pin(
+                graph,
+                candidate_path,
+                symbol,
+                pin_at,
+                lib_pin.name.as_deref(),
+            )
+        });
 
         return match token_kind {
-            SymbolPinTextVarKind::NetName => resolve_reduced_net_name_for_symbol_pin(
-                schematic,
-                symbol,
-                pin_at,
-                Some(&sheet_path_prefix),
-                |other| {
-                    shown_label_text_without_connectivity(
+            SymbolPinTextVarKind::NetName => graph_net
+                .as_ref()
+                .map(|net| net.name.clone())
+                .or_else(|| {
+                    resolve_reduced_net_name_for_symbol_pin(
+                        schematic,
+                        symbol,
+                        pin_at,
+                        Some(&sheet_path_prefix),
+                        |other| {
+                            shown_label_text_without_connectivity(
+                                schematics,
+                                sheet_paths,
+                                candidate_path,
+                                project,
+                                current_variant,
+                                other,
+                            )
+                        },
+                    )
+                })
+                .or_else(|| Some(String::new())),
+            SymbolPinTextVarKind::ShortNetName => graph_net
+                .as_ref()
+                .map(|net| short_net_name(&net.name))
+                .or_else(|| {
+                    resolve_reduced_net_name_for_symbol_pin(
+                        schematic,
+                        symbol,
+                        pin_at,
+                        Some(&sheet_path_prefix),
+                        |other| {
+                            shown_label_text_without_connectivity(
+                                schematics,
+                                sheet_paths,
+                                candidate_path,
+                                project,
+                                current_variant,
+                                other,
+                            )
+                        },
+                    )
+                    .map(|net_name| short_net_name(&net_name))
+                })
+                .or_else(|| Some(String::new())),
+            SymbolPinTextVarKind::NetClass => graph_net
+                .as_ref()
+                .map(|net| net.class.clone())
+                .filter(|value| !value.is_empty())
+                .or_else(|| {
+                    resolve_point_connectivity_text_var(
                         schematics,
                         sheet_paths,
                         candidate_path,
                         project,
                         current_variant,
-                        other,
+                        pin_at,
+                        token_kind,
                     )
-                },
-            )
-            .or_else(|| Some(String::new())),
-            SymbolPinTextVarKind::ShortNetName => resolve_reduced_net_name_for_symbol_pin(
-                schematic,
-                symbol,
-                pin_at,
-                Some(&sheet_path_prefix),
-                |other| {
-                    shown_label_text_without_connectivity(
-                        schematics,
-                        sheet_paths,
-                        candidate_path,
-                        project,
-                        current_variant,
-                        other,
-                    )
-                },
-            )
-            .map(|net_name| short_net_name(&net_name))
-            .or_else(|| Some(String::new())),
+                })
+                .or_else(|| Some(String::new())),
             _ => resolve_point_connectivity_text_var(
                 schematics,
                 sheet_paths,
@@ -4647,41 +4683,91 @@ fn resolve_symbol_pin_text_var(
                 let pin_at =
                     project_symbol_pin_at(candidate_symbol, lib_pin.at.unwrap_or([0.0, 0.0]));
                 return match token_kind {
-                    SymbolPinTextVarKind::NetName => resolve_reduced_net_name_for_symbol_pin(
-                        schematic,
-                        candidate_symbol,
-                        pin_at,
-                        Some(&sheet_path_prefix),
-                        |other| {
-                            shown_label_text_without_connectivity(
+                    SymbolPinTextVarKind::NetName => reduced_graph
+                        .and_then(|graph| {
+                            resolve_reduced_project_net_for_symbol_pin(
+                                graph,
+                                alternate_path,
+                                candidate_symbol,
+                                pin_at,
+                                lib_pin.name.as_deref(),
+                            )
+                        })
+                        .map(|net| net.name)
+                        .or_else(|| {
+                            resolve_reduced_net_name_for_symbol_pin(
+                                schematic,
+                                candidate_symbol,
+                                pin_at,
+                                Some(&sheet_path_prefix),
+                                |other| {
+                                    shown_label_text_without_connectivity(
+                                        schematics,
+                                        sheet_paths,
+                                        alternate_path,
+                                        project,
+                                        current_variant,
+                                        other,
+                                    )
+                                },
+                            )
+                        })
+                        .or_else(|| Some(String::new())),
+                    SymbolPinTextVarKind::ShortNetName => reduced_graph
+                        .and_then(|graph| {
+                            resolve_reduced_project_net_for_symbol_pin(
+                                graph,
+                                alternate_path,
+                                candidate_symbol,
+                                pin_at,
+                                lib_pin.name.as_deref(),
+                            )
+                        })
+                        .map(|net| short_net_name(&net.name))
+                        .or_else(|| {
+                            resolve_reduced_net_name_for_symbol_pin(
+                                schematic,
+                                candidate_symbol,
+                                pin_at,
+                                Some(&sheet_path_prefix),
+                                |other| {
+                                    shown_label_text_without_connectivity(
+                                        schematics,
+                                        sheet_paths,
+                                        alternate_path,
+                                        project,
+                                        current_variant,
+                                        other,
+                                    )
+                                },
+                            )
+                            .map(|net_name| short_net_name(&net_name))
+                        })
+                        .or_else(|| Some(String::new())),
+                    SymbolPinTextVarKind::NetClass => reduced_graph
+                        .and_then(|graph| {
+                            resolve_reduced_project_net_for_symbol_pin(
+                                graph,
+                                alternate_path,
+                                candidate_symbol,
+                                pin_at,
+                                lib_pin.name.as_deref(),
+                            )
+                        })
+                        .map(|net| net.class)
+                        .filter(|value| !value.is_empty())
+                        .or_else(|| {
+                            resolve_point_connectivity_text_var(
                                 schematics,
                                 sheet_paths,
                                 alternate_path,
                                 project,
                                 current_variant,
-                                other,
+                                pin_at,
+                                token_kind,
                             )
-                        },
-                    )
-                    .or_else(|| Some(String::new())),
-                    SymbolPinTextVarKind::ShortNetName => resolve_reduced_net_name_for_symbol_pin(
-                        schematic,
-                        candidate_symbol,
-                        pin_at,
-                        Some(&sheet_path_prefix),
-                        |other| {
-                            shown_label_text_without_connectivity(
-                                schematics,
-                                sheet_paths,
-                                alternate_path,
-                                project,
-                                current_variant,
-                                other,
-                            )
-                        },
-                    )
-                    .map(|net_name| short_net_name(&net_name))
-                    .or_else(|| Some(String::new())),
+                        })
+                        .or_else(|| Some(String::new())),
                     _ => resolve_point_connectivity_text_var(
                         schematics,
                         sheet_paths,
@@ -4713,6 +4799,26 @@ pub(crate) fn resolve_cross_reference_text_var(
     loaded_path: &LoadedSheetPath,
     project: Option<&LoadedProjectSettings>,
     current_variant: Option<&str>,
+    token: &str,
+) -> Option<String> {
+    resolve_cross_reference_text_var_with_graph(
+        schematics,
+        sheet_paths,
+        loaded_path,
+        project,
+        current_variant,
+        None,
+        token,
+    )
+}
+
+fn resolve_cross_reference_text_var_with_graph(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    loaded_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
     token: &str,
 ) -> Option<String> {
     let (reference, remainder) = token.split_once(':')?;
@@ -4781,6 +4887,7 @@ pub(crate) fn resolve_cross_reference_text_var(
                         loaded_path,
                         project,
                         effective_variant,
+                        reduced_graph,
                         &resolved_reference,
                         field_name,
                         symbol,
@@ -5718,12 +5825,13 @@ fn shown_global_label_text_with_graph(
             }
 
             if token.contains(':') {
-                if let Some(value) = resolve_cross_reference_text_var(
+                if let Some(value) = resolve_cross_reference_text_var_with_graph(
                     schematics,
                     sheet_paths,
                     loaded_path,
                     project,
                     current_variant,
+                    reduced_graph,
                     token,
                 ) {
                     return Some(value);

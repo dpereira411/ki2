@@ -335,9 +335,10 @@ fn resolved_pin_net_name(
     pin_at: [f64; 2],
     pin_name: Option<&str>,
 ) -> String {
-    if let Some(net) = resolve_reduced_project_net_for_symbol_pin(
-        project, sheet_path, symbol, pin_at, pin_name, false,
-    ) {
+    let graph = project.reduced_project_net_graph(false);
+    if let Some(net) =
+        resolve_reduced_project_net_for_symbol_pin(&graph, sheet_path, symbol, pin_at, pin_name)
+    {
         return net.name;
     }
 

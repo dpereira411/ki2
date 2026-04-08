@@ -1212,15 +1212,12 @@ fn reduced_project_base_pin_key(
 // pin identity instead of re-deriving net names from local component scans. Remaining divergence
 // is fuller item identity for non-pin items and the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
-    project: &SchematicProject,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
     at: [f64; 2],
     pin_name: Option<&str>,
-    for_board: bool,
 ) -> Option<ReducedProjectNetIdentity> {
-    let graph = project.reduced_project_net_graph(for_board);
-
     pin_name
         .and_then(|pin_name| {
             graph.pin_identities.get(&reduced_project_base_pin_key(

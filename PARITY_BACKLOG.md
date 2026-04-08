@@ -351,6 +351,10 @@ Current status:
   - intersheet-ref `NET_*` shown-text grouping now also builds one shared reduced project graph for
     the whole hierarchy pass instead of resolving connectivity label-by-label through local
     current-sheet reducers
+  - intersheet-ref cross-reference pin `NET_NAME` / `SHORT_NET_NAME` now also read through that
+    same shared graph pass; remaining divergence in that slice is narrower and limited to
+    `NET_CLASS(pin)`, which still falls back to the older point-netclass resolver when the shared
+    graph has no pin-owned class
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match
