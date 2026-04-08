@@ -635,27 +635,35 @@ Current status:
           during propagation, and the final reduced projection writes those per-link owners back
           instead of blasting every item-side connection from the chosen driver snapshot only at
           the end
+        - live reduced connection carriers are now shared mutable local owners rather than copied
+          wrapper values, and the recursive live graph mutates those owners through borrow/update
+          paths instead of swapping plain reduced structs
+        - live bus-entry items now also keep an attached live bus connection owner during graph
+          build, and only collapse back to `connected_bus_subgraph_index` when projecting to the
+          reduced query surface
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
-      - the recursive walk still operates on reduced wrapper snapshots, not real live
-        `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects with pointer identity and in-place
-        mutation shared by items and subgraphs
+      - the recursive walk now has local shared live connection owners, but it still does not have
+        a full live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph with pointer identity
+        shared across all items, subgraphs, and attached bus items
       - no full live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be
         replayed across all visited bus subgraphs after hierarchy propagation; the local graph now
         scopes stale replay to the active recursive root, but it still clones reduced connection
         snapshots rather than replaying live connection objects through recursive revisits
-      - no live cached driver connection object that can be cloned and recached in place across
-        labels, pins, sheet pins, and connected items by shared identity via a
-        `recacheSubgraphName()`-style owner; the per-link live wrappers now exist, but they still
-        have to be synchronized explicitly instead of sharing one mutable live connection object
-      - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
+      - no full live cached driver/item connection topology that can be recached in place across
+        labels, pins, sheet pins, bus entries, and connected items by pointer identity via a
+        `recacheSubgraphName()`-style owner; the local live connection owners now exist, but item
+        and subgraph relationships still synchronize through local wrappers instead of a fuller
+        shared object graph
+      - connected-bus-item ownership now exists on live bus-entry wrappers, but still not on real
         live item / connection pointers
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
       2. move live name recache and bus-member replay onto that same connection owner instead of
          cloning reduced snapshots through recursive revisits
-      3. widen connected-bus ownership from subgraph indexes to live item/connection ownership
+      3. widen the new live bus-entry connection owner into fuller live item/connection pointer
+         ownership instead of collapsing it back to subgraph indexes at projection time
       4. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
          promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
