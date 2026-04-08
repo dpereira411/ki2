@@ -85,6 +85,7 @@ enum PinConflict {
 
 struct ReducedErcPinContext {
     at: [f64; 2],
+    is_power_symbol: bool,
     path: std::path::PathBuf,
     reference: String,
     pin_number: String,
@@ -183,6 +184,10 @@ fn resolve_base_pin_type(
 
             Some(ReducedErcPinContext {
                 at: pin.at,
+                is_power_symbol: symbol
+                    .lib_symbol
+                    .as_ref()
+                    .is_some_and(|lib_symbol| lib_symbol.power),
                 path: schematic.path.clone(),
                 reference,
                 pin_number,
@@ -2558,8 +2563,10 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 // contexts, marker placement heuristics, and the full connection graph. It now runs over the
 // shared reduced project net map like upstream `m_nets` instead of per-sheet connection
 // components, and applies the typed companion-project `erc.pin_map` override slice on top of the
-// upstream default matrix instead of hard-coding only the defaults. Remaining divergence is richer
-// settings, driver-missing reporting, and full subgraph ownership.
+// upstream default matrix instead of hard-coding only the defaults. It now also follows the
+// reduced `needsDriver` / non-power preference shape more closely when choosing one missing-driver
+// report target from a net. Remaining divergence is richer settings, visibility-based pin
+// preference, multi-marker emission, and full subgraph ownership.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2614,6 +2621,11 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                     && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn)
             })
             .or_else(|| pins.iter().find(|pin| is_driven_pin_type(pin.pin_type)));
+        let preferred_missing_driver = pins
+            .iter()
+            .filter(|pin| is_driven_pin_type(pin.pin_type))
+            .find(|pin| !pin.is_power_symbol)
+            .or(needs_driver);
         let mut mismatches = Vec::<PinMismatch>::new();
         let mut mismatch_weights = BTreeMap::<usize, usize>::new();
 
@@ -2706,7 +2718,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         }
 
-        if let Some(pin) = needs_driver {
+        if let Some(pin) = preferred_missing_driver {
             let article = if pin.pin_type == ReducedPinType::PowerIn {
                 "Power input pin is not driven"
             } else {

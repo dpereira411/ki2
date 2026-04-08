@@ -483,6 +483,9 @@ Current status:
   - ranks pins by KiCad-style pin-type weights
   - chooses the nearest conflicting partner on the same sheet when possible before emitting
     diagnostics
+- reduced missing-driver selection now also prefers non-power-symbol driven pins over power-symbol
+  pins when choosing one report target, matching KiCad's `nonPowerPinsNeedingDrivers` branch more
+  closely with the local signal that is currently modeled
 - reduced cross-reference shown-text now covers the exercised symbol pin-function slice:
   - `${REF:NET_NAME(pin)}`
   - `${REF:SHORT_NET_NAME(pin)}`
