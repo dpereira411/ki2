@@ -1578,6 +1578,25 @@ pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::GetAllSubgraphs()`. This is not
+// a 1:1 shared cache because the Rust tree still stores cloned reduced subgraphs instead of live
+// `CONNECTION_SUBGRAPH*` objects, but it preserves the graph-owned "all resolved subgraphs for one
+// name" lookup boundary so ERC/export callers do not rebuild per-net neighbor lists locally.
+// Remaining divergence is the fuller subgraph object model and graph-owned cache lifetime.
+pub(crate) fn collect_reduced_project_subgraphs_by_name<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    net_name: &str,
+) -> Vec<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .subgraphs_by_name
+        .get(net_name)
+        .into_iter()
+        .flat_map(|indexes| indexes.iter())
+        .filter_map(|index| graph.subgraphs.get(*index))
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for the connection-point half of
 // `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
 // item map because the Rust tree still keys lookups by `(sheet instance path, point)` instead of

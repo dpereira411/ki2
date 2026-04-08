@@ -1,8 +1,9 @@
 use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, collect_connection_components,
     collect_connection_points, collect_reduced_label_component_snapshots,
-    collect_reduced_project_net_map, collect_reduced_project_subgraphs, projected_symbol_pin_info,
-    reduced_bus_members, reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
+    collect_reduced_project_net_map, collect_reduced_project_subgraphs,
+    collect_reduced_project_subgraphs_by_name, projected_symbol_pin_info, reduced_bus_members,
+    reduced_text_is_bus, resolve_reduced_net_name_for_symbol_pin,
     resolve_reduced_non_bus_driver_priority_at, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::core::SchematicProject;
@@ -1690,29 +1691,8 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // Remaining divergence is the fuller hier-pin and marker attachment path.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
     let subgraphs = collect_reduced_project_subgraphs(project, false);
-    let mut unique_pins_by_net =
-        BTreeMap::<String, std::collections::BTreeSet<ReducedNetBasePinKey>>::new();
-    let mut unique_labels_by_net = BTreeMap::<
-        String,
-        std::collections::BTreeSet<(String, crate::connectivity::PointKey)>,
-    >::new();
-
-    for subgraph in &subgraphs {
-        unique_pins_by_net
-            .entry(subgraph.name.clone())
-            .or_default()
-            .extend(subgraph.base_pins.iter().cloned());
-        unique_labels_by_net
-            .entry(subgraph.name.clone())
-            .or_default()
-            .extend(
-                subgraph
-                    .label_points
-                    .iter()
-                    .map(|(point, _kind)| (subgraph.sheet_instance_path.clone(), *point)),
-            );
-    }
 
     for subgraph in subgraphs
         .iter()
@@ -1772,14 +1752,27 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         }
 
-        let unique_pin_count = unique_pins_by_net
-            .get(&subgraph.name)
-            .map(|pins| pins.len())
-            .unwrap_or(local_unique_pins.len());
-        let unique_label_count = unique_labels_by_net
-            .get(&subgraph.name)
-            .map(|labels| labels.len())
-            .unwrap_or(local_unique_labels.len());
+        let (unique_pin_count, unique_label_count) = if subgraph.name.is_empty() {
+            (local_unique_pins.len(), local_unique_labels.len())
+        } else {
+            let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph.name);
+            let unique_pin_count = neighbors
+                .iter()
+                .flat_map(|neighbor| neighbor.base_pins.iter().cloned())
+                .collect::<std::collections::BTreeSet<ReducedNetBasePinKey>>()
+                .len();
+            let unique_label_count = neighbors
+                .iter()
+                .flat_map(|neighbor| {
+                    neighbor
+                        .label_points
+                        .iter()
+                        .map(|(point, _kind)| (neighbor.sheet_instance_path.clone(), *point))
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            (unique_pin_count, unique_label_count)
+        };
 
         if unique_pin_count <= 1 {
             if unique_pin_count == 0 && unique_label_count == 0 {
@@ -1822,8 +1815,8 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut dangling_labels = BTreeMap::<(String, crate::connectivity::PointKey, u8), bool>::new();
+    let graph = project.reduced_project_net_graph(false);
     let mut label_subgraphs = Vec::new();
-    let mut components_by_net = BTreeMap::<String, Vec<(String, usize, usize, bool, bool)>>::new();
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -1853,19 +1846,6 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 .label_points
                 .iter()
                 .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
-
-        if !subgraph.name.is_empty() {
-            components_by_net
-                .entry(subgraph.name.clone())
-                .or_default()
-                .push((
-                    subgraph.sheet_instance_path.clone(),
-                    subgraph.subgraph_code,
-                    pin_count,
-                    subgraph.has_no_connect,
-                    has_local_hierarchy,
-                ));
-        }
 
         label_subgraphs.push((
             subgraph.sheet_instance_path.clone(),
@@ -1901,30 +1881,41 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         let mut has_no_connect = subgraph_has_no_connect;
         let mut has_local_hierarchy = subgraph_has_local_hierarchy;
 
-        if let Some(neighbors) = (!net_name.is_empty())
-            .then(|| components_by_net.get(&net_name))
-            .flatten()
-        {
+        if !net_name.is_empty() {
+            let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &net_name);
             for (
                 neighbor_sheet_instance_path,
                 neighbor_subgraph_code,
                 neighbor_pin_count,
                 neighbor_has_no_connect,
                 neighbor_has_local_hierarchy,
-            ) in neighbors
-            {
-                if *neighbor_sheet_instance_path == sheet_instance_path
-                    && *neighbor_subgraph_code == subgraph_code
+            ) in neighbors.into_iter().map(|neighbor| {
+                let neighbor_has_local_hierarchy = !neighbor.sheet_pin_points.is_empty()
+                    || neighbor
+                        .label_points
+                        .iter()
+                        .any(|(_point, kind)| *kind == LabelKind::Hierarchical);
+
+                (
+                    neighbor.sheet_instance_path.clone(),
+                    neighbor.subgraph_code,
+                    neighbor.base_pins.len(),
+                    neighbor.has_no_connect,
+                    neighbor_has_local_hierarchy,
+                )
+            }) {
+                if neighbor_sheet_instance_path == sheet_instance_path
+                    && neighbor_subgraph_code == subgraph_code
                 {
                     continue;
                 }
 
                 all_pins += neighbor_pin_count;
-                has_no_connect |= *neighbor_has_no_connect;
+                has_no_connect |= neighbor_has_no_connect;
 
-                if *neighbor_sheet_instance_path == sheet_instance_path {
+                if neighbor_sheet_instance_path == sheet_instance_path {
                     local_pins += neighbor_pin_count;
-                    has_local_hierarchy |= *neighbor_has_local_hierarchy;
+                    has_local_hierarchy |= neighbor_has_local_hierarchy;
                 }
             }
         }

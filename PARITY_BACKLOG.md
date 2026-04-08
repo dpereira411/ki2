@@ -430,7 +430,8 @@ Current status:
   - `erc-label-not-connected`
   - `erc-label-single-pin`
   - same-name label grouping, pin counts, and no-connect aggregation now also derive from shared
-    reduced project subgraphs instead of regrouping local component `net_name` strings inside ERC
+    reduced project subgraphs plus a shared `GetAllSubgraphs()`-style lookup instead of regrouping
+    local component `net_name` strings inside ERC
   - current divergence is fuller cross-sheet subgraph/bus-parent neighbor ownership, not absence of
     the graph-owned label rule
 - reduced `CONNECTION_GRAPH::ercCheckSingleGlobalLabel()` coverage is now live through the loaded
@@ -450,6 +451,8 @@ Current status:
     no-connect plus that hierarchy boundary item
   - unnamed marker-only local subgraphs now survive into the shared reduced project graph instead
     of disappearing before the graph-owned no-connect pass runs
+  - same-name no-connect neighbor aggregation now uses the shared `GetAllSubgraphs()`-style lookup
+    instead of a local per-net regroup in ERC
   - current divergence is the fuller marker attachment path, not
     absence of the graph-owned no-connect rule
 - reduced wire-only coverage is now live for:
@@ -796,6 +799,8 @@ What is already covered indirectly:
   flattening directly to whole-net identities only
 - reduced project `FindSubgraphByName()` lookup now keys by `(sheet instance path, resolved full
   net name)` like KiCad instead of the old repo-local short-driver key
+- reduced project graph now also exposes a shared `GetAllSubgraphs()`-style same-name lookup for
+  ERC/export callers instead of forcing each caller to rebuild per-net neighbor maps
 - reduced project graph now also keeps reduced item-to-subgraph identity for connection points and
   symbol pins instead of flattening those lookups straight to whole-net identity
 - point/pin net identity now also derives back through that shared subgraph owner instead of
