@@ -2,7 +2,7 @@ use crate::connectivity::{
     ConnectionMemberKind, collect_connection_components, collect_connection_points,
     collect_reduced_label_component_snapshots, projected_symbol_pin_info,
     resolve_reduced_driver_conflict_at, resolve_reduced_net_name_at,
-    resolve_reduced_net_name_for_symbol_pin,
+    resolve_reduced_net_name_for_symbol_pin, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -134,6 +134,38 @@ fn pin_conflict(lhs: ReducedPinType, rhs: ReducedPinType) -> PinConflict {
     ];
 
     MAP[lhs as usize][rhs as usize]
+}
+
+// Upstream parity: reduced local helper for the symbol-pin net lookup that several
+// `ERC_TESTER` pin rules consume through the connection graph. This is not a 1:1 KiCad
+// `SCH_PIN::Connection()` owner because the Rust tree still lacks full `CONNECTION_SUBGRAPH`
+// item ownership for every projected pin, so it prefers the shared project-level reduced graph
+// identity and falls back to the older current-sheet point-net resolver where that reduced item
+// identity is still incomplete. The helper exists to keep that temporary divergence in one place
+// while the backlog drives the remaining item-to-subgraph parity work.
+fn resolved_pin_net_name(
+    project: &SchematicProject,
+    sheet_path: &crate::loader::LoadedSheetPath,
+    schematic: &crate::model::Schematic,
+    symbol: &crate::model::Symbol,
+    pin_at: [f64; 2],
+    pin_name: Option<&str>,
+) -> String {
+    if let Some(net) = resolve_reduced_project_net_for_symbol_pin(
+        project, sheet_path, symbol, pin_at, pin_name, false,
+    ) {
+        return net.name;
+    }
+
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
+    resolve_reduced_net_name_for_symbol_pin(
+        schematic,
+        symbol,
+        pin_at,
+        Some(&sheet_path_prefix),
+        |label| shown_label_text(project, sheet_path, label),
+    )
+    .unwrap_or_default()
 }
 
 fn is_driven_pin_type(pin_type: ReducedPinType) -> bool {
@@ -2449,11 +2481,11 @@ pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestMultUnitPinConflicts()`. This is
-// not a 1:1 KiCad marker pass because the Rust tree still keys conflicts off projected lib pins
-// plus reduced point-net names instead of `CONNECTION_SUBGRAPH`-owned `SCH_PIN` items, but it
-// preserves the exercised rule: the same reference/pin number across different units of a multi-
-// unit symbol must not resolve to different nets. Remaining divergence is fuller graph ownership
-// and KiCad marker attachment.
+// not a 1:1 KiCad marker pass because the Rust tree still uses projected lib pins plus the shared
+// reduced pin-net lookup instead of live `CONNECTION_SUBGRAPH`-owned `SCH_PIN` items, but it now
+// prefers the shared project graph owner before falling back to the older point-net resolver where
+// reduced item identity is still incomplete. Remaining divergence is fuller graph ownership and
+// KiCad marker attachment.
 pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut pin_to_net = BTreeMap::<String, String>::new();
@@ -2462,9 +2494,6 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -2499,14 +2528,14 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                     continue;
                 };
 
-                let net_name = resolve_reduced_net_name_for_symbol_pin(
+                let net_name = resolved_pin_net_name(
+                    project,
+                    sheet_path,
                     schematic,
                     symbol,
                     pin.at,
-                    Some(&sheet_path_prefix),
-                    |label| shown_label_text(project, sheet_path, label),
-                )
-                .unwrap_or_default();
+                    pin.name.as_deref(),
+                );
                 let key = format!("{reference}:{pin_number}");
 
                 if let Some(existing_net) = pin_to_net.get(&key) {
@@ -2536,11 +2565,13 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestDuplicatePinNets()`. This is not a
-// 1:1 KiCad marker pass because the Rust tree still groups projected lib pins by reduced resolved
-// point-net names instead of live `SCH_PIN::Connection()` objects, but it preserves the exercised
-// rule: duplicate numbered pins on the same placed symbol must not resolve to different nets unless
-// the lib symbol explicitly treats duplicate numbers as jumper pins. Remaining divergence is fuller
-// connection-graph ownership and KiCad marker/item attachment.
+// 1:1 KiCad marker pass because the Rust tree still groups projected lib pins by the shared
+// reduced pin-net lookup instead of live `SCH_PIN::Connection()` objects, but it now prefers the
+// shared project graph owner before falling back to the older point-net resolver where reduced
+// item identity is still incomplete. It preserves the exercised rule: duplicate numbered pins on
+// the same placed symbol must not resolve to different nets unless the lib symbol explicitly
+// treats duplicate numbers as jumper pins. Remaining divergence is fuller connection-graph
+// ownership and KiCad marker/item attachment.
 pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2548,8 +2579,6 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -2578,14 +2607,14 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                     continue;
                 };
 
-                let net_name = resolve_reduced_net_name_for_symbol_pin(
+                let net_name = resolved_pin_net_name(
+                    project,
+                    sheet_path,
                     schematic,
                     symbol,
                     pin.at,
-                    Some(&sheet_path_prefix),
-                    |label| shown_label_text(project, sheet_path, label),
-                )
-                .unwrap_or_default();
+                    pin.name.as_deref(),
+                );
 
                 pins_by_number
                     .entry(pin_number)
@@ -3035,10 +3064,12 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestGroundPins()`. This is not a 1:1
-// KiCad marker pass because the Rust tree still checks projected lib pins against the reduced
-// point-net resolver instead of live `SCH_PIN` connections, but it preserves the exercised rule:
-// once a symbol has a real ground net, any `GND`-named power pin on a different net is an ERC
-// error. Remaining divergence is fuller connection-graph ownership and richer pin metadata.
+// KiCad marker pass because the Rust tree still checks projected lib pins through the shared
+// reduced pin-net lookup instead of live `SCH_PIN` connections, but it now prefers the shared
+// project graph owner before falling back to the older point-net resolver where reduced item
+// identity is still incomplete. It preserves the exercised rule: once a symbol has a real ground
+// net, any `GND`-named power pin on a different net is an ERC error. Remaining divergence is
+// fuller connection-graph ownership and richer pin metadata.
 pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -3046,9 +3077,6 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        let sheet_path_prefix =
-            reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-
         for item in &schematic.screen.items {
             let SchItem::Symbol(symbol) = item else {
                 continue;
@@ -3066,14 +3094,14 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     continue;
                 }
 
-                let net_name = resolve_reduced_net_name_for_symbol_pin(
+                let net_name = resolved_pin_net_name(
+                    project,
+                    sheet_path,
                     schematic,
                     symbol,
                     pin.at,
-                    Some(&sheet_path_prefix),
-                    |label| shown_label_text(project, sheet_path, label),
-                )
-                .unwrap_or_default();
+                    pin.name.as_deref(),
+                );
                 let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
 
                 if net_is_ground {

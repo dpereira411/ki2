@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::core::SchematicProject;
 use crate::loader::{
-    SymbolPinTextVarKind, collect_wire_segments, point_on_wire_segment, points_equal,
-    resolve_point_connectivity_text_var, resolved_sheet_text_state,
+    LoadedSheetPath, SymbolPinTextVarKind, collect_wire_segments, point_on_wire_segment,
+    points_equal, resolve_point_connectivity_text_var, resolved_sheet_text_state,
     resolved_symbol_text_property_value,
 };
 use crate::model::{
@@ -80,6 +80,7 @@ pub(crate) struct ReducedNetNode {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedNetBasePinKey {
+    pub(crate) sheet_instance_path: String,
     pub(crate) symbol_uuid: Option<String>,
     pub(crate) at: PointKey,
     pub(crate) name: Option<String>,
@@ -108,6 +109,14 @@ pub(crate) struct ReducedProjectNetEntry {
     pub(crate) has_no_connect: bool,
     pub(crate) nodes: Vec<ReducedNetNode>,
     pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedProjectNetIdentity {
+    pub(crate) code: usize,
+    pub(crate) name: String,
+    pub(crate) class: String,
+    pub(crate) has_no_connect: bool,
 }
 
 fn connection_component_at(schematic: &Schematic, at: [f64; 2]) -> Option<ConnectionComponent> {
@@ -586,6 +595,7 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
 // graph-owned netcode allocation beyond these grouped reduced subgraphs.
 pub(crate) fn collect_reduced_net_map<FName, FClass, FAllow, FReference>(
     schematic: &Schematic,
+    sheet_instance_path: &str,
     mut resolve_net_name: FName,
     mut resolve_net_class: FClass,
     mut allow_symbol: FAllow,
@@ -640,6 +650,7 @@ where
                 });
                 let (expanded_numbers, _) = expand_stacked_pin_notation(&base_pin_number);
                 let base_pin_key = ReducedNetBasePinKey {
+                    sheet_instance_path: sheet_instance_path.to_string(),
                     symbol_uuid: symbol.uuid.clone(),
                     at: point_key(pin.at),
                     name: pin.name.clone(),
@@ -707,6 +718,7 @@ pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
 ) -> Vec<ReducedProjectNetEntry> {
+    let mut all_base_pins_by_net = BTreeMap::<String, Vec<ReducedNetBasePinKey>>::new();
     let mut candidates = BTreeMap::<
         (String, String),
         (String, String, bool, ReducedNetNode, ReducedNetBasePinKey),
@@ -741,6 +753,7 @@ pub(crate) fn collect_reduced_project_net_map(
 
         for entry in collect_reduced_net_map(
             schematic,
+            &sheet_path.instance_path,
             |at| {
                 resolve_point_connectivity_text_var(
                     &project.schematics,
@@ -776,6 +789,11 @@ pub(crate) fn collect_reduced_project_net_map(
             },
         ) {
             for subgraph in entry.subgraphs {
+                all_base_pins_by_net
+                    .entry(entry.name.clone())
+                    .or_default()
+                    .extend(subgraph.base_pins.iter().cloned());
+
                 for node in subgraph.nodes {
                     let key = (node.reference.clone(), node.pin.clone());
                     let base_pin_key = subgraph
@@ -826,15 +844,22 @@ pub(crate) fn collect_reduced_project_net_map(
     for ((reference, pin_number), (net_name, net_class, has_no_connect, node, base_pin_key)) in
         candidates
     {
-        let net_nodes = nets
-            .entry(net_name)
-            .or_insert_with(|| (net_class.clone(), false, BTreeMap::new(), Vec::new()));
+        let net_nodes = nets.entry(net_name.clone()).or_insert_with(|| {
+            (
+                net_class.clone(),
+                false,
+                BTreeMap::new(),
+                all_base_pins_by_net.remove(&net_name).unwrap_or_default(),
+            )
+        });
         if net_nodes.0.is_empty() && !net_class.is_empty() {
             net_nodes.0 = net_class.clone();
         }
         net_nodes.1 |= has_no_connect;
         net_nodes.2.insert((reference, pin_number), node);
-        net_nodes.3.push(base_pin_key);
+        if !net_nodes.3.contains(&base_pin_key) {
+            net_nodes.3.push(base_pin_key);
+        }
     }
 
     let mut nets = nets.into_iter().collect::<Vec<_>>();
@@ -853,6 +878,112 @@ pub(crate) fn collect_reduced_project_net_map(
             },
         )
         .collect()
+}
+
+// Upstream parity: reduced local analogue for the symbol-pin item half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
+// item map because the Rust tree still uses `(sheet instance path, symbol uuid, projected pin
+// point)` instead of a live `SCH_PIN*`, but it gives ERC/export one shared project-net owner for
+// pin identity instead of re-deriving net names from local component scans. Remaining divergence
+// is fuller item identity for non-pin items and the still-missing `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
+    project: &SchematicProject,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+    for_board: bool,
+) -> Option<ReducedProjectNetIdentity> {
+    let identities = collect_reduced_project_net_map(project, for_board)
+        .into_iter()
+        .map(|entry| {
+            (
+                entry.name.clone(),
+                ReducedProjectNetIdentity {
+                    code: entry.code,
+                    name: entry.name,
+                    class: entry.class,
+                    has_no_connect: entry.has_no_connect,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for project_sheet_path in &project.sheet_paths {
+        if for_board
+            && !resolved_sheet_text_state(
+                &project.schematics,
+                &project.sheet_paths,
+                project_sheet_path,
+                project.current_variant(),
+            )
+            .map(|state| state.on_board)
+            .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let Some(schematic) = project.schematic(&project_sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for entry in collect_reduced_net_map(
+            schematic,
+            &project_sheet_path.instance_path,
+            |point| {
+                resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    project_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    point,
+                    SymbolPinTextVarKind::NetName,
+                )
+            },
+            |point| {
+                resolve_point_connectivity_text_var(
+                    &project.schematics,
+                    &project.sheet_paths,
+                    project_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    point,
+                    SymbolPinTextVarKind::NetClass,
+                )
+            },
+            |candidate_symbol| !for_board || candidate_symbol.on_board,
+            |candidate_symbol| {
+                resolved_symbol_text_property_value(
+                    &project.schematics,
+                    project_sheet_path,
+                    project.project.as_ref(),
+                    project.current_variant(),
+                    candidate_symbol,
+                    "Reference",
+                )
+            },
+        ) {
+            let Some(identity) = identities.get(&entry.name) else {
+                continue;
+            };
+
+            if entry.subgraphs.iter().any(|subgraph| {
+                subgraph.base_pins.iter().any(|base_pin| {
+                    base_pin.sheet_instance_path == sheet_path.instance_path
+                        && base_pin.symbol_uuid == symbol.uuid
+                        && base_pin.at == point_key(at)
+                        && pin_name
+                            .map(|name| base_pin.name.as_deref() == Some(name))
+                            .unwrap_or(true)
+                })
+            }) {
+                return Some(identity.clone());
+            }
+        }
+    }
+
+    None
 }
 
 fn label_is_dangling_on_component(
