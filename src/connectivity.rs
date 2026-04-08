@@ -133,7 +133,7 @@ struct ReducedProjectPointIdentityKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct ReducedProjectNetGraph {
+pub(crate) struct ReducedProjectNetGraph {
     nets: Vec<ReducedProjectNetEntry>,
     pin_identities: BTreeMap<ReducedNetBasePinKey, ReducedProjectNetIdentity>,
     pin_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectNetIdentity>,
@@ -734,7 +734,7 @@ where
 // now owns one shared reduced project net map plus item lookup indexes instead of making ERC and
 // export rebuild those facts independently. Remaining divergence is the missing full subgraph
 // object model and graph-owned resolved-name caches beyond this reduced project graph.
-fn collect_reduced_project_net_graph(
+pub(crate) fn collect_reduced_project_net_graph(
     project: &SchematicProject,
     for_board: bool,
 ) -> ReducedProjectNetGraph {
@@ -1006,7 +1006,7 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     pin_name: Option<&str>,
     for_board: bool,
 ) -> Option<ReducedProjectNetIdentity> {
-    let graph = collect_reduced_project_net_graph(project, for_board);
+    let graph = project.reduced_project_net_graph(for_board);
 
     pin_name
         .and_then(|pin_name| {
@@ -1036,7 +1036,8 @@ pub(crate) fn resolve_reduced_project_net_at(
     at: [f64; 2],
     for_board: bool,
 ) -> Option<ReducedProjectNetIdentity> {
-    collect_reduced_project_net_graph(project, for_board)
+    project
+        .reduced_project_net_graph(for_board)
         .point_identities
         .get(&reduced_project_point_identity_key(sheet_path, at))
         .cloned()

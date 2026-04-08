@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::connectivity::{ReducedProjectNetGraph, collect_reduced_project_net_graph};
 use crate::error::Error;
 use crate::loader::{
     ActiveSchematicSettings, DrawingSheetSource, HierarchyLink, LoadResult, LoadedProjectSettings,
@@ -33,6 +35,8 @@ pub struct SchematicProject {
     sheet_pages_by_virtual_page: HashMap<usize, String>,
     by_path: HashMap<PathBuf, usize>,
     sheet_paths_by_instance: HashMap<String, usize>,
+    reduced_project_net_graph: RefCell<Option<ReducedProjectNetGraph>>,
+    reduced_project_net_graph_for_board: RefCell<Option<ReducedProjectNetGraph>>,
 }
 
 impl SchematicProject {
@@ -64,6 +68,8 @@ impl SchematicProject {
             sheet_pages_by_virtual_page: load.sheet_pages_by_virtual_page,
             by_path,
             sheet_paths_by_instance,
+            reduced_project_net_graph: RefCell::new(None),
+            reduced_project_net_graph_for_board: RefCell::new(None),
         }
     }
 
@@ -253,14 +259,15 @@ impl SchematicProject {
     // Upstream parity: local project-view analogue for `SCHEMATIC::SetCurrentVariant()`. This is
     // not a 1:1 KiCad boundary because the reduced Rust project view still exposes selection
     // directly on `SchematicProject`, but it now shares the same occurrence refresh path as
-    // `LoadResult`, including variant-sensitive intersheet-ref recompute. Remaining divergence is
-    // limited to broader sheet-occurrence semantics and the broader unported text-variable
-    // resolver surface.
+    // `LoadResult`, including variant-sensitive intersheet-ref recompute and reduced project-graph
+    // cache invalidation. Remaining divergence is limited to broader sheet-occurrence semantics
+    // and the broader unported text-variable resolver surface.
     pub fn set_current_variant(&mut self, variant: Option<&str>) {
         self.current_variant = variant
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
+        self.clear_reduced_project_net_graph_cache();
         refresh_live_sheet_variant_state(
             &mut self.schematics,
             &self.sheet_paths,
@@ -385,5 +392,32 @@ impl SchematicProject {
                     .is_some_and(|parent| parent.instance_path == instance_path)
             })
             .collect()
+    }
+
+    // Upstream parity: reduced local analogue for the project-owned
+    // `SCHEMATIC::ConnectionGraph()` access path. This is not a 1:1 KiCad graph owner because the
+    // current tree still stores a reduced Rust net graph instead of a mutable
+    // `CONNECTION_GRAPH`, but it keeps graph-owned net map and item-lookup state on
+    // `SchematicProject` instead of rebuilding it independently in ERC/export helpers. Remaining
+    // divergence is the still-missing full subgraph/driver object model behind that owner.
+    pub(crate) fn reduced_project_net_graph(&self, for_board: bool) -> ReducedProjectNetGraph {
+        let cache = if for_board {
+            &self.reduced_project_net_graph_for_board
+        } else {
+            &self.reduced_project_net_graph
+        };
+
+        if let Some(graph) = cache.borrow().clone() {
+            return graph;
+        }
+
+        let graph = collect_reduced_project_net_graph(self, for_board);
+        *cache.borrow_mut() = Some(graph.clone());
+        graph
+    }
+
+    fn clear_reduced_project_net_graph_cache(&self) {
+        *self.reduced_project_net_graph.borrow_mut() = None;
+        *self.reduced_project_net_graph_for_board.borrow_mut() = None;
     }
 }

@@ -341,6 +341,8 @@ Current status:
     instead of routing those only through raw point lookups
   - reduced project point lookup now also reads through that same shared project net owner instead
     of rebuilding the project net map and rescanning schematics per ERC query
+  - reduced project net map plus pin/point lookup now live on `SchematicProject` instead of only
+    in free connectivity helpers, with variant changes invalidating that reduced graph owner
   - reduced XML export now walks shared connection components first instead of only asking every
     pin for an independent point-net name
   - reduced driver tie-breaking now prefers non-`-Pad` names when priorities match
