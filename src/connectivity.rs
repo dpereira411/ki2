@@ -137,6 +137,7 @@ pub(crate) struct ReducedBusMember {
     pub(crate) name: String,
     pub(crate) local_name: String,
     pub(crate) full_local_name: String,
+    pub(crate) vector_index: Option<usize>,
     pub(crate) kind: ReducedBusMemberKind,
     pub(crate) members: Vec<ReducedBusMember>,
 }
@@ -549,10 +550,41 @@ fn reduced_bus_member_leaf_objects(members: &[ReducedBusMember]) -> Vec<ReducedB
     leaves
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::matchBusMember()`. This is not a
+// 1:1 KiCad live-connection remap because the Rust tree still matches reduced member snapshots
+// instead of `SCH_CONNECTION*`, but it now preserves the same exercised rule split:
+// - vector buses remap by vector index even if the visible member name changes
+// - bus groups remap by local member name
+// Remaining divergence is live cloned-member refresh after hierarchy propagation.
+fn match_reduced_bus_member<'a>(
+    bus_members: &'a [ReducedBusMember],
+    search: &ReducedBusMember,
+) -> Option<&'a ReducedBusMember> {
+    for member in bus_members {
+        if let Some(search_index) = search.vector_index {
+            if member.vector_index == Some(search_index) {
+                return Some(member);
+            }
+        }
+
+        if member.kind == ReducedBusMemberKind::Bus {
+            if let Some(found) = match_reduced_bus_member(&member.members, search) {
+                return Some(found);
+            }
+        } else if member.local_name == search.local_name {
+            return Some(member);
+        }
+    }
+
+    None
+}
+
 fn make_reduced_bus_member(
     text: &str,
     local_prefix: &str,
     sheet_prefix: &str,
+    vector_index: Option<usize>,
     kind: ReducedBusMemberKind,
     members: Vec<ReducedBusMember>,
 ) -> ReducedBusMember {
@@ -562,6 +594,7 @@ fn make_reduced_bus_member(
         name: text.to_string(),
         local_name: local_name.clone(),
         full_local_name: format!("{sheet_prefix}{local_name}"),
+        vector_index,
         kind,
         members,
     }
@@ -579,14 +612,17 @@ fn parse_reduced_bus_member_object(
             text,
             local_prefix,
             sheet_prefix,
+            None,
             ReducedBusMemberKind::Bus,
             members
                 .into_iter()
-                .map(|member| {
+                .enumerate()
+                .map(|(index, member)| {
                     make_reduced_bus_member(
                         &member,
                         local_prefix,
                         sheet_prefix,
+                        Some(index),
                         ReducedBusMemberKind::Net,
                         Vec::new(),
                     )
@@ -617,6 +653,7 @@ fn parse_reduced_bus_member_object(
             text,
             local_prefix,
             sheet_prefix,
+            None,
             ReducedBusMemberKind::Bus,
             members,
         );
@@ -648,6 +685,7 @@ fn parse_reduced_bus_member_object(
             text,
             local_prefix,
             sheet_prefix,
+            None,
             ReducedBusMemberKind::Bus,
             members,
         );
@@ -657,6 +695,7 @@ fn parse_reduced_bus_member_object(
         text,
         local_prefix,
         sheet_prefix,
+        None,
         ReducedBusMemberKind::Net,
         Vec::new(),
     )
@@ -713,6 +752,7 @@ fn expand_reduced_bus_member_entry(
         text,
         local_prefix,
         sheet_prefix,
+        None,
         ReducedBusMemberKind::Net,
         Vec::new(),
     )]
@@ -758,11 +798,13 @@ fn collect_reduced_bus_member_objects_inner(
     if let Some(members) = reduced_bus_vector_members(text) {
         return members
             .into_iter()
-            .map(|member| {
+            .enumerate()
+            .map(|(index, member)| {
                 make_reduced_bus_member(
                     &member,
                     local_prefix,
                     sheet_prefix,
+                    Some(index),
                     ReducedBusMemberKind::Net,
                     Vec::new(),
                 )
@@ -3934,7 +3976,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ReducedBusMemberKind, find_first_reduced_project_subgraph_by_name,
+        ReducedBusMember, ReducedBusMemberKind, find_first_reduced_project_subgraph_by_name,
         find_reduced_project_subgraph_by_name, reduced_bus_member_objects,
         resolve_reduced_net_name_at, resolve_reduced_project_net_at,
         resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
@@ -4057,10 +4099,51 @@ mod tests {
         assert_eq!(members[0].kind, ReducedBusMemberKind::Bus);
         assert_eq!(members[0].local_name, "USB.PAIR{DP DM}");
         assert_eq!(members[0].members.len(), 2);
+        assert_eq!(members[0].members[0].vector_index, None);
         assert_eq!(members[0].members[0].full_local_name, "USB.PAIR.DP");
         assert_eq!(members[0].members[1].full_local_name, "USB.PAIR.DM");
         assert_eq!(members[1].kind, ReducedBusMemberKind::Net);
         assert_eq!(members[1].full_local_name, "USB.AUX");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_member_match_uses_vector_index_before_name() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_member_match_vector_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000073")
+  (paper "A4")
+)"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let bus = reduced_bus_member_objects(&schematic, "DATA[0..3]");
+
+        let search = ReducedBusMember {
+            name: "ALT9".to_string(),
+            local_name: "ALT9".to_string(),
+            full_local_name: "/ALT9".to_string(),
+            vector_index: Some(2),
+            kind: ReducedBusMemberKind::Net,
+            members: Vec::new(),
+        };
+
+        let matched = super::match_reduced_bus_member(&bus, &search).expect("matched member");
+        assert_eq!(matched.name, "DATA2");
+        assert_eq!(matched.vector_index, Some(2));
 
         let _ = fs::remove_file(path);
     }
