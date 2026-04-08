@@ -679,10 +679,10 @@ Current status:
         but still not all the way to fuller live item / connection pointer topology across every
         attached item kind
       - live connection member trees, the active stale-member bag, stored live bus
-        parent/neighbor links, and the exercised active rematch helpers now use a dedicated live
-        local member payload, but projection and remaining boundary adapters still round-trip
-        through reduced member snapshots instead of keeping one fuller live member/pointer graph
-        through propagation and projection
+        parent/neighbor links, the exercised active rematch helpers, and active bus-driven
+        promotion now use dedicated live local member/connection payloads, but projection and
+        remaining boundary adapters still round-trip through reduced snapshots instead of keeping
+        one fuller live member/pointer graph through propagation and projection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

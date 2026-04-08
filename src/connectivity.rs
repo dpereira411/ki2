@@ -859,6 +859,57 @@ fn clone_live_bus_member_into_live_bus_member(
     }
 }
 
+fn clone_live_bus_member_into_live_connection_owner(
+    target: &mut LiveProjectConnection,
+    source: &LiveProjectBusMember,
+    sheet_instance_path: &str,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.connection_type = match source.kind {
+        ReducedBusMemberKind::Net => ReducedProjectConnectionType::Net,
+        ReducedBusMemberKind::Bus => ReducedProjectConnectionType::Bus,
+    };
+    target.name = source.full_local_name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    target.sheet_instance_path = sheet_instance_path.to_string();
+
+    if matches!(
+        target.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) && matches!(source.kind, ReducedBusMemberKind::Bus)
+    {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = existing_members;
+
+            let clone_limit = target.members.len().min(source.members.len());
+            for index in 0..clone_limit {
+                clone_live_bus_member_into_live_bus_member(
+                    &mut target.members[index],
+                    &source.members[index],
+                );
+            }
+
+            if target.members.len() > source.members.len() {
+                target.members.truncate(source.members.len());
+            } else if target.members.len() < source.members.len() {
+                target
+                    .members
+                    .extend(source.members[target.members.len()..].iter().cloned());
+            }
+        }
+    } else {
+        target.members = source.members.clone();
+    }
+}
+
 // Upstream parity: reduced local analogue for `assignNewNetCode()` / `assignNetCodesToBus()`.
 // This is not a 1:1 live `SCH_CONNECTION` mutation because the Rust tree still assigns onto
 // reduced snapshot connections after propagation settles, but it moves netcode ownership onto the
@@ -2474,6 +2525,7 @@ fn reduced_connection_from_bus_member(
     }
 }
 
+#[allow(dead_code)]
 fn reduced_connection_from_live_bus_member(
     member: &LiveProjectBusMember,
     sheet_instance_path: &str,
@@ -2965,15 +3017,12 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 continue;
             }
 
-            let promoted = reduced_connection_from_live_bus_member(
-                &parent_member,
-                &live_subgraphs[neighbor_index].sheet_instance_path,
-            );
-            clone_reduced_connection_into_live_connection_owner(
+            clone_live_bus_member_into_live_connection_owner(
                 &mut live_subgraphs[neighbor_index]
                     .driver_connection
                     .borrow_mut(),
-                &promoted,
+                &parent_member,
+                &live_subgraphs[neighbor_index].sheet_instance_path,
             );
             sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[neighbor_index]);
             live_subgraphs[neighbor_index].dirty = true;
@@ -3606,13 +3655,10 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 continue;
             }
 
-            let promoted = reduced_connection_from_live_bus_member(
+            clone_live_bus_member_into_live_connection_owner(
+                &mut neighbor_handle.borrow().driver_connection.borrow_mut(),
                 &parent_member,
                 &neighbor_snapshot.sheet_instance_path,
-            );
-            clone_reduced_connection_into_live_connection_owner(
-                &mut neighbor_handle.borrow().driver_connection.borrow_mut(),
-                &promoted,
             );
             sync_live_reduced_item_connections_from_driver_handle(&neighbor_handle);
             neighbor_handle.borrow_mut().dirty = true;
