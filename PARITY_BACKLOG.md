@@ -658,9 +658,10 @@ Current status:
         `recacheSubgraphName()`-style owner; the local live connection owners now exist, but item
         and subgraph relationships still synchronize through local wrappers instead of a fuller
         shared object graph
-      - the live graph still passes whole `LiveReducedSubgraph` values around and still clones
-        whole live subgraph vectors for fixpoint/equality checks, so subgraph topology itself is
-        not yet a shared mutable object graph
+      - the active recursive graph build now runs on shared live subgraph handles, but those
+        handles still wrap reduced local subgraph carriers instead of a fuller local
+        `CONNECTION_SUBGRAPH` analogue with stable pointer-style topology and recache/update
+        behavior across the whole graph
       - connected-bus-item ownership now exists on live bus-entry wrappers, but still not on real
         live item / connection pointers
     - concrete next unblock path:
@@ -670,9 +671,9 @@ Current status:
          cloning reduced snapshots through recursive revisits
       3. widen the new live bus-entry connection owner into fuller live item/connection pointer
          ownership instead of collapsing it back to subgraph indexes at projection time
-      4. replace the current value-owned `Vec<LiveReducedSubgraph>` recursion/fixpoint with shared
-         live subgraph handles so topology, dirty state, and attached live item owners stop being
-         copied by whole-subgraph clones
+      4. replace the current reduced live subgraph handle payload with a fuller local
+         `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
+         live item owners stay on one shared object graph instead of reduced wrapper structs
       5. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
          promotion
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
