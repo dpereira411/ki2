@@ -608,14 +608,16 @@ Current status:
     - the remaining gap is that these are still static reduced snapshots, not live
       `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` objects:
       - no full live per-visited-subgraph `m_dirty` / `propagateToNeighbors()` recursion with
-        pointer identity; the reduced graph now has the first live hierarchy and bus-neighbor
-        slices, but it still does not mutate and revisit the same shared live subgraph objects
-        across the full propagation walk KiCad uses
-      - no live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be replayed
-        across the visited bus subgraphs after hierarchy propagation; the reduced pass only
-        converges cloned snapshots
+        pointer identity; the reduced graph now has the first live hierarchy, bus, and
+        post-propagation item-connection slices, but it still does not mutate and revisit one
+        shared visited object set across the full propagation walk KiCad uses
+      - no full live `stale_bus_members` set of cloned `SCH_CONNECTION*` objects that can be
+        replayed across all visited bus subgraphs after hierarchy propagation; the reduced graph
+        now replays stale same-bus links during the live fixpoint, but cross-subgraph replay still
+        falls back to reduced convergence
       - no live cached driver connection object that can be cloned and recached in place across
-        labels, pins, and connected items
+        labels, pins, sheet pins, and connected items via a shared `recacheSubgraphName()`-style
+        owner
       - connected-bus-item ownership is now shared on reduced subgraph indexes, but still not on
         live item / connection pointers
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
