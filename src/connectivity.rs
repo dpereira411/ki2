@@ -394,7 +394,7 @@ impl LiveProjectStrongDriverOwner {
                 .map(|owner| owner.borrow().connection.clone()),
             LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
                 .upgrade()
-                .map(|owner| owner.borrow().connection.clone()),
+                .map(|owner| owner.borrow().driver_connection.clone()),
         }
         .expect("live strong driver owner requires an attached connection owner")
     }
@@ -2380,6 +2380,7 @@ struct LiveReducedBasePinPayload {
 struct LiveReducedBasePin {
     pin: LiveReducedBasePinPayload,
     connection: LiveReducedConnection,
+    driver_connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
 
@@ -2562,6 +2563,20 @@ impl LiveReducedBasePin {
         );
     }
 
+    // Upstream parity: local base-pin owner analogue for the exercised chosen-driver self-update
+    // KiCad gets because `m_driver_connection` and the chosen pin's `Connection()` are the same
+    // live object. This reduced bridge still keeps separate item and driver owners on the pin, but
+    // it lets the chosen symbol-pin/base-pin item connection adopt live renames from that chosen
+    // driver connection instead of relying on shared-object aliasing that no longer exists after
+    // the driver-owner split.
+    fn refresh_from_owned_driver_connection(&mut self) {
+        let driver_connection = self.driver_connection.clone();
+        clone_live_connection_owner_into_live_base_pin_connection_owner(
+            &mut self.connection.borrow_mut(),
+            &driver_connection.borrow(),
+        );
+    }
+
     // Upstream parity: local live base-pin-owner analogue for exercised symbol-pin/power-pin
     // strong-driver binding. This still uses the reduced live base-pin owner instead of a fuller
     // live `SCH_PIN`, but the base-pin owner now owns the driver attachment and pin-owned
@@ -2574,7 +2589,7 @@ impl LiveReducedBasePin {
         kind: ReducedProjectDriverKind,
         priority: i32,
     ) -> LiveProjectStrongDriverOwner {
-        self.connection.clone_from(floating_connection);
+        self.driver_connection.clone_from(floating_connection);
         self.driver = Some(driver.clone());
         LiveProjectStrongDriverOwner::SymbolPin {
             owner: Rc::downgrade(owner),
@@ -2690,6 +2705,7 @@ impl PartialEq for LiveReducedBasePin {
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
             self.connection.snapshot(),
+            self.driver_connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             other.pin.schematic_path.clone(),
@@ -2697,6 +2713,7 @@ impl PartialEq for LiveReducedBasePin {
             other.pin.number.clone(),
             other.pin.electrical_type.clone(),
             other.connection.snapshot(),
+            other.driver_connection.snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
     }
@@ -2718,6 +2735,7 @@ impl Ord for LiveReducedBasePin {
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
             self.connection.snapshot(),
+            self.driver_connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
@@ -2726,6 +2744,7 @@ impl Ord for LiveReducedBasePin {
                 other.pin.number.clone(),
                 other.pin.electrical_type.clone(),
                 other.connection.snapshot(),
+                other.driver_connection.snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
     }
@@ -3568,6 +3587,7 @@ fn build_live_reduced_subgraphs(
                             electrical_type: pin.electrical_type.clone(),
                         },
                         connection: LiveReducedConnection::new(pin.connection.clone()),
+                        driver_connection: LiveReducedConnection::new(pin.connection.clone()),
                         driver: None,
                     }))
                 })
@@ -4033,7 +4053,7 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
         let subgraph = handle.borrow();
         for base_pin in &subgraph.base_pins {
             let base_pin = base_pin.borrow();
-            let connection = base_pin.connection.snapshot();
+            let connection = base_pin.driver_connection.snapshot();
             if connection.connection_type == ReducedProjectConnectionType::None {
                 continue;
             }
@@ -6035,12 +6055,23 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
             live_subgraph_is_self_driven_symbol_pin(&subgraph)
                 && subgraph.driver_connection.borrow().name.contains("Net-(")
         } {
-            let subgraph = handle.borrow();
-            subgraph
-                .driver_connection
-                .borrow_mut()
-                .force_no_connect_name();
-            drop(subgraph);
+            let chosen_driver = {
+                let subgraph = handle.borrow();
+                subgraph
+                    .driver_connection
+                    .borrow_mut()
+                    .force_no_connect_name();
+                subgraph.chosen_driver.clone()
+            };
+            if let Some(driver) = chosen_driver {
+                if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } =
+                    &driver.borrow().owner
+                {
+                    if let Some(base_pin) = owner.upgrade() {
+                        base_pin.borrow_mut().refresh_from_owned_driver_connection();
+                    }
+                }
+            }
             sync_live_reduced_item_connections_from_driver_handle(handle);
         }
 
@@ -14245,7 +14276,8 @@ mod tests {
             }
             _ => panic!("expected symbol pin strong-driver owner"),
         };
-        assert_eq!(owner.borrow().connection.name(), "RENAMED");
+        assert_eq!(owner.borrow().driver_connection.name(), "RENAMED");
+        assert_eq!(owner.borrow().connection.name(), "PWR");
     }
 
     #[test]
@@ -17870,7 +17902,7 @@ mod tests {
                 _ => panic!("expected symbol pin strong-driver owner"),
             };
             let base_pin = owner.borrow_mut();
-            let mut connection = base_pin.connection.borrow_mut();
+            let mut connection = base_pin.driver_connection.borrow_mut();
             connection.name = "RENAMED".to_string();
             connection.local_name = "RENAMED".to_string();
             connection.full_local_name = "RENAMED".to_string();

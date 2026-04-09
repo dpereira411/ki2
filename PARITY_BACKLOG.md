@@ -949,6 +949,32 @@ Current status:
       - remaining missing pin behavior is now the richer live update/selection path after setup:
         multi-pin power-pin/base-pin branches still need fuller live pin/connection mutation than
         the current reduced base-pin owner can express
+      - active `UpdateItemConnections()`-style refresh now lives on the shared live item/subgraph
+        owners instead of external helper loops:
+        - live label/sheet-pin/hier-port owners decide their own chosen-driver skip and
+          kind-mismatch adoption
+        - live base-pin owners decide their own setup-time preservation vs chosen-connection
+          adoption
+        - the shared live subgraph owner now drives both the active handle path and the
+          compatibility live-subgraph path for that refresh flow
+      - active reduced projection of chosen-driver state, strong-driver snapshots, label/sheet-pin/
+        hier-port/base-pin connections now also lives on the shared live subgraph owner instead of
+        duplicated boundary loops
+      - active strong-driver kind/priority/identity/connection reads now also live on the shared
+        live driver owner itself instead of free helper accessors around that owner
+      - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
+        replay, and handle-side graph updates now also asks the shared live connection owner for
+        member matches instead of reaching through raw `.members` vectors on each caller
+      - recursive live bus-member matching now also belongs to the shared live bus-member owners
+        themselves instead of standalone recursive helper functions around the owner graph
+      - exercised strong-driver attachment for labels, sheet pins, hier ports, and symbol/base pins
+        now also belongs to those live item owners instead of being open-coded in the subgraph
+        builder
+      - remaining `snapshot()` / reduced-index sites after that audit are now concentrated in:
+        - compatibility/test-only live-subgraph paths
+        - projection/deterministic-order edges
+        - the still-missing fuller live pin / `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object
+          graph
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
