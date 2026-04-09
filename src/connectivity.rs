@@ -1889,49 +1889,6 @@ fn live_connection_clone_eq(
     }
 }
 
-fn live_bus_member_clone_eq_to_connection(
-    target: &LiveProjectBusMember,
-    source: &LiveProjectConnection,
-) -> bool {
-    if target.net_code != source.net_code
-        || target.name != source.name
-        || target.full_local_name != source.full_local_name
-        || target.kind
-            != match source.connection_type {
-                ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
-                    ReducedBusMemberKind::Bus
-                }
-                _ => ReducedBusMemberKind::Net,
-            }
-    {
-        return false;
-    }
-
-    if target.local_name.is_empty() && target.local_name != source.local_name {
-        return false;
-    }
-
-    if matches!(target.kind, ReducedBusMemberKind::Bus)
-        && matches!(
-            source.connection_type,
-            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-        )
-    {
-        if target.members.is_empty() {
-            live_bus_member_handles_clone_eq(&target.members, &source.members)
-        } else {
-            target.members.len() == source.members.len()
-                && target.members.iter().zip(source.members.iter()).all(
-                    |(target_member, source_member)| {
-                        live_bus_member_handle_clone_eq(target_member, source_member)
-                    },
-                )
-        }
-    } else {
-        live_bus_member_handles_clone_eq(&target.members, &source.members)
-    }
-}
-
 fn clone_live_connection_owner_into_live_bus_member(
     target: &mut LiveProjectBusMember,
     source: &LiveProjectConnection,
@@ -3811,7 +3768,9 @@ impl LiveReducedSubgraph {
     }
 
     // Upstream parity: local live-subgraph analogue for refreshing parent-bus members from dirty
-    // child net connections during the active recursive walk.
+    // child net connections during the active recursive walk. Upstream mutates the matched bus
+    // member in place inside `propagateToNeighbors()` and continues the current visited-chain
+    // propagation without requeueing the parent bus as a fresh dirty root.
     fn refresh_bus_parent_members(
         live_subgraphs: &[LiveReducedSubgraphHandle],
         component: &[LiveReducedSubgraphHandle],
@@ -3848,7 +3807,7 @@ impl LiveReducedSubgraph {
                     continue;
                 }
 
-                let changed = {
+                {
                     let parent = parent_handle.borrow();
                     let mut parent_connection = parent.driver_connection.borrow_mut();
                     let link_member = link.borrow().member.clone();
@@ -3857,19 +3816,10 @@ impl LiveReducedSubgraph {
                     else {
                         continue;
                     };
-                    let changed = !live_bus_member_clone_eq_to_connection(
-                        &member.borrow(),
-                        &child_connection.borrow(),
-                    );
                     clone_live_connection_owner_into_live_bus_member(
                         &mut member.borrow_mut(),
                         &child_connection.borrow(),
                     );
-                    changed
-                };
-
-                if changed {
-                    parent_handle.borrow_mut().dirty = true;
                 }
             }
         }
@@ -15760,6 +15710,7 @@ mod tests {
         ];
 
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[0].borrow_mut().dirty = false;
         let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
         LiveReducedSubgraph::refresh_bus_parent_members(&live_subgraphs, &component);
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
@@ -15772,6 +15723,7 @@ mod tests {
             graph[0].driver_connection.members[0].full_local_name,
             "/PWR"
         );
+        assert!(!live_subgraphs[0].borrow().dirty);
     }
 
     #[test]
