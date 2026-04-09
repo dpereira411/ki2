@@ -6815,6 +6815,22 @@ pub(crate) fn collect_reduced_project_subgraphs(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::GetNetMap or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns reduced cloned subgraph snapshots by shared graph borrow instead of
+// live `CONNECTION_SUBGRAPH*` owners
+// local_only_reason: keeps production ERC/export callers on the shared reduced graph owner
+// instead of cloning subgraph storage into local helper vectors
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: production callers can iterate live `CONNECTION_SUBGRAPH` owners directly
+pub(crate) fn reduced_project_subgraphs(
+    graph: &ReducedProjectNetGraph,
+) -> &[ReducedProjectSubgraphEntry] {
+    &graph.subgraphs
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for indexing into `CONNECTION_GRAPH` subgraph storage.
 // This is not a 1:1 pointer owner because the Rust tree still stores cloned reduced subgraphs
 // instead of live `CONNECTION_SUBGRAPH*`, but it keeps parent/child relation consumers on the

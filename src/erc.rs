@@ -2,10 +2,10 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_connection_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_graph, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
-    collect_reduced_project_symbol_pins, reduced_bus_member_full_local_names,
-    reduced_project_subgraph_by_index, reduced_project_subgraph_index,
-    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_no_connect,
+    collect_reduced_project_subgraphs_by_name, collect_reduced_project_symbol_pins,
+    reduced_bus_member_full_local_names, reduced_project_subgraph_by_index,
+    reduced_project_subgraph_index, reduced_project_subgraphs, resolve_reduced_project_subgraph_at,
+    resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -67,12 +67,12 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
 // the shared reduced driver owner instead of sweeping every repeated subgraph independently.
 // Remaining divergence is the still-missing live subgraph/driver object model behind that owner.
 fn graph_run_erc_subgraphs(
-    project: &SchematicProject,
-) -> Vec<crate::connectivity::ReducedProjectSubgraphEntry> {
+    graph: &crate::connectivity::ReducedProjectNetGraph,
+) -> Vec<&crate::connectivity::ReducedProjectSubgraphEntry> {
     let mut seen_driver_identities = std::collections::BTreeSet::new();
 
-    collect_reduced_project_subgraphs(project, false)
-        .into_iter()
+    reduced_project_subgraphs(graph)
+        .iter()
         .filter(|subgraph| {
             crate::connectivity::reduced_project_subgraph_driver_identity(subgraph)
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
@@ -1971,7 +1971,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         }
     }
 
-    for subgraph in graph_run_erc_subgraphs(project) {
+    for subgraph in graph_run_erc_subgraphs(&graph) {
         if subgraph.label_links.is_empty() {
             continue;
         }
@@ -2160,7 +2160,9 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in graph_run_erc_subgraphs(project)
+    let graph = project.reduced_project_net_graph(false);
+
+    for subgraph in graph_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
@@ -2230,7 +2232,9 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in graph_run_erc_subgraphs(project)
+    let graph = project.reduced_project_net_graph(false);
+
+    for subgraph in graph_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
@@ -2441,7 +2445,9 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
 pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in graph_run_erc_subgraphs(project)
+    let graph = project.reduced_project_net_graph(false);
+
+    for subgraph in graph_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
@@ -2537,7 +2543,9 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in graph_run_erc_subgraphs(project) {
+    let graph = project.reduced_project_net_graph(false);
+
+    for subgraph in graph_run_erc_subgraphs(&graph) {
         let Some(sheet_path) = project
             .sheet_paths
             .iter()
@@ -2639,7 +2647,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(project)
+    for subgraph in graph_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
@@ -2980,7 +2988,9 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for subgraph in graph_run_erc_subgraphs(project) {
+    let graph = project.reduced_project_net_graph(false);
+
+    for subgraph in graph_run_erc_subgraphs(&graph) {
         let Some(primary_driver) = subgraph.drivers.first() else {
             continue;
         };
