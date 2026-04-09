@@ -4126,9 +4126,6 @@ impl LiveReducedSubgraph {
                             &connection,
                         );
                         if changed {
-                            sync_live_reduced_item_connections_from_driver_handle(
-                                &candidate_handle,
-                            );
                             recache_live_reduced_subgraph_name_handle_cache_from_handles(
                                 &mut subgraphs_by_name,
                                 &mut subgraphs_by_sheet_and_name,
@@ -16303,7 +16300,40 @@ mod tests {
                 anchor: PointKey(0, 0),
                 points: Vec::new(),
                 nodes: Vec::new(),
-                base_pins: Vec::new(),
+                base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: crate::connectivity::ReducedNetBasePinKey {
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("u1".to_string()),
+                        at: PointKey(0, 0),
+                        name: Some("IN".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    reference: None,
+                    number: Some("1".to_string()),
+                    electrical_type: Some("input".to_string()),
+                    visible: true,
+                    is_power_symbol: false,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    driver_connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/OLD1".to_string(),
+                        local_name: "OLD1".to_string(),
+                        full_local_name: "/OLD1".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    preserve_local_name_on_refresh: false,
+                }],
                 label_links: vec![ReducedLabelLink {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
@@ -16334,6 +16364,9 @@ mod tests {
 
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
         LiveReducedSubgraph::refresh_multiple_bus_parent_names(&live_subgraphs);
+        for handle in &live_subgraphs {
+            LiveReducedSubgraph::refresh_post_propagation_item_connections(handle);
+        }
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(
@@ -16348,6 +16381,10 @@ mod tests {
         assert_eq!(graph[3].resolved_connection.name, "/RENAMED1");
         assert_eq!(
             graph[3].label_links[0].connection.full_local_name,
+            "/RENAMED1"
+        );
+        assert_eq!(
+            graph[3].base_pins[0].connection.full_local_name,
             "/RENAMED1"
         );
     }
