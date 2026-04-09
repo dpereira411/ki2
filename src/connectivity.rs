@@ -3398,13 +3398,12 @@ impl LiveReducedSubgraph {
         }
     }
 
-    // Upstream parity: local live-subgraph analogue for collecting the connected propagation
-    // component around one dirty subgraph. Active component discovery now belongs to the shared
-    // subgraph owner and follows attached hierarchy and bus handles directly instead of leaving
-    // traversal identity in an outer free helper keyed by reduced indexes.
+    // Upstream parity: local live-subgraph analogue for collecting the hierarchy-visited slice
+    // around one dirty subgraph during `propagateToNeighbors()`. Bus-parent and bus-neighbor
+    // mutations are handled by their own branches and should not expand this visited chain.
     fn collect_propagation_component_handles(
         start: &LiveReducedSubgraphHandle,
-        live_subgraphs: &[LiveReducedSubgraphHandle],
+        _live_subgraphs: &[LiveReducedSubgraphHandle],
     ) -> Vec<LiveReducedSubgraphHandle> {
         let mut queue = VecDeque::from([start.clone()]);
         let mut visited = BTreeSet::from([live_subgraph_handle_id(start)]);
@@ -3421,22 +3420,6 @@ impl LiveReducedSubgraph {
             for child_handle in live_subgraph_child_handles_from_handle(&handle) {
                 if visited.insert(live_subgraph_handle_id(&child_handle)) {
                     queue.push_back(child_handle);
-                }
-            }
-
-            for parent_handle in live_subgraph_bus_parent_handles_from_handle(&handle) {
-                if visited.insert(live_subgraph_handle_id(&parent_handle)) {
-                    queue.push_back(parent_handle);
-                }
-            }
-
-            for link in live_subgraph_bus_neighbor_links_from_handle(&handle) {
-                let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, &link)
-                else {
-                    continue;
-                };
-                if visited.insert(live_subgraph_handle_id(&neighbor_handle)) {
-                    queue.push_back(neighbor_handle);
                 }
             }
         }
@@ -14214,7 +14197,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_live_reduced_propagation_component_prefers_bus_parent_handles() {
+    fn collect_live_reduced_propagation_component_excludes_bus_parent_handles() {
         let reduced = vec![
             ReducedProjectSubgraphEntry {
                 subgraph_code: 1,
@@ -14326,7 +14309,7 @@ mod tests {
                 .collect::<Vec<_>>();
         component.sort_unstable();
 
-        assert_eq!(component, vec![0, 1]);
+        assert_eq!(component, vec![1]);
         let child_parent = handles[1]
             .borrow()
             .bus_parent_handles
