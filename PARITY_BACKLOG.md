@@ -1089,6 +1089,12 @@ Current status:
       - reduced projection now also materializes `driver_connection` from the live chosen subgraph
         owner even when the reduced entry started with `driver_connection: None`, so that boundary
         no longer depends on pre-live optional driver-connection state
+      - production reduced graph assembly now also materializes subgraph `driver_connection` even
+        when the pre-live pending subgraph had no explicit driver candidate, so real reduced graph
+        ownership no longer treats subgraph driver connection as optional after graph build
+      - production reduced graph consumers now also read subgraph `driver_connection` as required
+        owner state for exercised netcode assignment and child-name collection instead of branching
+        around an optional reduced driver connection on the real graph path
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

@@ -5643,10 +5643,13 @@ fn rebuild_reduced_project_graph_name_caches(
             let code = *net_codes.entry(subgraph.name.clone()).or_insert(next_code);
             subgraph.code = code;
             assign_reduced_connection_net_codes(&mut subgraph.resolved_connection, &mut net_codes);
-
-            if let Some(driver_connection) = &mut subgraph.driver_connection {
-                assign_reduced_connection_net_codes(driver_connection, &mut net_codes);
-            }
+            assign_reduced_connection_net_codes(
+                subgraph
+                    .driver_connection
+                    .as_mut()
+                    .expect("production reduced graph materializes subgraph driver connection"),
+                &mut net_codes,
+            );
 
             for link in &mut subgraph.label_links {
                 assign_reduced_connection_net_codes(&mut link.connection, &mut net_codes);
@@ -7191,12 +7194,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             resolved_full_local_name,
             pending.bus_members.clone(),
         );
+        let driver_connection = pending
+            .driver_connection
+            .clone()
+            .unwrap_or_else(|| resolved_connection.clone());
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
-            driver_connection: pending.driver_connection.clone(),
+            driver_connection: Some(driver_connection),
             chosen_driver_identity: pending.chosen_driver_identity.clone(),
             drivers: pending.drivers.clone(),
             class: if pending.class.is_empty() {
@@ -7390,10 +7397,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .map(|connection| connection.full_local_name.clone())
                 .collect::<Vec<_>>();
 
-            if let Some(driver_connection) = &child.driver_connection {
-                if !driver_connection.full_local_name.is_empty() {
-                    child_names.push(driver_connection.full_local_name.clone());
-                }
+            let driver_connection = child
+                .driver_connection
+                .as_ref()
+                .expect("production reduced graph materializes subgraph driver connection");
+            if !driver_connection.full_local_name.is_empty() {
+                child_names.push(driver_connection.full_local_name.clone());
             } else if !child.resolved_connection.name.is_empty() {
                 child_names.push(child.resolved_connection.name.clone());
             }
