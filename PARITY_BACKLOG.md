@@ -987,6 +987,9 @@ Current status:
         subgraph owner instead of a large free-function identity match around the graph
       - live topology seeding and wire/bus item parent-handle attachment during graph build now
         also live on the shared live subgraph owner instead of separate builder loops around it
+      - exercised bus-entry connected-bus attachment during live graph build now also lives on the
+        shared live wire-item owner instead of a free geometry-matching builder loop around the
+        item graph
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale

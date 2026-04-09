@@ -2594,6 +2594,84 @@ struct LiveReducedSubgraphWireItem {
     parent_subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
 
+impl LiveReducedSubgraphWireItem {
+    // Upstream parity: local wire-item analogue for the exercised connected-bus attachment KiCad
+    // keeps on bus entries during graph build. This still identifies the attached bus from reduced
+    // wire geometry instead of real `SCH_LINE*` pointers, but the shared wire-item owner now owns
+    // the geometric match and attached-bus write instead of leaving that decision in a free graph
+    // builder loop.
+    fn attach_connected_bus_item(
+        &mut self,
+        sheet_instance_path: &str,
+        bus_subgraphs: &[(String, Vec<LiveReducedSubgraphWireItemHandle>)],
+    ) {
+        if !self.is_bus_entry {
+            return;
+        }
+
+        let attached_bus = bus_subgraphs
+            .iter()
+            .find(|(bus_sheet_path, bus_items)| {
+                *bus_sheet_path == sheet_instance_path
+                    && bus_items.iter().any(|bus_item| {
+                        let bus_item = bus_item.borrow();
+                        point_on_wire_segment(
+                            [f64::from_bits(self.start.0), f64::from_bits(self.start.1)],
+                            [
+                                f64::from_bits(bus_item.start.0),
+                                f64::from_bits(bus_item.start.1),
+                            ],
+                            [
+                                f64::from_bits(bus_item.end.0),
+                                f64::from_bits(bus_item.end.1),
+                            ],
+                        ) || point_on_wire_segment(
+                            [f64::from_bits(self.end.0), f64::from_bits(self.end.1)],
+                            [
+                                f64::from_bits(bus_item.start.0),
+                                f64::from_bits(bus_item.start.1),
+                            ],
+                            [
+                                f64::from_bits(bus_item.end.0),
+                                f64::from_bits(bus_item.end.1),
+                            ],
+                        )
+                    })
+            })
+            .and_then(|(_, bus_items)| {
+                bus_items
+                    .iter()
+                    .find(|bus_item| {
+                        let bus_item = bus_item.borrow();
+                        point_on_wire_segment(
+                            [f64::from_bits(self.start.0), f64::from_bits(self.start.1)],
+                            [
+                                f64::from_bits(bus_item.start.0),
+                                f64::from_bits(bus_item.start.1),
+                            ],
+                            [
+                                f64::from_bits(bus_item.end.0),
+                                f64::from_bits(bus_item.end.1),
+                            ],
+                        ) || point_on_wire_segment(
+                            [f64::from_bits(self.end.0), f64::from_bits(self.end.1)],
+                            [
+                                f64::from_bits(bus_item.start.0),
+                                f64::from_bits(bus_item.start.1),
+                            ],
+                            [
+                                f64::from_bits(bus_item.end.0),
+                                f64::from_bits(bus_item.end.1),
+                            ],
+                        )
+                    })
+                    .map(Rc::downgrade)
+            });
+
+        self.connected_bus_item_handle = attached_bus;
+    }
+}
+
 impl PartialEq for LiveReducedSubgraphWireItem {
     fn eq(&self, other: &Self) -> bool {
         self.start == other.start
@@ -3687,73 +3765,9 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
         let subgraph = handle.borrow_mut();
 
         for item_handle in &subgraph.wire_items {
-            if !item_handle.borrow().is_bus_entry {
-                continue;
-            }
-            let item = item_handle.borrow();
-
-            let attached_bus = bus_subgraphs
-                .iter()
-                .find(|(bus_sheet_path, bus_items)| {
-                    *bus_sheet_path == sheet_instance_path
-                        && bus_items.iter().any(|bus_item| {
-                            let bus_item = bus_item.borrow();
-                            point_on_wire_segment(
-                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
-                                [
-                                    f64::from_bits(bus_item.start.0),
-                                    f64::from_bits(bus_item.start.1),
-                                ],
-                                [
-                                    f64::from_bits(bus_item.end.0),
-                                    f64::from_bits(bus_item.end.1),
-                                ],
-                            ) || point_on_wire_segment(
-                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
-                                [
-                                    f64::from_bits(bus_item.start.0),
-                                    f64::from_bits(bus_item.start.1),
-                                ],
-                                [
-                                    f64::from_bits(bus_item.end.0),
-                                    f64::from_bits(bus_item.end.1),
-                                ],
-                            )
-                        })
-                })
-                .and_then(|(_, bus_items)| {
-                    bus_items
-                        .iter()
-                        .find(|bus_item| {
-                            let bus_item = bus_item.borrow();
-                            point_on_wire_segment(
-                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
-                                [
-                                    f64::from_bits(bus_item.start.0),
-                                    f64::from_bits(bus_item.start.1),
-                                ],
-                                [
-                                    f64::from_bits(bus_item.end.0),
-                                    f64::from_bits(bus_item.end.1),
-                                ],
-                            ) || point_on_wire_segment(
-                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
-                                [
-                                    f64::from_bits(bus_item.start.0),
-                                    f64::from_bits(bus_item.start.1),
-                                ],
-                                [
-                                    f64::from_bits(bus_item.end.0),
-                                    f64::from_bits(bus_item.end.1),
-                                ],
-                            )
-                        })
-                        .map(Rc::downgrade)
-                });
-
-            drop(item);
-            let mut item = item_handle.borrow_mut();
-            item.connected_bus_item_handle = attached_bus;
+            item_handle
+                .borrow_mut()
+                .attach_connected_bus_item(&sheet_instance_path, &bus_subgraphs);
         }
     }
 }
