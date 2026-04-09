@@ -5896,10 +5896,7 @@ fn erc_reports_labels_connected_to_only_one_pin() {
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].severity, ki2::diagnostic::Severity::Warning);
-    assert_eq!(
-        diagnostics[0].message,
-        "Label is connected to only one pin at 0, 0"
-    );
+    assert_eq!(diagnostics[0].message, "Label connected to only one pin");
 
     let _ = fs::remove_file(path);
 }

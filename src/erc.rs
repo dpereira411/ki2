@@ -2238,7 +2238,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     severity: Severity::Warning,
                     code: "erc-label-single-pin",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!("Label is connected to only one pin at {}, {}", at[0], at[1]),
+                    message: "Label connected to only one pin".to_string(),
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
