@@ -2674,11 +2674,12 @@ fn attach_live_hierarchy_links_to_handles(
 // the attached base-pin owner instead of carrying a second driver-side connection cache. The
 // attached base pin still seeds its own live connection owner from the floating strong-driver
 // connection so later per-pin item branches have a real owner to update without borrowing the
-// whole subgraph driver. Live strong drivers now always carry their kind/priority/connection
-// through one owner graph, with unattached drivers living on a floating owner until attachment
-// upgrades them to a concrete item owner. Remaining divergence is the fuller live driver-item
-// object graph and the still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph
-// behind these handles.
+// whole subgraph driver. Once the chosen driver is attached, the active live subgraph now also
+// points its `driver_connection` at that same chosen item-owned live connection owner, matching
+// KiCad's `m_driver_connection = m_driver->Connection(...)` branch more closely instead of keeping
+// a parallel subgraph-owned connection copy on the active path. Remaining divergence is the fuller
+// live driver-item object graph and the still-missing live `SCH_CONNECTION` /
+// `CONNECTION_SUBGRAPH` object graph behind these handles.
 fn attach_live_strong_driver_owners_to_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
@@ -2687,6 +2688,7 @@ fn attach_live_strong_driver_owners_to_handles(
         let mut subgraph = handle.borrow_mut();
         let chosen_identity =
             reduced_project_subgraph_driver_identity(&reduced_subgraphs[index]).cloned();
+        let chosen_connection = reduced_subgraph_driver_connection(&reduced_subgraphs[index]);
         let live_drivers = subgraph.drivers.clone();
 
         for (driver, reduced_driver) in live_drivers
@@ -2799,8 +2801,15 @@ fn attach_live_strong_driver_owners_to_handles(
             driver_ref.owner = owner;
             drop(driver_ref);
 
-            if chosen_identity.as_ref() == reduced_driver.identity.as_ref() {
+            let is_chosen_driver = chosen_identity
+                .as_ref()
+                .map(|identity| reduced_driver.identity.as_ref() == Some(identity))
+                .unwrap_or_else(|| reduced_driver.connection == chosen_connection);
+
+            if is_chosen_driver {
                 subgraph.chosen_driver = Some(driver.clone());
+                subgraph.driver_connection =
+                    live_project_strong_driver_connection(&driver.borrow());
             }
         }
     }
@@ -13167,6 +13176,24 @@ mod tests {
             }
             _ => panic!("expected symbol pin strong-driver owner"),
         }
+
+        drop(subgraph);
+        {
+            let subgraph = handles[0].borrow();
+            let mut connection = subgraph.driver_connection.borrow_mut();
+            connection.name = "RENAMED".to_string();
+            connection.local_name = "RENAMED".to_string();
+            connection.full_local_name = "RENAMED".to_string();
+        }
+
+        let subgraph = handles[0].borrow();
+        let owner = match subgraph.drivers[0].borrow().owner.clone() {
+            super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().expect("symbol pin owner")
+            }
+            _ => panic!("expected symbol pin strong-driver owner"),
+        };
+        assert_eq!(owner.borrow().connection.name(), "RENAMED");
     }
 
     #[test]

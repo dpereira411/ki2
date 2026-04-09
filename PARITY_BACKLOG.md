@@ -889,6 +889,10 @@ Current status:
         `CONNECTION_SUBGRAPH::UpdateItemConnections()` `item != m_driver` guard by keeping the
         chosen live strong-driver handle on the subgraph owner and skipping refresh on that same
         chosen driver item instead of rediscovering the driver from names after owner attachment
+      - chosen live subgraphs now also point `driver_connection` at the chosen item-owned live
+        connection owner, closer to KiCad's `m_driver_connection = m_driver->Connection(...)`
+        branch instead of keeping an active parallel subgraph-owned connection copy after driver
+        attachment
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage
