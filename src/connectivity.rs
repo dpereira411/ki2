@@ -1640,6 +1640,20 @@ impl LiveProjectConnection {
         }
     }
 
+    // Upstream parity: local live-owner bridge toward the common
+    // `SCH_CONNECTION::Clone()` + dirty-recache call sites in `CONNECTION_GRAPH`. This still
+    // compares reduced live connection payloads instead of full KiCad `SCH_CONNECTION` objects,
+    // but the connection owner now decides whether cloning would mutate its state so
+    // `CONNECTION_SUBGRAPH` propagation stops carrying a parallel clone-equality policy.
+    fn clone_from_live_connection_if_changed(&mut self, source: &LiveProjectConnection) -> bool {
+        if live_connection_clone_eq(self, source) {
+            return false;
+        }
+
+        self.clone_from_live_connection(source);
+        true
+    }
+
     // Upstream parity: local live-owner bridge toward cloning one propagated bus member into an
     // attached `SCH_CONNECTION`. This keeps the exercised bus-member-to-connection mutation on the
     // connection owner instead of open-coding it at each propagation site.
@@ -1978,6 +1992,27 @@ fn clone_live_connection_owner_into_live_connection_owner(
     source: &LiveProjectConnection,
 ) {
     target.clone_from_live_connection(source);
+}
+
+fn clone_live_connection_owner_into_live_connection_owner_if_changed(
+    target: &mut LiveProjectConnection,
+    source: &LiveProjectConnection,
+) -> bool {
+    target.clone_from_live_connection_if_changed(source)
+}
+
+fn clone_live_connection_handle_from_handle_if_changed(
+    target: &LiveProjectConnectionHandle,
+    source: &LiveProjectConnectionHandle,
+) -> bool {
+    if Rc::ptr_eq(target, source) {
+        return false;
+    }
+
+    clone_live_connection_owner_into_live_connection_owner_if_changed(
+        &mut target.borrow_mut(),
+        &source.borrow(),
+    )
 }
 
 #[cfg(test)]
@@ -3378,21 +3413,12 @@ impl LiveReducedSubgraph {
         let chosen_connection = best_handle.borrow().driver_connection.clone();
 
         for handle in visited {
-            let mut subgraph = handle.borrow_mut();
-            let changed = {
-                let chosen_connection_ref = chosen_connection.borrow();
-                !live_connection_clone_eq(
-                    &subgraph.driver_connection.borrow(),
-                    &chosen_connection_ref,
-                )
-            };
-            if changed {
-                clone_live_connection_owner_into_live_connection_owner(
-                    &mut subgraph.driver_connection.borrow_mut(),
-                    &chosen_connection.borrow(),
-                );
-            }
-            subgraph.dirty = changed;
+            let target_connection = handle.borrow().driver_connection.clone();
+            let changed = clone_live_connection_handle_from_handle_if_changed(
+                &target_connection,
+                &chosen_connection,
+            );
+            handle.borrow_mut().dirty = changed;
         }
     }
 
@@ -3483,21 +3509,15 @@ impl LiveReducedSubgraph {
                     continue;
                 }
 
-                let same_connection = {
-                    let handle_ref = handle.borrow();
-                    live_connection_clone_eq(
-                        &handle_ref.driver_connection.borrow(),
-                        &chosen_connection.borrow(),
-                    )
-                };
-                if same_connection {
+                let target_connection = handle.borrow().driver_connection.clone();
+                let changed = clone_live_connection_handle_from_handle_if_changed(
+                    &target_connection,
+                    &chosen_connection,
+                );
+                if !changed {
                     continue;
                 }
 
-                clone_live_connection_owner_into_live_connection_owner(
-                    &mut handle.borrow().driver_connection.borrow_mut(),
-                    &chosen_connection.borrow(),
-                );
                 sync_live_reduced_item_connections_from_driver_handle(handle);
                 handle.borrow_mut().dirty = true;
                 promoted.push(handle.clone());
@@ -4087,18 +4107,12 @@ impl LiveReducedSubgraph {
                         .name
                         .clone();
                     if old_candidate_name == old_name {
-                        let changed = {
-                            let candidate = candidate_handle.borrow();
-                            let changed = !live_connection_clone_eq(
-                                &candidate.driver_connection.borrow(),
-                                &connection.borrow(),
-                            );
-                            clone_live_connection_owner_into_live_connection_owner(
-                                &mut candidate.driver_connection.borrow_mut(),
-                                &connection.borrow(),
-                            );
-                            changed
-                        };
+                        let target_connection =
+                            candidate_handle.borrow().driver_connection.clone();
+                        let changed = clone_live_connection_handle_from_handle_if_changed(
+                            &target_connection,
+                            &connection,
+                        );
                         if changed {
                             sync_live_reduced_item_connections_from_driver_handle(
                                 &candidate_handle,
