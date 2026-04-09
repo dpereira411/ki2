@@ -2090,6 +2090,7 @@ struct LiveReducedLabelLink {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
 
@@ -2101,6 +2102,7 @@ struct LiveReducedHierSheetPinLink {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>>;
 
@@ -2111,6 +2113,7 @@ struct LiveReducedHierPortLink {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 
@@ -2134,6 +2137,7 @@ struct LiveReducedBasePin {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 
 type LiveReducedBasePinHandle = Rc<RefCell<LiveReducedBasePin>>;
@@ -3061,6 +3065,18 @@ impl LiveReducedSubgraph {
     // the shared subgraph owner now owns the parent-handle and bus-item connection attachment
     // instead of leaving that setup in a separate builder loop.
     fn attach_item_parent_handles(&mut self, handle: &LiveReducedSubgraphHandle) {
+        for base_pin in &self.base_pins {
+            base_pin.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
+        }
+        for link in &self.label_links {
+            link.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
+        }
+        for pin in &self.hier_sheet_pins {
+            pin.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
+        }
+        for port in &self.hier_ports {
+            port.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
+        }
         for item in &self.bus_items {
             let mut item_ref = item.borrow_mut();
             item_ref.parent_subgraph_handle = Rc::downgrade(handle);
@@ -4432,6 +4448,7 @@ fn build_live_reduced_subgraph_handles(
                                 pin.driver_connection.clone().into(),
                             )),
                             driver: None,
+                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4453,6 +4470,7 @@ fn build_live_reduced_subgraph_handles(
                             connection: Rc::new(RefCell::new(link.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(link.connection.into())),
                             driver: None,
+                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4468,6 +4486,7 @@ fn build_live_reduced_subgraph_handles(
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(pin.connection.into())),
                             driver: None,
+                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4482,6 +4501,7 @@ fn build_live_reduced_subgraph_handles(
                             connection: Rc::new(RefCell::new(port.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(port.connection.into())),
                             driver: None,
+                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -13469,6 +13489,12 @@ mod tests {
             super::LiveProjectStrongDriverOwner::Label { owner, .. } => {
                 let owner = owner.upgrade().expect("label owner");
                 assert!(Rc::ptr_eq(&owner, &subgraph.label_links[0]));
+                let parent_subgraph = owner
+                    .borrow()
+                    .parent_subgraph_handle
+                    .upgrade()
+                    .expect("label parent subgraph");
+                assert!(Rc::ptr_eq(&parent_subgraph, &handles[0]));
                 let owner_ref = owner.borrow();
                 let driver_connection = owner_ref.driver_connection.clone();
                 let item_connection = owner_ref.connection.clone();
@@ -13603,6 +13629,12 @@ mod tests {
         match owner {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 let owner = owner.upgrade().expect("symbol pin owner");
+                let parent_subgraph = owner
+                    .borrow()
+                    .parent_subgraph_handle
+                    .upgrade()
+                    .expect("symbol pin parent subgraph");
+                assert!(Rc::ptr_eq(&parent_subgraph, &handles[0]));
                 assert_eq!(owner.borrow().pin.key.symbol_uuid.as_deref(), Some("sym"));
                 assert_eq!(owner.borrow().pin.key.at, PointKey(10, 20));
                 assert_eq!(owner.borrow().pin.key.number.as_deref(), Some("1"));
