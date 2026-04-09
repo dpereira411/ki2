@@ -343,9 +343,17 @@ fn unattached_live_strong_driver_owner(
 
     #[cfg(not(test))]
     {
+        if kind == ReducedProjectDriverKind::PowerPin {
+            return LiveProjectStrongDriverOwner::Floating {
+                identity,
+                connection: connection.clone(),
+                kind,
+                priority,
+            };
+        }
+
         let _ = identity;
         let _ = connection;
-        let _ = kind;
         let _ = priority;
         panic!("production live strong drivers must bind to concrete item owners");
     }
@@ -5233,13 +5241,13 @@ pub(crate) fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolP
             let rotated = rotate_point(local_at, symbol.angle);
             let at = [symbol.at[0] + rotated[0], symbol.at[1] + rotated[1]];
 
-                            ProjectedSymbolPin {
-                                at,
-                                name: pin.name.clone(),
-                                number: pin.number.clone(),
-                                electrical_type: pin.electrical_type.clone(),
-                                visible: pin.visible,
-                            }
+            ProjectedSymbolPin {
+                at,
+                name: pin.name.clone(),
+                number: pin.number.clone(),
+                electrical_type: pin.electrical_type.clone(),
+                visible: pin.visible,
+            }
         })
         .collect()
 }
