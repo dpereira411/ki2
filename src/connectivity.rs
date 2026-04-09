@@ -3787,7 +3787,6 @@ impl LiveReducedSubgraph {
                                 candidate_link.member = refreshed_member.clone();
                             }
                         }
-                        parent.dirty = true;
                     }
 
                     if !stale_members
@@ -15310,6 +15309,165 @@ mod tests {
             graph[0].driver_connection.members[0].full_local_name,
             "/PWR"
         );
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_promote_global_neighbor_without_dirtying_parent_bus() {
+        let graph = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/BUS".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 1,
+                }],
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/PWR".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "/PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "/PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                chosen_driver_index: None,
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: 6,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/PWR".to_string(),
+                        local_name: "PWR".to_string(),
+                        full_local_name: "/PWR".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    identity: None,
+                }],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(1, 1),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 0,
+                }],
+                bus_parent_indexes: vec![0],
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        live_subgraphs[0].borrow_mut().dirty = false;
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+
+        assert!(!live_subgraphs[0].borrow().dirty);
+        assert_eq!(stale_members.len(), 1);
+        assert_eq!(stale_members[0].borrow().full_local_name, "/PWR");
     }
 
     #[test]
