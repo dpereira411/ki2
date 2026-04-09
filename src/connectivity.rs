@@ -2683,16 +2683,17 @@ fn attach_live_hierarchy_links_to_handles(
 // drivers to shared live item owners on the active graph instead of leaving every strong driver as
 // a detached copied struct, and now also attaches those item owners back onto the same shared live
 // strong-driver owners used by the subgraph driver list. Active strong-driver connection reads now
-// prefer those shared item owners, and symbol-pin strong drivers now read their connection through
-// the attached base-pin owner instead of carrying a second driver-side connection cache. The
-// attached base pin still seeds its own live connection owner from the floating strong-driver
-// connection so later per-pin item branches have a real owner to update without borrowing the
-// whole subgraph driver. Once the chosen driver is attached, the active live subgraph now also
-// points its `driver_connection` at that same chosen item-owned live connection owner, matching
-// KiCad's `m_driver_connection = m_driver->Connection(...)` branch more closely instead of keeping
-// a parallel subgraph-owned connection copy on the active path. Remaining divergence is the fuller
-// live driver-item object graph and the still-missing live `SCH_CONNECTION` /
-// `CONNECTION_SUBGRAPH` object graph behind these handles.
+// prefer those shared item owners, symbol-pin strong drivers now read their connection through the
+// attached base-pin owner instead of carrying a second driver-side connection cache, and the
+// chosen-driver check now compares against the attached live owner identity instead of the reduced
+// driver identity after owner binding. The attached base pin still seeds its own live connection
+// owner from the floating strong-driver connection so later per-pin item branches have a real
+// owner to update without borrowing the whole subgraph driver. Once the chosen driver is attached,
+// the active live subgraph now also points its `driver_connection` at that same chosen item-owned
+// live connection owner, matching KiCad's `m_driver_connection = m_driver->Connection(...)`
+// branch more closely instead of keeping a parallel subgraph-owned connection copy on the active
+// path. Remaining divergence is the fuller live driver-item object graph and the still-missing
+// live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph behind these handles.
 fn attach_live_strong_driver_owners_to_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
@@ -2831,7 +2832,7 @@ fn attach_live_strong_driver_owners_to_handles(
 
             let is_chosen_driver = chosen_identity
                 .as_ref()
-                .map(|identity| reduced_driver.identity.as_ref() == Some(identity))
+                .map(|identity| live_project_strong_driver_identity(&driver.borrow()).as_ref() == Some(identity))
                 .unwrap_or_else(|| reduced_driver.connection == chosen_connection);
 
             if is_chosen_driver {

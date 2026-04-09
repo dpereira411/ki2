@@ -912,21 +912,23 @@ Current status:
         same live carrier
       - attached live strong-driver identity now derives from the shared live item owners
         themselves instead of staying copied on the live driver wrapper after owner attachment
+      - active chosen-driver attachment now also compares against that attached live owner identity
+        instead of reading the reduced driver identity again after owner binding
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage
       - the next concrete missing pin behavior is earlier than driver ranking:
-        KiCad's `updateSymbolConnectivity()` / `updatePinConnectivity()` seeds a live
-        `SCH_CONNECTION` on every `SCH_PIN` before `ResolveDrivers()`, while the current reduced
-        live graph still only gives many base-pin owners meaningful live connection state once a
-        pin later becomes a chosen or attached strong driver
+        the shared live graph now seeds every projected pin before `ResolveDrivers()`, so the
+        remaining gap is no longer missing setup-time pin-owned connections
+      - remaining missing pin behavior is now the richer live update/selection path after setup:
+        multi-pin power-pin/base-pin branches still need fuller live pin/connection mutation than
+        the current reduced base-pin owner can express
     - concrete next unblock path:
-      1. widen reduced/live base-pin payload so every projected pin can carry its own
-         `updateSymbolConnectivity()`-style seeded live connection before driver resolution,
-         instead of starting most base-pin owners empty and backfilling only the exercised driver
-         branches later
-      2. replace the reduced wrapper connections inside the recursive walk with a live local
+      1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
+      2. widen live pin owners so multi-pin power/base-pin branches update their own live
+         connection state after setup instead of relying on chosen-driver or attached-driver
+         special cases
       3. move live name recache and the remaining projection/boundary bus-member ownership onto
          that same connection/member owner instead of cloning reduced snapshots through recursive
          revisits, with the next gap now concentrated in projection and the still-missing fuller
