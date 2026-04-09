@@ -842,8 +842,12 @@ Current status:
       - the reduced project graph now projects graph-owned per-pin driver connections out of the
         live base-pin owners, so symbol-pin driver-name queries no longer have to collapse back to
         the whole-subgraph driver connection
-      - remaining gap is the richer per-pin update/selection logic on that owner for multi-pin
-        power-pin/base-pin branches
+      - reduced/live subgraphs now also preserve richer base-pin payload:
+        `ReducedProjectBasePin { key, number, electrical_type }`
+        so the graph no longer has to collapse pin-owned state to bare `ReducedNetBasePinKey`
+        before live propagation and reduced-project projection
+      - remaining gap is now the richer per-pin update/selection logic on those live pin owners
+        for multi-pin power-pin/base-pin branches, not missing graph-owned per-pin storage
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

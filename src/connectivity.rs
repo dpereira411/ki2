@@ -87,6 +87,13 @@ pub(crate) struct ReducedNetBasePinKey {
     pub(crate) name: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedProjectBasePin {
+    pub(crate) key: ReducedNetBasePinKey,
+    pub(crate) number: Option<String>,
+    pub(crate) electrical_type: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ReducedNetSubgraph {
     pub(crate) anchor: [f64; 2],
@@ -94,7 +101,7 @@ pub(crate) struct ReducedNetSubgraph {
     pub(crate) has_no_connect: bool,
     pub(crate) points: Vec<PointKey>,
     pub(crate) nodes: Vec<ReducedNetNode>,
-    pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+    pub(crate) base_pins: Vec<ReducedProjectBasePin>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -197,7 +204,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) anchor: PointKey,
     pub(crate) points: Vec<PointKey>,
     pub(crate) nodes: Vec<ReducedNetNode>,
-    pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+    pub(crate) base_pins: Vec<ReducedProjectBasePin>,
     pub(crate) label_links: Vec<ReducedLabelLink>,
     pub(crate) no_connect_points: Vec<PointKey>,
     pub(crate) hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
@@ -1762,6 +1769,7 @@ fn clone_live_connection_owner_into_live_bus_member(
     }
 }
 
+#[cfg(test)]
 fn clone_reduced_connection_into_live_connection_owner(
     target: &mut LiveProjectConnection,
     source: &ReducedProjectConnection,
@@ -2022,7 +2030,7 @@ type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 
 #[derive(Clone, Debug)]
 struct LiveReducedBasePin {
-    key: ReducedNetBasePinKey,
+    pin: ReducedProjectBasePin,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2122,11 +2130,11 @@ impl Ord for LiveReducedHierPortLink {
 impl PartialEq for LiveReducedBasePin {
     fn eq(&self, other: &Self) -> bool {
         (
-            self.key.clone(),
+            self.pin.key.clone(),
             self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
-            other.key.clone(),
+            other.pin.key.clone(),
             other.connection.snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
@@ -2144,12 +2152,12 @@ impl PartialOrd for LiveReducedBasePin {
 impl Ord for LiveReducedBasePin {
     fn cmp(&self, other: &Self) -> Ordering {
         (
-            self.key.clone(),
+            self.pin.key.clone(),
             self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
-                other.key.clone(),
+                other.pin.key.clone(),
                 other.connection.snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
@@ -2308,7 +2316,7 @@ fn live_base_pin_handles_to_snapshots(
 ) -> Vec<ReducedNetBasePinKey> {
     base_pins
         .iter()
-        .map(|base_pin| base_pin.borrow().key.clone())
+        .map(|base_pin| base_pin.borrow().pin.key.clone())
         .collect()
 }
 
@@ -2649,7 +2657,7 @@ fn attach_live_strong_driver_owners_to_handles(
                     .base_pins
                     .iter()
                     .find(|base_pin| {
-                        let key = &base_pin.borrow().key;
+                        let key = &base_pin.borrow().pin.key;
                         key.symbol_uuid == symbol_uuid && key.at == at
                     })
                     .map(|base_pin| {
@@ -2784,9 +2792,9 @@ fn build_live_reduced_subgraphs(
                 .base_pins
                 .iter()
                 .cloned()
-                .map(|key| {
+                .map(|pin| {
                     Rc::new(RefCell::new(LiveReducedBasePin {
-                        key,
+                        pin,
                         connection: empty_live_reduced_connection(),
                         driver: None,
                     }))
@@ -3255,12 +3263,12 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
                 continue;
             }
 
-            by_pin.insert(base_pin.key.clone(), connection.clone());
+            by_pin.insert(base_pin.pin.key.clone(), connection.clone());
             by_location
                 .entry(ReducedProjectPinIdentityKey {
-                    sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
-                    symbol_uuid: base_pin.key.symbol_uuid.clone(),
-                    at: base_pin.key.at,
+                    sheet_instance_path: base_pin.pin.key.sheet_instance_path.clone(),
+                    symbol_uuid: base_pin.pin.key.symbol_uuid.clone(),
+                    at: base_pin.pin.key.at,
                 })
                 .or_insert(connection);
         }
@@ -6571,13 +6579,17 @@ where
                     (!trimmed.is_empty() && trimmed != "~").then_some(name)
                 });
                 let (expanded_numbers, _) = expand_stacked_pin_notation(&base_pin_number);
-                let base_pin_key = ReducedNetBasePinKey {
-                    sheet_instance_path: sheet_instance_path.to_string(),
-                    symbol_uuid: symbol.uuid.clone(),
-                    at: point_key(pin.at),
-                    name: pin.name.clone(),
+                let base_pin = ReducedProjectBasePin {
+                    key: ReducedNetBasePinKey {
+                        sheet_instance_path: sheet_instance_path.to_string(),
+                        symbol_uuid: symbol.uuid.clone(),
+                        at: point_key(pin.at),
+                        name: pin.name.clone(),
+                    },
+                    number: pin.number.clone(),
+                    electrical_type: pin.electrical_type.clone(),
                 };
-                base_pins.push(base_pin_key);
+                base_pins.push(base_pin);
 
                 let Some(reference) = reference.as_ref() else {
                     continue;
@@ -6677,7 +6689,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         anchor: PointKey,
         points: Vec<PointKey>,
         nodes: Vec<ReducedNetNode>,
-        base_pins: Vec<ReducedNetBasePinKey>,
+        base_pins: Vec<ReducedProjectBasePin>,
         label_links: Vec<ReducedLabelLink>,
         no_connect_points: Vec<PointKey>,
         hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
@@ -6954,7 +6966,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 all_base_pins_by_net
                     .entry(entry.name.clone())
                     .or_default()
-                    .extend(base_pins.iter().cloned());
+                    .extend(base_pins.iter().map(|base_pin| base_pin.key.clone()));
 
                 for node in nodes {
                     let key = (
@@ -6965,20 +6977,21 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     let base_pin_key = base_pins
                         .iter()
                         .find(|base_pin| {
-                            base_pin.symbol_uuid.is_some()
+                            base_pin.key.symbol_uuid.is_some()
                                 && node
                                     .pinfunction
                                     .as_ref()
                                     .map(|pinfunction| {
                                         base_pin
+                                            .key
                                             .name
                                             .as_ref()
                                             .is_some_and(|name| pinfunction.starts_with(name))
                                     })
-                                    .unwrap_or(base_pin.name.is_none())
+                                    .unwrap_or(base_pin.key.name.is_none())
                         })
-                        .cloned()
-                        .or_else(|| base_pins.first().cloned())
+                        .map(|base_pin| base_pin.key.clone())
+                        .or_else(|| base_pins.first().map(|base_pin| base_pin.key.clone()))
                         .expect("shared reduced net map must keep base pin identity");
 
                     let candidate = (
@@ -7234,12 +7247,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             .or_default()
             .push(index);
         for base_pin in &net_identity.base_pins {
-            pin_subgraph_identities.insert(base_pin.clone(), index);
+            pin_subgraph_identities.insert(base_pin.key.clone(), index);
             pin_subgraph_identities_by_location.insert(
                 ReducedProjectPinIdentityKey {
-                    sheet_instance_path: base_pin.sheet_instance_path.clone(),
-                    symbol_uuid: base_pin.symbol_uuid.clone(),
-                    at: base_pin.at,
+                    sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
+                    symbol_uuid: base_pin.key.symbol_uuid.clone(),
+                    at: base_pin.key.at,
                 },
                 index,
             );
@@ -7516,20 +7529,26 @@ pub(crate) fn collect_reduced_project_net_map(
                 .base_pins
                 .iter()
                 .find(|base_pin| {
-                    base_pin.symbol_uuid.is_some()
+                    base_pin.key.symbol_uuid.is_some()
                         && node
                             .pinfunction
                             .as_ref()
                             .map(|pinfunction| {
                                 base_pin
+                                    .key
                                     .name
                                     .as_ref()
                                     .is_some_and(|name| pinfunction.starts_with(name))
                             })
-                            .unwrap_or(base_pin.name.is_none())
+                            .unwrap_or(base_pin.key.name.is_none())
                 })
-                .cloned()
-                .or_else(|| subgraph.base_pins.first().cloned());
+                .map(|base_pin| base_pin.key.clone())
+                .or_else(|| {
+                    subgraph
+                        .base_pins
+                        .first()
+                        .map(|base_pin| base_pin.key.clone())
+                });
             let key = (node.reference.clone(), node.pin.clone());
             let candidate = (
                 subgraph.code,
@@ -7555,8 +7574,9 @@ pub(crate) fn collect_reduced_project_net_map(
         }
 
         for base_pin in subgraph.base_pins {
-            if !entry.3.contains(&base_pin) {
-                entry.3.push(base_pin);
+            let base_pin_key = base_pin.key;
+            if !entry.3.contains(&base_pin_key) {
+                entry.3.push(base_pin_key);
             }
         }
     }
@@ -12224,11 +12244,15 @@ mod tests {
             anchor: PointKey(10, 20),
             points: Vec::new(),
             nodes: Vec::new(),
-            base_pins: vec![super::ReducedNetBasePinKey {
-                sheet_instance_path: String::new(),
-                symbol_uuid: Some("sym".to_string()),
-                at: PointKey(10, 20),
-                name: Some("1".to_string()),
+            base_pins: vec![super::ReducedProjectBasePin {
+                key: super::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    name: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("power_in".to_string()),
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -12251,8 +12275,8 @@ mod tests {
         match owner {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 let owner = owner.upgrade().expect("symbol pin owner");
-                assert_eq!(owner.borrow().key.symbol_uuid.as_deref(), Some("sym"));
-                assert_eq!(owner.borrow().key.at, PointKey(10, 20));
+                assert_eq!(owner.borrow().pin.key.symbol_uuid.as_deref(), Some("sym"));
+                assert_eq!(owner.borrow().pin.key.at, PointKey(10, 20));
                 assert_eq!(
                     owner.borrow().connection.borrow().connection_type,
                     super::ReducedProjectConnectionType::Net
@@ -14679,11 +14703,15 @@ mod tests {
             anchor: PointKey(0, 0),
             points: Vec::new(),
             nodes: Vec::new(),
-            base_pins: vec![crate::connectivity::ReducedNetBasePinKey {
-                sheet_instance_path: String::new(),
-                symbol_uuid: Some("r1".to_string()),
-                at: PointKey(0, 0),
-                name: Some("1".to_string()),
+            base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                key: crate::connectivity::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("r1".to_string()),
+                    at: PointKey(0, 0),
+                    name: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("passive".to_string()),
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -14743,11 +14771,15 @@ mod tests {
             anchor: PointKey(0, 0),
             points: Vec::new(),
             nodes: Vec::new(),
-            base_pins: vec![crate::connectivity::ReducedNetBasePinKey {
-                sheet_instance_path: String::new(),
-                symbol_uuid: Some("r1".to_string()),
-                at: PointKey(0, 0),
-                name: Some("1".to_string()),
+            base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                key: crate::connectivity::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("r1".to_string()),
+                    at: PointKey(0, 0),
+                    name: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("passive".to_string()),
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -14807,11 +14839,15 @@ mod tests {
             anchor: PointKey(0, 0),
             points: Vec::new(),
             nodes: Vec::new(),
-            base_pins: vec![crate::connectivity::ReducedNetBasePinKey {
-                sheet_instance_path: String::new(),
-                symbol_uuid: Some("r1".to_string()),
-                at: PointKey(0, 0),
-                name: Some("1".to_string()),
+            base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                key: crate::connectivity::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("r1".to_string()),
+                    at: PointKey(0, 0),
+                    name: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("passive".to_string()),
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),

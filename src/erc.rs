@@ -1794,7 +1794,12 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph.name);
                 let unique_pin_count = neighbors
                     .iter()
-                    .flat_map(|neighbor| neighbor.base_pins.iter().cloned())
+                    .flat_map(|neighbor| {
+                        neighbor
+                            .base_pins
+                            .iter()
+                            .map(|base_pin| base_pin.key.clone())
+                    })
                     .collect::<std::collections::BTreeSet<ReducedNetBasePinKey>>()
                     .len();
                 let unique_label_count = neighbors
@@ -2150,7 +2155,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                 let endpoint_has_owner = subgraph
                     .base_pins
                     .iter()
-                    .any(|base_pin| base_pin.at == endpoint)
+                    .any(|base_pin| base_pin.key.at == endpoint)
                     || subgraph
                         .label_links
                         .iter()
