@@ -396,6 +396,18 @@ impl LiveProjectStrongDriverOwner {
     }
 }
 
+fn empty_live_project_connection_handle() -> LiveProjectConnectionHandle {
+    Rc::new(RefCell::new(LiveProjectConnection {
+        net_code: 0,
+        connection_type: ReducedProjectConnectionType::None,
+        name: String::new(),
+        local_name: String::new(),
+        full_local_name: String::new(),
+        sheet_instance_path: String::new(),
+        members: Vec::new(),
+    }))
+}
+
 impl LiveProjectStrongDriverOwner {
     fn full_name(&self) -> String {
         self.connection_handle().borrow().name.clone()
@@ -2182,6 +2194,7 @@ impl LiveReducedLabelLink {
     fn attach_strong_driver(
         &mut self,
         owner: &LiveReducedLabelLinkHandle,
+        source_driver_connection: &LiveProjectConnectionHandle,
         driver: &LiveProjectStrongDriverHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
@@ -2189,7 +2202,7 @@ impl LiveReducedLabelLink {
         self.driver = Some(driver.clone());
         clone_live_connection_owner_into_live_connection_owner(
             &mut self.driver_connection.borrow_mut(),
-            &self.connection.borrow(),
+            &source_driver_connection.borrow(),
         );
         LiveProjectStrongDriverOwner::Label {
             owner: Rc::downgrade(owner),
@@ -2237,6 +2250,7 @@ impl LiveReducedHierSheetPinLink {
     fn attach_strong_driver(
         &mut self,
         owner: &LiveReducedHierSheetPinLinkHandle,
+        source_driver_connection: &LiveProjectConnectionHandle,
         driver: &LiveProjectStrongDriverHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
@@ -2244,7 +2258,7 @@ impl LiveReducedHierSheetPinLink {
         self.driver = Some(driver.clone());
         clone_live_connection_owner_into_live_connection_owner(
             &mut self.driver_connection.borrow_mut(),
-            &self.connection.borrow(),
+            &source_driver_connection.borrow(),
         );
         LiveProjectStrongDriverOwner::SheetPin {
             owner: Rc::downgrade(owner),
@@ -2290,6 +2304,7 @@ impl LiveReducedHierPortLink {
     fn attach_strong_driver(
         &mut self,
         owner: &LiveReducedHierPortLinkHandle,
+        source_driver_connection: &LiveProjectConnectionHandle,
         driver: &LiveProjectStrongDriverHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
@@ -2297,7 +2312,7 @@ impl LiveReducedHierPortLink {
         self.driver = Some(driver.clone());
         clone_live_connection_owner_into_live_connection_owner(
             &mut self.driver_connection.borrow_mut(),
-            &self.connection.borrow(),
+            &source_driver_connection.borrow(),
         );
         LiveProjectStrongDriverOwner::HierPort {
             owner: Rc::downgrade(owner),
@@ -2815,12 +2830,7 @@ impl LiveReducedSubgraph {
             *driver_ref = owner;
             drop(driver_ref);
 
-            self.attach_strong_driver(
-                driver,
-                reduced_driver,
-                chosen_identity.as_ref(),
-                &chosen_connection,
-            );
+            self.attach_strong_driver(driver, chosen_identity.as_ref(), &chosen_connection);
         }
 
         self.refresh_base_pin_connections_from_driver(false);
@@ -2860,45 +2870,25 @@ impl LiveReducedSubgraph {
     // the shared subgraph owner during driver resolution. This still seeds from reduced projected
     // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
     // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
-    // that branch open-coded in the surrounding builder. Symbol-pin branches compare through
-    // attached live pin-driver owners. Non-identity text-item fallback still depends on the
-    // reduced strong-driver snapshot to recognize the chosen driver, but once that branch picks a
-    // text-item driver the chosen text-driver connection owner is widened onto the chosen
-    // connection before the subgraph adopts it.
+    // that branch open-coded in the surrounding builder. Symbol-pin and text-item branches now
+    // compare through attached live owner-side driver connections; remaining divergence is the
+    // still-missing fuller live driver-item object graph, not reduced snapshot matching on the
+    // active path.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
-        reduced_driver: &ReducedProjectStrongDriver,
         chosen_identity: Option<&ReducedProjectDriverIdentity>,
         chosen_connection: &ReducedProjectConnection,
     ) {
         let chosen_live_connection = LiveProjectConnection::from(chosen_connection.clone());
-        let is_symbol_pin_driver = matches!(
-            *driver.borrow(),
-            LiveProjectStrongDriverOwner::SymbolPin { .. }
-        );
-        let mut chosen_from_reduced_snapshot = false;
         let is_chosen_driver = chosen_identity
             .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
             .unwrap_or_else(|| {
-                if is_symbol_pin_driver {
-                    let driver_connection = driver.borrow().connection_handle();
-                    *driver_connection.borrow() == chosen_live_connection
-                } else {
-                    chosen_from_reduced_snapshot = reduced_driver.connection == *chosen_connection;
-                    chosen_from_reduced_snapshot
-                }
+                let driver_connection = driver.borrow().connection_handle();
+                *driver_connection.borrow() == chosen_live_connection
             });
 
         if is_chosen_driver {
-            if chosen_from_reduced_snapshot {
-                let driver_connection = driver.borrow().connection_handle();
-                let chosen_live_connection = LiveProjectConnection::from(chosen_connection.clone());
-                clone_live_connection_owner_into_live_connection_owner(
-                    &mut driver_connection.borrow_mut(),
-                    &chosen_live_connection,
-                );
-            }
             self.chosen_driver = Some(driver.clone());
             self.driver_connection = driver.borrow().connection_handle();
         }
@@ -2927,6 +2917,7 @@ impl LiveReducedSubgraph {
                         .map(|port| {
                             port.borrow_mut().attach_strong_driver(
                                 port,
+                                floating_connection,
                                 driver,
                                 driver_kind,
                                 priority,
@@ -2948,6 +2939,7 @@ impl LiveReducedSubgraph {
                         .map(|link| {
                             link.borrow_mut().attach_strong_driver(
                                 link,
+                                floating_connection,
                                 driver,
                                 driver_kind,
                                 priority,
@@ -2966,8 +2958,13 @@ impl LiveReducedSubgraph {
                 .iter()
                 .find(|pin| pin.borrow().at == at)
                 .map(|pin| {
-                    pin.borrow_mut()
-                        .attach_strong_driver(pin, driver, driver_kind, priority)
+                    pin.borrow_mut().attach_strong_driver(
+                        pin,
+                        floating_connection,
+                        driver,
+                        driver_kind,
+                        priority,
+                    )
                 })
                 .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                     identity: fallback_identity,
@@ -4468,7 +4465,7 @@ fn build_live_reduced_subgraph_handles(
                             at: link.at,
                             kind: link.kind,
                             connection: Rc::new(RefCell::new(link.connection.clone().into())),
-                            driver_connection: Rc::new(RefCell::new(link.connection.into())),
+                            driver_connection: empty_live_project_connection_handle(),
                             driver: None,
                             parent_subgraph_handle: Weak::new(),
                         }))
@@ -4484,7 +4481,7 @@ fn build_live_reduced_subgraph_handles(
                             at: pin.at,
                             child_sheet_uuid: pin.child_sheet_uuid,
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
-                            driver_connection: Rc::new(RefCell::new(pin.connection.into())),
+                            driver_connection: empty_live_project_connection_handle(),
                             driver: None,
                             parent_subgraph_handle: Weak::new(),
                         }))
@@ -4499,7 +4496,7 @@ fn build_live_reduced_subgraph_handles(
                             schematic_path: port.schematic_path.clone(),
                             at: port.at,
                             connection: Rc::new(RefCell::new(port.connection.clone().into())),
-                            driver_connection: Rc::new(RefCell::new(port.connection.into())),
+                            driver_connection: empty_live_project_connection_handle(),
                             driver: None,
                             parent_subgraph_handle: Weak::new(),
                         }))

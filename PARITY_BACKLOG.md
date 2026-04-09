@@ -1078,11 +1078,10 @@ Current status:
       - after the latest owner-side projection/recache/refresh ports, the remaining same-sized
         owner slices on the active handle path are exhausted; the next honest move is the larger
         live pin / connection object expansion rather than another boundary helper cleanup
-      - the remaining reduced strong-driver snapshot dependency on the active path is now narrowed
-        to recognizing non-identity text-item chosen drivers; exercised text-item driver reads
-        already go through live owner-side driver connections, and once that reduced fallback picks
-        a text-item driver the chosen live text-driver owner is now promoted onto the chosen
-        connection before the subgraph adopts it
+      - exercised text-item chosen-driver selection no longer depends on reduced strong-driver
+        snapshots on the active path; text owners now seed their dedicated live driver handles from
+        the attached strong-driver connection itself, so chosen-driver matching stays on live
+        owner-side connections before the subgraph adopts the chosen driver
       - reduced projection no longer preserves stale `chosen_driver_identity` from the pre-live
         reduced graph; chosen-driver identity at the graph boundary now projects only from the
         chosen live owner graph
@@ -1101,6 +1100,16 @@ Current status:
       - pending reduced graph assembly now also materializes subgraph `driver_connection` directly
         instead of carrying an optional pending driver owner and reconstructing fallback
         local/full-local names later in final reduced graph assembly
+      - `ReducedProjectSubgraphEntry.driver_connection` is now required owner state too; the
+        optional reduced carrier is gone from production paths, helper paths, ERC consumers, and
+        the reduced-graph fixtures that exercise the real graph flow
+      - live wire-item owners now also keep direct shared live connection handles instead of an
+        optional connection slot
+      - live label/sheet-pin/hier-port/base-pin owners now also keep parent subgraph weak handles,
+        and live bus-link targets / wire-item parent links now use direct weak topology handles
+        instead of optional wrappers on the active graph
+      - after those topology cuts, the remaining same-sized active handle/item-graph slices are
+        exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
