@@ -3520,12 +3520,15 @@ fn erc_reports_floating_wires_and_dangling_endpoints() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-wire-dangling"
-            && diagnostic.message == "Floating wire component at 0, 0"
+            && diagnostic.message == "Wires not connected to anything"
     }));
     assert_eq!(
         diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == "erc-unconnected-wire-endpoint")
+            .filter(|diagnostic| {
+                diagnostic.code == "erc-unconnected-wire-endpoint"
+                    && diagnostic.message == "Unconnected wire endpoint"
+            })
             .count(),
         2
     );
@@ -3578,7 +3581,7 @@ fn erc_reports_floating_bus_entries_and_dangling_bus_entry_endpoints() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-wire-dangling"
-            && diagnostic.message == "Floating wire component at 0, 0"
+            && diagnostic.message == "Wires not connected to anything"
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-unconnected-wire-endpoint"

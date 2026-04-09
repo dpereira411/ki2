@@ -2409,10 +2409,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                             endpoint_at[0], endpoint_at[1]
                         )
                     } else {
-                        format!(
-                            "Unconnected wire endpoint at {}, {}",
-                            endpoint_at[0], endpoint_at[1]
-                        )
+                        "Unconnected wire endpoint".to_string()
                     },
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
@@ -2458,16 +2455,11 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
         else {
             continue;
         };
-        let anchor = [
-            f64::from_bits(subgraph.anchor.0),
-            f64::from_bits(subgraph.anchor.1),
-        ];
-
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
             code: "erc-wire-dangling",
             kind: crate::diagnostic::DiagnosticKind::Validation,
-            message: format!("Floating wire component at {}, {}", anchor[0], anchor[1]),
+            message: "Wires not connected to anything".to_string(),
             path: Some(sheet_path.schematic_path.clone()),
             span: None,
             line: None,
