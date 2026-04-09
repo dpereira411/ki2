@@ -742,6 +742,11 @@ Current status:
       - the exercised live neighbor-promotion and multi-parent rename branches now also clone
         live-to-live connection state on the active path instead of rebuilding full reduced
         connection snapshots before mutating bus members or candidate driver connections
+      - the active recursive hierarchy/bus traversal cluster no longer clones whole live subgraph
+        wrappers just to read topology, driver names, and sheet paths; it now follows shared live
+        handles plus narrow live-owner reads across hierarchy traversal, connected-component
+        discovery, secondary-driver promotion, bus-neighbor propagation, bus-parent refresh,
+        bus-link rematch, multi-parent rename, and post-propagation item refresh
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

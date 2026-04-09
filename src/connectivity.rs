@@ -1779,10 +1779,12 @@ fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
     live_reduced_subgraph_driver_priority(subgraph) < 6
 }
 
+#[cfg(test)]
 fn live_subgraph_has_hier_pins(subgraph: &LiveReducedSubgraph) -> bool {
     !subgraph.hier_sheet_pins.is_empty()
 }
 
+#[cfg(test)]
 fn live_subgraph_has_hier_ports(subgraph: &LiveReducedSubgraph) -> bool {
     !subgraph.hier_ports.is_empty()
 }
@@ -2292,6 +2294,27 @@ fn live_subgraph_child_handles(
         .collect()
 }
 
+fn live_subgraph_parent_handle_from_handle(
+    handle: &LiveReducedSubgraphHandle,
+) -> Option<LiveReducedSubgraphHandle> {
+    handle
+        .borrow()
+        .hier_parent_handle
+        .as_ref()
+        .and_then(Weak::upgrade)
+}
+
+fn live_subgraph_child_handles_from_handle(
+    handle: &LiveReducedSubgraphHandle,
+) -> Vec<LiveReducedSubgraphHandle> {
+    handle
+        .borrow()
+        .hier_child_handles
+        .iter()
+        .filter_map(Weak::upgrade)
+        .collect()
+}
+
 // Upstream parity: active plain bus-parent traversal now follows shared live parent handles. The
 // non-test live payload no longer needs copied reduced parent indexes; those are reconstructed
 // only when projecting the live graph back into the reduced shared graph view.
@@ -2306,7 +2329,25 @@ fn live_subgraph_bus_parent_handles(
         .collect()
 }
 
-fn live_subgraph_has_hierarchy_handles(subgraph: &LiveReducedSubgraph) -> bool {
+fn live_subgraph_bus_parent_handles_from_handle(
+    handle: &LiveReducedSubgraphHandle,
+) -> Vec<LiveReducedSubgraphHandle> {
+    handle
+        .borrow()
+        .bus_parent_handles
+        .iter()
+        .filter_map(Weak::upgrade)
+        .collect()
+}
+
+fn live_subgraph_bus_neighbor_links_from_handle(
+    handle: &LiveReducedSubgraphHandle,
+) -> Vec<LiveReducedSubgraphLinkHandle> {
+    handle.borrow().bus_neighbor_links.clone()
+}
+
+fn live_subgraph_has_hierarchy_handles_from_handle(handle: &LiveReducedSubgraphHandle) -> bool {
+    let subgraph = handle.borrow();
     subgraph
         .hier_parent_handle
         .as_ref()
@@ -3603,21 +3644,18 @@ fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProject
 // Upstream parity: local bridge for the hierarchy-chain portion of live graph propagation on the
 // shared live subgraph owner. This still mutates reduced live carriers instead of full local
 // `CONNECTION_SUBGRAPH` objects, but the active recursive graph build now walks shared subgraph
-// handles and uses handle identity instead of reduced subgraph indexes for traversal.
+// handles and uses handle identity plus narrow live handle reads instead of cloning whole live
+// subgraph wrappers for traversal.
 fn propagate_reduced_live_hierarchy_chain_on_handles(
     start: &LiveReducedSubgraphHandle,
-    live_subgraphs: &[LiveReducedSubgraphHandle],
+    _live_subgraphs: &[LiveReducedSubgraphHandle],
     force: bool,
 ) {
-    let start_snapshot = start.borrow().clone();
-    if !force
-        && live_subgraph_has_hier_ports(&start_snapshot)
-        && live_subgraph_has_hier_pins(&start_snapshot)
-    {
+    let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
+    let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
+    if !force && start_has_hier_ports && start_has_hier_pins {
         return;
-    } else if !live_subgraph_has_hier_ports(&start_snapshot)
-        && !live_subgraph_has_hier_pins(&start_snapshot)
-    {
+    } else if !start_has_hier_ports && !start_has_hier_pins {
         start.borrow_mut().dirty = false;
         return;
     }
@@ -3630,15 +3668,13 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
 
     while let Some(handle) = stack.pop() {
         visited.push(handle.clone());
-        let snapshot = handle.borrow().clone();
-
-        if let Some(parent_handle) = live_subgraph_parent_handle(live_subgraphs, &snapshot) {
+        if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
             if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
                 stack.push(parent_handle);
             }
         }
 
-        for child_handle in live_subgraph_child_handles(live_subgraphs, &snapshot) {
+        for child_handle in live_subgraph_child_handles_from_handle(&handle) {
             if visited_set.insert(live_subgraph_handle_id(&child_handle)) {
                 stack.push(child_handle);
             }
@@ -3646,21 +3682,19 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
     }
 
     let mut best_handle = start.clone();
-    let mut highest = live_reduced_subgraph_driver_priority(&start_snapshot);
+    let mut highest = live_reduced_subgraph_driver_priority(&start.borrow());
     let mut best_is_strong = highest >= 3;
-    let mut best_name = start_snapshot.driver_connection.name().to_string();
+    let mut best_name = start.borrow().driver_connection.name().to_string();
 
     if highest < 6 {
         for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
-            let snapshot = handle.borrow().clone();
-            let best_snapshot = best_handle.borrow().clone();
-            let priority = live_reduced_subgraph_driver_priority(&snapshot);
+            let priority = live_reduced_subgraph_driver_priority(&handle.borrow());
             let candidate_strong = priority >= 3;
-            let candidate_name = snapshot.driver_connection.name();
-            let shorter_path = reduced_sheet_path_depth(&snapshot.sheet_instance_path)
-                < reduced_sheet_path_depth(&best_snapshot.sheet_instance_path);
-            let as_good_path = reduced_sheet_path_depth(&snapshot.sheet_instance_path)
-                <= reduced_sheet_path_depth(&best_snapshot.sheet_instance_path);
+            let candidate_name = handle.borrow().driver_connection.name();
+            let candidate_depth = reduced_sheet_path_depth(&handle.borrow().sheet_instance_path);
+            let best_depth = reduced_sheet_path_depth(&best_handle.borrow().sheet_instance_path);
+            let shorter_path = candidate_depth < best_depth;
+            let as_good_path = candidate_depth <= best_depth;
 
             if (priority >= 6)
                 || (!best_is_strong && candidate_strong)
@@ -3701,27 +3735,25 @@ fn collect_live_reduced_propagation_component_handles_from_handles(
 
     while let Some(handle) = queue.pop_front() {
         component.push(handle.clone());
-        let snapshot = handle.borrow().clone();
-
-        if let Some(parent_handle) = live_subgraph_parent_handle(live_subgraphs, &snapshot) {
+        if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
             if visited.insert(live_subgraph_handle_id(&parent_handle)) {
                 queue.push_back(parent_handle);
             }
         }
 
-        for child_handle in live_subgraph_child_handles(live_subgraphs, &snapshot) {
+        for child_handle in live_subgraph_child_handles_from_handle(&handle) {
             if visited.insert(live_subgraph_handle_id(&child_handle)) {
                 queue.push_back(child_handle);
             }
         }
 
-        for parent_handle in live_subgraph_bus_parent_handles(live_subgraphs, &snapshot) {
+        for parent_handle in live_subgraph_bus_parent_handles_from_handle(&handle) {
             if visited.insert(live_subgraph_handle_id(&parent_handle)) {
                 queue.push_back(parent_handle);
             }
         }
 
-        for link in snapshot.bus_neighbor_links {
+        for link in live_subgraph_bus_neighbor_links_from_handle(&handle) {
             let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, &link) else {
                 continue;
             };
@@ -3752,21 +3784,21 @@ fn collect_live_reduced_propagation_component_from_handles(
 // Upstream parity: local bridge for the global-secondary-driver promotion branch on the shared
 // live subgraph owner. The active recursion now promotes the shared live connection owner itself
 // instead of snapshotting the chosen connection through reduced carriers, while still revisiting
-// shared subgraph handles by handle identity instead of reduced indexes.
+// shared subgraph handles by handle identity and narrow live-owner reads instead of cloning whole
+// live subgraph wrappers.
 fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
     start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) -> Vec<LiveReducedSubgraphHandle> {
-    let start_snapshot = start.borrow().clone();
-    if live_subgraph_has_local_driver(&start_snapshot)
-        || live_subgraph_strong_driver_count(&start_snapshot) < 2
+    if live_subgraph_has_local_driver(&start.borrow())
+        || live_subgraph_strong_driver_count(&start.borrow()) < 2
     {
         return Vec::new();
     }
 
-    let chosen_connection = start_snapshot.driver_connection.clone();
-    let start_sheet = start_snapshot.sheet_instance_path;
-    let secondary_drivers = start_snapshot.drivers;
+    let chosen_connection = start.borrow().driver_connection.clone();
+    let start_sheet = start.borrow().sheet_instance_path.clone();
+    let secondary_drivers = start.borrow().drivers.clone();
     let mut promoted = Vec::new();
 
     for secondary_driver in secondary_drivers {
@@ -3781,12 +3813,12 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
                 continue;
             }
 
-            let candidate_snapshot = handle.borrow().clone();
-            if !secondary_is_global && candidate_snapshot.sheet_instance_path != start_sheet {
+            if !secondary_is_global && handle.borrow().sheet_instance_path != start_sheet {
                 continue;
             }
 
-            if !candidate_snapshot
+            if !handle
+                .borrow()
                 .drivers
                 .iter()
                 .any(|candidate_driver| candidate_driver.full_name == secondary_driver.full_name)
@@ -3796,7 +3828,8 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
 
             let same_connection = {
                 let chosen = chosen_connection.borrow();
-                let candidate = candidate_snapshot.driver_connection.borrow();
+                let handle_ref = handle.borrow();
+                let candidate = handle_ref.driver_connection.borrow();
                 *candidate == *chosen
             };
             if same_connection {
@@ -3824,16 +3857,15 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
     force: bool,
 ) {
     for handle in component {
-        let snapshot = handle.borrow().clone();
-        if !snapshot.dirty {
+        if !handle.borrow().dirty {
             continue;
         }
 
-        let has_hierarchy_links = live_subgraph_has_hierarchy_handles(&snapshot);
+        let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
 
         if !has_hierarchy_links {
             let is_bus = matches!(
-                snapshot.driver_connection.borrow().connection_type,
+                handle.borrow().driver_connection.borrow().connection_type,
                 ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
             );
             if !is_bus {
@@ -3854,21 +3886,25 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
     // Upstream parity: local live-handle analogue for the bus-neighbor driver/member propagation
     // KiCad runs through connected `CONNECTION_SUBGRAPH` neighbors. This still keeps reduced
     // member snapshots, but active traversal now matches and mutates through attached live
-    // parent/neighbor handles instead of reduced subgraph indexes.
+    // parent/neighbor handles and narrow live-owner reads instead of reduced subgraph indexes or
+    // whole live subgraph clones.
     for parent_handle in component {
-        let parent_snapshot = parent_handle.borrow().clone();
-        if !parent_snapshot.dirty {
+        if !parent_handle.borrow().dirty {
             continue;
         }
         let is_bus = matches!(
-            parent_snapshot.driver_connection.borrow().connection_type,
+            parent_handle
+                .borrow()
+                .driver_connection
+                .borrow()
+                .connection_type,
             ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
         );
         if !is_bus {
             continue;
         }
 
-        let mut sorted_links = parent_snapshot.bus_neighbor_links.clone();
+        let mut sorted_links = live_subgraph_bus_neighbor_links_from_handle(parent_handle);
         sorted_links.sort_by(|left, right| {
             left.borrow()
                 .member
@@ -3906,9 +3942,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 continue;
             };
 
-            let neighbor_snapshot = neighbor_handle.borrow().clone();
             let (neighbor_name, neighbor_connection_sheet, neighbor_search, promoted_connection) = {
-                let neighbor_connection = neighbor_snapshot.driver_connection.borrow();
+                let neighbor = neighbor_handle.borrow();
+                let neighbor_connection = neighbor.driver_connection.borrow();
                 (
                     neighbor_connection.name.clone(),
                     neighbor_connection.sheet_instance_path.clone(),
@@ -3920,8 +3956,8 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 continue;
             }
 
-            let parent_sheet_instance_path = parent_snapshot.sheet_instance_path.clone();
-            let neighbor_sheet_instance_path = neighbor_snapshot.sheet_instance_path.clone();
+            let parent_sheet_instance_path = parent_handle.borrow().sheet_instance_path.clone();
+            let neighbor_sheet_instance_path = neighbor_handle.borrow().sheet_instance_path.clone();
 
             if neighbor_connection_sheet != neighbor_sheet_instance_path {
                 if neighbor_connection_sheet != parent_sheet_instance_path {
@@ -3939,7 +3975,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 }
             }
 
-            if live_reduced_subgraph_driver_priority(&neighbor_snapshot) >= 6 {
+            if live_reduced_subgraph_driver_priority(&neighbor_handle.borrow()) >= 6 {
                 let old_member = current_link_member.clone();
                 let refreshed_member = {
                     let parent = parent_handle.borrow();
@@ -3981,7 +4017,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
             clone_live_bus_member_into_live_connection_owner(
                 &mut neighbor_handle.borrow().driver_connection.borrow_mut(),
                 &parent_member,
-                &neighbor_snapshot.sheet_instance_path,
+                &neighbor_sheet_instance_path,
             );
             sync_live_reduced_item_connections_from_driver_handle(&neighbor_handle);
             neighbor_handle.borrow_mut().dirty = true;
@@ -4012,33 +4048,33 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
 ) {
     // Upstream parity: local live-handle analogue for refreshing parent bus members from a dirty
     // child net. This still stores reduced bus members on the live subgraph owner, but it now
-    // follows the attached live parent handle instead of recovering the parent through copied
-    // source indexes first.
+    // follows the attached live parent handle and shared live connection owner instead of
+    // recovering the parent through copied source indexes or whole live subgraph clones first.
     for child_handle in component {
-        let child_snapshot = child_handle.borrow().clone();
-        if !child_snapshot.dirty {
+        if !child_handle.borrow().dirty {
             continue;
         }
-        let child_connection = child_snapshot.driver_connection.borrow();
-        if child_connection.connection_type != ReducedProjectConnectionType::Net {
+        let child_connection = child_handle.borrow().driver_connection.clone();
+        if child_connection.borrow().connection_type != ReducedProjectConnectionType::Net {
             continue;
         }
 
-        let child_sheet_instance_path = child_snapshot.sheet_instance_path.clone();
-        let parent_links = child_snapshot.bus_parent_links.clone();
+        let child_sheet_instance_path = child_handle.borrow().sheet_instance_path.clone();
+        let parent_links = child_handle.borrow().bus_parent_links.clone();
 
         for link in parent_links {
             let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, &link) else {
                 continue;
             };
-            let parent_snapshot = parent_handle.borrow().clone();
-            if child_connection.sheet_instance_path != child_sheet_instance_path
-                && child_connection.sheet_instance_path != parent_snapshot.sheet_instance_path
+            let child_connection_sheet = child_connection.borrow().sheet_instance_path.clone();
+            let parent_sheet_instance_path = parent_handle.borrow().sheet_instance_path.clone();
+            if child_connection_sheet != child_sheet_instance_path
+                && child_connection_sheet != parent_sheet_instance_path
             {
                 continue;
             }
 
-            let search = live_bus_member_search_from_live_connection(&child_connection);
+            let search = live_bus_member_search_from_live_connection(&child_connection.borrow());
 
             if match_live_bus_member_live(
                 &parent_handle.borrow().driver_connection.borrow().members,
@@ -4059,7 +4095,10 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                     continue;
                 };
                 let old_member = member.clone();
-                clone_live_connection_owner_into_live_bus_member(member, &child_connection);
+                clone_live_connection_owner_into_live_bus_member(
+                    member,
+                    &child_connection.borrow(),
+                );
                 *member != old_member
             };
 
@@ -4127,20 +4166,19 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
 ) {
     // Upstream parity: local live-handle analogue for rematching bus parent/neighbor links after
     // propagation. This still projects reduced member snapshots into link state, but active
-    // refresh now prefers the attached live parent/child handles and handle-keyed refresh state
-    // over copied link or subgraph indexes.
+    // refresh now prefers the attached live parent/child handles, shared live connection owners,
+    // and handle-keyed refresh state over copied link or subgraph indexes.
     let mut refreshed_parent_links = BTreeMap::<usize, Vec<LiveReducedSubgraphLinkHandle>>::new();
 
     for child_handle in component {
         let child_id = live_subgraph_handle_id(child_handle);
-        let child_snapshot = child_handle.borrow().clone();
-        let child_connection = child_snapshot.driver_connection.borrow();
-        let existing_parent_links = child_snapshot.bus_parent_links.clone();
+        let child_connection = child_handle.borrow().driver_connection.clone();
+        let existing_parent_links = child_handle.borrow().bus_parent_links.clone();
 
-        let mut parent_handles = live_subgraph_bus_parent_handles(live_subgraphs, &child_snapshot)
+        let mut parent_handles = live_subgraph_bus_parent_handles_from_handle(child_handle)
             .into_iter()
             .collect::<Vec<_>>();
-        for link in &child_snapshot.bus_parent_links {
+        for link in &existing_parent_links {
             let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, link) else {
                 continue;
             };
@@ -4153,7 +4191,6 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
         }
 
         for parent_handle in parent_handles {
-            let parent_snapshot = parent_handle.borrow().clone();
             let mut search_candidates = Vec::new();
 
             if let Some(existing_member) = existing_parent_links
@@ -4168,7 +4205,8 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                 search_candidates.push(existing_member);
             }
 
-            if let Some(parent_neighbor_member) = parent_snapshot
+            if let Some(parent_neighbor_member) = parent_handle
+                .borrow()
                 .bus_neighbor_links
                 .iter()
                 .find(|link| {
@@ -4182,12 +4220,12 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
             }
 
             search_candidates.push(live_bus_member_search_from_live_connection(
-                &child_connection,
+                &child_connection.borrow(),
             ));
 
             let Some(refreshed_member) = search_candidates.into_iter().find_map(|search| {
                 match_live_bus_member_live(
-                    &parent_snapshot.driver_connection.borrow().members,
+                    &parent_handle.borrow().driver_connection.borrow().members,
                     &search,
                 )
                 .cloned()
@@ -4262,13 +4300,14 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
         build_live_reduced_name_handle_caches_from_handles(live_subgraphs);
 
     for subgraph_handle in live_subgraphs {
-        let subgraph_snapshot = subgraph_handle.borrow().clone();
-        if subgraph_snapshot.bus_parent_links.len() < 2 {
+        let bus_parent_links = subgraph_handle.borrow().bus_parent_links.clone();
+        if bus_parent_links.len() < 2 {
             continue;
         }
 
         let connection = {
-            let connection = subgraph_snapshot.driver_connection.borrow();
+            let subgraph = subgraph_handle.borrow();
+            let connection = subgraph.driver_connection.borrow();
             if connection.connection_type != ReducedProjectConnectionType::Net {
                 continue;
             }
@@ -4278,7 +4317,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             continue;
         }
 
-        for link in subgraph_snapshot.bus_parent_links {
+        for link in bus_parent_links {
             let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, &link) else {
                 continue;
             };
@@ -4362,10 +4401,11 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
     for handle in live_subgraphs {
         sync_live_reduced_item_connections_from_driver_handle(handle);
 
-        let snapshot = handle.borrow().clone();
-        if live_subgraph_is_self_driven_symbol_pin(&snapshot)
-            && snapshot.driver_connection.borrow().name.contains("Net-(")
-        {
+        if {
+            let subgraph = handle.borrow();
+            live_subgraph_is_self_driven_symbol_pin(&subgraph)
+                && subgraph.driver_connection.borrow().name.contains("Net-(")
+        } {
             let subgraph = handle.borrow();
             let mut connection = subgraph.driver_connection.borrow_mut();
             connection.name = reduced_force_no_connect_net_name(&connection.name);
@@ -4377,15 +4417,16 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
             sync_live_reduced_item_connections_from_driver_handle(handle);
         }
 
-        let snapshot = handle.borrow().clone();
-        if live_subgraph_is_self_driven_sheet_pin(&snapshot)
-            && matches!(
-                snapshot.driver_connection.borrow().connection_type,
-                ReducedProjectConnectionType::Net
-            )
-        {
+        if {
+            let subgraph = handle.borrow();
+            live_subgraph_is_self_driven_sheet_pin(&subgraph)
+                && matches!(
+                    subgraph.driver_connection.borrow().connection_type,
+                    ReducedProjectConnectionType::Net
+                )
+        } {
             if let Some((connection_type, members)) =
-                live_subgraph_child_handles(live_subgraphs, &snapshot)
+                live_subgraph_child_handles_from_handle(handle)
                     .into_iter()
                     .find_map(|child_handle| {
                         let child = child_handle.borrow();
