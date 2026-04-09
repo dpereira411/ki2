@@ -98,6 +98,7 @@ pub(crate) struct ReducedProjectBasePin {
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
     pub(crate) connection: ReducedProjectConnection,
+    pub(crate) driver_connection: ReducedProjectConnection,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -3209,6 +3210,10 @@ impl LiveReducedSubgraph {
                 .connection
                 .borrow()
                 .project_onto_reduced(&mut target.connection);
+            source
+                .driver_connection
+                .borrow()
+                .project_onto_reduced(&mut target.driver_connection);
         }
     }
 
@@ -4246,6 +4251,7 @@ fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> Reduced
         number: base_pin.pin.number.clone(),
         electrical_type: base_pin.pin.electrical_type.clone(),
         connection: base_pin.connection.borrow().snapshot(),
+        driver_connection: base_pin.driver_connection.borrow().snapshot(),
     }
 }
 
@@ -6611,6 +6617,12 @@ where
                         &unit_pins,
                         sheet_instance_path,
                     ),
+                    driver_connection: reduced_seeded_symbol_pin_connection(
+                        symbol,
+                        pin,
+                        &unit_pins,
+                        sheet_instance_path,
+                    ),
                 };
                 base_pins.push(base_pin);
 
@@ -8320,9 +8332,9 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 // Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
-// graph-owned per-pin driver connections projected from the live base-pin owners, and both the
-// named and by-location lookup edges now include projected pin number so stacked pins do not
-// collapse to one driver-name query. Base-pin owners now also start with
+// graph-owned per-pin driver connections projected on the reduced base-pin payload itself, and
+// both the named and by-location lookup edges now include projected pin number so stacked pins do
+// not collapse to one driver-name query. Base-pin owners now also start with
 // `updatePinConnectivity()`-style seeded names, so this lookup ignores auto-generated pin-owned
 // names when the graph has a better chosen driver and only reports the pin-owned name directly for
 // exercised power-pin and pin-default branches. Remaining divergence is fuller live
@@ -8335,13 +8347,24 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<String> {
-    pin_name
-        .and_then(|pin_name| {
-            graph
-                .pin_driver_connections
-                .get(&reduced_project_base_pin_key(
-                    sheet_path, symbol, at, pin_name, pin_number,
-                ))
+    resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name, pin_number)
+        .and_then(|subgraph| {
+            pin_name
+                .and_then(|pin_name| {
+                    subgraph.base_pins.iter().find(|base_pin| {
+                        base_pin.key
+                            == reduced_project_base_pin_key(sheet_path, symbol, at, pin_name, pin_number)
+                    })
+                })
+                .or_else(|| {
+                    subgraph.base_pins.iter().find(|base_pin| {
+                        base_pin.key.symbol_uuid == symbol.uuid
+                            && base_pin.key.at == point_key(at)
+                            && (pin_number.is_none()
+                                || base_pin.key.number.as_deref() == pin_number)
+                    })
+                })
+                .map(|base_pin| &base_pin.driver_connection)
         })
         .or_else(|| {
             graph
@@ -13432,6 +13455,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -13600,6 +13632,15 @@ mod tests {
                         sheet_instance_path: String::new(),
                         members: Vec::new(),
                     },
+                    driver_connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "VCC".to_string(),
+                        local_name: "VCC".to_string(),
+                        full_local_name: "VCC".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
                 },
                 super::ReducedProjectBasePin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -13613,6 +13654,15 @@ mod tests {
                     number: Some("2".to_string()),
                     electrical_type: Some("power_in".to_string()),
                     connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "GND".to_string(),
+                        local_name: "GND".to_string(),
+                        full_local_name: "GND".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    driver_connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
                         name: "GND".to_string(),
@@ -16410,6 +16460,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -16490,6 +16549,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -16562,6 +16630,15 @@ mod tests {
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
                 connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: String::new(),
@@ -16654,6 +16731,15 @@ mod tests {
                 number: Some("1".to_string()),
                 electrical_type: Some("input".to_string()),
                 connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "Net-(U1-Pad1)".to_string(),
+                    local_name: "Net-(U1-Pad1)".to_string(),
+                    full_local_name: "Net-(U1-Pad1)".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "Net-(U1-Pad1)".to_string(),
@@ -16800,6 +16886,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "VCC".to_string(),
+                    local_name: "VCC".to_string(),
+                    full_local_name: "VCC".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: vec![ReducedLabelLink {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -16928,6 +17023,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "VCC".to_string(),
+                    local_name: "VCC".to_string(),
+                    full_local_name: "VCC".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: vec![ReducedLabelLink {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -17022,6 +17126,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17107,6 +17220,15 @@ mod tests {
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
                 connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "PWR".to_string(),
@@ -17222,6 +17344,15 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17287,6 +17418,15 @@ mod tests {
                 number: Some("7".to_string()),
                 electrical_type: Some("bidirectional".to_string()),
                 connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "SIG".to_string(),
