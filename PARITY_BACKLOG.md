@@ -640,9 +640,10 @@ Current status:
           paths instead of swapping plain reduced structs
         - the active live graph now uses a dedicated local live connection payload instead of
           reusing `ReducedProjectConnection` directly as its shared mutable owner
-        - live bus-entry items now also keep an attached live bus connection owner during graph
-          build, and only collapse back to `connected_bus_subgraph_index` when projecting to the
-          reduced query surface
+        - active live bus-entry items now keep only an attached live bus subgraph handle during
+          graph build; the cached connected-bus connection owner remains test-only scaffolding and
+          the reduced query surface still only receives `connected_bus_subgraph_index` at
+          projection time
         - bus-neighbor propagation now mutates existing live connection owners in place instead of
           replacing them with brand-new owners, so attached live bus-entry references keep identity
           across exercised driver/member updates
