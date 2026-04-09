@@ -876,6 +876,12 @@ Current status:
         symbol-pin owner attachment
       - the reduced project-graph by-location fallback now also keys by projected pin number, so
         nameless stacked pin lookups no longer collapse at that fallback edge either
+      - reduced `SCH_PIN::GetDefaultNetName()` naming now also uses the effective stacked pad
+        number instead of the raw shown number, so stacked-pin default names no longer depend on
+        the unreduced shown-number token in the exercised duplicate/name fallback branches
+      - reduced stacked-pin expansion now also mirrors the exercised upstream bracket/range branch
+        like `[1-3]` and `[A1-A3]` instead of only splitting comma lists, so shared stacked-pin
+        consumers no longer diverge on those range forms before the graph/export paths see them
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage

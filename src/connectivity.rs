@@ -522,20 +522,83 @@ fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
     ]
 }
 
+fn parse_alphanumeric_pin(pin: &str) -> (String, Option<i64>) {
+    let mut number_start = pin.len();
+
+    for (index, ch) in pin.char_indices().rev() {
+        if !ch.is_ascii_digit() {
+            number_start = index + ch.len_utf8();
+            break;
+        }
+
+        if index == 0 {
+            number_start = 0;
+        }
+    }
+
+    if number_start >= pin.len() {
+        return (String::new(), None);
+    }
+
+    let prefix = pin[..number_start].to_string();
+    let number = pin[number_start..].parse::<i64>().ok();
+    (prefix, number)
+}
+
+// Upstream parity: reduced local analogue for `ExpandStackedPinNotation()`. This now mirrors the
+// exercised bracket/range branches KiCad uses for stacked pins, including `[1-3]` and `[A1-A3]`,
+// instead of only splitting comma lists. Remaining divergence is broader upstream validation and
+// any stacked-pin syntax not yet exercised in the local graph/export paths.
 fn expand_stacked_pin_notation(pin: &str) -> (Vec<String>, bool) {
     let trimmed = pin.trim();
+    let has_open_bracket = trimmed.contains('[');
+    let has_close_bracket = trimmed.contains(']');
+
+    if has_open_bracket || has_close_bracket {
+        if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+            return (vec![pin.to_string()], false);
+        }
+    }
 
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return (vec![pin.to_string()], false);
+        return (vec![pin.to_string()], true);
     }
 
     let inner = &trimmed[1..trimmed.len() - 1];
-    let numbers = inner
+    let mut numbers = Vec::new();
+
+    for part in inner
         .split(',')
         .map(str::trim)
         .filter(|segment| !segment.is_empty())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
+    {
+        if let Some(dash_index) = part.find('-') {
+            let start = part[..dash_index].trim();
+            let end = part[dash_index + 1..].trim();
+            let (start_prefix, start_value) = parse_alphanumeric_pin(start);
+            let (end_prefix, end_value) = parse_alphanumeric_pin(end);
+
+            let Some(start_value) = start_value else {
+                return (vec![pin.to_string()], false);
+            };
+            let Some(end_value) = end_value else {
+                return (vec![pin.to_string()], false);
+            };
+            if start_prefix != end_prefix || start_value > end_value {
+                return (vec![pin.to_string()], false);
+            }
+
+            for value in start_value..=end_value {
+                if start_prefix.is_empty() {
+                    numbers.push(value.to_string());
+                } else {
+                    numbers.push(format!("{start_prefix}{value}"));
+                }
+            }
+        } else {
+            numbers.push(part.to_string());
+        }
+    }
 
     if numbers.is_empty() {
         (vec![pin.to_string()], false)
@@ -554,6 +617,24 @@ fn reduced_short_net_name(net_name: &str) -> String {
         .next()
         .unwrap_or(net_name)
         .to_string()
+}
+
+// Upstream parity: reduced local analogue for `SCH_PIN::GetEffectivePadNumber()`. This still
+// uses reduced stacked-pin text instead of live `SCH_PIN` state, but it now applies the same
+// exercised "smallest logical number" branch to default-net naming instead of always using the
+// raw shown pin number. Remaining divergence is fuller stacked-pin parsing beyond the reduced
+// bracketed notation helper.
+fn reduced_effective_pad_number(pin_number: &str) -> String {
+    let (expanded_numbers, valid) = expand_stacked_pin_notation(pin_number);
+
+    if valid {
+        expanded_numbers
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| pin_number.to_string())
+    } else {
+        pin_number.to_string()
+    }
 }
 
 // Upstream parity: reduced local analogue for the bus-kind discrimination KiCad gets from
@@ -8682,6 +8763,11 @@ fn symbol_reference_text(symbol: &Symbol) -> Option<String> {
         .map(|property| property.value.clone())
 }
 
+// Upstream parity: reduced local analogue for `SCH_PIN::GetDefaultNetName()`. This still runs on
+// reduced projected pin data instead of live `SCH_PIN` items, but it now applies the exercised
+// stacked-pin effective-pad-number branch instead of always naming from the raw shown pin number.
+// Remaining divergence is fuller stacked-pin parsing and the still-missing live pin object/cache
+// behavior around this naming path.
 fn reduced_symbol_pin_default_net_name(
     symbol: &Symbol,
     pin: &ProjectedSymbolPin,
@@ -8690,10 +8776,11 @@ fn reduced_symbol_pin_default_net_name(
 ) -> Option<String> {
     let reference = symbol_reference_text(symbol)?;
     let pin_number = pin.number.as_deref()?;
+    let effective_pad_number = reduced_effective_pad_number(pin_number);
 
     if reference.ends_with('?') {
         let symbol_uuid = symbol.uuid.as_deref()?;
-        return Some(format!("Net-({symbol_uuid}-Pad{pin_number})"));
+        return Some(format!("Net-({symbol_uuid}-Pad{effective_pad_number})"));
     }
 
     let pin_name = pin
@@ -8719,14 +8806,14 @@ fn reduced_symbol_pin_default_net_name(
         let mut name = format!("{prefix}{reference}-{pin_name}");
 
         if name_is_duplicated {
-            name.push_str(&format!("-Pad{pin_number}"));
+            name.push_str(&format!("-Pad{effective_pad_number}"));
         }
 
         name.push(')');
         return Some(name);
     }
 
-    Some(format!("{prefix}{reference}-Pad{pin_number})"))
+    Some(format!("{prefix}{reference}-Pad{effective_pad_number})"))
 }
 
 fn label_uses_connectivity_dependent_text(label: &Label) -> bool {
@@ -11571,6 +11658,37 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_symbol_pin_default_net_name_uses_effective_stacked_pad_number() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("73050000-0000-0000-0000-000000000777".to_string());
+        symbol.set_field_text(
+            crate::model::PropertyKind::SymbolReference,
+            "U1".to_string(),
+        );
+
+        let pin = super::ProjectedSymbolPin {
+            at: [0.0, 0.0],
+            name: Some("A".to_string()),
+            number: Some("[2-3]".to_string()),
+            electrical_type: Some("input".to_string()),
+        };
+        let unit_pins = vec![
+            pin.clone(),
+            super::ProjectedSymbolPin {
+                at: [10.0, 0.0],
+                name: Some("A".to_string()),
+                number: Some("[4-5]".to_string()),
+                electrical_type: Some("input".to_string()),
+            },
+        ];
+
+        let name = super::reduced_symbol_pin_default_net_name(&symbol, &pin, &unit_pins, false)
+            .expect("default net name");
+
+        assert_eq!(name, "Net-(U1-A-Pad2)");
     }
 
     #[test]
