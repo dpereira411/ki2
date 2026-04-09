@@ -376,7 +376,7 @@ fn apply_configured_rule_severity(
         "erc-pin-not-connected" => {
             configured_rule_severity(project, "pin_not_connected", Some(Severity::Error))
         }
-        "erc-hierarchical-label-mismatch" => {
+        "erc-hier-label-mismatch" => {
             configured_rule_severity(project, "hier_label_mismatch", Some(Severity::Error))
         }
         "erc-bus-to-net-conflict" => {
@@ -2613,7 +2613,7 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
             for (name, _) in pins {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
-                    code: "erc-hierarchical-label-mismatch",
+                    code: "erc-hier-label-mismatch",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: format!(
                         "Sheet pin {name} has no matching hierarchical label inside the sheet"
@@ -2628,7 +2628,7 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
             for (name, _) in child_labels {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
-                    code: "erc-hierarchical-label-mismatch",
+                    code: "erc-hier-label-mismatch",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: format!(
                         "Hierarchical label {name} has no matching sheet pin in the parent sheet"

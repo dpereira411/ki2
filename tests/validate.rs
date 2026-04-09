@@ -3301,7 +3301,7 @@ fn erc_reports_hierarchical_sheet_name_mismatches() {
     let project = SchematicProject::from_load_result(loaded);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-hierarchical-label-mismatch")
+        .filter(|diagnostic| diagnostic.code == "erc-hier-label-mismatch")
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 2);
@@ -3411,7 +3411,7 @@ fn erc_matches_hierarchical_sheet_pins_by_shown_text() {
     let project = SchematicProject::from_load_result(loaded);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-hierarchical-label-mismatch")
+        .filter(|diagnostic| diagnostic.code == "erc-hier-label-mismatch")
         .collect::<Vec<_>>();
 
     assert!(diagnostics.is_empty(), "{diagnostics:#?}");
