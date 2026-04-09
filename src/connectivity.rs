@@ -392,9 +392,9 @@ impl LiveProjectStrongDriverOwner {
             LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
                 .upgrade()
                 .map(|owner| owner.borrow().connection.clone()),
-            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
-                .upgrade()
-                .map(|owner| owner.borrow().driver_connection.clone()),
+            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner.upgrade().map(|owner| {
+                LiveReducedConnection::from_handle(owner.borrow().driver_connection.clone())
+            }),
         }
         .expect("live strong driver owner requires an attached connection owner")
     }
@@ -1608,6 +1608,8 @@ struct LiveProjectConnection {
     members: Vec<LiveProjectBusMemberHandle>,
 }
 
+type LiveProjectConnectionHandle = Rc<RefCell<LiveProjectConnection>>;
+
 impl From<ReducedProjectConnection> for LiveProjectConnection {
     fn from(connection: ReducedProjectConnection) -> Self {
         Self {
@@ -2064,6 +2066,10 @@ impl LiveReducedConnection {
         }
     }
 
+    fn from_handle(connection: LiveProjectConnectionHandle) -> Self {
+        Self { connection }
+    }
+
     // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This still operates
     // on a reduced local connection carrier, but active cloning now mutates one shared live
     // connection owner directly instead of round-tripping through a reduced snapshot. Remaining
@@ -2175,7 +2181,7 @@ struct LiveReducedBasePinPayload {
 struct LiveReducedBasePin {
     pin: LiveReducedBasePinPayload,
     connection: LiveReducedConnection,
-    driver_connection: LiveReducedConnection,
+    driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
 
@@ -2394,7 +2400,10 @@ impl LiveReducedBasePin {
         kind: ReducedProjectDriverKind,
         priority: i32,
     ) -> LiveProjectStrongDriverOwner {
-        self.driver_connection.clone_from(floating_connection);
+        clone_live_connection_owner_into_live_connection_owner(
+            &mut self.driver_connection.borrow_mut(),
+            &floating_connection.borrow(),
+        );
         self.driver = Some(driver.clone());
         LiveProjectStrongDriverOwner::SymbolPin {
             owner: Rc::downgrade(owner),
@@ -2422,7 +2431,9 @@ impl LiveReducedBasePin {
             sheet_instance_path: String::new(),
             members: Vec::new(),
         };
-        self.driver_connection.project_onto_reduced(&mut connection);
+        self.driver_connection
+            .borrow()
+            .project_onto_reduced(&mut connection);
         if connection.connection_type == ReducedProjectConnectionType::None {
             return;
         }
@@ -2539,7 +2550,7 @@ impl PartialEq for LiveReducedBasePin {
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
             self.connection.snapshot(),
-            self.driver_connection.snapshot(),
+            self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             other.pin.schematic_path.clone(),
@@ -2547,7 +2558,7 @@ impl PartialEq for LiveReducedBasePin {
             other.pin.number.clone(),
             other.pin.electrical_type.clone(),
             other.connection.snapshot(),
-            other.driver_connection.snapshot(),
+            other.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
     }
@@ -2569,7 +2580,7 @@ impl Ord for LiveReducedBasePin {
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
             self.connection.snapshot(),
-            self.driver_connection.snapshot(),
+            self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
@@ -2578,7 +2589,7 @@ impl Ord for LiveReducedBasePin {
                 other.pin.number.clone(),
                 other.pin.electrical_type.clone(),
                 other.connection.snapshot(),
-                other.driver_connection.snapshot(),
+                other.driver_connection.borrow().snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
     }
@@ -4072,7 +4083,7 @@ fn build_live_reduced_subgraph_handles(
                                 electrical_type: pin.electrical_type.clone(),
                             },
                             connection: LiveReducedConnection::new(pin.connection.clone()),
-                            driver_connection: LiveReducedConnection::new(pin.connection.clone()),
+                            driver_connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver: None,
                         }))
                     })
@@ -13492,7 +13503,7 @@ mod tests {
             }
             _ => panic!("expected symbol pin strong-driver owner"),
         };
-        assert_eq!(owner.borrow().driver_connection.name(), "RENAMED");
+        assert_eq!(owner.borrow().driver_connection.borrow().name, "RENAMED");
         assert_eq!(owner.borrow().connection.name(), "PWR");
     }
 

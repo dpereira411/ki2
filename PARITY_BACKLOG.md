@@ -998,6 +998,8 @@ Current status:
       - post-pass live graph updates now also live on the shared live subgraph owner:
         - bus parent/neighbor link rematch
         - multiple-bus-parent rename and same-name recache
+      - active base-pin driver connections now live on direct shared live connection handles
+        instead of a second `LiveReducedConnection` wrapper on the pin owner
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
