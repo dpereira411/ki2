@@ -539,6 +539,24 @@ struct ReducedProjectPinIdentityKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ReducedProjectSymbolIdentityKey {
+    sheet_instance_path: String,
+    symbol_uuid: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedProjectSymbolPin {
+    pub(crate) schematic_path: std::path::PathBuf,
+    pub(crate) at: PointKey,
+    pub(crate) name: Option<String>,
+    pub(crate) number: Option<String>,
+    pub(crate) electrical_type: Option<String>,
+    pub(crate) reference: Option<String>,
+    pub(crate) is_power_symbol: bool,
+    pub(crate) subgraph_index: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct ReducedProjectPointIdentityKey {
     sheet_instance_path: String,
     at: PointKey,
@@ -570,6 +588,7 @@ pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
+    symbol_pins_by_symbol: BTreeMap<ReducedProjectSymbolIdentityKey, Vec<ReducedProjectSymbolPin>>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
@@ -6608,11 +6627,14 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         refresh_reduced_live_graph_propagation_with_handles(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
+    let symbol_pins_by_symbol =
+        build_reduced_project_symbol_pin_inventory(&inputs, &pin_subgraph_identities_by_location);
 
     ReducedProjectNetGraph {
         subgraphs: reduced_subgraphs,
         subgraphs_by_name,
         subgraphs_by_sheet_and_name,
+        symbol_pins_by_symbol,
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
         point_subgraph_identities,
@@ -6983,6 +7005,81 @@ fn reduced_project_pin_identity_key(
         at: point_key(at),
         number: pin_number.map(str::to_string),
     }
+}
+
+fn reduced_project_symbol_identity_key(
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+) -> ReducedProjectSymbolIdentityKey {
+    ReducedProjectSymbolIdentityKey {
+        sheet_instance_path: sheet_path.instance_path.clone(),
+        symbol_uuid: symbol.uuid.clone(),
+    }
+}
+
+fn build_reduced_project_symbol_pin_inventory(
+    inputs: &ReducedProjectGraphInputs<'_>,
+    pin_subgraph_identities_by_location: &BTreeMap<ReducedProjectPinIdentityKey, usize>,
+) -> BTreeMap<ReducedProjectSymbolIdentityKey, Vec<ReducedProjectSymbolPin>> {
+    let mut symbol_pins_by_symbol =
+        BTreeMap::<ReducedProjectSymbolIdentityKey, Vec<ReducedProjectSymbolPin>>::new();
+
+    for sheet_path in inputs.sheet_paths {
+        let Some(schematic) = inputs
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let reference = resolved_symbol_text_property_value(
+                inputs.schematics,
+                sheet_path,
+                inputs.project,
+                inputs.current_variant,
+                symbol,
+                "Reference",
+            );
+            let is_power_symbol = symbol
+                .lib_symbol
+                .as_ref()
+                .is_some_and(|lib_symbol| lib_symbol.power);
+
+            let projected_pins = projected_symbol_pin_info(symbol)
+                .into_iter()
+                .map(|pin| ReducedProjectSymbolPin {
+                    schematic_path: schematic.path.clone(),
+                    at: point_key(pin.at),
+                    name: pin.name.clone(),
+                    number: pin.number.clone(),
+                    electrical_type: pin.electrical_type.clone(),
+                    reference: reference.clone(),
+                    is_power_symbol,
+                    subgraph_index: pin_subgraph_identities_by_location
+                        .get(&reduced_project_pin_identity_key(
+                            sheet_path,
+                            symbol,
+                            pin.at,
+                            pin.number.as_deref(),
+                        ))
+                        .copied(),
+                })
+                .collect::<Vec<_>>();
+
+            symbol_pins_by_symbol
+                .entry(reduced_project_symbol_identity_key(sheet_path, symbol))
+                .or_default()
+                .extend(projected_pins);
+        }
+    }
+
+    symbol_pins_by_symbol
 }
 
 fn reduced_project_point_identity_key(
@@ -7460,6 +7557,25 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
                 ))
                 .and_then(|index| graph.subgraphs.get(*index))
         })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for iterating a symbol's `SCH_PIN` owners through the
+// shared graph. This still projects reduced pin payload instead of exposing live `SCH_PIN*`
+// objects, but it keeps ERC/net-name callers on one graph-owned per-symbol pin inventory,
+// including unconnected pins, instead of re-projecting symbol pins ad hoc at each call site.
+// Remaining divergence is the fuller live pin object layer behind this reduced inventory.
+pub(crate) fn collect_reduced_project_symbol_pins<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+) -> Vec<&'a ReducedProjectSymbolPin> {
+    graph
+        .symbol_pins_by_symbol
+        .get(&reduced_project_symbol_identity_key(sheet_path, symbol))
+        .into_iter()
+        .flat_map(|pins| pins.iter())
+        .collect()
 }
 
 // Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
@@ -10777,6 +10893,7 @@ mod tests {
             }],
             subgraphs_by_name: BTreeMap::new(),
             subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
             pin_subgraph_identities: BTreeMap::new(),
             pin_subgraph_identities_by_location: BTreeMap::from([
                 (
@@ -10893,6 +11010,7 @@ mod tests {
             }],
             subgraphs_by_name: BTreeMap::new(),
             subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
             pin_subgraph_identities: BTreeMap::new(),
             pin_subgraph_identities_by_location: BTreeMap::from([(
                 super::ReducedProjectPinIdentityKey {
@@ -10920,6 +11038,86 @@ mod tests {
             .as_deref(),
             Some("SIG")
         );
+    }
+
+    #[test]
+    fn reduced_project_symbol_pin_inventory_keeps_unconnected_pins() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_symbol_pin_inventory_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:U"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "U" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "U_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "IN" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin output line (at 10 0 0) (length 2.54)
+          (name "OUT" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "device:U")
+    (uuid "73050000-0000-0000-0000-000000000991")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "U" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "SIG" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("symbol");
+
+        let pins = super::collect_reduced_project_symbol_pins(&graph, &sheet_path, symbol);
+        assert_eq!(pins.len(), 2);
+
+        let connected_pin = pins
+            .iter()
+            .find(|pin| pin.number.as_deref() == Some("1"))
+            .expect("connected pin");
+        let unconnected_pin = pins
+            .iter()
+            .find(|pin| pin.number.as_deref() == Some("2"))
+            .expect("unconnected pin");
+
+        assert_eq!(connected_pin.reference.as_deref(), Some("U1"));
+        assert_eq!(unconnected_pin.reference.as_deref(), Some("U1"));
+        assert_ne!(connected_pin.subgraph_index, unconnected_pin.subgraph_index);
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
