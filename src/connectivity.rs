@@ -4066,13 +4066,8 @@ impl LiveReducedSubgraph {
                 .cloned()
                 .unwrap_or_default();
             sort_dedup_live_subgraph_link_handles(&mut next_neighbor_links);
-            let links_changed = live.bus_parent_links != next_parent_links
-                || live.bus_neighbor_links != next_neighbor_links;
             live.bus_parent_links = next_parent_links;
             live.bus_neighbor_links = next_neighbor_links;
-            if links_changed {
-                live.dirty = true;
-            }
         }
     }
 
