@@ -1004,136 +1004,6 @@ fn match_reduced_bus_member_mut<'a>(
     None
 }
 
-// Upstream parity: local live-graph analogue for `CONNECTION_GRAPH::matchBusMember()`. This now
-// matches against the active live connection-member payload instead of round-tripping through a
-// reduced member vector during graph propagation. Remaining divergence is fuller pointer-shared
-// member identity across every attached item and subgraph relationship.
-#[cfg_attr(not(test), allow(dead_code))]
-fn match_live_bus_member<'a>(
-    bus_members: &'a [LiveProjectBusMemberHandle],
-    search: &ReducedBusMember,
-) -> Option<LiveProjectBusMemberHandle> {
-    for member in bus_members {
-        let member_ref = member.borrow();
-        if let Some(search_index) = search.vector_index {
-            if member_ref.vector_index == Some(search_index) {
-                return Some(member.clone());
-            }
-        }
-
-        if member_ref.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member(&member_ref.members, search) {
-                return Some(found);
-            }
-        } else if member_ref.local_name == search.local_name {
-            return Some(member.clone());
-        }
-    }
-
-    None
-}
-
-fn match_live_bus_member_live<'a>(
-    bus_members: &'a [LiveProjectBusMemberHandle],
-    search: &LiveProjectBusMember,
-) -> Option<LiveProjectBusMemberHandle> {
-    for member in bus_members {
-        let member_ref = member.borrow();
-        if let Some(search_index) = search.vector_index {
-            if member_ref.vector_index == Some(search_index) {
-                return Some(member.clone());
-            }
-        }
-
-        if member_ref.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member_live(&member_ref.members, search) {
-                return Some(found);
-            }
-        } else if member_ref.local_name == search.local_name {
-            return Some(member.clone());
-        }
-    }
-
-    None
-}
-
-fn match_live_bus_member_connection<'a>(
-    bus_members: &'a [LiveProjectBusMemberHandle],
-    search: &LiveProjectConnection,
-) -> Option<LiveProjectBusMemberHandle> {
-    for member in bus_members {
-        let member_ref = member.borrow();
-
-        if member_ref.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member_connection(&member_ref.members, search) {
-                return Some(found);
-            }
-        } else if member_ref.local_name == search.local_name {
-            return Some(member.clone());
-        }
-    }
-
-    None
-}
-
-// Upstream parity: mutable live-graph analogue for `CONNECTION_GRAPH::matchBusMember()`. This now
-// mutates the active live connection-member payload directly instead of reduced member snapshots.
-// Remaining divergence is fuller pointer-shared member identity across every attached item and
-// subgraph relationship.
-#[cfg_attr(not(test), allow(dead_code))]
-fn match_live_bus_member_mut<'a>(
-    bus_members: &'a mut [LiveProjectBusMemberHandle],
-    search: &ReducedBusMember,
-) -> Option<LiveProjectBusMemberHandle> {
-    for member in bus_members {
-        let member_ref = member.borrow();
-        if let Some(search_index) = search.vector_index {
-            if member_ref.vector_index == Some(search_index) {
-                return Some(member.clone());
-            }
-        }
-
-        if member_ref.kind == ReducedBusMemberKind::Bus {
-            drop(member_ref);
-            if let Some(found) = match_live_bus_member_mut(&mut member.borrow_mut().members, search)
-            {
-                return Some(found);
-            }
-        } else if member_ref.local_name == search.local_name {
-            return Some(member.clone());
-        }
-    }
-
-    None
-}
-
-fn match_live_bus_member_mut_live<'a>(
-    bus_members: &'a mut [LiveProjectBusMemberHandle],
-    search: &LiveProjectBusMember,
-) -> Option<LiveProjectBusMemberHandle> {
-    for member in bus_members {
-        let member_ref = member.borrow();
-        if let Some(search_index) = search.vector_index {
-            if member_ref.vector_index == Some(search_index) {
-                return Some(member.clone());
-            }
-        }
-
-        if member_ref.kind == ReducedBusMemberKind::Bus {
-            drop(member_ref);
-            if let Some(found) =
-                match_live_bus_member_mut_live(&mut member.borrow_mut().members, search)
-            {
-                return Some(found);
-            }
-        } else if member_ref.local_name == search.local_name {
-            return Some(member.clone());
-        }
-    }
-
-    None
-}
-
 // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()` when a propagated member
 // net replaces an older bus member name. This is not a 1:1 live clone because the Rust tree still
 // copies reduced connection snapshots into `ReducedBusMember`, but it preserves the exercised name
@@ -1580,6 +1450,133 @@ impl LiveProjectBusMember {
             self.members.clear();
         }
     }
+
+    // Upstream parity: local live bus-member analogue for the exercised recursive member matching
+    // KiCad performs through `SCH_CONNECTION` member trees. This still walks reduced live member
+    // owners instead of a fuller live connection/member graph, but the recursion now belongs to
+    // the member owner instead of free helper functions around the owner graph.
+    fn matches_reduced_member(&self, search: &ReducedBusMember) -> bool {
+        if let Some(search_index) = search.vector_index {
+            if self.vector_index == Some(search_index) {
+                return true;
+            }
+        }
+
+        self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
+    }
+
+    fn matches_live_member(&self, search: &LiveProjectBusMember) -> bool {
+        if let Some(search_index) = search.vector_index {
+            if self.vector_index == Some(search_index) {
+                return true;
+            }
+        }
+
+        self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
+    }
+
+    fn matches_connection_member(&self, search: &LiveProjectConnection) -> bool {
+        self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
+    }
+
+    fn find_descendant(&self, search: &ReducedBusMember) -> Option<LiveProjectBusMemberHandle> {
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_reduced_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                if let Some(found) = member_ref.find_descendant(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn find_descendant_live(
+        &self,
+        search: &LiveProjectBusMember,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_live_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                if let Some(found) = member_ref.find_descendant_live(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn find_descendant_for_connection(
+        &self,
+        search: &LiveProjectConnection,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_connection_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                if let Some(found) = member_ref.find_descendant_for_connection(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn find_descendant_mut(
+        &mut self,
+        search: &ReducedBusMember,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_reduced_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                drop(member_ref);
+                if let Some(found) = member.borrow_mut().find_descendant_mut(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn find_descendant_mut_live(
+        &mut self,
+        search: &LiveProjectBusMember,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_live_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                drop(member_ref);
+                if let Some(found) = member.borrow_mut().find_descendant_mut_live(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
 }
 
 fn live_bus_member_clone_eq(target: &LiveProjectBusMember, source: &LiveProjectBusMember) -> bool {
@@ -1815,7 +1812,20 @@ impl LiveProjectConnection {
     // member matches instead of reaching through raw `.members` vectors.
     #[cfg_attr(not(test), allow(dead_code))]
     fn find_member(&self, search: &ReducedBusMember) -> Option<LiveProjectBusMemberHandle> {
-        match_live_bus_member(&self.members, search)
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_reduced_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                if let Some(found) = member_ref.find_descendant(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -1823,7 +1833,20 @@ impl LiveProjectConnection {
         &self,
         search: &LiveProjectBusMember,
     ) -> Option<LiveProjectBusMemberHandle> {
-        match_live_bus_member_live(&self.members, search)
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_live_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                if let Some(found) = member_ref.find_descendant_live(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -1831,12 +1854,39 @@ impl LiveProjectConnection {
         &self,
         search: &LiveProjectConnection,
     ) -> Option<LiveProjectBusMemberHandle> {
-        match_live_bus_member_connection(&self.members, search)
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_connection_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                if let Some(found) = member_ref.find_descendant_for_connection(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
     fn find_member_mut(&mut self, search: &ReducedBusMember) -> Option<LiveProjectBusMemberHandle> {
-        match_live_bus_member_mut(&mut self.members, search)
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_reduced_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                drop(member_ref);
+                if let Some(found) = member.borrow_mut().find_descendant_mut(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -1844,7 +1894,21 @@ impl LiveProjectConnection {
         &mut self,
         search: &LiveProjectBusMember,
     ) -> Option<LiveProjectBusMemberHandle> {
-        match_live_bus_member_mut_live(&mut self.members, search)
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_live_member(search) {
+                return Some(member.clone());
+            }
+
+            if member_ref.kind == ReducedBusMemberKind::Bus {
+                drop(member_ref);
+                if let Some(found) = member.borrow_mut().find_descendant_mut_live(search) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
     }
 
     fn snapshot(&self) -> ReducedProjectConnection {
@@ -5416,10 +5480,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 let refreshed_member = {
                     let parent = parent_handle.borrow();
                     let mut parent_connection = parent.driver_connection.borrow_mut();
-                    let Some(member_handle) = match_live_bus_member_mut_live(
-                        &mut parent_connection.members,
-                        &current_link_member.borrow(),
-                    ) else {
+                    let Some(member_handle) =
+                        parent_connection.find_member_mut_live(&current_link_member.borrow())
+                    else {
                         continue;
                     };
                     clone_live_connection_owner_into_live_bus_member(
@@ -5534,10 +5597,8 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 let parent = parent_handle.borrow();
                 let mut parent_connection = parent.driver_connection.borrow_mut();
                 let link_member = link.borrow().member.clone();
-                let Some(member) = match_live_bus_member_mut_live(
-                    &mut parent_connection.members,
-                    &link_member.borrow(),
-                ) else {
+                let Some(member) = parent_connection.find_member_mut_live(&link_member.borrow())
+                else {
                     continue;
                 };
                 let changed = !live_bus_member_clone_eq_to_connection(
@@ -5579,9 +5640,7 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
             let changed = {
                 let subgraph = handle.borrow();
                 let mut connection = subgraph.driver_connection.borrow_mut();
-                let Some(member) =
-                    match_live_bus_member_mut_live(&mut connection.members, &stale_member.borrow())
-                else {
+                let Some(member) = connection.find_member_mut_live(&stale_member.borrow()) else {
                     continue;
                 };
                 if Rc::ptr_eq(&member, stale_member) {
@@ -5800,10 +5859,8 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                 let parent = parent_handle.borrow();
                 let mut parent_connection = parent.driver_connection.borrow_mut();
                 let link_member = link.borrow().member.clone();
-                let Some(member) = match_live_bus_member_mut_live(
-                    &mut parent_connection.members,
-                    &link_member.borrow(),
-                ) else {
+                let Some(member) = parent_connection.find_member_mut_live(&link_member.borrow())
+                else {
                     continue;
                 };
 
