@@ -559,6 +559,13 @@ pub(crate) struct ReducedProjectSymbolPin {
     pub(crate) subgraph_index: Option<usize>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedProjectSymbolPinInventory {
+    pub(crate) unit_count: usize,
+    pub(crate) duplicate_pin_numbers_are_jumpers: bool,
+    pub(crate) pins: Vec<ReducedProjectSymbolPin>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct ReducedProjectPointIdentityKey {
     sheet_instance_path: String,
@@ -590,7 +597,8 @@ pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
-    symbol_pins_by_symbol: BTreeMap<ReducedProjectSymbolIdentityKey, Vec<ReducedProjectSymbolPin>>,
+    symbol_pins_by_symbol:
+        BTreeMap<ReducedProjectSymbolIdentityKey, ReducedProjectSymbolPinInventory>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
@@ -6997,9 +7005,9 @@ fn reduced_project_symbol_identity_key(
 fn build_reduced_project_symbol_pin_inventory(
     inputs: &ReducedProjectGraphInputs<'_>,
     pin_subgraph_identities_by_location: &BTreeMap<ReducedProjectPinIdentityKey, usize>,
-) -> BTreeMap<ReducedProjectSymbolIdentityKey, Vec<ReducedProjectSymbolPin>> {
+) -> BTreeMap<ReducedProjectSymbolIdentityKey, ReducedProjectSymbolPinInventory> {
     let mut symbol_pins_by_symbol =
-        BTreeMap::<ReducedProjectSymbolIdentityKey, Vec<ReducedProjectSymbolPin>>::new();
+        BTreeMap::<ReducedProjectSymbolIdentityKey, ReducedProjectSymbolPinInventory>::new();
 
     for sheet_path in inputs.sheet_paths {
         let Some(schematic) = inputs
@@ -7027,6 +7035,22 @@ fn build_reduced_project_symbol_pin_inventory(
                 .lib_symbol
                 .as_ref()
                 .is_some_and(|lib_symbol| lib_symbol.power);
+            let unit_count = symbol
+                .lib_symbol
+                .as_ref()
+                .map(|lib_symbol| {
+                    lib_symbol
+                        .units
+                        .iter()
+                        .map(|unit| unit.unit_number)
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                })
+                .unwrap_or(0);
+            let duplicate_pin_numbers_are_jumpers = symbol
+                .lib_symbol
+                .as_ref()
+                .is_some_and(|lib_symbol| lib_symbol.duplicate_pin_numbers_are_jumpers);
 
             let projected_pins = projected_symbol_pin_info(symbol)
                 .into_iter()
@@ -7052,8 +7076,17 @@ fn build_reduced_project_symbol_pin_inventory(
 
             symbol_pins_by_symbol
                 .entry(reduced_project_symbol_identity_key(sheet_path, symbol))
-                .or_default()
-                .extend(projected_pins);
+                .and_modify(|inventory| {
+                    inventory.unit_count = inventory.unit_count.max(unit_count);
+                    inventory.duplicate_pin_numbers_are_jumpers |=
+                        duplicate_pin_numbers_are_jumpers;
+                    inventory.pins.extend(projected_pins.clone());
+                })
+                .or_insert(ReducedProjectSymbolPinInventory {
+                    unit_count,
+                    duplicate_pin_numbers_are_jumpers,
+                    pins: projected_pins,
+                });
         }
     }
 
@@ -7535,6 +7568,26 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still exposes reduced graph-owned symbol pin inventory instead of live `SCH_PIN*`
+// plus `SCH_SYMBOL*` owners
+// local_only_reason: keeps ERC/net-name callers on one graph-owned per-symbol pin inventory with
+// exercised per-symbol metadata instead of re-walking symbol/lib state ad hoc
+// replaced_by: fuller live `SCH_PIN` / `SCH_SYMBOL` owner graph
+// remove_when: production callers can iterate live symbol/pin owners directly
+pub(crate) fn reduced_project_symbol_pin_inventory<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+) -> Option<&'a ReducedProjectSymbolPinInventory> {
+    graph
+        .symbol_pins_by_symbol
+        .get(&reduced_project_symbol_identity_key(sheet_path, symbol))
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for iterating a symbol's `SCH_PIN` owners through the
 // shared graph. This still projects reduced pin payload instead of exposing live `SCH_PIN*`
 // objects, but it keeps ERC/net-name callers on one graph-owned per-symbol pin inventory,
@@ -7545,11 +7598,9 @@ pub(crate) fn collect_reduced_project_symbol_pins<'a>(
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
 ) -> Vec<&'a ReducedProjectSymbolPin> {
-    graph
-        .symbol_pins_by_symbol
-        .get(&reduced_project_symbol_identity_key(sheet_path, symbol))
+    reduced_project_symbol_pin_inventory(graph, sheet_path, symbol)
         .into_iter()
-        .flat_map(|pins| pins.iter())
+        .flat_map(|inventory| inventory.pins.iter())
         .collect()
 }
 

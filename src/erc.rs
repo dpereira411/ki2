@@ -2,9 +2,9 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_connection_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_graph, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name, collect_reduced_project_symbol_pins,
-    reduced_bus_member_full_local_names, reduced_project_subgraph_by_index,
-    reduced_project_subgraph_index, reduced_project_subgraphs, resolve_reduced_project_subgraph_at,
+    collect_reduced_project_subgraphs_by_name, reduced_bus_member_full_local_names,
+    reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_project_symbol_pin_inventory, resolve_reduced_project_subgraph_at,
     resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
@@ -3051,6 +3051,12 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                 continue;
             };
 
+            let Some(pin_inventory) =
+                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
+            else {
+                continue;
+            };
+
             let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
                 continue;
             };
@@ -3075,7 +3081,7 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                 continue;
             };
 
-            for pin in collect_reduced_project_symbol_pins(&graph, sheet_path, symbol) {
+            for pin in &pin_inventory.pins {
                 let Some(ref pin_number) = pin.number else {
                     continue;
                 };
@@ -3130,25 +3136,25 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             };
 
-            let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+            let Some(pin_inventory) =
+                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
+            else {
                 continue;
             };
 
-            if lib_symbol.duplicate_pin_numbers_are_jumpers {
+            if pin_inventory.duplicate_pin_numbers_are_jumpers {
                 continue;
             }
 
-            let state = resolved_symbol_text_state(
-                symbol,
-                &sheet_path.instance_path,
-                project.current_variant(),
-            );
-            let reference = resolved_property_value(&state.properties, "Reference")
+            let reference = pin_inventory
+                .pins
+                .iter()
+                .find_map(|pin| pin.reference.clone())
                 .unwrap_or_else(|| "?".to_string());
 
             let mut pins_by_number = BTreeMap::<String, Vec<(Option<String>, String)>>::new();
 
-            for pin in collect_reduced_project_symbol_pins(&graph, sheet_path, symbol) {
+            for pin in &pin_inventory.pins {
                 let Some(ref pin_number) = pin.number else {
                     continue;
                 };
@@ -3582,7 +3588,13 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
                 continue;
             };
 
-            for pin in collect_reduced_project_symbol_pins(&graph, sheet_path, symbol) {
+            let Some(pin_inventory) =
+                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
+            else {
+                continue;
+            };
+
+            for pin in &pin_inventory.pins {
                 let Some(number) = pin.number.as_deref() else {
                     continue;
                 };
@@ -3632,10 +3644,15 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             };
 
+            let Some(pin_inventory) =
+                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
+            else {
+                continue;
+            };
             let mut has_ground_net = false;
             let mut mismatched_pins = Vec::new();
 
-            for pin in collect_reduced_project_symbol_pins(&graph, sheet_path, symbol) {
+            for pin in &pin_inventory.pins {
                 let Some(pin_type) = pin.electrical_type.as_deref() else {
                     continue;
                 };
@@ -3762,8 +3779,9 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                 }
                 SchItem::Symbol(symbol) => {
                     if let Some(point) =
-                        collect_reduced_project_symbol_pins(&graph, sheet_path, symbol)
+                        reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
                             .into_iter()
+                            .flat_map(|inventory| inventory.pins.iter())
                             .find(|pin| {
                                 pin.electrical_type.as_deref() != Some("no_connect")
                                     && !point_is_on_grid(
