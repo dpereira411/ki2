@@ -2215,7 +2215,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     && all_pins > 1
                     && !has_no_connect
                     && !has_local_hierarchy)
-                || (all_pins == 0 && !has_no_connect)
+                || all_pins == 0
             {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,

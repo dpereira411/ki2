@@ -6111,6 +6111,25 @@ fn erc_reports_dangling_symbol_pins_in_issue11926_fixture() {
 }
 
 #[test]
+fn erc_reports_dangling_global_label_on_no_connect_line_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "../ki/tests/fixtures/erc_upstream_qa/projects/NoConnectOnLineWithGlobalLabel.kicad_sch",
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "erc-label-not-connected"
+                && diagnostic.message == "Label is not connected at 63.5, 30.48"
+        }),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn erc_reports_hidden_unconnected_pins_in_issue6588_fixture() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue6588.kicad_sch");
