@@ -3311,8 +3311,9 @@ impl LiveReducedSubgraph {
     // Upstream parity: local live-subgraph analogue for the hierarchy-chain slice inside
     // `propagateToNeighbors()`. This still mutates reduced live carriers instead of full local
     // `CONNECTION_SUBGRAPH` objects, but the shared subgraph owner now owns the traversal and
-    // chosen-driver rewrite for one hierarchy-connected component instead of leaving that flow in
-    // a free helper around the handle graph.
+    // chosen-driver rewrite for one hierarchy-connected component, and that rewrite now stays on
+    // the chosen live driver handle instead of snapshotting a reduced-shaped chosen connection
+    // through the active propagation path.
     fn propagate_hierarchy_chain(start: &LiveReducedSubgraphHandle, force: bool) {
         let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
         let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
@@ -3379,18 +3380,22 @@ impl LiveReducedSubgraph {
         }
 
         let chosen_connection = best_handle.borrow().driver_connection.clone();
-        let chosen_connection_snapshot = chosen_connection.borrow().clone();
 
         for handle in visited {
             let mut subgraph = handle.borrow_mut();
-            let changed = !live_connection_clone_eq(
-                &subgraph.driver_connection.borrow(),
-                &chosen_connection_snapshot,
-            );
-            clone_live_connection_owner_into_live_connection_owner(
-                &mut subgraph.driver_connection.borrow_mut(),
-                &chosen_connection_snapshot,
-            );
+            let changed = {
+                let chosen_connection_ref = chosen_connection.borrow();
+                !live_connection_clone_eq(
+                    &subgraph.driver_connection.borrow(),
+                    &chosen_connection_ref,
+                )
+            };
+            if changed {
+                clone_live_connection_owner_into_live_connection_owner(
+                    &mut subgraph.driver_connection.borrow_mut(),
+                    &chosen_connection.borrow(),
+                );
+            }
             subgraph.dirty = changed;
         }
     }

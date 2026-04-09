@@ -1111,6 +1111,9 @@ Current status:
       - chosen-driver attachment on the active live subgraph path now compares against the
         already-seeded live subgraph driver handle instead of rehydrating a reduced chosen
         connection snapshot for equality during build-time owner binding
+      - hierarchy-chain chosen-driver rewrites on the active live graph now also clone directly
+        from the chosen live driver handle instead of snapshotting a temporary reduced-shaped
+        connection through the active propagation loop
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:
