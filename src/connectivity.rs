@@ -273,7 +273,7 @@ type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
 enum LiveProjectStrongDriverOwner {
     Floating {
         identity: Option<ReducedProjectDriverIdentity>,
-        connection: LiveReducedConnection,
+        connection: LiveProjectConnectionHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
     },
@@ -304,7 +304,7 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
         Self {
             owner: LiveProjectStrongDriverOwner::Floating {
                 identity: driver.identity,
-                connection: LiveReducedConnection::new(driver.connection),
+                connection: Rc::new(RefCell::new(driver.connection.into())),
                 kind: driver.kind,
                 priority: driver.priority,
             },
@@ -382,7 +382,9 @@ impl LiveProjectStrongDriverOwner {
 
     fn connection(&self) -> LiveReducedConnection {
         match self {
-            LiveProjectStrongDriverOwner::Floating { connection, .. } => Some(connection.clone()),
+            LiveProjectStrongDriverOwner::Floating { connection, .. } => {
+                Some(LiveReducedConnection::from_handle(connection.clone()))
+            }
             LiveProjectStrongDriverOwner::Label { owner, .. } => owner
                 .upgrade()
                 .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
@@ -2896,7 +2898,7 @@ impl LiveReducedSubgraph {
                         })
                         .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                             identity: fallback_identity,
-                            connection: floating_connection.clone(),
+                            connection: floating_connection.connection.clone(),
                             kind: driver_kind,
                             priority,
                         })
@@ -2917,7 +2919,7 @@ impl LiveReducedSubgraph {
                         })
                         .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                             identity: fallback_identity,
-                            connection: floating_connection.clone(),
+                            connection: floating_connection.connection.clone(),
                             kind: driver_kind,
                             priority,
                         })
@@ -2933,7 +2935,7 @@ impl LiveReducedSubgraph {
                 })
                 .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                     identity: fallback_identity,
-                    connection: floating_connection.clone(),
+                    connection: floating_connection.connection.clone(),
                     kind: driver_kind,
                     priority,
                 }),
@@ -2962,13 +2964,13 @@ impl LiveReducedSubgraph {
                 })
                 .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                     identity: fallback_identity,
-                    connection: floating_connection.clone(),
+                    connection: floating_connection.connection.clone(),
                     kind: driver_kind,
                     priority,
                 }),
             None => LiveProjectStrongDriverOwner::Floating {
                 identity: None,
-                connection: floating_connection.clone(),
+                connection: floating_connection.connection.clone(),
                 kind: driver_kind,
                 priority,
             },
@@ -4248,12 +4250,12 @@ fn attach_live_strong_driver_owners_to_handles(
             let priority = reduced_driver.priority;
             let floating_connection = match &driver.borrow().owner {
                 LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
-                _ => driver.borrow().connection(),
+                _ => driver.borrow().connection().connection.clone(),
             };
             let owner = subgraph.attach_driver_owner_for_identity(
                 identity,
                 driver,
-                &floating_connection,
+                &LiveReducedConnection::from_handle(floating_connection),
                 driver_kind,
                 priority,
             );

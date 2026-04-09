@@ -1005,6 +1005,8 @@ Current status:
         connections
       - active label, sheet-pin, and hier-port item connections now also live on direct shared
         live connection handles instead of `LiveReducedConnection` wrappers on those item owners
+      - floating strong-driver owners now also keep direct shared live connection handles instead
+        of `LiveReducedConnection` wrapper state on the fallback driver branch
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
