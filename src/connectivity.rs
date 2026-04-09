@@ -8271,9 +8271,20 @@ fn reduced_label_driver_priority(label: &Label) -> i32 {
     match label.kind {
         LabelKind::Global => 7,
         LabelKind::Local => 4,
-        LabelKind::Hierarchical => 3,
+        LabelKind::Hierarchical => reduced_hierarchical_label_driver_priority(),
         LabelKind::Directive => 0,
     }
+}
+
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_HIER_LABEL_T branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_HIERLABEL` driver item owner
+// remove_when: hierarchical-label priority reads directly from live KiCad-shaped item owners
+fn reduced_hierarchical_label_driver_priority() -> i32 {
+    3
 }
 
 // upstream: CONNECTION_SUBGRAPH::ResolveDrivers candidate_cmp sheet-pin shape branch
@@ -8629,8 +8640,10 @@ fn reduced_local_driver_identity_to_project_identity(
 // per-item `m_drivers` collection, and symbol-pin driver identity now also carries pin number so
 // stacked same-position pins do not collapse before live owner attachment. Reduced power-pin
 // drivers now also prefer the projected pin shown name before the symbol value so multi-pin power
-// symbols keep per-pin driver text through the shared graph owner. Remaining divergence is the
-// still-missing live connection object plus fuller power/bus-parent driver ownership.
+// symbols keep per-pin driver text through the shared graph owner. The reduced collection now
+// also mirrors KiCad's strong-driver cleanup by dropping weak sheet-pin/default-pin drivers once a
+// hierarchical-label-or-stronger driver exists. Remaining divergence is the still-missing live
+// connection object plus fuller power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
@@ -8771,6 +8784,13 @@ where
             && !reduced_project_strong_driver_name(driver).contains("${")
             && !reduced_project_strong_driver_name(driver).starts_with('<')
     });
+
+    if drivers
+        .iter()
+        .any(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+    {
+        drivers.retain(|driver| driver.priority >= reduced_hierarchical_label_driver_priority());
+    }
 
     drivers.sort_by(|lhs, rhs| {
         rhs.priority.cmp(&lhs.priority).then_with(|| {
