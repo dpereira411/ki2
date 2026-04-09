@@ -3499,7 +3499,6 @@ impl LiveReducedSubgraph {
                     continue;
                 }
 
-                sync_live_reduced_item_connections_from_driver_handle(handle);
                 promoted.push(handle.clone());
             }
         }
@@ -16691,7 +16690,40 @@ mod tests {
                 anchor: PointKey(0, 0),
                 points: Vec::new(),
                 nodes: Vec::new(),
-                base_pins: Vec::new(),
+                base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: crate::connectivity::ReducedNetBasePinKey {
+                        sheet_instance_path: "/other".to_string(),
+                        symbol_uuid: Some("pwr".to_string()),
+                        at: PointKey(0, 0),
+                        name: Some("1".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    reference: None,
+                    number: Some("1".to_string()),
+                    electrical_type: Some("power_in".to_string()),
+                    visible: true,
+                    is_power_symbol: true,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR_ALT".to_string(),
+                        local_name: "PWR_ALT".to_string(),
+                        full_local_name: "PWR_ALT".to_string(),
+                        sheet_instance_path: "/other".to_string(),
+                        members: Vec::new(),
+                    },
+                    driver_connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR_ALT".to_string(),
+                        local_name: "PWR_ALT".to_string(),
+                        full_local_name: "PWR_ALT".to_string(),
+                        sheet_instance_path: "/other".to_string(),
+                        members: Vec::new(),
+                    },
+                    preserve_local_name_on_refresh: true,
+                }],
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
@@ -16768,6 +16800,8 @@ mod tests {
 
         assert_eq!(graph[1].name, "VCC");
         assert_eq!(graph[1].driver_connection.name, "VCC");
+        assert_eq!(graph[1].base_pins[0].connection.name, "VCC");
+        assert_eq!(graph[1].base_pins[0].connection.local_name, "PWR_ALT");
         assert_eq!(graph[2].name, "PWR_ALT");
         assert_eq!(graph[2].driver_connection.name, "PWR_ALT");
     }
