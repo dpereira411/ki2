@@ -16100,12 +16100,71 @@ mod tests {
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
             },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 3,
+                code: 3,
+                name: "PWR_ALT".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR_ALT".to_string(),
+                    local_name: "PWR_ALT".to_string(),
+                    full_local_name: "/local/PWR_ALT".to_string(),
+                    sheet_instance_path: "/local".to_string(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR_ALT".to_string(),
+                    local_name: "PWR_ALT".to_string(),
+                    full_local_name: "/local/PWR_ALT".to_string(),
+                    sheet_instance_path: "/local".to_string(),
+                    members: Vec::new(),
+                },
+                chosen_driver_index: None,
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: 4,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR_ALT".to_string(),
+                        local_name: "PWR_ALT".to_string(),
+                        full_local_name: "/local/PWR_ALT".to_string(),
+                        sheet_instance_path: "/local".to_string(),
+                        members: Vec::new(),
+                    },
+                    identity: None,
+                }],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/local".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
         ];
 
         refresh_reduced_live_graph_propagation(&mut graph);
 
         assert_eq!(graph[1].name, "VCC");
         assert_eq!(graph[1].driver_connection.name, "VCC");
+        assert_eq!(graph[2].name, "PWR_ALT");
+        assert_eq!(graph[2].driver_connection.name, "PWR_ALT");
     }
 
     #[test]
