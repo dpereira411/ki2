@@ -425,14 +425,35 @@ impl LiveProjectStrongDriver {
         self.connection().name()
     }
 
+    // Upstream parity: local live-driver analogue for reduced projection at the graph boundary.
+    // Consumers still read reduced strong-driver records, but the shared live driver owner now
+    // projects itself onto that boundary instead of leaving driver snapshot assembly in free
+    // helper functions outside the owner graph.
+    fn project_onto_reduced(&self, target: &mut ReducedProjectStrongDriver) {
+        target.kind = self.kind();
+        target.priority = self.priority();
+        self.connection()
+            .project_onto_reduced(&mut target.connection);
+        target.identity = self.identity();
+    }
+
     fn snapshot(&self) -> ReducedProjectStrongDriver {
-        let connection = self.connection().snapshot();
-        ReducedProjectStrongDriver {
+        let mut target = ReducedProjectStrongDriver {
             kind: self.kind(),
             priority: self.priority(),
-            connection,
-            identity: self.identity(),
-        }
+            connection: ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::None,
+                name: String::new(),
+                local_name: String::new(),
+                full_local_name: String::new(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            identity: None,
+        };
+        self.project_onto_reduced(&mut target);
+        target
     }
 }
 
@@ -2418,16 +2439,10 @@ impl LiveReducedBasePin {
     }
 }
 
-fn live_strong_driver_handle_snapshot(
-    driver: &LiveProjectStrongDriverHandle,
-) -> ReducedProjectStrongDriver {
-    driver.borrow().snapshot()
-}
-
 fn live_optional_driver_snapshot(
     driver: &Option<LiveProjectStrongDriverHandle>,
 ) -> Option<ReducedProjectStrongDriver> {
-    driver.as_ref().map(live_strong_driver_handle_snapshot)
+    driver.as_ref().map(|driver| driver.borrow().snapshot())
 }
 
 impl PartialEq for LiveReducedHierSheetPinLink {
