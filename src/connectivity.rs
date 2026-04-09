@@ -4659,29 +4659,6 @@ fn reduced_connection_from_live_bus_member(
     }
 }
 
-// Upstream parity: reduced local analogue for the `matchBusMember()`-driven member refresh KiCad
-// Upstream parity: reduced local analogue for the bus-neighbor branch inside
-// `CONNECTION_GRAPH::propagateToNeighbors()`. This is still not a 1:1 live KiCad graph walk
-// because the Rust tree does not yet recurse stale members and item-owned connections on the same
-// live objects, but it now mutates chosen bus-member and neighbor driver connections on a shared
-// live subgraph owner before projecting them back onto the reduced graph. Remaining divergence is
-// the later stale-member replay / recache recursion that still falls back to the reduced fixpoint.
-#[cfg(test)]
-fn refresh_reduced_live_bus_neighbor_drivers(
-    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
-) {
-    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
-    let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
-    let mut stale_members = Vec::new();
-    LiveReducedSubgraph::refresh_bus_neighbor_drivers(
-        &live_subgraphs,
-        &component,
-        &mut stale_members,
-    );
-    LiveReducedSubgraph::replay_stale_bus_members(&component, &stale_members);
-    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
-}
-
 // Upstream parity: reduced local analogue for the repeated bus-neighbor dirty propagation KiCad
 // gets by revisiting the same live subgraphs until bus-driven renames stop changing. This is still
 // not the final `m_dirty` / recursive `propagateToNeighbors()` engine, but it moves the repeat
@@ -8616,9 +8593,9 @@ mod tests {
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         recache_live_reduced_subgraph_name_from_handles,
         recache_live_reduced_subgraph_name_handle_cache_from_handles, reduced_bus_member_objects,
-        refresh_reduced_live_bus_neighbor_drivers, refresh_reduced_live_graph_propagation,
-        resolve_reduced_net_name_at, resolve_reduced_project_net_at,
-        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
+        refresh_reduced_live_graph_propagation, resolve_reduced_net_name_at,
+        resolve_reduced_project_net_at, resolve_reduced_project_subgraph_at,
+        resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
         resolve_reduced_project_subgraph_for_symbol_pin,
     };
@@ -14274,7 +14251,16 @@ mod tests {
             },
         ];
 
-        refresh_reduced_live_bus_neighbor_drivers(&mut graph);
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        LiveReducedSubgraph::replay_stale_bus_members(&component, &stale_members);
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(graph[1].name, "/SIG1");
         assert_eq!(graph[1].resolved_connection.full_local_name, "/SIG1");
@@ -14425,7 +14411,16 @@ mod tests {
             },
         ];
 
-        refresh_reduced_live_bus_neighbor_drivers(&mut graph);
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        LiveReducedSubgraph::replay_stale_bus_members(&component, &stale_members);
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(
             graph[0].resolved_connection.members[0].full_local_name,

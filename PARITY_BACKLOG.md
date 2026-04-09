@@ -965,6 +965,7 @@ Current status:
         on an item-owner clone path instead of relying on the shared live connection clone to
         keep non-empty `local_name` values for every net connection in the graph
       - the remaining small reduced-live compatibility wrappers for:
+        - bus-neighbor refresh plus stale-member replay
         - bus parent-member refresh
         - bus-link member rematch
         - multiple-bus-parent rename
