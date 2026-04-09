@@ -4944,8 +4944,6 @@ fn refresh_reduced_live_graph_propagation_with_handles(
 
     let all_indexes = (0..live_subgraphs.len()).collect::<Vec<_>>();
     LiveReducedSubgraph::refresh_multiple_bus_parent_names(&live_subgraphs);
-    LiveReducedSubgraph::run_dirty_roots(&live_subgraphs, false);
-    LiveReducedSubgraph::run_dirty_roots(&live_subgraphs, true);
     let component = all_indexes
         .iter()
         .filter_map(|index| live_subgraphs.get(*index).cloned())
