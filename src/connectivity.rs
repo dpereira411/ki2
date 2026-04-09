@@ -91,6 +91,7 @@ pub(crate) struct ReducedNetBasePinKey {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedProjectBasePin {
+    pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) key: ReducedNetBasePinKey,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
@@ -392,6 +393,11 @@ fn live_project_strong_driver_priority(driver: &LiveProjectStrongDriver) -> i32 
     }
 }
 
+// Upstream parity: reduced local analogue for reading strong-driver item identity back out of the
+// live graph owner after attachment. Symbol-pin identity now derives from the live base-pin owner
+// payload instead of copied per-pin side state, while non-pin owners still read the shared live
+// item identity cached on their attached owner. Remaining divergence is the still-missing fuller
+// live driver-item object graph.
 fn live_project_strong_driver_identity(
     driver: &LiveProjectStrongDriver,
 ) -> Option<ReducedProjectDriverIdentity> {
@@ -406,9 +412,19 @@ fn live_project_strong_driver_identity(
         LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
             .upgrade()
             .and_then(|owner| owner.borrow().identity.clone()),
-        LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
-            .upgrade()
-            .and_then(|owner| owner.borrow().pin.identity.clone()),
+        LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+            owner.upgrade().and_then(|owner| {
+                let owner = owner.borrow();
+                owner.pin.key.symbol_uuid.as_ref().map(|symbol_uuid| {
+                    ReducedProjectDriverIdentity::SymbolPin {
+                        schematic_path: owner.pin.schematic_path.clone(),
+                        symbol_uuid: Some(symbol_uuid.clone()),
+                        at: owner.pin.key.at,
+                        pin_number: owner.pin.number.clone(),
+                    }
+                })
+            })
+        }
     }
 }
 
@@ -2139,17 +2155,19 @@ type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 
 #[derive(Clone, Debug)]
 struct LiveReducedBasePinPayload {
+    schematic_path: std::path::PathBuf,
     key: ReducedNetBasePinKey,
     number: Option<String>,
     electrical_type: Option<String>,
-    identity: Option<ReducedProjectDriverIdentity>,
 }
 
 #[derive(Clone, Debug)]
 // Upstream parity: reduced local live pin-item payload under the shared graph. This still keeps a
 // reduced projected pin payload instead of a live `SCH_PIN*`, but it now separates immutable pin
 // identity/type data from the shared live connection owner so the active live pin carrier stops
-// shadowing a second copied reduced connection beside the real live connection handle.
+// shadowing a second copied reduced connection beside the real live connection handle. Symbol-pin
+// driver identity now derives from this owner payload instead of living as copied side state on
+// the live pin carrier.
 struct LiveReducedBasePin {
     pin: LiveReducedBasePinPayload,
     connection: LiveReducedConnection,
@@ -2251,12 +2269,14 @@ impl Ord for LiveReducedHierPortLink {
 impl PartialEq for LiveReducedBasePin {
     fn eq(&self, other: &Self) -> bool {
         (
+            self.pin.schematic_path.clone(),
             self.pin.key.clone(),
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
             self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
+            other.pin.schematic_path.clone(),
             other.pin.key.clone(),
             other.pin.number.clone(),
             other.pin.electrical_type.clone(),
@@ -2277,6 +2297,7 @@ impl PartialOrd for LiveReducedBasePin {
 impl Ord for LiveReducedBasePin {
     fn cmp(&self, other: &Self) -> Ordering {
         (
+            self.pin.schematic_path.clone(),
             self.pin.key.clone(),
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
@@ -2284,6 +2305,7 @@ impl Ord for LiveReducedBasePin {
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
+                other.pin.schematic_path.clone(),
                 other.pin.key.clone(),
                 other.pin.number.clone(),
                 other.pin.electrical_type.clone(),
@@ -2443,11 +2465,13 @@ fn live_reduced_subgraph_extra_projection_eq(
 
 // Upstream parity: reduced live-pin snapshot helper for the shared graph owner. This still
 // projects back to reduced pin payload instead of a live `SCH_PIN`, but it now keeps the fuller
-// reduced base-pin payload on the live owner instead of collapsing the active pin carrier down to
-// only its key before comparison or projection helpers use it.
+// reduced base-pin payload on the live owner, including schematic-path identity, instead of
+// collapsing the active pin carrier down to only its key before comparison or projection helpers
+// use it.
 fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> ReducedProjectBasePin {
     let base_pin = base_pin.borrow();
     ReducedProjectBasePin {
+        schematic_path: base_pin.pin.schematic_path.clone(),
         key: base_pin.pin.key.clone(),
         number: base_pin.pin.number.clone(),
         electrical_type: base_pin.pin.electrical_type.clone(),
@@ -2829,7 +2853,6 @@ fn attach_live_strong_driver_owners_to_handles(
                             base_pin_ref.connection.clone_from(&floating_connection);
                         }
                         let mut base_pin_ref = base_pin.borrow_mut();
-                        base_pin_ref.pin.identity = identity.clone();
                         base_pin_ref.driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SymbolPin {
                             owner: Rc::downgrade(base_pin),
@@ -2974,8 +2997,9 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // of caching one more copied summary field, and attaches the exercised label/sheet-pin/symbol-pin
 // strong drivers back onto shared live item owners via the same shared live strong-driver owners
 // used by the subgraph driver list. Those live strong-driver owners now also keep a live
-// connection carrier instead of parallel live name fields. Remaining divergence is the
-// still-missing fuller live driver-item object graph.
+// connection carrier instead of parallel live name fields, and symbol-pin driver identity now
+// derives from the live base-pin owner payload instead of copied per-pin side state. Remaining
+// divergence is the still-missing fuller live driver-item object graph.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -3027,10 +3051,10 @@ fn build_live_reduced_subgraphs(
                 .map(|pin| {
                     Rc::new(RefCell::new(LiveReducedBasePin {
                         pin: LiveReducedBasePinPayload {
+                            schematic_path: pin.schematic_path.clone(),
                             key: pin.key.clone(),
                             number: pin.number.clone(),
                             electrical_type: pin.electrical_type.clone(),
-                            identity: None,
                         },
                         connection: LiveReducedConnection::new(pin.connection.clone()),
                         driver: None,
@@ -6914,10 +6938,12 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
 // grouping inside each exporter. It now also keeps node-less driver subgraphs instead of dropping
 // them before the shared graph owner sees them, matching KiCad's graph-owned subgraph coverage
 // more closely, and it keeps shared base-pin identity even for symbols excluded from node emission
-// so graph item lookup stays available for ERC power-pin paths. It now also preserves first-seen
-// net-name encounter order instead of reordering reduced subgraphs by net name before the shared
-// graph owner assigns whole-net codes. Remaining divergence is the missing full subgraph object
-// model and graph-owned netcode allocation beyond these grouped reduced subgraphs.
+// so graph item lookup stays available for ERC power-pin paths. Reduced base-pin payload now also
+// preserves schematic-path identity so later live symbol-pin owners can derive their own driver
+// identity without a copied side cache. It now also preserves first-seen net-name encounter order
+// instead of reordering reduced subgraphs by net name before the shared graph owner assigns
+// whole-net codes. Remaining divergence is the missing full subgraph object model and graph-owned
+// netcode allocation beyond these grouped reduced subgraphs.
 pub(crate) fn collect_reduced_net_map<FName, FClass, FAllow, FReference>(
     schematic: &Schematic,
     sheet_instance_path: &str,
@@ -6980,6 +7006,7 @@ where
                 });
                 let (expanded_numbers, _) = expand_stacked_pin_notation(&base_pin_number);
                 let base_pin = ReducedProjectBasePin {
+                    schematic_path: schematic.path.clone(),
                     key: ReducedNetBasePinKey {
                         sheet_instance_path: sheet_instance_path.to_string(),
                         symbol_uuid: symbol.uuid.clone(),
@@ -13600,6 +13627,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![super::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: super::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
@@ -13766,6 +13794,7 @@ mod tests {
             nodes: Vec::new(),
             base_pins: vec![
                 super::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     key: super::ReducedNetBasePinKey {
                         sheet_instance_path: String::new(),
                         symbol_uuid: Some("sym".to_string()),
@@ -13786,6 +13815,7 @@ mod tests {
                     },
                 },
                 super::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     key: super::ReducedNetBasePinKey {
                         sheet_instance_path: String::new(),
                         symbol_uuid: Some("sym".to_string()),
@@ -16348,6 +16378,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("r1".to_string()),
@@ -16427,6 +16458,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("r1".to_string()),
@@ -16506,6 +16538,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("r1".to_string()),
@@ -16580,6 +16613,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("r1".to_string()),
@@ -16672,6 +16706,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
@@ -16778,6 +16813,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
@@ -16850,6 +16886,7 @@ mod tests {
             points: Vec::new(),
             nodes: Vec::new(),
             base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 key: crate::connectivity::ReducedNetBasePinKey {
                     sheet_instance_path: String::new(),
                     symbol_uuid: Some("u1".to_string()),
@@ -16886,6 +16923,10 @@ mod tests {
         let handles = build_live_reduced_subgraph_handles(&reduced);
         let snapshot = super::live_base_pin_handle_snapshot(&handles[0].borrow().base_pins[0]);
 
+        assert_eq!(
+            snapshot.schematic_path,
+            std::path::PathBuf::from("root.kicad_sch")
+        );
         assert_eq!(snapshot.key.symbol_uuid.as_deref(), Some("u1"));
         assert_eq!(snapshot.key.number.as_deref(), Some("7"));
         assert_eq!(snapshot.number.as_deref(), Some("7"));

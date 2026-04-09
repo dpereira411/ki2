@@ -916,10 +916,13 @@ Current status:
         owner graph instead of leaving those reduced fields on pre-live placeholders after live
         propagation
       - live base-pin owners now also keep the fuller reduced pin payload on the live owner
-        instead of collapsing back to bare pin keys, so active live pin carriers retain number and
-        electrical type alongside the shared live connection owner
+        instead of collapsing back to bare pin keys, so active live pin carriers retain schematic
+        path, number, and electrical type alongside the shared live connection owner
       - attached live strong-driver identity now derives from the shared live item owners
         themselves instead of staying copied on the live driver wrapper after owner attachment
+      - symbol-pin strong-driver identity now also derives from the live base-pin owner payload
+        itself instead of copied per-pin live side state, so live symbol-pin owners no longer need
+        a second identity cache after attachment
       - active chosen-driver attachment now also compares against that attached live owner identity
         instead of reading the reduced driver identity again after owner binding
       - the remaining pin gap is now the richer per-pin live update/selection logic after setup on
