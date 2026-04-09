@@ -4541,7 +4541,6 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
     stale_members: &[LiveProjectBusMemberHandle],
 ) {
     for stale_member in stale_members {
-        let stale_member_snapshot = stale_member.borrow().clone();
         for handle in component {
             let is_bus = {
                 let subgraph = handle.borrow();
@@ -4563,10 +4562,13 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
                 else {
                     continue;
                 };
+                if Rc::ptr_eq(&member, stale_member) {
+                    continue;
+                }
                 let old_member = member.borrow().clone();
                 clone_live_bus_member_into_live_bus_member(
                     &mut member.borrow_mut(),
-                    &stale_member_snapshot,
+                    &stale_member.borrow(),
                 );
                 *member.borrow() != old_member
             };
@@ -4751,11 +4753,8 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             if connection.connection_type != ReducedProjectConnectionType::Net {
                 continue;
             }
-            connection.clone()
+            subgraph.driver_connection.clone()
         };
-        if connection.connection_type != ReducedProjectConnectionType::Net {
-            continue;
-        }
 
         for link in bus_parent_links {
             let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, &link) else {
@@ -4772,14 +4771,14 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                     continue;
                 };
 
-                if member.borrow().full_local_name == connection.full_local_name {
+                if member.borrow().full_local_name == connection.borrow().full_local_name {
                     continue;
                 }
 
                 let old_name = member.borrow().full_local_name.clone();
                 clone_live_connection_owner_into_live_bus_member(
                     &mut member.borrow_mut(),
-                    &connection,
+                    &connection.borrow(),
                 );
                 old_name
             };
@@ -4793,15 +4792,22 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
             for candidate_handle in candidate_handles {
                 let old_candidate_name = candidate_handle.borrow().driver_connection.name();
                 if old_candidate_name == old_name {
-                    *candidate_handle.borrow().driver_connection.borrow_mut() = connection.clone();
-                    sync_live_reduced_item_connections_from_driver_handle(&candidate_handle);
-                    candidate_handle.borrow_mut().dirty = true;
-                    recache_live_reduced_subgraph_name_handle_cache_from_handles(
-                        &mut subgraphs_by_name,
-                        &mut subgraphs_by_sheet_and_name,
-                        &candidate_handle,
-                        &old_candidate_name,
-                    );
+                    let changed = {
+                        let candidate = candidate_handle.borrow();
+                        let before = candidate.driver_connection.snapshot();
+                        candidate.driver_connection.clone_from(&connection);
+                        candidate.driver_connection.snapshot() != before
+                    };
+                    if changed {
+                        sync_live_reduced_item_connections_from_driver_handle(&candidate_handle);
+                        candidate_handle.borrow_mut().dirty = true;
+                        recache_live_reduced_subgraph_name_handle_cache_from_handles(
+                            &mut subgraphs_by_name,
+                            &mut subgraphs_by_sheet_and_name,
+                            &candidate_handle,
+                            &old_candidate_name,
+                        );
+                    }
                 }
             }
         }

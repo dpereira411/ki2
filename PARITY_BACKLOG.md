@@ -792,6 +792,11 @@ Current status:
         the owning live subgraph dirty at the mutation site, and the recursive walk now consumes
         an explicit dirty-handle subset per visit instead of falling back to a whole-subgraph
         compatibility compare
+      - exercised multi-parent bus rename now also clones through the shared live connection owner
+        instead of replacing candidate subgraph connection payloads with whole copied live
+        connection values
+      - active stale-member replay now also clones directly from the shared live member owner
+        instead of snapshotting each stale member into a temporary value before replay
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
