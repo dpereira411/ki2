@@ -2370,16 +2370,28 @@ impl LiveReducedBasePin {
 
     // Upstream parity: local base-pin owner analogue for the exercised chosen-driver self-update
     // KiCad gets because `m_driver_connection` and the chosen pin's `Connection()` are the same
-    // live object. This reduced bridge still keeps separate item and driver owners on the pin, but
-    // it lets the chosen symbol-pin/base-pin item connection adopt live renames from that chosen
-    // driver connection instead of relying on shared-object aliasing that no longer exists after
-    // the driver-owner split.
+    // live object. Chosen symbol-pin owners now alias their item connection onto that live driver
+    // handle on the active path; this fallback keeps the older reduced split-owner path safe until
+    // the fuller live pin object exists.
     fn refresh_from_owned_driver_connection(&mut self) {
+        if Rc::ptr_eq(&self.connection, &self.driver_connection) {
+            return;
+        }
         let driver_connection = self.driver_connection.clone();
         clone_live_connection_owner_into_live_base_pin_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
+    }
+
+    // Upstream parity: local base-pin-owner analogue for the chosen symbol-pin path where KiCad's
+    // pin `Connection()` and `m_driver_connection` are the same live object. This keeps the
+    // exercised chosen symbol-pin branch on one shared live connection handle instead of relying
+    // on later self-refresh to copy names across split local owners.
+    fn adopt_driver_connection_as_item_connection(&mut self) {
+        if !Rc::ptr_eq(&self.connection, &self.driver_connection) {
+            self.connection = self.driver_connection.clone();
+        }
     }
 
     // Upstream parity: local live base-pin-owner analogue for exercised symbol-pin/power-pin
@@ -2872,8 +2884,11 @@ impl LiveReducedSubgraph {
     // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
     // that branch open-coded in the surrounding builder. Symbol-pin and text-item branches now
     // compare through attached live owner-side driver connections against the already-seeded live
-    // subgraph driver handle; remaining divergence is the still-missing fuller live driver-item
-    // object graph, not reduced chosen-connection snapshot matching on the active path.
+    // subgraph driver handle. Chosen symbol-pin owners now also alias their item connection onto
+    // that chosen driver handle, closer to KiCad's shared `SCH_PIN::Connection()` /
+    // `m_driver_connection` path. Remaining divergence is the still-missing fuller live
+    // driver-item object graph, not reduced chosen-connection snapshot matching on the active
+    // path.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
@@ -2890,6 +2905,13 @@ impl LiveReducedSubgraph {
         if is_chosen_driver {
             self.chosen_driver = Some(driver.clone());
             self.driver_connection = driver.borrow().connection_handle();
+            if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } = &*driver.borrow() {
+                if let Some(base_pin) = owner.upgrade() {
+                    base_pin
+                        .borrow_mut()
+                        .adopt_driver_connection_as_item_connection();
+                }
+            }
         }
     }
 
@@ -13674,7 +13696,11 @@ mod tests {
             _ => panic!("expected symbol pin strong-driver owner"),
         };
         assert_eq!(owner.borrow().driver_connection.borrow().name, "RENAMED");
-        assert_eq!(owner.borrow().connection.borrow().name, "PWR");
+        assert!(Rc::ptr_eq(
+            &owner.borrow().connection,
+            &owner.borrow().driver_connection
+        ));
+        assert_eq!(owner.borrow().connection.borrow().name, "RENAMED");
     }
 
     #[test]
@@ -13780,6 +13806,10 @@ mod tests {
             _ => panic!("expected symbol pin strong-driver owner"),
         };
 
+        assert!(!Rc::ptr_eq(
+            &owner.borrow().connection,
+            &owner.borrow().driver_connection
+        ));
         assert_eq!(owner.borrow().connection.borrow().name, "ITEM");
         assert_eq!(owner.borrow().driver_connection.borrow().name, "SEEDED");
         assert_eq!(
@@ -13877,6 +13907,17 @@ mod tests {
 
         assert!(subgraph.chosen_driver.is_some());
         assert_eq!(subgraph.driver_connection.borrow().name, "SEEDED");
+        let owner = match subgraph.drivers[0].borrow().clone() {
+            super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().expect("symbol pin owner")
+            }
+            _ => panic!("expected symbol pin strong-driver owner"),
+        };
+        assert!(Rc::ptr_eq(
+            &owner.borrow().connection,
+            &owner.borrow().driver_connection
+        ));
+        assert_eq!(owner.borrow().connection.borrow().name, "SEEDED");
     }
 
     #[test]

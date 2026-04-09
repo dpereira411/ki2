@@ -1131,6 +1131,10 @@ Current status:
       - reduced graph-name/netcode cache rebuild now also re-derives outward
         `resolved_connection` state from the required reduced `driver_connection` owner instead of
         assigning both boundary connections in parallel during cache rebuild
+      - chosen symbol-pin owners now alias their item connection onto the chosen live driver
+        handle on the active path, so the exercised self-driven symbol-pin branch is closer to
+        KiCad's shared `SCH_PIN::Connection()` / `m_driver_connection` behavior instead of relying
+        only on later self-refresh across split local owners
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:
