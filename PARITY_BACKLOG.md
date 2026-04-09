@@ -1131,10 +1131,24 @@ Current status:
       - reduced graph-name/netcode cache rebuild now also re-derives outward
         `resolved_connection` state from the required reduced `driver_connection` owner instead of
         assigning both boundary connections in parallel during cache rebuild
+      - production reduced subgraph naming now also reads from the required reduced
+        `driver_connection` owner instead of keeping `ReducedProjectSubgraphEntry.name` as a
+        second production owner:
+        - final reduced graph assembly now seeds `driver_connection.name` with the resolved net
+          identity before mirroring outward boundary state
+        - reduced graph-name/netcode cache rebuild now re-syncs `subgraph.name` from the driver
+          owner instead of assigning caches from a parallel field first
+        - whole-net flattening and symbol-pin / point-net queries now report net names from the
+          same required driver owner instead of the parallel `subgraph.name` field
       - chosen symbol-pin owners now alias their item connection onto the chosen live driver
         handle on the active path, so the exercised self-driven symbol-pin branch is closer to
         KiCad's shared `SCH_PIN::Connection()` / `m_driver_connection` behavior instead of relying
         only on later self-refresh across split local owners
+      - the remaining chosen text-item split is semantically real on the current owner model:
+        chosen label/sheet-pin/hier-port owners still keep item-owned shown-text connections while
+        their driver handles carry the chosen net identity, so blindly aliasing text-item
+        `connection` onto `driver_connection` would collapse shown-text ownership instead of
+        removing a reduced carryover
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:

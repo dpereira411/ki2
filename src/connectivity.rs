@@ -5637,8 +5637,10 @@ fn attach_reduced_connected_bus_items(reduced_subgraphs: &mut [ReducedProjectSub
 // maps as names change, but it keeps the final shared `(name, sheet+name)` indexes and first-seen
 // net codes aligned with the post-propagation reduced subgraph names instead of stale pre-rename
 // values. Outward reduced `resolved_connection` state is now re-derived from the required reduced
-// `driver_connection` owner during this cache rebuild instead of assigning both in parallel.
-// Remaining divergence is the still-missing live cache mutation on real subgraph objects.
+// `driver_connection` owner during this cache rebuild instead of assigning both in parallel, and
+// production cache/code assignment now also reads the reduced subgraph name from that same owner
+// instead of treating `subgraph.name` as a second source of truth. Remaining divergence is the
+// still-missing live cache mutation on real subgraph objects.
 fn rebuild_reduced_project_graph_name_caches(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) -> (
@@ -5650,13 +5652,16 @@ fn rebuild_reduced_project_graph_name_caches(
     let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
 
     for (index, subgraph) in reduced_subgraphs.iter_mut().enumerate() {
-        if !subgraph.name.is_empty() {
+        let owner_name = subgraph.driver_connection.name.clone();
+
+        if !owner_name.is_empty() {
+            subgraph.name = owner_name.clone();
             let next_code = net_codes.len() + 1;
-            let code = *net_codes.entry(subgraph.name.clone()).or_insert(next_code);
+            let code = *net_codes.entry(owner_name.clone()).or_insert(next_code);
             subgraph.code = code;
             assign_reduced_connection_net_codes(&mut subgraph.driver_connection, &mut net_codes);
             subgraph.resolved_connection = subgraph.driver_connection.clone();
-            subgraph.resolved_connection.name = subgraph.name.clone();
+            subgraph.resolved_connection.name = owner_name.clone();
 
             for link in &mut subgraph.label_links {
                 assign_reduced_connection_net_codes(&mut link.connection, &mut net_codes);
@@ -5670,21 +5675,22 @@ fn rebuild_reduced_project_graph_name_caches(
                 assign_reduced_connection_net_codes(&mut port.connection, &mut net_codes);
             }
             subgraphs_by_name
-                .entry(subgraph.name.clone())
+                .entry(owner_name.clone())
                 .or_default()
                 .push(index);
-            if subgraph.name.contains('[') {
-                let prefix_only = format!("{}[]", subgraph.name.split('[').next().unwrap_or(""));
+            if owner_name.contains('[') {
+                let prefix_only = format!("{}[]", owner_name.split('[').next().unwrap_or(""));
                 subgraphs_by_name
                     .entry(prefix_only)
                     .or_default()
                     .push(index);
             }
             subgraphs_by_sheet_and_name
-                .entry((subgraph.sheet_instance_path.clone(), subgraph.name.clone()))
+                .entry((subgraph.sheet_instance_path.clone(), owner_name))
                 .or_default()
                 .push(index);
         } else {
+            subgraph.name.clear();
             subgraph.code = 0;
         }
     }
@@ -6667,12 +6673,13 @@ where
 // derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps,
 // outward `resolved_connection` state is now also derived from the required reduced
 // `driver_connection` owner instead of being rebuilt from parallel raw fields during final graph
-// assembly,
-// whole-net views are derived from the shared subgraph owner instead of a second stored flattened
-// carrier, reduced label/sheet-pin/no-connect membership now rides on the shared subgraph owner
-// for graph-side ERC rules instead of per-sheet component rescans, and reduced driver identity now
-// rides on that same owner so `RunERC()`-style reused-screen de-duplication can happen above the
-// shared graph boundary. The outward reduced node carrier is still narrower than a real
+// assembly, whole-net views are derived from the shared subgraph owner instead of a second stored
+// flattened carrier, reduced label/sheet-pin/no-connect membership now rides on the shared
+// subgraph owner for graph-side ERC rules instead of per-sheet component rescans, reduced driver
+// identity now rides on that same owner so `RunERC()`-style reused-screen de-duplication can
+// happen above the shared graph boundary, and final reduced subgraph names now also derive from
+// the required reduced `driver_connection` owner instead of treating `name` as an independent
+// production owner. The outward reduced node carrier is still narrower than a real
 // `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
@@ -7168,14 +7175,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         let resolved_name = net_identity
             .map(|net| net.name.clone())
             .unwrap_or_else(|| pending.name.clone());
-        let mut resolved_connection = pending.driver_connection.clone();
+        let mut driver_connection = pending.driver_connection.clone();
+        driver_connection.name = resolved_name.clone();
+        let mut resolved_connection = driver_connection.clone();
         resolved_connection.name = resolved_name.clone();
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
-            driver_connection: pending.driver_connection.clone(),
+            driver_connection,
             chosen_driver_identity: pending.chosen_driver_identity.clone(),
             drivers: pending.drivers.clone(),
             class: if pending.class.is_empty() {
@@ -7453,8 +7462,9 @@ pub(crate) fn collect_reduced_project_net_graph(
 // flattened net vector beside it. Remaining divergence is the missing full subgraph object model
 // and graph-owned resolved-name caches beyond this reduced project net map. It now also preserves
 // the shared graph's reduced net codes for non-export callers instead of renumbering them a second
-// time at the flattened whole-net layer; write-time exporters still do their own emitted-code
-// assignment like KiCad `makeListOfNets()`.
+// time at the flattened whole-net layer, and whole-net grouping now reads net names from the
+// required reduced `driver_connection` owner instead of a parallel reduced subgraph `name` field.
+// Write-time exporters still do their own emitted-code assignment like KiCad `makeListOfNets()`.
 pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
@@ -7481,8 +7491,9 @@ pub(crate) fn collect_reduced_project_net_map(
     >::new();
 
     for subgraph in project.reduced_project_net_graph(for_board).subgraphs {
+        let owner_name = subgraph.driver_connection.name.clone();
         let entry = grouped
-            .entry((subgraph.code, subgraph.name.clone()))
+            .entry((subgraph.code, owner_name.clone()))
             .or_insert_with(|| {
                 (
                     subgraph.class.clone(),
@@ -7526,7 +7537,7 @@ pub(crate) fn collect_reduced_project_net_map(
             let key = (node.reference.clone(), node.pin.clone());
             let candidate = (
                 subgraph.code,
-                subgraph.name.clone(),
+                owner_name.clone(),
                 subgraph.class.clone(),
                 subgraph.has_no_connect,
                 node,
@@ -8196,6 +8207,12 @@ fn reduced_project_base_pin_key(
 // point)` instead of a live `SCH_PIN*`, but it now derives shared net identity through the stored
 // pin-to-subgraph owner instead of keeping a second pin-to-net side map. Remaining divergence is
 // fuller item identity for non-pin items and the still-missing `CONNECTION_SUBGRAPH` object.
+// Upstream parity: reduced local analogue for the symbol-pin half of
+// `CONNECTION_GRAPH::GetNetFromItem()` on the project graph path. This still returns reduced net
+// identity instead of a live `CONNECTION_SUBGRAPH`, but it now reports the symbol pin's net name
+// from the required reduced `driver_connection` owner instead of a parallel reduced subgraph
+// `name` field. Remaining divergence is fuller item identity and the still-missing live
+// `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8209,7 +8226,7 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     )
     .map(|subgraph| ReducedProjectNetIdentity {
         code: subgraph.code,
-        name: subgraph.name.clone(),
+        name: subgraph.driver_connection.name.clone(),
         class: subgraph.class.clone(),
         has_no_connect: subgraph.has_no_connect,
     })
@@ -8306,9 +8323,10 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
 // `CONNECTION_GRAPH::GetSubgraphForItem()` / `GetResolvedSubgraphName()` on the project graph
 // path. This is not a 1:1 KiCad item map because the Rust tree still keys the lookup by `(sheet
 // instance path, reduced subgraph anchor)` instead of a live item-owned `CONNECTION_SUBGRAPH`,
-// but it now reports the graph-owned subgraph name directly instead of re-deriving the point net
-// name from reduced connection boundary state. Remaining divergence is fuller item identity for
-// labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
+// but it now reports the graph-owned subgraph name from the required reduced driver owner instead
+// of re-deriving the point net name from reduced connection boundary state or treating
+// `subgraph.name` as a second owner. Remaining divergence is fuller item identity for labels,
+// wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8317,7 +8335,7 @@ pub(crate) fn resolve_reduced_project_net_at(
     resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
         ReducedProjectNetIdentity {
             code: subgraph.code,
-            name: subgraph.name.clone(),
+            name: subgraph.driver_connection.name.clone(),
             class: subgraph.class.clone(),
             has_no_connect: subgraph.has_no_connect,
         }
