@@ -1136,6 +1136,9 @@ Current status:
       - pending reduced graph assembly now also keys its pending net/base-pin/node side maps
         through that pending `driver_connection.name` owner instead of the earlier pre-owner
         `entry.name` carrier
+      - initial reduced `(name, sheet+name)` subgraph cache insertion now also keys from the
+        required reduced `driver_connection.name` owner instead of immediately reading the
+        mirrored outward `subgraph.name` field after boundary sync
       - `ReducedProjectSubgraphEntry.driver_connection` is now required owner state too; the
         optional reduced carrier is gone from production paths, helper paths, ERC consumers, and
         the reduced-graph fixtures that exercise the real graph flow

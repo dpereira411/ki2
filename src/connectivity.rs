@@ -6332,21 +6332,22 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         };
         subgraph.driver_connection.name = resolved_name;
         subgraph.sync_boundary_state_from_driver_owner();
+        let owner_name = subgraph.driver_connection.name.clone();
 
         let index = reduced_subgraphs.len();
         subgraphs_by_name
-            .entry(subgraph.name.clone())
+            .entry(owner_name.clone())
             .or_default()
             .push(index);
-        if subgraph.name.contains('[') {
-            let prefix_only = format!("{}[]", subgraph.name.split('[').next().unwrap_or(""));
+        if owner_name.contains('[') {
+            let prefix_only = format!("{}[]", owner_name.split('[').next().unwrap_or(""));
             subgraphs_by_name
                 .entry(prefix_only)
                 .or_default()
                 .push(index);
         }
         subgraphs_by_sheet_and_name
-            .entry((subgraph.sheet_instance_path.clone(), subgraph.name.clone()))
+            .entry((subgraph.sheet_instance_path.clone(), owner_name))
             .or_default()
             .push(index);
         for base_pin in &subgraph.base_pins {
