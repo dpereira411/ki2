@@ -1,4 +1,6 @@
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
+#[cfg(test)]
+use std::cell::{Ref, RefMut};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::{Rc, Weak};
@@ -380,23 +382,21 @@ impl LiveProjectStrongDriverOwner {
         }
     }
 
-    fn connection(&self) -> LiveReducedConnection {
+    fn connection_handle(&self) -> LiveProjectConnectionHandle {
         match self {
-            LiveProjectStrongDriverOwner::Floating { connection, .. } => {
-                Some(LiveReducedConnection::from_handle(connection.clone()))
-            }
+            LiveProjectStrongDriverOwner::Floating { connection, .. } => Some(connection.clone()),
             LiveProjectStrongDriverOwner::Label { owner, .. } => owner
                 .upgrade()
-                .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
+                .map(|owner| owner.borrow().connection.clone()),
             LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner
                 .upgrade()
-                .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
+                .map(|owner| owner.borrow().connection.clone()),
             LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
                 .upgrade()
-                .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
-            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner.upgrade().map(|owner| {
-                LiveReducedConnection::from_handle(owner.borrow().driver_connection.clone())
-            }),
+                .map(|owner| owner.borrow().connection.clone()),
+            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
+                .upgrade()
+                .map(|owner| owner.borrow().driver_connection.clone()),
         }
         .expect("live strong driver owner requires an attached connection owner")
     }
@@ -419,12 +419,12 @@ impl LiveProjectStrongDriver {
         self.owner.identity()
     }
 
-    fn connection(&self) -> LiveReducedConnection {
-        self.owner.connection()
+    fn connection_handle(&self) -> LiveProjectConnectionHandle {
+        self.owner.connection_handle()
     }
 
     fn full_name(&self) -> String {
-        self.connection().name()
+        self.connection_handle().borrow().name.clone()
     }
 
     // Upstream parity: local live-driver analogue for reduced projection at the graph boundary.
@@ -434,7 +434,8 @@ impl LiveProjectStrongDriver {
     fn project_onto_reduced(&self, target: &mut ReducedProjectStrongDriver) {
         target.kind = self.kind();
         target.priority = self.priority();
-        self.connection()
+        self.connection_handle()
+            .borrow()
             .project_onto_reduced(&mut target.connection);
         target.identity = self.identity();
     }
@@ -1910,17 +1911,6 @@ fn live_connection_clone_eq(
     }
 }
 
-fn live_connection_handle_clone_eq(
-    target: &LiveReducedConnection,
-    source: &LiveReducedConnection,
-) -> bool {
-    if Rc::ptr_eq(&target.connection, &source.connection) {
-        return true;
-    }
-
-    live_connection_clone_eq(&target.borrow(), &source.borrow())
-}
-
 fn live_bus_member_clone_eq_to_connection(
     target: &LiveProjectBusMember,
     source: &LiveProjectConnection,
@@ -2056,20 +2046,18 @@ fn clone_live_connection_owner_into_live_base_pin_connection_owner(
     }
 }
 
+#[cfg(test)]
 #[derive(Clone)]
 struct LiveReducedConnection {
     connection: Rc<RefCell<LiveProjectConnection>>,
 }
 
+#[cfg(test)]
 impl LiveReducedConnection {
     fn new(connection: ReducedProjectConnection) -> Self {
         Self {
             connection: Rc::new(RefCell::new(connection.into())),
         }
-    }
-
-    fn from_handle(connection: LiveProjectConnectionHandle) -> Self {
-        Self { connection }
     }
 
     // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This still operates
@@ -2096,40 +2084,33 @@ impl LiveReducedConnection {
     fn snapshot(&self) -> ReducedProjectConnection {
         self.borrow().snapshot()
     }
-
-    // Upstream parity: local connection-owner bridge for reduced projection at the graph boundary.
-    // Consumers still consume reduced connections, but the live wrapper now delegates that
-    // projection to the shared live connection owner instead of a free clone helper outside the
-    // owner graph.
-    fn project_onto_reduced(&self, target: &mut ReducedProjectConnection) {
-        self.borrow().project_onto_reduced(target);
-    }
-
-    fn name(&self) -> String {
-        self.borrow().name.clone()
-    }
 }
 
+#[cfg(test)]
 impl std::fmt::Debug for LiveReducedConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.borrow().fmt(f)
     }
 }
 
+#[cfg(test)]
 impl PartialEq for LiveReducedConnection {
     fn eq(&self, other: &Self) -> bool {
         self.snapshot() == other.snapshot()
     }
 }
 
+#[cfg(test)]
 impl Eq for LiveReducedConnection {}
 
+#[cfg(test)]
 impl PartialOrd for LiveReducedConnection {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(test)]
 impl Ord for LiveReducedConnection {
     fn cmp(&self, other: &Self) -> Ordering {
         self.snapshot().cmp(&other.snapshot())
@@ -2198,7 +2179,7 @@ impl LiveReducedLabelLink {
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
-        driver_connection: &LiveReducedConnection,
+        driver_connection: &LiveProjectConnectionHandle,
         driver_connection_type: ReducedProjectConnectionType,
     ) {
         if chosen_driver
@@ -2249,7 +2230,7 @@ impl LiveReducedHierSheetPinLink {
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
-        driver_connection: &LiveReducedConnection,
+        driver_connection: &LiveProjectConnectionHandle,
         driver_connection_type: ReducedProjectConnectionType,
     ) {
         if chosen_driver
@@ -2298,7 +2279,7 @@ impl LiveReducedHierPortLink {
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
-        driver_connection: &LiveReducedConnection,
+        driver_connection: &LiveProjectConnectionHandle,
         driver_connection_type: ReducedProjectConnectionType,
     ) {
         if chosen_driver
@@ -2350,7 +2331,7 @@ impl LiveReducedBasePin {
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
-        driver_connection: &LiveReducedConnection,
+        driver_connection: &LiveProjectConnectionHandle,
         driver_connection_type: ReducedProjectConnectionType,
         refresh_attached_strong_driver_pins: bool,
     ) {
@@ -2407,7 +2388,7 @@ impl LiveReducedBasePin {
         &mut self,
         owner: &LiveReducedBasePinHandle,
         driver: &LiveProjectStrongDriverHandle,
-        floating_connection: &LiveReducedConnection,
+        floating_connection: &LiveProjectConnectionHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
     ) -> LiveProjectStrongDriverOwner {
@@ -2821,7 +2802,7 @@ impl LiveReducedSubgraphLink {
 struct LiveReducedSubgraph {
     #[cfg(test)]
     source_index: usize,
-    driver_connection: LiveReducedConnection,
+    driver_connection: LiveProjectConnectionHandle,
     drivers: Vec<LiveProjectStrongDriverHandle>,
     chosen_driver: Option<LiveProjectStrongDriverHandle>,
     sheet_instance_path: String,
@@ -2864,7 +2845,7 @@ impl LiveReducedSubgraph {
 
         if is_chosen_driver {
             self.chosen_driver = Some(driver.clone());
-            self.driver_connection = driver.borrow().connection();
+            self.driver_connection = driver.borrow().connection_handle();
         }
     }
 
@@ -2877,7 +2858,7 @@ impl LiveReducedSubgraph {
         &mut self,
         identity: Option<ReducedProjectDriverIdentity>,
         driver: &LiveProjectStrongDriverHandle,
-        floating_connection: &LiveReducedConnection,
+        floating_connection: &LiveProjectConnectionHandle,
         driver_kind: ReducedProjectDriverKind,
         priority: i32,
     ) -> LiveProjectStrongDriverOwner {
@@ -2898,7 +2879,7 @@ impl LiveReducedSubgraph {
                         })
                         .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                             identity: fallback_identity,
-                            connection: floating_connection.connection.clone(),
+                            connection: floating_connection.clone(),
                             kind: driver_kind,
                             priority,
                         })
@@ -2919,7 +2900,7 @@ impl LiveReducedSubgraph {
                         })
                         .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                             identity: fallback_identity,
-                            connection: floating_connection.connection.clone(),
+                            connection: floating_connection.clone(),
                             kind: driver_kind,
                             priority,
                         })
@@ -2935,7 +2916,7 @@ impl LiveReducedSubgraph {
                 })
                 .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                     identity: fallback_identity,
-                    connection: floating_connection.connection.clone(),
+                    connection: floating_connection.clone(),
                     kind: driver_kind,
                     priority,
                 }),
@@ -2964,13 +2945,13 @@ impl LiveReducedSubgraph {
                 })
                 .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                     identity: fallback_identity,
-                    connection: floating_connection.connection.clone(),
+                    connection: floating_connection.clone(),
                     kind: driver_kind,
                     priority,
                 }),
             None => LiveProjectStrongDriverOwner::Floating {
                 identity: None,
-                connection: floating_connection.connection.clone(),
+                connection: floating_connection.clone(),
                 kind: driver_kind,
                 priority,
             },
@@ -3031,7 +3012,7 @@ impl LiveReducedSubgraph {
         for item in &self.bus_items {
             let mut item_ref = item.borrow_mut();
             item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
-            item_ref.connection = Some(self.driver_connection.connection.clone());
+            item_ref.connection = Some(self.driver_connection.clone());
         }
         for item in &self.wire_items {
             item.borrow_mut().parent_subgraph_handle = Some(Rc::downgrade(handle));
@@ -3280,13 +3261,13 @@ impl LiveReducedSubgraph {
         let mut best_handle = start.clone();
         let mut highest = live_reduced_subgraph_driver_priority(&start.borrow());
         let mut best_is_strong = highest >= 3;
-        let mut best_name = start.borrow().driver_connection.name().to_string();
+        let mut best_name = start.borrow().driver_connection.borrow().name.clone();
 
         if highest < 6 {
             for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
                 let priority = live_reduced_subgraph_driver_priority(&handle.borrow());
                 let candidate_strong = priority >= 3;
-                let candidate_name = handle.borrow().driver_connection.name();
+                let candidate_name = handle.borrow().driver_connection.borrow().name.clone();
                 let candidate_depth =
                     reduced_sheet_path_depth(&handle.borrow().sheet_instance_path);
                 let best_depth =
@@ -3312,12 +3293,18 @@ impl LiveReducedSubgraph {
         }
 
         let chosen_connection = best_handle.borrow().driver_connection.clone();
+        let chosen_connection_snapshot = chosen_connection.borrow().clone();
 
         for handle in visited {
             let mut subgraph = handle.borrow_mut();
-            let changed =
-                !live_connection_handle_clone_eq(&subgraph.driver_connection, &chosen_connection);
-            subgraph.driver_connection.clone_from(&chosen_connection);
+            let changed = !live_connection_clone_eq(
+                &subgraph.driver_connection.borrow(),
+                &chosen_connection_snapshot,
+            );
+            clone_live_connection_owner_into_live_connection_owner(
+                &mut subgraph.driver_connection.borrow_mut(),
+                &chosen_connection_snapshot,
+            );
             subgraph.dirty = changed;
         }
     }
@@ -3388,7 +3375,7 @@ impl LiveReducedSubgraph {
         let mut promoted = Vec::new();
 
         for secondary_driver in secondary_drivers {
-            if secondary_driver.borrow().full_name() == chosen_connection.name() {
+            if secondary_driver.borrow().full_name() == chosen_connection.borrow().name {
                 continue;
             }
 
@@ -3411,19 +3398,19 @@ impl LiveReducedSubgraph {
 
                 let same_connection = {
                     let handle_ref = handle.borrow();
-                    live_connection_handle_clone_eq(
-                        &handle_ref.driver_connection,
-                        &chosen_connection,
+                    live_connection_clone_eq(
+                        &handle_ref.driver_connection.borrow(),
+                        &chosen_connection.borrow(),
                     )
                 };
                 if same_connection {
                     continue;
                 }
 
-                handle
-                    .borrow()
-                    .driver_connection
-                    .clone_from(&chosen_connection);
+                clone_live_connection_owner_into_live_connection_owner(
+                    &mut handle.borrow().driver_connection.borrow_mut(),
+                    &chosen_connection.borrow(),
+                );
                 sync_live_reduced_item_connections_from_driver_handle(handle);
                 handle.borrow_mut().dirty = true;
                 promoted.push(handle.clone());
@@ -3750,15 +3737,23 @@ impl LiveReducedSubgraph {
                     .unwrap_or_default();
 
                 for candidate_handle in candidate_handles {
-                    let old_candidate_name = candidate_handle.borrow().driver_connection.name();
+                    let old_candidate_name = candidate_handle
+                        .borrow()
+                        .driver_connection
+                        .borrow()
+                        .name
+                        .clone();
                     if old_candidate_name == old_name {
                         let changed = {
                             let candidate = candidate_handle.borrow();
-                            let changed = !live_connection_handle_clone_eq(
-                                &candidate.driver_connection,
-                                &connection,
+                            let changed = !live_connection_clone_eq(
+                                &candidate.driver_connection.borrow(),
+                                &connection.borrow(),
                             );
-                            candidate.driver_connection.clone_from(&connection);
+                            clone_live_connection_owner_into_live_connection_owner(
+                                &mut candidate.driver_connection.borrow_mut(),
+                                &connection.borrow(),
+                            );
                             changed
                         };
                         if changed {
@@ -3784,7 +3779,7 @@ impl LiveReducedSubgraph {
     // of full live subgraph objects, but the shared live subgraph owner now decides which name and
     // prefix entries belong in those caches instead of free helpers rebuilding keys around it.
     fn cache_name(&self) -> String {
-        self.driver_connection.name()
+        self.driver_connection.borrow().name.clone()
     }
 
     fn cache_prefix_name(&self) -> Option<String> {
@@ -4050,8 +4045,8 @@ fn build_live_reduced_subgraph_handles(
             Rc::new(RefCell::new(LiveReducedSubgraph {
                 #[cfg(test)]
                 source_index: _index,
-                driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
-                    subgraph,
+                driver_connection: Rc::new(RefCell::new(
+                    reduced_subgraph_driver_connection(subgraph).into(),
                 )),
                 drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
                 chosen_driver: None,
@@ -4250,12 +4245,12 @@ fn attach_live_strong_driver_owners_to_handles(
             let priority = reduced_driver.priority;
             let floating_connection = match &driver.borrow().owner {
                 LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
-                _ => driver.borrow().connection().connection.clone(),
+                _ => driver.borrow().connection_handle(),
             };
             let owner = subgraph.attach_driver_owner_for_identity(
                 identity,
                 driver,
-                &LiveReducedConnection::from_handle(floating_connection),
+                &floating_connection,
                 driver_kind,
                 priority,
             );
@@ -10435,23 +10430,26 @@ mod tests {
         let live = build_live_reduced_subgraph_handles(&reduced);
         {
             let mut subgraph = live[0].borrow_mut();
-            subgraph.driver_connection = LiveReducedConnection::new(ReducedProjectConnection {
-                net_code: 0,
-                connection_type: ReducedProjectConnectionType::Bus,
-                name: "/RENAMED".to_string(),
-                local_name: "RENAMED".to_string(),
-                full_local_name: "/RENAMED".to_string(),
-                sheet_instance_path: "/child".to_string(),
-                members: vec![ReducedBusMember {
+            subgraph.driver_connection = Rc::new(RefCell::new(
+                ReducedProjectConnection {
                     net_code: 0,
-                    name: "RENAMED1".to_string(),
-                    local_name: "RENAMED1".to_string(),
-                    full_local_name: "/RENAMED1".to_string(),
-                    vector_index: None,
-                    kind: ReducedBusMemberKind::Net,
-                    members: Vec::new(),
-                }],
-            });
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/RENAMED".to_string(),
+                    local_name: "RENAMED".to_string(),
+                    full_local_name: "/RENAMED".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "RENAMED1".to_string(),
+                        local_name: "RENAMED1".to_string(),
+                        full_local_name: "/RENAMED1".to_string(),
+                        vector_index: None,
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                }
+                .into(),
+            ));
             subgraph.label_links[0].borrow_mut().connection = Rc::new(RefCell::new(
                 ReducedProjectConnection {
                     net_code: 0,
@@ -12902,15 +12900,18 @@ mod tests {
         let live_subgraphs = vec![
             LiveReducedSubgraph {
                 source_index: 0,
-                driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
-                    net_code: 0,
-                    connection_type: ReducedProjectConnectionType::Net,
-                    name: "/OLD".to_string(),
-                    local_name: "OLD".to_string(),
-                    full_local_name: "/OLD".to_string(),
-                    sheet_instance_path: String::new(),
-                    members: Vec::new(),
-                }),
+                driver_connection: Rc::new(RefCell::new(
+                    ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/OLD".to_string(),
+                        local_name: "OLD".to_string(),
+                        full_local_name: "/OLD".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    }
+                    .into(),
+                )),
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
@@ -12932,15 +12933,18 @@ mod tests {
             },
             LiveReducedSubgraph {
                 source_index: 1,
-                driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
-                    net_code: 0,
-                    connection_type: ReducedProjectConnectionType::Net,
-                    name: "/KEEP".to_string(),
-                    local_name: "KEEP".to_string(),
-                    full_local_name: "/KEEP".to_string(),
-                    sheet_instance_path: "/child".to_string(),
-                    members: Vec::new(),
-                }),
+                driver_connection: Rc::new(RefCell::new(
+                    ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/KEEP".to_string(),
+                        local_name: "KEEP".to_string(),
+                        full_local_name: "/KEEP".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    }
+                    .into(),
+                )),
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
@@ -12997,15 +13001,18 @@ mod tests {
     fn recache_live_reduced_subgraph_name_handle_cache_keeps_shared_identity() {
         let live_subgraphs = vec![LiveReducedSubgraph {
             source_index: 0,
-            driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
-                net_code: 0,
-                connection_type: ReducedProjectConnectionType::Net,
-                name: "/OLD".to_string(),
-                local_name: "OLD".to_string(),
-                full_local_name: "/OLD".to_string(),
-                sheet_instance_path: String::new(),
-                members: Vec::new(),
-            }),
+            driver_connection: Rc::new(RefCell::new(
+                ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD".to_string(),
+                    local_name: "OLD".to_string(),
+                    full_local_name: "/OLD".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }
+                .into(),
+            )),
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
@@ -13137,7 +13144,7 @@ mod tests {
         }
         handles[0].borrow_mut().dirty = false;
 
-        assert_eq!(shared.borrow().driver_connection.name(), "/RENAMED");
+        assert_eq!(shared.borrow().driver_connection.borrow().name, "/RENAMED");
         assert!(!shared.borrow().dirty);
         let attached_bus_item = shared.borrow().wire_items[0]
             .borrow()
@@ -14215,23 +14222,26 @@ mod tests {
         let live_subgraphs = vec![
             LiveReducedSubgraph {
                 source_index: 0,
-                driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
-                    net_code: 0,
-                    connection_type: ReducedProjectConnectionType::Bus,
-                    name: "/BUS_A".to_string(),
-                    local_name: "BUS_A".to_string(),
-                    full_local_name: "/BUS_A".to_string(),
-                    sheet_instance_path: String::new(),
-                    members: vec![ReducedBusMember {
+                driver_connection: Rc::new(RefCell::new(
+                    ReducedProjectConnection {
                         net_code: 0,
-                        name: "OLD1".to_string(),
-                        local_name: "OLD1".to_string(),
-                        full_local_name: "/OLD1".to_string(),
-                        vector_index: Some(1),
-                        kind: ReducedBusMemberKind::Net,
-                        members: Vec::new(),
-                    }],
-                }),
+                        connection_type: ReducedProjectConnectionType::Bus,
+                        name: "/BUS_A".to_string(),
+                        local_name: "BUS_A".to_string(),
+                        full_local_name: "/BUS_A".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: vec![ReducedBusMember {
+                            net_code: 0,
+                            name: "OLD1".to_string(),
+                            local_name: "OLD1".to_string(),
+                            full_local_name: "/OLD1".to_string(),
+                            vector_index: Some(1),
+                            kind: ReducedBusMemberKind::Net,
+                            members: Vec::new(),
+                        }],
+                    }
+                    .into(),
+                )),
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
@@ -14253,23 +14263,26 @@ mod tests {
             },
             LiveReducedSubgraph {
                 source_index: 1,
-                driver_connection: LiveReducedConnection::new(ReducedProjectConnection {
-                    net_code: 0,
-                    connection_type: ReducedProjectConnectionType::Bus,
-                    name: "/BUS_B".to_string(),
-                    local_name: "BUS_B".to_string(),
-                    full_local_name: "/BUS_B".to_string(),
-                    sheet_instance_path: "/child".to_string(),
-                    members: vec![ReducedBusMember {
+                driver_connection: Rc::new(RefCell::new(
+                    ReducedProjectConnection {
                         net_code: 0,
-                        name: "OLD1".to_string(),
-                        local_name: "OLD1".to_string(),
-                        full_local_name: "/OLD1".to_string(),
-                        vector_index: Some(1),
-                        kind: ReducedBusMemberKind::Net,
-                        members: Vec::new(),
-                    }],
-                }),
+                        connection_type: ReducedProjectConnectionType::Bus,
+                        name: "/BUS_B".to_string(),
+                        local_name: "BUS_B".to_string(),
+                        full_local_name: "/BUS_B".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: vec![ReducedBusMember {
+                            net_code: 0,
+                            name: "OLD1".to_string(),
+                            local_name: "OLD1".to_string(),
+                            full_local_name: "/OLD1".to_string(),
+                            vector_index: Some(1),
+                            kind: ReducedBusMemberKind::Net,
+                            members: Vec::new(),
+                        }],
+                    }
+                    .into(),
+                )),
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
@@ -16703,7 +16716,7 @@ mod tests {
         let handles = build_live_reduced_subgraph_handles(&reduced);
         {
             let subgraph = handles[0].borrow();
-            assert_eq!(subgraph.driver_connection.name(), "/SIG");
+            assert_eq!(subgraph.driver_connection.borrow().name, "/SIG");
             assert!(matches!(
                 subgraph
                     .chosen_driver
