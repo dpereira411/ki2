@@ -312,14 +312,126 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
     }
 }
 
+impl LiveProjectStrongDriverOwner {
+    // Upstream parity: local owner-side analogue for the exercised strong-driver metadata/identity
+    // reads KiCad gets from the chosen live driver item and its attached `SCH_CONNECTION`. This
+    // still runs on reduced live owners instead of the fuller live driver-item object graph, but
+    // it moves active driver reads onto the shared owner itself instead of routing them through
+    // parallel free helper accessors.
+    fn kind(&self) -> ReducedProjectDriverKind {
+        match self {
+            LiveProjectStrongDriverOwner::Floating { kind, .. }
+            | LiveProjectStrongDriverOwner::Label { kind, .. }
+            | LiveProjectStrongDriverOwner::SheetPin { kind, .. }
+            | LiveProjectStrongDriverOwner::HierPort { kind, .. }
+            | LiveProjectStrongDriverOwner::SymbolPin { kind, .. } => *kind,
+        }
+    }
+
+    fn priority(&self) -> i32 {
+        match self {
+            LiveProjectStrongDriverOwner::Floating { priority, .. }
+            | LiveProjectStrongDriverOwner::Label { priority, .. }
+            | LiveProjectStrongDriverOwner::SheetPin { priority, .. }
+            | LiveProjectStrongDriverOwner::HierPort { priority, .. }
+            | LiveProjectStrongDriverOwner::SymbolPin { priority, .. } => *priority,
+        }
+    }
+
+    fn identity(&self) -> Option<ReducedProjectDriverIdentity> {
+        match self {
+            LiveProjectStrongDriverOwner::Floating { identity, .. } => identity.clone(),
+            LiveProjectStrongDriverOwner::Label { owner, .. } => owner.upgrade().map(|owner| {
+                let owner = owner.borrow();
+                ReducedProjectDriverIdentity::Label {
+                    schematic_path: owner.schematic_path.clone(),
+                    at: owner.at,
+                    kind: reduced_label_kind_sort_key(owner.kind),
+                }
+            }),
+            LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner.upgrade().map(|owner| {
+                let owner = owner.borrow();
+                ReducedProjectDriverIdentity::SheetPin {
+                    schematic_path: owner.schematic_path.clone(),
+                    at: owner.at,
+                }
+            }),
+            LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner.upgrade().map(|owner| {
+                let owner = owner.borrow();
+                ReducedProjectDriverIdentity::Label {
+                    schematic_path: owner.schematic_path.clone(),
+                    at: owner.at,
+                    kind: reduced_label_kind_sort_key(LabelKind::Hierarchical),
+                }
+            }),
+            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().and_then(|owner| {
+                    let owner = owner.borrow();
+                    owner.pin.key.symbol_uuid.as_ref().map(|symbol_uuid| {
+                        ReducedProjectDriverIdentity::SymbolPin {
+                            schematic_path: owner.pin.schematic_path.clone(),
+                            symbol_uuid: Some(symbol_uuid.clone()),
+                            at: owner.pin.key.at,
+                            pin_number: owner.pin.number.clone(),
+                        }
+                    })
+                })
+            }
+        }
+    }
+
+    fn connection(&self) -> LiveReducedConnection {
+        match self {
+            LiveProjectStrongDriverOwner::Floating { connection, .. } => Some(connection.clone()),
+            LiveProjectStrongDriverOwner::Label { owner, .. } => owner
+                .upgrade()
+                .map(|owner| owner.borrow().connection.clone()),
+            LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner
+                .upgrade()
+                .map(|owner| owner.borrow().connection.clone()),
+            LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
+                .upgrade()
+                .map(|owner| owner.borrow().connection.clone()),
+            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
+                .upgrade()
+                .map(|owner| owner.borrow().connection.clone()),
+        }
+        .expect("live strong driver owner requires an attached connection owner")
+    }
+}
+
 impl LiveProjectStrongDriver {
+    // Upstream parity: local live-driver analogue for exercised reads from the chosen strong
+    // driver. The fuller live driver-item graph is still missing, but active callers now read kind,
+    // priority, identity, and attached connection through the shared owner object instead of
+    // helper functions outside the driver type.
+    fn kind(&self) -> ReducedProjectDriverKind {
+        self.owner.kind()
+    }
+
+    fn priority(&self) -> i32 {
+        self.owner.priority()
+    }
+
+    fn identity(&self) -> Option<ReducedProjectDriverIdentity> {
+        self.owner.identity()
+    }
+
+    fn connection(&self) -> LiveReducedConnection {
+        self.owner.connection()
+    }
+
+    fn full_name(&self) -> String {
+        self.connection().name()
+    }
+
     fn snapshot(&self) -> ReducedProjectStrongDriver {
-        let connection = live_project_strong_driver_connection(self).snapshot();
+        let connection = self.connection().snapshot();
         ReducedProjectStrongDriver {
-            kind: live_project_strong_driver_kind(self),
-            priority: live_project_strong_driver_priority(self),
+            kind: self.kind(),
+            priority: self.priority(),
             connection,
-            identity: live_project_strong_driver_identity(self),
+            identity: self.identity(),
         }
     }
 }
@@ -374,100 +486,6 @@ fn live_strong_driver_handles_to_snapshots(
         .iter()
         .map(|driver| driver.borrow().snapshot())
         .collect()
-}
-
-fn live_project_strong_driver_kind(driver: &LiveProjectStrongDriver) -> ReducedProjectDriverKind {
-    match &driver.owner {
-        LiveProjectStrongDriverOwner::Floating { kind, .. }
-        | LiveProjectStrongDriverOwner::Label { kind, .. }
-        | LiveProjectStrongDriverOwner::SheetPin { kind, .. }
-        | LiveProjectStrongDriverOwner::HierPort { kind, .. }
-        | LiveProjectStrongDriverOwner::SymbolPin { kind, .. } => *kind,
-    }
-}
-
-fn live_project_strong_driver_priority(driver: &LiveProjectStrongDriver) -> i32 {
-    match &driver.owner {
-        LiveProjectStrongDriverOwner::Floating { priority, .. }
-        | LiveProjectStrongDriverOwner::Label { priority, .. }
-        | LiveProjectStrongDriverOwner::SheetPin { priority, .. }
-        | LiveProjectStrongDriverOwner::HierPort { priority, .. }
-        | LiveProjectStrongDriverOwner::SymbolPin { priority, .. } => *priority,
-    }
-}
-
-// Upstream parity: reduced local analogue for reading strong-driver item identity back out of the
-// live graph owner after attachment. Symbol-pin identity now derives from the live base-pin owner
-// payload instead of copied per-pin side state, while non-pin owners still read the shared live
-// item identity cached on their attached owner. Remaining divergence is the still-missing fuller
-// live driver-item object graph.
-fn live_project_strong_driver_identity(
-    driver: &LiveProjectStrongDriver,
-) -> Option<ReducedProjectDriverIdentity> {
-    match &driver.owner {
-        LiveProjectStrongDriverOwner::Floating { identity, .. } => identity.clone(),
-        LiveProjectStrongDriverOwner::Label { owner, .. } => owner.upgrade().map(|owner| {
-            let owner = owner.borrow();
-            ReducedProjectDriverIdentity::Label {
-                schematic_path: owner.schematic_path.clone(),
-                at: owner.at,
-                kind: reduced_label_kind_sort_key(owner.kind),
-            }
-        }),
-        LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner.upgrade().map(|owner| {
-            let owner = owner.borrow();
-            ReducedProjectDriverIdentity::SheetPin {
-                schematic_path: owner.schematic_path.clone(),
-                at: owner.at,
-            }
-        }),
-        LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner.upgrade().map(|owner| {
-            let owner = owner.borrow();
-            ReducedProjectDriverIdentity::Label {
-                schematic_path: owner.schematic_path.clone(),
-                at: owner.at,
-                kind: reduced_label_kind_sort_key(LabelKind::Hierarchical),
-            }
-        }),
-        LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
-            owner.upgrade().and_then(|owner| {
-                let owner = owner.borrow();
-                owner.pin.key.symbol_uuid.as_ref().map(|symbol_uuid| {
-                    ReducedProjectDriverIdentity::SymbolPin {
-                        schematic_path: owner.pin.schematic_path.clone(),
-                        symbol_uuid: Some(symbol_uuid.clone()),
-                        at: owner.pin.key.at,
-                        pin_number: owner.pin.number.clone(),
-                    }
-                })
-            })
-        }
-    }
-}
-
-fn live_project_strong_driver_connection(
-    driver: &LiveProjectStrongDriver,
-) -> LiveReducedConnection {
-    match &driver.owner {
-        LiveProjectStrongDriverOwner::Floating { connection, .. } => Some(connection.clone()),
-        LiveProjectStrongDriverOwner::Label { owner, .. } => owner
-            .upgrade()
-            .map(|owner| owner.borrow().connection.clone()),
-        LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner
-            .upgrade()
-            .map(|owner| owner.borrow().connection.clone()),
-        LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
-            .upgrade()
-            .map(|owner| owner.borrow().connection.clone()),
-        LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
-            .upgrade()
-            .map(|owner| owner.borrow().connection.clone()),
-    }
-    .expect("live strong driver owner requires an attached connection owner")
-}
-
-fn live_project_strong_driver_full_name(driver: &LiveProjectStrongDriver) -> String {
-    live_project_strong_driver_connection(driver).name()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -2745,7 +2763,7 @@ impl LiveReducedSubgraph {
         reduced.chosen_driver_identity = self
             .chosen_driver
             .as_ref()
-            .and_then(|driver| live_project_strong_driver_identity(&driver.borrow()))
+            .and_then(|driver| driver.borrow().identity())
             .or_else(|| reduced.chosen_driver_identity.clone());
 
         for (target, source) in reduced.label_links.iter_mut().zip(self.label_links.iter()) {
@@ -2949,7 +2967,7 @@ fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 
     subgraph
         .drivers
         .first()
-        .map(|driver| live_project_strong_driver_priority(&driver.borrow()))
+        .map(|driver| driver.borrow().priority())
         .or_else(|| {
             (!matches!(
                 subgraph.driver_connection.borrow().connection_type,
@@ -3139,7 +3157,7 @@ fn attach_live_strong_driver_owners_to_handles(
             let priority = reduced_driver.priority;
             let floating_connection = match &driver.borrow().owner {
                 LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
-                _ => live_project_strong_driver_connection(&driver.borrow()),
+                _ => driver.borrow().connection(),
             };
             let owner = match identity {
                 Some(ReducedProjectDriverIdentity::Label { at, kind, .. }) => {
@@ -3253,15 +3271,12 @@ fn attach_live_strong_driver_owners_to_handles(
 
             let is_chosen_driver = chosen_identity
                 .as_ref()
-                .map(|identity| {
-                    live_project_strong_driver_identity(&driver.borrow()).as_ref() == Some(identity)
-                })
+                .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
                 .unwrap_or_else(|| reduced_driver.connection == chosen_connection);
 
             if is_chosen_driver {
                 subgraph.chosen_driver = Some(driver.clone());
-                subgraph.driver_connection =
-                    live_project_strong_driver_connection(&driver.borrow());
+                subgraph.driver_connection = driver.borrow().connection();
             }
         }
     }
@@ -5208,14 +5223,11 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
     let mut promoted = Vec::new();
 
     for secondary_driver in secondary_drivers {
-        if live_project_strong_driver_full_name(&secondary_driver.borrow())
-            == chosen_connection.name()
-        {
+        if secondary_driver.borrow().full_name() == chosen_connection.name() {
             continue;
         }
 
-        let secondary_is_global =
-            live_project_strong_driver_priority(&secondary_driver.borrow()) >= 6;
+        let secondary_is_global = secondary_driver.borrow().priority() >= 6;
 
         for handle in live_subgraphs.iter() {
             if Rc::ptr_eq(handle, start) {
@@ -5227,8 +5239,7 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
             }
 
             if !handle.borrow().drivers.iter().any(|candidate_driver| {
-                live_project_strong_driver_full_name(&candidate_driver.borrow())
-                    == live_project_strong_driver_full_name(&secondary_driver.borrow())
+                candidate_driver.borrow().full_name() == secondary_driver.borrow().full_name()
             }) {
                 continue;
             }
