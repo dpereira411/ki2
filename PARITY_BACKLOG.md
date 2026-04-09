@@ -1108,6 +1108,9 @@ Current status:
       - live label/sheet-pin/hier-port/base-pin owners now also keep parent subgraph weak handles,
         and live bus-link targets / wire-item parent links now use direct weak topology handles
         instead of optional wrappers on the active graph
+      - chosen-driver attachment on the active live subgraph path now compares against the
+        already-seeded live subgraph driver handle instead of rehydrating a reduced chosen
+        connection snapshot for equality during build-time owner binding
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:

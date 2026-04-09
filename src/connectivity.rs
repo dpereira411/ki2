@@ -2808,7 +2808,7 @@ impl LiveReducedSubgraph {
         self.attach_topology_from_reduced(reduced_subgraph, live_subgraphs);
 
         let chosen_identity = reduced_project_subgraph_driver_identity(reduced_subgraph).cloned();
-        let chosen_connection = reduced_subgraph_driver_connection(reduced_subgraph);
+        let chosen_connection = self.driver_connection.clone();
         let live_drivers = self.drivers.clone();
 
         for (driver, reduced_driver) in live_drivers.iter().zip(reduced_subgraph.drivers.iter()) {
@@ -2871,21 +2871,20 @@ impl LiveReducedSubgraph {
     // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
     // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
     // that branch open-coded in the surrounding builder. Symbol-pin and text-item branches now
-    // compare through attached live owner-side driver connections; remaining divergence is the
-    // still-missing fuller live driver-item object graph, not reduced snapshot matching on the
-    // active path.
+    // compare through attached live owner-side driver connections against the already-seeded live
+    // subgraph driver handle; remaining divergence is the still-missing fuller live driver-item
+    // object graph, not reduced chosen-connection snapshot matching on the active path.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
         chosen_identity: Option<&ReducedProjectDriverIdentity>,
-        chosen_connection: &ReducedProjectConnection,
+        chosen_connection: &LiveProjectConnectionHandle,
     ) {
-        let chosen_live_connection = LiveProjectConnection::from(chosen_connection.clone());
         let is_chosen_driver = chosen_identity
             .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
             .unwrap_or_else(|| {
                 let driver_connection = driver.borrow().connection_handle();
-                *driver_connection.borrow() == chosen_live_connection
+                *driver_connection.borrow() == *chosen_connection.borrow()
             });
 
         if is_chosen_driver {
