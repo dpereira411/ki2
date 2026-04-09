@@ -837,6 +837,25 @@ fn match_live_bus_member_live<'a>(
     None
 }
 
+fn match_live_bus_member_connection<'a>(
+    bus_members: &'a [LiveProjectBusMemberHandle],
+    search: &LiveProjectConnection,
+) -> Option<LiveProjectBusMemberHandle> {
+    for member in bus_members {
+        let member_ref = member.borrow();
+
+        if member_ref.kind == ReducedBusMemberKind::Bus {
+            if let Some(found) = match_live_bus_member_connection(&member_ref.members, search) {
+                return Some(found);
+            }
+        } else if member_ref.local_name == search.local_name {
+            return Some(member.clone());
+        }
+    }
+
+    None
+}
+
 // Upstream parity: mutable live-graph analogue for `CONNECTION_GRAPH::matchBusMember()`. This now
 // mutates the active live connection-member payload directly instead of reduced member snapshots.
 // Remaining divergence is fuller pointer-shared member identity across every attached item and
@@ -1329,25 +1348,6 @@ impl LiveProjectBusMember {
             kind: self.kind.clone(),
             members: live_bus_member_handles_to_snapshots(&self.members),
         }
-    }
-}
-
-fn live_bus_member_search_from_live_connection(
-    connection: &LiveProjectConnection,
-) -> LiveProjectBusMember {
-    LiveProjectBusMember {
-        net_code: connection.net_code,
-        name: connection.local_name.clone(),
-        local_name: connection.local_name.clone(),
-        full_local_name: connection.full_local_name.clone(),
-        vector_index: None,
-        kind: match connection.connection_type {
-            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
-                ReducedBusMemberKind::Bus
-            }
-            _ => ReducedBusMemberKind::Net,
-        },
-        members: connection.members.clone(),
     }
 }
 
@@ -4360,13 +4360,12 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 continue;
             };
 
-            let (neighbor_name, neighbor_connection_sheet, neighbor_search, promoted_connection) = {
+            let (neighbor_name, neighbor_connection_sheet, promoted_connection) = {
                 let neighbor = neighbor_handle.borrow();
                 let neighbor_connection = neighbor.driver_connection.borrow();
                 (
                     neighbor_connection.name.clone(),
                     neighbor_connection.sheet_instance_path.clone(),
-                    live_bus_member_search_from_live_connection(&neighbor_connection),
                     neighbor_connection.clone(),
                 )
             };
@@ -4385,8 +4384,11 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 let parent_has_search = {
                     let parent = parent_handle.borrow();
                     let parent_connection = parent.driver_connection.borrow();
-                    match_live_bus_member_live(&parent_connection.members, &neighbor_search)
-                        .is_some()
+                    match_live_bus_member_connection(
+                        &parent_connection.members,
+                        &promoted_connection,
+                    )
+                    .is_some()
                 };
                 if parent_has_search {
                     continue;
@@ -4500,11 +4502,9 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 continue;
             }
 
-            let search = live_bus_member_search_from_live_connection(&child_connection.borrow());
-
-            if match_live_bus_member_live(
+            if match_live_bus_member_connection(
                 &parent_handle.borrow().driver_connection.borrow().members,
-                &search,
+                &child_connection.borrow(),
             )
             .is_some()
             {
@@ -4627,21 +4627,16 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
         }
 
         for parent_handle in parent_handles {
-            let mut search_candidates = Vec::<LiveProjectBusMember>::new();
-
-            if let Some(existing_member) = existing_parent_links
+            let existing_member = existing_parent_links
                 .iter()
                 .find(|link| {
                     live_subgraph_handle_for_link(live_subgraphs, link)
                         .as_ref()
                         .is_some_and(|candidate| Rc::ptr_eq(candidate, &parent_handle))
                 })
-                .map(|link| link.borrow().member.borrow().clone())
-            {
-                search_candidates.push(existing_member);
-            }
+                .map(|link| link.borrow().member.clone());
 
-            if let Some(parent_neighbor_member) = parent_handle
+            let parent_neighbor_member = parent_handle
                 .borrow()
                 .bus_neighbor_links
                 .iter()
@@ -4650,21 +4645,32 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                         .as_ref()
                         .is_some_and(|candidate| Rc::ptr_eq(candidate, child_handle))
                 })
-                .map(|link| link.borrow().member.borrow().clone())
-            {
-                search_candidates.push(parent_neighbor_member);
-            }
+                .map(|link| link.borrow().member.clone());
 
-            search_candidates.push(live_bus_member_search_from_live_connection(
-                &child_connection.borrow(),
-            ));
+            let refreshed_member = existing_member
+                .as_ref()
+                .and_then(|search| {
+                    match_live_bus_member_live(
+                        &parent_handle.borrow().driver_connection.borrow().members,
+                        &search.borrow(),
+                    )
+                })
+                .or_else(|| {
+                    parent_neighbor_member.as_ref().and_then(|search| {
+                        match_live_bus_member_live(
+                            &parent_handle.borrow().driver_connection.borrow().members,
+                            &search.borrow(),
+                        )
+                    })
+                })
+                .or_else(|| {
+                    match_live_bus_member_connection(
+                        &parent_handle.borrow().driver_connection.borrow().members,
+                        &child_connection.borrow(),
+                    )
+                });
 
-            let Some(refreshed_member) = search_candidates.into_iter().find_map(|search| {
-                match_live_bus_member_live(
-                    &parent_handle.borrow().driver_connection.borrow().members,
-                    &search,
-                )
-            }) else {
+            let Some(refreshed_member) = refreshed_member else {
                 continue;
             };
 

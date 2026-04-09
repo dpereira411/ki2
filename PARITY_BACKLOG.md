@@ -797,6 +797,9 @@ Current status:
         connection values
       - active stale-member replay now also clones directly from the shared live member owner
         instead of snapshotting each stale member into a temporary value before replay
+      - active bus-neighbor search, parent-member refresh, and bus-link rematch now match live bus
+        members directly from shared live connection owners instead of fabricating temporary
+        member-shaped search objects from those connections first
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
