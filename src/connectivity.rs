@@ -3644,7 +3644,9 @@ fn apply_live_reduced_driver_connections(
 // item/subgraph pointers, so this projection must collapse bus-entry attachment back to source
 // indexes at the edge. Active live bus-entry items no longer carry a copied reduced bus index
 // alongside that live owner, and those wire-item owners are now shared handles on the live graph
-// instead of copied value wrappers.
+// instead of copied value wrappers. Reduced strong-driver snapshots now also refresh from the
+// bound live owners here so ERC and graph queries stop reading pre-live reduced driver metadata
+// after the active graph has already attached item owners.
 fn apply_live_reduced_driver_connections_from_handles(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -3662,6 +3664,7 @@ fn apply_live_reduced_driver_connections_from_handles(
         if let Some(driver_connection) = &mut reduced.driver_connection {
             clone_live_connection_owner_into_reduced_connection(driver_connection, &live_driver);
         }
+        reduced.drivers = live_strong_driver_handles_to_snapshots(&live.drivers);
 
         for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
             let source = source.borrow();
@@ -16583,6 +16586,111 @@ mod tests {
             reduced[0].base_pins[0].connection.name,
             "unconnected-(R1-Pad1)"
         );
+    }
+
+    #[test]
+    fn live_projection_updates_driver_snapshots() {
+        let mut reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "PWR".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            chosen_driver_identity: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::PowerPin,
+                priority: 6,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    pin_number: Some("1".to_string()),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                key: crate::connectivity::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    name: Some("1".to_string()),
+                    number: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("power_in".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        {
+            let subgraph = handles[0].borrow();
+            let owner = match subgraph.drivers[0].borrow().owner.clone() {
+                super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                    owner.upgrade().expect("symbol pin owner")
+                }
+                _ => panic!("expected symbol pin strong-driver owner"),
+            };
+            let base_pin = owner.borrow_mut();
+            let mut connection = base_pin.connection.borrow_mut();
+            connection.name = "RENAMED".to_string();
+            connection.local_name = "RENAMED".to_string();
+            connection.full_local_name = "RENAMED".to_string();
+        }
+
+        apply_live_reduced_driver_connections_from_handles(&mut reduced, &handles);
+
+        assert_eq!(reduced[0].drivers[0].connection.name, "RENAMED");
     }
 
     #[test]

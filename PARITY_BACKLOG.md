@@ -911,6 +911,9 @@ Current status:
         candidate ranking now all prefer the projected pin shown name before the symbol value, so
         exercised multi-pin power symbols keep per-pin driver text through setup, reduced
         `ResolveDrivers()` ranking, and the projected graph-owned symbol-pin driver-name lookup
+      - reduced graph projection now also refreshes base-pin connection payload and reduced
+        strong-driver snapshots from the active live owner graph instead of leaving those reduced
+        fields on pre-live placeholders after live propagation
       - live base-pin owners now also keep immutable pin identity separately from the shared live
         connection owner instead of shadowing a second copied reduced pin connection inside the
         same live carrier
