@@ -110,6 +110,8 @@ struct ReducedErcPinContext {
     path: std::path::PathBuf,
     reference: String,
     pin_number: String,
+    pin_name: Option<String>,
+    symbol_uuid: Option<String>,
     pin_type: ReducedPinType,
 }
 
@@ -252,6 +254,8 @@ fn reduced_erc_pin_context_from_base_pin(
         path: base_pin.schematic_path.clone(),
         reference,
         pin_number,
+        pin_name: base_pin.key.name.clone(),
+        symbol_uuid: base_pin.key.symbol_uuid.clone(),
         pin_type,
     })
 }
@@ -496,10 +500,7 @@ fn reduced_preferred_missing_driver_pin<'a>(
     let needs_driver = pins
         .iter()
         .filter(|pin| is_driven_pin_type(pin.pin_type))
-        .find(|pin| {
-            pin.visible
-                && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn)
-        })
+        .find(|pin| pin.visible && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn))
         .or_else(|| {
             pins.iter().find(|pin| {
                 is_driven_pin_type(pin.pin_type)
@@ -521,6 +522,15 @@ fn reduced_preferred_missing_driver_pin<'a>(
                 .find(|pin| is_driven_pin_type(pin.pin_type) && !pin.is_power_symbol)
         })
         .or(needs_driver)
+}
+
+fn reduced_erc_pins_are_stacked(lhs: &ReducedErcPinContext, rhs: &ReducedErcPinContext) -> bool {
+    lhs.path == rhs.path
+        && lhs.symbol_uuid == rhs.symbol_uuid
+        && lhs.pin_type == rhs.pin_type
+        && lhs.pin_name == rhs.pin_name
+        && lhs.at[0].to_bits() == rhs.at[0].to_bits()
+        && lhs.at[1].to_bits() == rhs.at[1].to_bits()
 }
 
 // Upstream parity: local helper for deterministic reduced label lookup keys. KiCad keeps live
@@ -2762,17 +2772,16 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestPinToPin()`. This is not a 1:1
-// KiCad pin-matrix runner because the Rust tree still lacks full `ERC_SETTINGS`, graph-owned pin
-// contexts, marker placement heuristics, and the full connection graph. It now runs over the
-// shared reduced project net map like upstream `m_nets` instead of per-sheet connection
-// components, applies the typed companion-project `erc.pin_map` override slice on top of the
-// upstream default matrix instead of hard-coding only the defaults, and now reads the exercised
-// per-pin ERC context from shared graph-owned base-pin payload instead of re-walking symbols at
-// report time. It now also follows the reduced `needsDriver` / non-power preference shape more
-// closely when choosing one missing-driver report target from a net, and sorts reduced pin
-// contexts with a local `StrNumCmp` analogue before conflict selection so reference/pin ordering
-// stays deterministic on mixed numeric names. Remaining divergence is richer settings,
-// visibility-based pin preference, multi-marker emission, and full subgraph ownership.
+// KiCad pin-matrix runner because the Rust tree still lacks full `ERC_SETTINGS`, marker
+// placement/ranking exactness, and the fuller live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH`
+// ownership model. It now runs over the shared reduced project net map like upstream `m_nets`
+// instead of per-sheet connection components, applies the typed companion-project `erc.pin_map`
+// override slice on top of the upstream default matrix instead of hard-coding only the defaults,
+// reads exercised per-pin ERC context from shared graph-owned pin payload instead of re-walking
+// symbols at report time, prefers visible non-power pins for the reduced `needsDriver` report
+// target, and skips same-symbol stacked pins before pin-map conflict checks. Remaining divergence
+// is richer settings, multi-marker emission, and the fuller live graph ownership behind the
+// reduced carrier.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2823,6 +2832,10 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 
         for (index, lhs_pin) in pins.iter().enumerate() {
             for (rhs_index, rhs_pin) in pins.iter().enumerate().skip(index + 1) {
+                if reduced_erc_pins_are_stacked(lhs_pin, rhs_pin) {
+                    continue;
+                }
+
                 let conflict = configured_pin_conflict(project, lhs_pin.pin_type, rhs_pin.pin_type);
                 if conflict == PinConflict::Ok {
                     continue;
@@ -3705,16 +3718,17 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                     }
                 }
                 SchItem::Symbol(symbol) => {
-                    if let Some(point) = collect_reduced_project_symbol_pins(&graph, sheet_path, symbol)
-                        .into_iter()
-                        .find(|pin| {
-                            pin.electrical_type.as_deref() != Some("no_connect")
-                                && !point_is_on_grid(
-                                    [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
-                                    grid_size_mm,
-                                )
-                        })
-                        .map(|pin| [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)])
+                    if let Some(point) =
+                        collect_reduced_project_symbol_pins(&graph, sheet_path, symbol)
+                            .into_iter()
+                            .find(|pin| {
+                                pin.electrical_type.as_deref() != Some("no_connect")
+                                    && !point_is_on_grid(
+                                        [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
+                                        grid_size_mm,
+                                    )
+                            })
+                            .map(|pin| [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)])
                     {
                         diagnostics.push(Diagnostic {
                             severity: Severity::Warning,
@@ -3801,9 +3815,7 @@ pub fn check_field_name_whitespace(project: &SchematicProject) -> Vec<Diagnostic
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ReducedErcPinContext, ReducedPinType, reduced_preferred_missing_driver_pin,
-    };
+    use super::{ReducedErcPinContext, ReducedPinType, reduced_preferred_missing_driver_pin};
 
     fn test_pin(
         reference: &str,
@@ -3819,6 +3831,8 @@ mod tests {
             path: std::path::PathBuf::from("root.kicad_sch"),
             reference: reference.to_string(),
             pin_number: pin_number.to_string(),
+            pin_name: Some(pin_number.to_string()),
+            symbol_uuid: Some("sym".to_string()),
             pin_type,
         }
     }
@@ -3838,5 +3852,36 @@ mod tests {
         assert_eq!(chosen.pin_number, "1");
         assert!(chosen.visible);
         assert!(!chosen.is_power_symbol);
+    }
+
+    #[test]
+    fn stacked_pin_helper_only_matches_same_symbol_name_type_and_position() {
+        let lhs = ReducedErcPinContext {
+            at: [10.0, 20.0],
+            visible: true,
+            is_power_symbol: false,
+            path: std::path::PathBuf::from("root.kicad_sch"),
+            reference: "U1".to_string(),
+            pin_number: "1".to_string(),
+            pin_name: Some("IO".to_string()),
+            symbol_uuid: Some("sym".to_string()),
+            pin_type: ReducedPinType::Output,
+        };
+        let mut rhs = ReducedErcPinContext {
+            at: lhs.at,
+            visible: lhs.visible,
+            is_power_symbol: lhs.is_power_symbol,
+            path: lhs.path.clone(),
+            reference: lhs.reference.clone(),
+            pin_number: "2".to_string(),
+            pin_name: lhs.pin_name.clone(),
+            symbol_uuid: lhs.symbol_uuid.clone(),
+            pin_type: lhs.pin_type,
+        };
+
+        assert!(super::reduced_erc_pins_are_stacked(&lhs, &rhs));
+
+        rhs.pin_name = Some("ALT".to_string());
+        assert!(!super::reduced_erc_pins_are_stacked(&lhs, &rhs));
     }
 }

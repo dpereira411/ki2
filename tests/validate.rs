@@ -6062,6 +6062,44 @@ fn erc_uses_project_pin_map_overrides() {
 }
 
 #[test]
+fn erc_skips_stacked_same_symbol_pin_conflicts() {
+    let path = temp_schematic(
+        "erc_stacked_same_symbol_conflict_skip",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:STACKDRV"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "STACKDRV" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "STACKDRV_1_1"
+        (pin output line (at 0 0 180) (length 2.54)
+          (name "OUT" (effects (font (size 1 1))))
+          (number "[1,2]" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:STACKDRV")
+    (at 0 0 0)
+    (uuid "73930000-0000-0000-0000-000000000112")
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "STACKDRV" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (global_label "STACKED" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+        .collect::<Vec<_>>();
+
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_input_pins_without_driver() {
     let path = temp_schematic(
         "erc_missing_driver",
