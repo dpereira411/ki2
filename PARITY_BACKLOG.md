@@ -833,9 +833,12 @@ Current status:
         not a blanket subgraph-driver owner on every base pin
       - the exercised self-driven single-pin symbol branch now keeps a live base-pin connection
         owner and refreshes it during post-propagation `Net-(` -> `unconnected-(` renames
-      - remaining gap is the fuller pin-owned live connection object for exercised driven
-        symbol-pin / multi-pin power-pin branches; the current optional base-pin connection carrier
-        is still too ad hoc for those paths
+      - exercised driven symbol-pin strong drivers now also keep a live connection owner directly
+        on the symbol-pin driver owner instead of routing that state through the optional base-pin
+        carrier
+      - remaining gap is the fuller pin-owned live item/connection object for multi-pin
+        power-pin/base-pin branches; the current optional base-pin connection carrier is still too
+        ad hoc there
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
