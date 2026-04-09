@@ -1718,8 +1718,10 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // branches:
 // - connected no-connect markers on same-name nets
 // - dangling no-connect markers with no pins or labels
-// instead of leaving the reduced ERC path on the older connected-only point-local check.
-// Remaining divergence is the fuller hier-pin and marker attachment path.
+// instead of leaving the reduced ERC path on the older connected-only point-local check. Same-name
+// grouping on the real graph path now also keys from the graph-owned reduced driver connection
+// name instead of the parallel reduced subgraph `name` field. Remaining divergence is the fuller
+// hier-pin and marker attachment path.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -1791,10 +1793,11 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            let (unique_pin_count, unique_label_count) = if subgraph.name.is_empty() {
+            let subgraph_name = subgraph.driver_connection.name.clone();
+            let (unique_pin_count, unique_label_count) = if subgraph_name.is_empty() {
                 (local_unique_pins.len(), local_unique_labels.len())
             } else {
-                let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph.name);
+                let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph_name);
                 let unique_pin_count = neighbors
                     .iter()
                     .flat_map(|neighbor| {
@@ -1858,8 +1861,10 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // shared reduced project subgraphs for pin counts and same-name neighbor aggregation instead of
 // grouping local component snapshots by ad-hoc `net_name` strings inside ERC. It now also follows
 // `RunERC()`-style reused-screen de-duplication through the shared reduced driver owner, and now
-// walks reduced member-keyed bus-parent links instead of bare parent index lists. Remaining
-// divergence is fuller live bus-neighbor connection ownership plus the local dangling-label probe.
+// walks reduced member-keyed bus-parent links instead of bare parent index lists. Subgraph net
+// names on the real graph path now also flow from the graph-owned reduced driver connection
+// instead of the parallel reduced subgraph `name` field. Remaining divergence is fuller live
+// bus-neighbor connection ownership plus the local dangling-label probe.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     fn subgraph_has_local_hierarchy_via_bus_parents(
         graph: &crate::connectivity::ReducedProjectNetGraph,
@@ -1971,7 +1976,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         label_subgraphs.push((
             subgraph.sheet_instance_path.clone(),
             subgraph.subgraph_code,
-            subgraph.name.clone(),
+            subgraph.driver_connection.name.clone(),
             pin_count,
             has_no_connect,
             has_local_hierarchy,
@@ -2615,6 +2620,8 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // resolved/driver connection owners on each subgraph instead of mixing bus/member/full-name state
 // from unrelated string caches. It still compares flattened reduced `FullLocalName()` values and
 // still diverges on fuller resolved bus-object ownership plus cached live driver connections.
+// The exercised fallback net name on the real graph path now also comes from the graph-owned
+// reduced driver connection instead of the parallel reduced subgraph `name` field.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2740,11 +2747,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 return driver_connection.full_local_name.clone();
             }
 
-            if subgraph.resolved_connection.name.is_empty() {
-                subgraph.name.clone()
-            } else {
-                subgraph.resolved_connection.name.clone()
-            }
+            subgraph.driver_connection.name.clone()
         });
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
