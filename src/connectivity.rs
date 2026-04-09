@@ -3637,11 +3637,14 @@ fn apply_live_reduced_driver_connections(
 // Upstream parity: local bridge for projecting the active shared live subgraph owner back onto
 // the reduced graph query surface. This still ends in a reduced projection because consumers do
 // not yet keep live item/subgraph pointers, but the active recursive graph build now mutates one
-// shared live subgraph object graph before that projection. Remaining divergence is that callers
-// still consume reduced indices instead of live item/subgraph pointers, so this projection must
-// collapse bus-entry attachment back to source indexes at the edge. Active live bus-entry items no
-// longer carry a copied reduced bus index alongside that live owner, and those wire-item owners
-// are now shared handles on the live graph instead of copied value wrappers.
+// shared live subgraph object graph before that projection. Base-pin live connection owners now
+// also project back onto the reduced subgraph payload instead of only the side pin-driver map, so
+// the reduced graph boundary no longer drops exercised per-pin connection updates from the active
+// live graph. Remaining divergence is that callers still consume reduced indices instead of live
+// item/subgraph pointers, so this projection must collapse bus-entry attachment back to source
+// indexes at the edge. Active live bus-entry items no longer carry a copied reduced bus index
+// alongside that live owner, and those wire-item owners are now shared handles on the live graph
+// instead of copied value wrappers.
 fn apply_live_reduced_driver_connections_from_handles(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -3683,6 +3686,15 @@ fn apply_live_reduced_driver_connections_from_handles(
         }
 
         for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
+            let source = source.borrow();
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
+                &mut target.connection,
+                &source_connection,
+            );
+        }
+
+        for (target, source) in reduced.base_pins.iter_mut().zip(live.base_pins.iter()) {
             let source = source.borrow();
             let source_connection = source.connection.borrow();
             clone_live_connection_owner_into_reduced_connection(
@@ -16497,6 +16509,80 @@ mod tests {
         let connection = handles[0].borrow().base_pins[0].borrow().connection.clone();
 
         assert_eq!(connection.name(), "unconnected-(R1-Pad1)");
+    }
+
+    #[test]
+    fn live_projection_updates_reduced_base_pin_connections() {
+        let mut reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "Net-(R1-Pad1)".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "Net-(R1-Pad1)".to_string(),
+                local_name: "Net-(R1-Pad1)".to_string(),
+                full_local_name: "Net-(R1-Pad1)".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "Net-(R1-Pad1)".to_string(),
+                local_name: "Net-(R1-Pad1)".to_string(),
+                full_local_name: "Net-(R1-Pad1)".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            chosen_driver_identity: None,
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                key: crate::connectivity::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("r1".to_string()),
+                    at: PointKey(0, 0),
+                    name: Some("1".to_string()),
+                    number: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("passive".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        super::refresh_reduced_live_graph_propagation(&mut reduced);
+
+        assert_eq!(
+            reduced[0].base_pins[0].connection.name,
+            "unconnected-(R1-Pad1)"
+        );
     }
 
     #[test]

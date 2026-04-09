@@ -907,6 +907,10 @@ Current status:
         lookup now ignores those auto-generated pin-owned names when the graph has a better chosen
         driver, so connected labeled nets do not regress while per-pin live owners stop starting
         blank
+      - reduced power-pin seeding, reduced strong-driver collection, and reduced driver-name
+        candidate ranking now all prefer the projected pin shown name before the symbol value, so
+        exercised multi-pin power symbols keep per-pin driver text through setup, reduced
+        `ResolveDrivers()` ranking, and the projected graph-owned symbol-pin driver-name lookup
       - live base-pin owners now also keep immutable pin identity separately from the shared live
         connection owner instead of shadowing a second copied reduced pin connection inside the
         same live carrier
@@ -914,9 +918,9 @@ Current status:
         themselves instead of staying copied on the live driver wrapper after owner attachment
       - active chosen-driver attachment now also compares against that attached live owner identity
         instead of reading the reduced driver identity again after owner binding
-      - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
-        owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
-        graph-owned per-pin storage
+      - the remaining pin gap is now the richer per-pin live update/selection logic after setup on
+        those live pin owners for multi-pin power-pin/base-pin branches, not missing lookup
+        identity, missing graph-owned per-pin storage, or reduced power-pin naming
       - the next concrete missing pin behavior is earlier than driver ranking:
         the shared live graph now seeds every projected pin before `ResolveDrivers()`, so the
         remaining gap is no longer missing setup-time pin-owned connections
