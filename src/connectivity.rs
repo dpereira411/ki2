@@ -4880,9 +4880,24 @@ fn refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(
 
 #[cfg(test)]
 fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    refresh_reduced_hierarchy_driver_chains_on_live_subgraphs(&mut live_subgraphs);
-    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
+    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
+
+    for handle in &live_subgraphs {
+        if !live_subgraph_has_hierarchy_handles_from_handle(handle) {
+            handle.borrow_mut().dirty = false;
+            continue;
+        }
+
+        propagate_reduced_live_hierarchy_chain_on_handles(handle, &live_subgraphs, false);
+    }
+
+    for handle in &live_subgraphs {
+        if handle.borrow().dirty {
+            propagate_reduced_live_hierarchy_chain_on_handles(handle, &live_subgraphs, true);
+        }
+    }
+
+    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the bus-neighbor branch inside
@@ -5030,14 +5045,20 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
 fn refresh_reduced_live_bus_neighbor_drivers(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
+    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
+    let all_indexes = (0..live_subgraphs.len()).collect::<Vec<_>>();
     let mut stale_members = Vec::new();
-    refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
-        &mut live_subgraphs,
+    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
+        &live_subgraphs,
+        &all_indexes,
         &mut stale_members,
     );
-    replay_reduced_live_stale_bus_members_on_live_subgraphs(&mut live_subgraphs, &stale_members);
-    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
+    replay_reduced_live_stale_bus_members_on_handles_for_indexes(
+        &live_subgraphs,
+        &all_indexes,
+        &stale_members,
+    );
+    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the stale-member update KiCad performs after a bus
@@ -5110,9 +5131,10 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
 
 #[cfg(test)]
 fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    refresh_reduced_live_bus_parent_members_on_live_subgraphs(&mut live_subgraphs);
-    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
+    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
+    let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+    refresh_reduced_live_bus_parent_members_on_handles_for_component(&live_subgraphs, &component);
+    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the multiple-parent rename/recache branch KiCad
@@ -5196,9 +5218,9 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
 fn refresh_reduced_live_multiple_bus_parent_names(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(&mut live_subgraphs);
-    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
+    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
+    refresh_reduced_live_multiple_bus_parent_names_on_handles(&live_subgraphs);
+    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the post-remap bus-link refresh KiCad gets from
@@ -5281,9 +5303,10 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
 
 #[cfg(test)]
 fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    refresh_reduced_live_bus_link_members_on_live_subgraphs(&mut live_subgraphs);
-    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
+    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
+    let all_indexes = (0..live_subgraphs.len()).collect::<Vec<_>>();
+    refresh_reduced_live_bus_link_members_on_handles_for_indexes(&live_subgraphs, &all_indexes);
+    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the repeated bus-neighbor dirty propagation KiCad
