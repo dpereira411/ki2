@@ -822,6 +822,9 @@ Current status:
       - live strong drivers now carry kind/priority/connection through one owner graph:
         unattached drivers sit on a floating owner and attachment upgrades them to concrete item
         owners instead of splitting real state between `owner` and a second fallback carrier
+      - live bus-entry attachment now points at shared live bus-item owners, and projection derives
+        the parent subgraph from that bus item owner instead of storing the attached bus only as a
+        subgraph pointer/index edge
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

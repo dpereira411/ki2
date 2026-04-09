@@ -2159,7 +2159,8 @@ struct LiveReducedSubgraphWireItem {
     is_bus_entry: bool,
     #[cfg(test)]
     connected_bus_connection: Option<LiveReducedConnection>,
-    connected_bus_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
+    connected_bus_item_handle: Option<Weak<RefCell<LiveReducedSubgraphWireItem>>>,
+    parent_subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
 
 impl PartialEq for LiveReducedSubgraphWireItem {
@@ -2444,6 +2445,7 @@ fn build_live_reduced_subgraph_handles(
     attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
     attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
     attach_live_strong_driver_owners_to_handles(&handles, reduced_subgraphs);
+    attach_live_wire_item_parent_handles_to_handles(&handles);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
 }
@@ -2479,6 +2481,20 @@ fn attach_live_subgraph_links_to_handles(
             link.borrow_mut().subgraph_handle = live_subgraphs
                 .get(reduced_link.subgraph_index)
                 .map(Rc::downgrade);
+        }
+    }
+}
+
+// Upstream parity: local bridge toward item-pointer topology on the shared live graph. Wire and
+// bus items now keep a live reference back to their owning subgraph handle instead of only
+// existing as detached value payload on that subgraph.
+fn attach_live_wire_item_parent_handles_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
+    for handle in live_subgraphs {
+        let subgraph = handle.borrow_mut();
+        let mut all_items = subgraph.bus_items.clone();
+        all_items.extend(subgraph.wire_items.clone());
+        for item in all_items {
+            item.borrow_mut().parent_subgraph_handle = Some(Rc::downgrade(handle));
         }
     }
 }
@@ -2786,7 +2802,8 @@ fn build_live_reduced_subgraphs(
                         is_bus_entry: item.is_bus_entry,
                         #[cfg(test)]
                         connected_bus_connection: None,
-                        connected_bus_handle: None,
+                        connected_bus_item_handle: None,
+                        parent_subgraph_handle: None,
                     }))
                 })
                 .collect(),
@@ -2801,7 +2818,8 @@ fn build_live_reduced_subgraphs(
                         is_bus_entry: item.is_bus_entry,
                         #[cfg(test)]
                         connected_bus_connection: None,
-                        connected_bus_handle: None,
+                        connected_bus_item_handle: None,
+                        parent_subgraph_handle: None,
                     }))
                 })
                 .collect(),
@@ -2822,8 +2840,9 @@ fn build_live_reduced_subgraphs(
 // Upstream parity: local bridge for connected-bus ownership on the shared live subgraph graph.
 // This still uses reduced wire geometry instead of real `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*`
 // pointers, but bus and wire items on the active live graph now keep shared local item owners,
-// and bus entries keep a live reference back to the attached bus subgraph instead of carrying a
-// copied reduced bus index as active ownership.
+// and bus entries keep a live reference to the attached bus item owner instead of carrying a
+// copied reduced bus index as active ownership. Projection can derive the parent subgraph from
+// that bus item owner when callers still need reduced subgraph indexes.
 fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
     let bus_subgraphs = live_subgraphs
         .iter()
@@ -2833,7 +2852,6 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
                 (
                     subgraph.sheet_instance_path.clone(),
                     subgraph.bus_items.clone(),
-                    Rc::downgrade(handle),
                 )
             })
         })
@@ -2851,7 +2869,7 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
 
             let attached_bus = bus_subgraphs
                 .iter()
-                .find(|(bus_sheet_path, bus_items, _)| {
+                .find(|(bus_sheet_path, bus_items)| {
                     *bus_sheet_path == sheet_instance_path
                         && bus_items.iter().any(|bus_item| {
                             let bus_item = bus_item.borrow();
@@ -2878,11 +2896,39 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
                             )
                         })
                 })
-                .map(|(_, _, bus_handle)| bus_handle.clone());
+                .and_then(|(_, bus_items)| {
+                    bus_items
+                        .iter()
+                        .find(|bus_item| {
+                            let bus_item = bus_item.borrow();
+                            point_on_wire_segment(
+                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            ) || point_on_wire_segment(
+                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                                [
+                                    f64::from_bits(bus_item.start.0),
+                                    f64::from_bits(bus_item.start.1),
+                                ],
+                                [
+                                    f64::from_bits(bus_item.end.0),
+                                    f64::from_bits(bus_item.end.1),
+                                ],
+                            )
+                        })
+                        .map(Rc::downgrade)
+                });
 
             drop(item);
             let mut item = item_handle.borrow_mut();
-            item.connected_bus_handle = attached_bus;
+            item.connected_bus_item_handle = attached_bus;
         }
     }
 }
@@ -3066,6 +3112,15 @@ fn live_subgraph_child_handles_from_handle(
         .collect()
 }
 
+fn live_subgraph_handle_from_wire_item(
+    item: &LiveReducedSubgraphWireItemHandle,
+) -> Option<LiveReducedSubgraphHandle> {
+    item.borrow()
+        .parent_subgraph_handle
+        .as_ref()
+        .and_then(Weak::upgrade)
+}
+
 // Upstream parity: active plain bus-parent traversal now follows shared live parent handles. The
 // non-test live payload no longer needs copied reduced parent indexes; those are reconstructed
 // only when projecting the live graph back into the reduced shared graph view.
@@ -3218,9 +3273,10 @@ fn apply_live_reduced_driver_connections(
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
             let source = source.borrow();
             target.connected_bus_subgraph_index = source
-                .connected_bus_handle
+                .connected_bus_item_handle
                 .as_ref()
                 .and_then(Weak::upgrade)
+                .and_then(|bus| live_subgraph_handle_from_wire_item(&bus))
                 .map(|bus| bus.borrow().source_index);
         }
     }
@@ -3302,9 +3358,10 @@ fn apply_live_reduced_driver_connections_from_handles(
         for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
             let source = source.borrow();
             target.connected_bus_subgraph_index = source
-                .connected_bus_handle
+                .connected_bus_item_handle
                 .as_ref()
                 .and_then(Weak::upgrade)
+                .and_then(|bus| live_subgraph_handle_from_wire_item(&bus))
                 .map(|bus| live_subgraph_projection_index(live_subgraphs, &bus));
         }
     }
@@ -9683,7 +9740,7 @@ mod tests {
         let handles = build_live_reduced_subgraph_handles(&reduced);
         handles[1].borrow_mut().wire_items[0]
             .borrow_mut()
-            .connected_bus_handle = Some(Rc::downgrade(&handles[0]));
+            .connected_bus_item_handle = Some(Rc::downgrade(&handles[0].borrow().bus_items[0]));
 
         apply_live_reduced_driver_connections_from_handles(&mut reduced, &handles);
 
@@ -10217,12 +10274,14 @@ mod tests {
         );
 
         let live_bus_entry = live[1].borrow();
-        let connected_bus = live_bus_entry.wire_items[0]
+        let connected_bus_item = live_bus_entry.wire_items[0]
             .borrow()
-            .connected_bus_handle
+            .connected_bus_item_handle
             .as_ref()
             .and_then(Weak::upgrade)
-            .expect("connected bus owner");
+            .expect("connected bus item owner");
+        let connected_bus = super::live_subgraph_handle_from_wire_item(&connected_bus_item)
+            .expect("connected bus subgraph owner");
         let connected_bus_connection = connected_bus.borrow().driver_connection.clone();
         assert_eq!(
             connected_bus_connection.borrow().members[0]
@@ -11803,12 +11862,18 @@ mod tests {
 
         assert_eq!(shared.borrow().driver_connection.name(), "/RENAMED");
         assert!(!shared.borrow().dirty);
-        let attached_bus = shared.borrow().wire_items[0]
+        let attached_bus_item = shared.borrow().wire_items[0]
             .borrow()
-            .connected_bus_handle
+            .connected_bus_item_handle
             .as_ref()
             .and_then(Weak::upgrade)
-            .expect("attached live bus");
+            .expect("attached live bus item");
+        let attached_bus = super::live_subgraph_handle_from_wire_item(&attached_bus_item)
+            .expect("attached live bus subgraph");
+        assert!(Rc::ptr_eq(
+            &attached_bus_item,
+            &shared.borrow().bus_items[0]
+        ));
         assert!(Rc::ptr_eq(&attached_bus, &shared));
     }
 
