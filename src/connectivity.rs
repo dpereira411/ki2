@@ -176,6 +176,7 @@ pub(crate) struct ReducedProjectBusNeighborLink {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedLabelLink {
+    pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) at: PointKey,
     pub(crate) kind: LabelKind,
     pub(crate) connection: ReducedProjectConnection,
@@ -183,6 +184,7 @@ pub(crate) struct ReducedLabelLink {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedHierSheetPinLink {
+    pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) at: PointKey,
     pub(crate) child_sheet_uuid: Option<String>,
     pub(crate) connection: ReducedProjectConnection,
@@ -190,6 +192,7 @@ pub(crate) struct ReducedHierSheetPinLink {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedHierPortLink {
+    pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) at: PointKey,
     pub(crate) connection: ReducedProjectConnection,
 }
@@ -403,15 +406,29 @@ fn live_project_strong_driver_identity(
 ) -> Option<ReducedProjectDriverIdentity> {
     match &driver.owner {
         LiveProjectStrongDriverOwner::Floating { identity, .. } => identity.clone(),
-        LiveProjectStrongDriverOwner::Label { owner, .. } => owner
-            .upgrade()
-            .and_then(|owner| owner.borrow().identity.clone()),
-        LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner
-            .upgrade()
-            .and_then(|owner| owner.borrow().identity.clone()),
-        LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
-            .upgrade()
-            .and_then(|owner| owner.borrow().identity.clone()),
+        LiveProjectStrongDriverOwner::Label { owner, .. } => owner.upgrade().map(|owner| {
+            let owner = owner.borrow();
+            ReducedProjectDriverIdentity::Label {
+                schematic_path: owner.schematic_path.clone(),
+                at: owner.at,
+                kind: reduced_label_kind_sort_key(owner.kind),
+            }
+        }),
+        LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner.upgrade().map(|owner| {
+            let owner = owner.borrow();
+            ReducedProjectDriverIdentity::SheetPin {
+                schematic_path: owner.schematic_path.clone(),
+                at: owner.at,
+            }
+        }),
+        LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner.upgrade().map(|owner| {
+            let owner = owner.borrow();
+            ReducedProjectDriverIdentity::Label {
+                schematic_path: owner.schematic_path.clone(),
+                at: owner.at,
+                kind: reduced_label_kind_sort_key(LabelKind::Hierarchical),
+            }
+        }),
         LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
             owner.upgrade().and_then(|owner| {
                 let owner = owner.borrow();
@@ -2126,9 +2143,9 @@ impl Ord for LiveReducedConnection {
 
 #[derive(Clone, Debug)]
 struct LiveReducedLabelLink {
+    schematic_path: std::path::PathBuf,
     at: PointKey,
     kind: LabelKind,
-    identity: Option<ReducedProjectDriverIdentity>,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2136,9 +2153,9 @@ type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
 
 #[derive(Clone, Debug)]
 struct LiveReducedHierSheetPinLink {
+    schematic_path: std::path::PathBuf,
     at: PointKey,
     child_sheet_uuid: Option<String>,
-    identity: Option<ReducedProjectDriverIdentity>,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2146,8 +2163,8 @@ type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>
 
 #[derive(Clone, Debug)]
 struct LiveReducedHierPortLink {
+    schematic_path: std::path::PathBuf,
     at: PointKey,
-    identity: Option<ReducedProjectDriverIdentity>,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2191,11 +2208,13 @@ fn live_optional_driver_snapshot(
 impl PartialEq for LiveReducedHierSheetPinLink {
     fn eq(&self, other: &Self) -> bool {
         (
+            &self.schematic_path,
             self.at,
             &self.child_sheet_uuid,
             &self.connection,
             live_optional_driver_snapshot(&self.driver),
         ) == (
+            &other.schematic_path,
             other.at,
             &other.child_sheet_uuid,
             &other.connection,
@@ -2215,12 +2234,14 @@ impl PartialOrd for LiveReducedHierSheetPinLink {
 impl Ord for LiveReducedHierSheetPinLink {
     fn cmp(&self, other: &Self) -> Ordering {
         (
+            &self.schematic_path,
             self.at,
             &self.child_sheet_uuid,
             &self.connection,
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
+                &other.schematic_path,
                 other.at,
                 &other.child_sheet_uuid,
                 &other.connection,
@@ -2232,10 +2253,12 @@ impl Ord for LiveReducedHierSheetPinLink {
 impl PartialEq for LiveReducedHierPortLink {
     fn eq(&self, other: &Self) -> bool {
         (
+            &self.schematic_path,
             self.at,
             &self.connection,
             live_optional_driver_snapshot(&self.driver),
         ) == (
+            &other.schematic_path,
             other.at,
             &other.connection,
             live_optional_driver_snapshot(&other.driver),
@@ -2254,11 +2277,13 @@ impl PartialOrd for LiveReducedHierPortLink {
 impl Ord for LiveReducedHierPortLink {
     fn cmp(&self, other: &Self) -> Ordering {
         (
+            &self.schematic_path,
             self.at,
             &self.connection,
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
+                &other.schematic_path,
                 other.at,
                 &other.connection,
                 live_optional_driver_snapshot(&other.driver),
@@ -2773,7 +2798,6 @@ fn attach_live_strong_driver_owners_to_handles(
                             .find(|port| port.borrow().at == at)
                             .map(|port| {
                                 let mut port_ref = port.borrow_mut();
-                                port_ref.identity = identity.clone();
                                 port_ref.driver = Some(driver.clone());
                                 LiveProjectStrongDriverOwner::HierPort {
                                     owner: Rc::downgrade(port),
@@ -2797,7 +2821,6 @@ fn attach_live_strong_driver_owners_to_handles(
                             })
                             .map(|link| {
                                 let mut link_ref = link.borrow_mut();
-                                link_ref.identity = identity.clone();
                                 link_ref.driver = Some(driver.clone());
                                 LiveProjectStrongDriverOwner::Label {
                                     owner: Rc::downgrade(link),
@@ -2819,7 +2842,6 @@ fn attach_live_strong_driver_owners_to_handles(
                     .find(|pin| pin.borrow().at == at)
                     .map(|pin| {
                         let mut pin_ref = pin.borrow_mut();
-                        pin_ref.identity = identity.clone();
                         pin_ref.driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SheetPin {
                             owner: Rc::downgrade(pin),
@@ -3073,9 +3095,9 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|link| {
                     Rc::new(RefCell::new(LiveReducedLabelLink {
+                        schematic_path: link.schematic_path.clone(),
                         at: link.at,
                         kind: link.kind,
-                        identity: None,
                         connection: LiveReducedConnection::new(link.connection),
                         driver: None,
                     }))
@@ -3087,9 +3109,9 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|pin| {
                     Rc::new(RefCell::new(LiveReducedHierSheetPinLink {
+                        schematic_path: pin.schematic_path.clone(),
                         at: pin.at,
                         child_sheet_uuid: pin.child_sheet_uuid,
-                        identity: None,
                         connection: LiveReducedConnection::new(pin.connection),
                         driver: None,
                     }))
@@ -3101,8 +3123,8 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|port| {
                     Rc::new(RefCell::new(LiveReducedHierPortLink {
+                        schematic_path: port.schematic_path.clone(),
                         at: port.at,
-                        identity: None,
                         connection: LiveReducedConnection::new(port.connection),
                         driver: None,
                     }))
@@ -8309,8 +8331,10 @@ fn reduced_label_kind_sort_key(kind: LabelKind) -> u8 {
 // Upstream parity: reduced local helper for the label/no-connect/wire membership KiCad keeps on
 // `CONNECTION_SUBGRAPH`. This is not a 1:1 item-owner cache because the Rust tree still stores
 // reduced snapshots instead of live `SCH_ITEM*`, but it now attaches reduced connection ownership
-// directly to label links instead of splitting label point state from bus/net text state. Remaining
-// divergence is fuller live item identity plus in-place connection updates.
+// directly to label links instead of splitting label point state from bus/net text state, and the
+// reduced label payload now also keeps schematic-path identity so later live driver owners can
+// derive label identity from the owner itself. Remaining divergence is fuller live item identity
+// plus in-place connection updates.
 fn collect_reduced_subgraph_local_membership(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -8369,6 +8393,7 @@ fn collect_reduced_subgraph_local_membership(
                     };
 
                     Some(ReducedLabelLink {
+                        schematic_path: schematic.path.clone(),
                         at: point_key(label.at),
                         kind: label.kind,
                         connection: build_reduced_project_connection(
@@ -8513,8 +8538,10 @@ fn child_sheet_path_for_sheet<'a>(
 // keeps on `CONNECTION_SUBGRAPH`. This is not a 1:1 item-owner cache because the Rust tree still
 // stores reduced shown-text snapshots instead of live `SCH_SHEET_PIN*` / `SCH_HIERLABEL*`, but it
 // now attaches reduced connection ownership directly to those hierarchy links so parent-child
-// matching and ERC do not need separate raw name/type caches. Remaining divergence is fuller
-// item-pointer identity and live connection-type ownership.
+// matching and ERC do not need separate raw name/type caches, and the reduced sheet-pin payload
+// now also keeps schematic-path identity so live driver owners can derive sheet-pin identity from
+// the owner itself. Remaining divergence is fuller item-pointer identity and live connection-type
+// ownership.
 fn collect_reduced_subgraph_hierarchy_membership(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -8562,6 +8589,7 @@ fn collect_reduced_subgraph_hierarchy_membership(
                     );
 
                     hier_sheet_pins.push(ReducedHierSheetPinLink {
+                        schematic_path: schematic.path.clone(),
                         at: point_key(pin.at),
                         child_sheet_uuid: sheet.uuid.clone(),
                         connection: build_reduced_project_connection(
@@ -8607,6 +8635,7 @@ fn collect_reduced_subgraph_hierarchy_membership(
                 );
 
                 hier_ports.push(ReducedHierPortLink {
+                    schematic_path: schematic.path.clone(),
                     at: point_key(label.at),
                     connection: build_reduced_project_connection(
                         schematic,
@@ -10276,6 +10305,7 @@ mod tests {
             nodes: Vec::new(),
             base_pins: Vec::new(),
             label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 connection: ReducedProjectConnection {
@@ -10622,6 +10652,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -10676,6 +10707,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(1, 1),
                     child_sheet_uuid: None,
                     connection: ReducedProjectConnection {
@@ -10767,6 +10799,7 @@ mod tests {
             nodes: Vec::new(),
             base_pins: Vec::new(),
             label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 connection: ReducedProjectConnection {
@@ -13515,6 +13548,7 @@ mod tests {
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
             hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(10, 20),
                 child_sheet_uuid: Some("child".to_string()),
                 connection: ReducedProjectConnection {
@@ -13562,12 +13596,116 @@ mod tests {
                 assert!(matches!(
                     driver.identity,
                     Some(super::ReducedProjectDriverIdentity::SheetPin {
+                        schematic_path,
                         at: PointKey(10, 20),
-                        ..
-                    })
+                    }) if schematic_path == std::path::PathBuf::from("root.kicad_sch")
                 ));
             }
             _ => panic!("expected sheet pin strong-driver owner"),
+        }
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_attach_label_driver_owners() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            chosen_driver_identity: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: 6,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::Label {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(5, 6),
+                    kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(5, 6),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(5, 6),
+                kind: LabelKind::Global,
+                connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+        let owner = subgraph.drivers[0].borrow().owner.clone();
+
+        match owner {
+            super::LiveProjectStrongDriverOwner::Label { owner, .. } => {
+                let owner = owner.upgrade().expect("label owner");
+                assert!(Rc::ptr_eq(&owner, &subgraph.label_links[0]));
+                let driver = owner.borrow().driver.clone().expect("label driver owner");
+                let driver = driver.borrow().snapshot();
+                assert_eq!(driver.connection.local_name, "SIG");
+                assert_eq!(driver.connection.name, "/SIG");
+                assert_eq!(driver.priority, 6);
+                assert!(matches!(
+                    driver.identity,
+                    Some(super::ReducedProjectDriverIdentity::Label {
+                        schematic_path,
+                        at: PointKey(5, 6),
+                        kind,
+                    }) if schematic_path == std::path::PathBuf::from("root.kicad_sch")
+                        && kind == super::reduced_label_kind_sort_key(LabelKind::Global)
+                ));
+            }
+            _ => panic!("expected label strong-driver owner"),
         }
     }
 
@@ -14058,6 +14196,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -14104,6 +14243,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     child_sheet_uuid: None,
                     connection: ReducedProjectConnection {
@@ -14435,6 +14575,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     child_sheet_uuid: Some("child-sheet".to_string()),
                     connection: ReducedProjectConnection {
@@ -14508,6 +14649,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -14546,6 +14688,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     child_sheet_uuid: Some("child-sheet".to_string()),
                     connection: ReducedProjectConnection {
@@ -14625,6 +14768,7 @@ mod tests {
                 nodes: Vec::new(),
                 base_pins: Vec::new(),
                 label_links: vec![ReducedLabelLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     kind: LabelKind::Local,
                     connection: ReducedProjectConnection {
@@ -14640,6 +14784,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -14743,6 +14888,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     child_sheet_uuid: Some("child-sheet".to_string()),
                     connection: ReducedProjectConnection {
@@ -14800,6 +14946,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -14901,6 +15048,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     child_sheet_uuid: Some("child-sheet".to_string()),
                     connection: ReducedProjectConnection {
@@ -14958,6 +15106,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -15795,6 +15944,7 @@ mod tests {
                 nodes: Vec::new(),
                 base_pins: Vec::new(),
                 label_links: vec![ReducedLabelLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     kind: LabelKind::Local,
                     connection: ReducedProjectConnection {
@@ -15889,6 +16039,7 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     child_sheet_uuid: Some("child-sheet".to_string()),
                     connection: ReducedProjectConnection {
@@ -15959,6 +16110,7 @@ mod tests {
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -16984,6 +17136,7 @@ mod tests {
             nodes: Vec::new(),
             base_pins: Vec::new(),
             label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 connection: ReducedProjectConnection {
@@ -17075,6 +17228,7 @@ mod tests {
             nodes: Vec::new(),
             base_pins: Vec::new(),
             label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 connection: ReducedProjectConnection {
@@ -17379,11 +17533,13 @@ mod tests {
 impl PartialEq for LiveReducedLabelLink {
     fn eq(&self, other: &Self) -> bool {
         (
+            &self.schematic_path,
             self.at,
             self.kind,
             &self.connection,
             live_optional_driver_snapshot(&self.driver),
         ) == (
+            &other.schematic_path,
             other.at,
             other.kind,
             &other.connection,

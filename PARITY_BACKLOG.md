@@ -920,6 +920,10 @@ Current status:
         path, number, and electrical type alongside the shared live connection owner
       - attached live strong-driver identity now derives from the shared live item owners
         themselves instead of staying copied on the live driver wrapper after owner attachment
+      - attached label and sheet-pin strong-driver identity now also derives from the live owner
+        payload itself instead of copied live identity side state on those owners
+      - attached hierarchical-label port strong-driver identity now also derives from the live
+        owner payload instead of copied live identity side state on that owner
       - symbol-pin strong-driver identity now also derives from the live base-pin owner payload
         itself instead of copied per-pin live side state, so live symbol-pin owners no longer need
         a second identity cache after attachment
