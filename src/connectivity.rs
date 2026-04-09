@@ -2544,7 +2544,7 @@ struct LiveReducedSubgraphWireItem {
     is_bus_entry: bool,
     connection: LiveProjectConnectionHandle,
     connected_bus_item_handle: Option<Weak<RefCell<LiveReducedSubgraphWireItem>>>,
-    parent_subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
+    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 
 impl LiveReducedSubgraphWireItem {
@@ -2659,7 +2659,7 @@ struct LiveReducedSubgraphLink {
     member: LiveProjectBusMemberHandle,
     #[cfg(test)]
     subgraph_index: usize,
-    subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
+    subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 
 #[cfg(test)]
@@ -2720,9 +2720,7 @@ impl LiveReducedSubgraphLink {
     // owner now decides which member and target subgraph index it projects instead of leaving that
     // boundary logic in a free helper around the owner graph.
     fn projection_index(&self, live_subgraphs: &[LiveReducedSubgraphHandle]) -> usize {
-        self.subgraph_handle
-            .as_ref()
-            .and_then(Weak::upgrade)
+        Weak::upgrade(&self.subgraph_handle)
             .map(|subgraph| live_subgraph_projection_index(live_subgraphs, &subgraph))
             .unwrap_or_else(|| {
                 #[cfg(test)]
@@ -3027,7 +3025,8 @@ impl LiveReducedSubgraph {
         {
             link.borrow_mut().subgraph_handle = live_subgraphs
                 .get(reduced_link.subgraph_index)
-                .map(Rc::downgrade);
+                .map(Rc::downgrade)
+                .expect("active live bus-neighbor link requires an attached subgraph handle");
         }
 
         for (link, reduced_link) in self
@@ -3037,7 +3036,8 @@ impl LiveReducedSubgraph {
         {
             link.borrow_mut().subgraph_handle = live_subgraphs
                 .get(reduced_link.subgraph_index)
-                .map(Rc::downgrade);
+                .map(Rc::downgrade)
+                .expect("active live bus-parent link requires an attached subgraph handle");
         }
 
         self.bus_parent_handles = reduced_subgraph
@@ -3063,12 +3063,12 @@ impl LiveReducedSubgraph {
     fn attach_item_parent_handles(&mut self, handle: &LiveReducedSubgraphHandle) {
         for item in &self.bus_items {
             let mut item_ref = item.borrow_mut();
-            item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
+            item_ref.parent_subgraph_handle = Rc::downgrade(handle);
             item_ref.connection = self.driver_connection.clone();
         }
         for item in &self.wire_items {
             let mut item_ref = item.borrow_mut();
-            item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
+            item_ref.parent_subgraph_handle = Rc::downgrade(handle);
             item_ref.connection = self.driver_connection.clone();
         }
     }
@@ -4294,7 +4294,7 @@ fn update_live_subgraph_link_handle(
         {
             existing.subgraph_index = target_handle.borrow().source_index;
         }
-        existing.subgraph_handle = Some(Rc::downgrade(target_handle));
+        existing.subgraph_handle = Rc::downgrade(target_handle);
         drop(existing);
         return existing_handle;
     }
@@ -4303,7 +4303,7 @@ fn update_live_subgraph_link_handle(
         member,
         #[cfg(test)]
         subgraph_index: target_handle.borrow().source_index,
-        subgraph_handle: Some(Rc::downgrade(target_handle)),
+        subgraph_handle: Rc::downgrade(target_handle),
     }))
 }
 
@@ -4395,7 +4395,7 @@ fn build_live_reduced_subgraph_handles(
                             member: Rc::new(RefCell::new(link.member.into())),
                             #[cfg(test)]
                             subgraph_index: link.subgraph_index,
-                            subgraph_handle: None,
+                            subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4408,7 +4408,7 @@ fn build_live_reduced_subgraph_handles(
                             member: Rc::new(RefCell::new(link.member.into())),
                             #[cfg(test)]
                             subgraph_index: link.subgraph_index,
-                            subgraph_handle: None,
+                            subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4496,7 +4496,7 @@ fn build_live_reduced_subgraph_handles(
                             is_bus_entry: item.is_bus_entry,
                             connection: live_driver_connection.clone(),
                             connected_bus_item_handle: None,
-                            parent_subgraph_handle: None,
+                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4511,7 +4511,7 @@ fn build_live_reduced_subgraph_handles(
                             is_bus_entry: item.is_bus_entry,
                             connection: live_driver_connection.clone(),
                             connected_bus_item_handle: None,
-                            parent_subgraph_handle: None,
+                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4555,10 +4555,7 @@ fn live_subgraph_handle_for_link(
     _live_subgraphs: &[LiveReducedSubgraphHandle],
     link: &LiveReducedSubgraphLinkHandle,
 ) -> Option<LiveReducedSubgraphHandle> {
-    link.borrow()
-        .subgraph_handle
-        .as_ref()
-        .and_then(Weak::upgrade)
+    Weak::upgrade(&link.borrow().subgraph_handle)
 }
 
 // Upstream parity: active hierarchy traversal should follow the shared live parent handle. The
@@ -4609,10 +4606,7 @@ fn live_subgraph_child_handles_from_handle(
 fn live_subgraph_handle_from_wire_item(
     item: &LiveReducedSubgraphWireItemHandle,
 ) -> Option<LiveReducedSubgraphHandle> {
-    item.borrow()
-        .parent_subgraph_handle
-        .as_ref()
-        .and_then(Weak::upgrade)
+    Weak::upgrade(&item.borrow().parent_subgraph_handle)
 }
 
 // Upstream parity: active plain bus-parent traversal now follows shared live parent handles. The
@@ -14254,14 +14248,12 @@ mod tests {
         let bus_neighbor = bus.bus_neighbor_links[0]
             .borrow()
             .subgraph_handle
-            .as_ref()
-            .and_then(Weak::upgrade)
+            .upgrade()
             .expect("bus neighbor handle");
         let net_parent = net.bus_parent_links[0]
             .borrow()
             .subgraph_handle
-            .as_ref()
-            .and_then(Weak::upgrade)
+            .upgrade()
             .expect("net parent handle");
 
         assert!(Rc::ptr_eq(&bus_neighbor, &handles[1]));
