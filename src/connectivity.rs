@@ -8276,6 +8276,13 @@ fn reduced_label_driver_priority(label: &Label) -> i32 {
     }
 }
 
+// upstream: CONNECTION_SUBGRAPH::ResolveDrivers candidate_cmp sheet-pin shape branch
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: reduced `SheetPinShape` carrier instead of live `SCH_SHEET_PIN`
+// local_only_reason: none
+// replaced_by: fuller live `SCH_SHEET_PIN` driver item owner
+// remove_when: sheet-pin candidate comparison runs on live KiCad-shaped item owners
 fn reduced_sheet_pin_driver_rank(shape: SheetPinShape) -> i32 {
     match shape {
         SheetPinShape::Output => 1,
@@ -8284,6 +8291,17 @@ fn reduced_sheet_pin_driver_rank(shape: SheetPinShape) -> i32 {
         | SheetPinShape::TriState
         | SheetPinShape::Unspecified => 0,
     }
+}
+
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_SHEET_PIN_T branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_SHEET_PIN` driver item owner
+// remove_when: sheet-pin priority reads directly from live KiCad-shaped item owners
+fn reduced_sheet_pin_driver_priority() -> i32 {
+    2
 }
 
 fn reduced_power_pin_driver_priority(
@@ -8684,7 +8702,7 @@ where
 
                     drivers.push(ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::SheetPin,
-                        priority: reduced_sheet_pin_driver_rank(pin.shape),
+                        priority: reduced_sheet_pin_driver_priority(),
                         connection: build_reduced_project_driver_connection(
                             schematic,
                             sheet_instance_path,
@@ -8838,7 +8856,7 @@ where
                     })
                 }) {
                     candidates.push(ReducedDriverNameCandidate {
-                        priority: 0,
+                        priority: reduced_sheet_pin_driver_priority(),
                         sheet_pin_rank: reduced_sheet_pin_driver_rank(pin.shape),
                         text: shown_sheet_pin_text(sheet, pin),
                         source: ReducedNetNameSource::SheetPin,
