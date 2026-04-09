@@ -983,6 +983,8 @@ Current status:
       - post-propagation self-driven symbol-pin no-connect refresh and self-driven sheet-pin
         child-bus promotion now also live on the shared live subgraph owner instead of an outer
         handle loop around it
+      - strong-driver item-owner attachment match/selection now also lives on the shared live
+        subgraph owner instead of a large free-function identity match around the graph
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
@@ -1005,6 +1007,9 @@ Current status:
         - fuller live pin object/update behavior for multi-pin power/base-pin branches
         - fuller live connection/subgraph object ownership instead of reduced carriers with
           projection adapters at the boundary
+      - after the latest owner-side projection/recache/refresh ports, the remaining same-sized
+        owner slices on the active handle path are exhausted; the next honest move is the larger
+        live pin / connection object expansion rather than another boundary helper cleanup
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
