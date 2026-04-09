@@ -998,6 +998,35 @@ Current status:
       - post-pass live graph updates now also live on the shared live subgraph owner:
         - bus parent/neighbor link rematch
         - multiple-bus-parent rename and same-name recache
+      - the shared live subgraph owner now also owns the active subgraph driver connection as a
+        direct live connection handle instead of a `LiveReducedConnection` wrapper on the active
+        path
+      - active recursive bus-neighbor propagation, parent-member refresh, and stale-member replay
+        now also live on the shared live subgraph owner instead of free functions around the handle
+        graph
+      - live subgraph construction now also runs through the subgraph owner itself for:
+        - topology attachment
+        - strong-driver attachment
+        - initial base-pin refresh
+        - parent item-handle attachment
+      - reduced projection and build-time bus-entry connected-bus attachment now also run through
+        the shared live subgraph owner instead of free orchestration loops around the handle graph
+      - after the latest audit, the remaining non-test free functions around the active handle
+        graph are thin handle-access helpers or reduced projection boundaries, not another material
+        ownership mismatch on the active path
+      - reduced base-pin payload now also carries its own projected per-pin driver connection on
+        `ReducedProjectBasePin.driver_connection`, so the reduced graph no longer needs a parallel
+        graph-level pin-driver side map for exercised symbol-pin driver queries
+      - symbol-pin driver-name lookup now reads that per-pin reduced base-pin owner directly; the
+        remaining by-location pin-driver map has been removed from production graph ownership and
+        only survives in narrow manual fallback tests
+      - the active live handle graph is now owner-driven through:
+        - construction
+        - strong-driver attachment
+        - recursive propagation
+        - post-pass bus updates
+        - post-propagation item refresh
+        - reduced projection
       - active base-pin driver connections now live on direct shared live connection handles
         instead of a second `LiveReducedConnection` wrapper on the pin owner
       - active base-pin item connections now also live on direct shared live connection handles,

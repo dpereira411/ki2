@@ -555,8 +555,6 @@ pub(crate) struct ReducedProjectNetGraph {
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
-    pin_driver_connections_by_location:
-        BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
     label_subgraph_identities: BTreeMap<ReducedProjectLabelIdentityKey, usize>,
     no_connect_subgraph_identities: BTreeMap<ReducedProjectNoConnectIdentityKey, usize>,
@@ -2403,41 +2401,6 @@ impl LiveReducedBasePin {
             priority,
         }
     }
-
-    // Upstream parity: local base-pin owner analogue for projecting graph-owned pin driver
-    // connections back out of the shared live graph. The reduced project graph still stores maps
-    // instead of live `SCH_PIN* -> SCH_CONNECTION*` lookups, but the pin owner now decides how its
-    // dedicated pin-driver connection is exported to those reduced maps instead of leaving that
-    // owner walk in an external collector loop.
-    fn project_driver_connection_by_location(
-        &self,
-        by_location: &mut BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
-    ) {
-        let mut connection = ReducedProjectConnection {
-            net_code: 0,
-            connection_type: ReducedProjectConnectionType::None,
-            name: String::new(),
-            local_name: String::new(),
-            full_local_name: String::new(),
-            sheet_instance_path: String::new(),
-            members: Vec::new(),
-        };
-        self.driver_connection
-            .borrow()
-            .project_onto_reduced(&mut connection);
-        if connection.connection_type == ReducedProjectConnectionType::None {
-            return;
-        }
-
-        by_location
-            .entry(ReducedProjectPinIdentityKey {
-                sheet_instance_path: self.pin.key.sheet_instance_path.clone(),
-                symbol_uuid: self.pin.key.symbol_uuid.clone(),
-                at: self.pin.key.at,
-                number: self.pin.key.number.clone(),
-            })
-            .or_insert(connection);
-    }
 }
 
 fn live_optional_driver_snapshot(
@@ -3249,21 +3212,6 @@ impl LiveReducedSubgraph {
                 .and_then(Weak::upgrade)
                 .and_then(|bus| live_subgraph_handle_from_wire_item(&bus))
                 .map(|bus| live_subgraph_projection_index(live_subgraphs, &bus));
-        }
-    }
-
-    // Upstream parity: local live-subgraph analogue for projecting graph-owned pin driver
-    // connections back out of the shared graph owner. The reduced caller surface still consumes
-    // pin-driver maps, but the shared live subgraph now delegates that projection to its live
-    // base-pin owners instead of an external free collector loop.
-    fn project_pin_driver_connections_by_location(
-        &self,
-        by_location: &mut BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
-    ) {
-        for base_pin in &self.base_pins {
-            base_pin
-                .borrow()
-                .project_driver_connection_by_location(by_location);
         }
     }
 
@@ -4717,27 +4665,13 @@ fn reduced_project_hierarchy_indexes_from_live_subgraph(
     (parent_index, child_indexes)
 }
 
-fn collect_reduced_project_pin_driver_connections_from_live_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection> {
-    let mut by_location = BTreeMap::new();
-
-    for handle in live_subgraphs {
-        handle
-            .borrow()
-            .project_pin_driver_connections_by_location(&mut by_location);
-    }
-
-    by_location
-}
-
 // Upstream parity: local bridge for projecting the active shared live subgraph owner back onto
 // the reduced graph query surface. This still ends in a reduced projection because consumers do
 // not yet keep live item/subgraph pointers, but the active recursive graph build now mutates one
 // shared live subgraph object graph before that projection. Base-pin live connection owners now
-// also project back onto the reduced subgraph payload instead of only the side pin-driver map, so
-// the reduced graph boundary no longer drops exercised per-pin connection updates from the active
-// live graph. Remaining divergence is that callers still consume reduced indices instead of live
+// also project back onto the reduced subgraph payload directly, so the reduced graph boundary no
+// longer drops exercised per-pin connection updates from the active live graph. Remaining
+// divergence is that callers still consume reduced indices instead of live
 // item/subgraph pointers, so this projection must collapse bus-entry attachment back to source
 // indexes at the edge. Active live bus-entry items no longer carry a copied reduced bus index
 // alongside that live owner, and those wire-item owners are now shared handles on the live graph
@@ -7466,13 +7400,11 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
-    let live_subgraphs =
+    let _live_subgraphs =
         refresh_reduced_live_graph_propagation_with_handles(&mut reduced_subgraphs);
     attach_reduced_connected_bus_items(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
-    let pin_driver_connections_by_location =
-        collect_reduced_project_pin_driver_connections_from_live_handles(&live_subgraphs);
 
     ReducedProjectNetGraph {
         subgraphs: reduced_subgraphs,
@@ -7480,7 +7412,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraphs_by_sheet_and_name,
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
-        pin_driver_connections_by_location,
         point_subgraph_identities,
         label_subgraph_identities,
         no_connect_subgraph_identities,
@@ -8324,8 +8255,8 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
 // graph-owned per-pin driver connections projected on the reduced base-pin payload itself, and
-// both the named and by-location lookup edges now include projected pin number so stacked pins do
-// not collapse to one driver-name query. Base-pin owners now also start with
+// both the named and by-location subgraph lookup edges now include projected pin number so
+// stacked pins do not collapse to one driver-name query. Base-pin owners now also start with
 // `updatePinConnectivity()`-style seeded names, so this lookup ignores auto-generated pin-owned
 // names when the graph has a better chosen driver and only reports the pin-owned name directly for
 // exercised power-pin and pin-default branches. Remaining divergence is fuller live
@@ -8359,13 +8290,6 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
                 })
             })
             .map(|base_pin| &base_pin.driver_connection)
-    })
-    .or_else(|| {
-        graph
-            .pin_driver_connections_by_location
-            .get(&reduced_project_pin_identity_key(
-                sheet_path, symbol, at, pin_number,
-            ))
     })
     .and_then(|connection| {
         (!connection.local_name.is_empty() && !is_auto_generated_net_name(&connection.local_name))
@@ -11695,12 +11619,115 @@ mod tests {
             })
             .expect("symbol");
         let graph = super::ReducedProjectNetGraph {
-            subgraphs: Vec::new(),
+            subgraphs: vec![super::ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "PWR".to_string(),
+                resolved_connection: super::ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: super::ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: sheet_path.instance_path.clone(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(super::ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: super::ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: sheet_path.instance_path.clone(),
+                    members: Vec::new(),
+                }),
+                chosen_driver_identity: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: sheet_path.instance_path.clone(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: vec![
+                    super::ReducedProjectBasePin {
+                        schematic_path: sheet_path.schematic_path.clone(),
+                        key: super::ReducedNetBasePinKey {
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            symbol_uuid: symbol.uuid.clone(),
+                            at: super::point_key([0.0, 0.0]),
+                            name: Some("PWR".to_string()),
+                            number: Some("1".to_string()),
+                        },
+                        number: Some("1".to_string()),
+                        electrical_type: None,
+                        connection: super::ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: super::ReducedProjectConnectionType::Net,
+                            name: "VCC".to_string(),
+                            local_name: "VCC".to_string(),
+                            full_local_name: "VCC".to_string(),
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            members: Vec::new(),
+                        },
+                        driver_connection: super::ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: super::ReducedProjectConnectionType::Net,
+                            name: "VCC".to_string(),
+                            local_name: "VCC".to_string(),
+                            full_local_name: "VCC".to_string(),
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            members: Vec::new(),
+                        },
+                    },
+                    super::ReducedProjectBasePin {
+                        schematic_path: sheet_path.schematic_path.clone(),
+                        key: super::ReducedNetBasePinKey {
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            symbol_uuid: symbol.uuid.clone(),
+                            at: super::point_key([0.0, 0.0]),
+                            name: Some("PWR".to_string()),
+                            number: Some("2".to_string()),
+                        },
+                        number: Some("2".to_string()),
+                        electrical_type: None,
+                        connection: super::ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: super::ReducedProjectConnectionType::Net,
+                            name: "GND".to_string(),
+                            local_name: "GND".to_string(),
+                            full_local_name: "GND".to_string(),
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            members: Vec::new(),
+                        },
+                        driver_connection: super::ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: super::ReducedProjectConnectionType::Net,
+                            name: "GND".to_string(),
+                            local_name: "GND".to_string(),
+                            full_local_name: "GND".to_string(),
+                            sheet_instance_path: sheet_path.instance_path.clone(),
+                            members: Vec::new(),
+                        },
+                    },
+                ],
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            }],
             subgraphs_by_name: BTreeMap::new(),
             subgraphs_by_sheet_and_name: BTreeMap::new(),
             pin_subgraph_identities: BTreeMap::new(),
-            pin_subgraph_identities_by_location: BTreeMap::new(),
-            pin_driver_connections_by_location: BTreeMap::from([
+            pin_subgraph_identities_by_location: BTreeMap::from([
                 (
                     super::ReducedProjectPinIdentityKey {
                         sheet_instance_path: sheet_path.instance_path.clone(),
@@ -11708,15 +11735,7 @@ mod tests {
                         at: super::point_key([0.0, 0.0]),
                         number: Some("1".to_string()),
                     },
-                    super::ReducedProjectConnection {
-                        net_code: 0,
-                        connection_type: super::ReducedProjectConnectionType::Net,
-                        name: "VCC".to_string(),
-                        local_name: "VCC".to_string(),
-                        full_local_name: "VCC".to_string(),
-                        sheet_instance_path: sheet_path.instance_path.clone(),
-                        members: Vec::new(),
-                    },
+                    0,
                 ),
                 (
                     super::ReducedProjectPinIdentityKey {
@@ -11725,15 +11744,7 @@ mod tests {
                         at: super::point_key([0.0, 0.0]),
                         number: Some("2".to_string()),
                     },
-                    super::ReducedProjectConnection {
-                        net_code: 0,
-                        connection_type: super::ReducedProjectConnectionType::Net,
-                        name: "GND".to_string(),
-                        local_name: "GND".to_string(),
-                        full_local_name: "GND".to_string(),
-                        sheet_instance_path: sheet_path.instance_path.clone(),
-                        members: Vec::new(),
-                    },
+                    0,
                 ),
             ]),
             point_subgraph_identities: BTreeMap::new(),
@@ -11840,23 +11851,6 @@ mod tests {
                     number: Some("1".to_string()),
                 },
                 0,
-            )]),
-            pin_driver_connections_by_location: BTreeMap::from([(
-                super::ReducedProjectPinIdentityKey {
-                    sheet_instance_path: String::new(),
-                    symbol_uuid: symbol.uuid.clone(),
-                    at: PointKey(0, 0),
-                    number: Some("1".to_string()),
-                },
-                super::ReducedProjectConnection {
-                    net_code: 1,
-                    connection_type: super::ReducedProjectConnectionType::Net,
-                    name: "Net-(U1-Pad1)".to_string(),
-                    local_name: "Net-(U1-Pad1)".to_string(),
-                    full_local_name: "Net-(U1-Pad1)".to_string(),
-                    sheet_instance_path: String::new(),
-                    members: Vec::new(),
-                },
             )]),
             point_subgraph_identities: BTreeMap::new(),
             label_subgraph_identities: BTreeMap::new(),
