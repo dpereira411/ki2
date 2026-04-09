@@ -63,20 +63,26 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
 // `CONNECTION_GRAPH::RunERC()`. This is not a 1:1 KiCad iterator because the Rust tree still lacks
 // live `CONNECTION_SUBGRAPH*` and absorbed-subgraph state, but it now preserves KiCad's
 // `seenDriverInstances` behavior by deduplicating graph-owned ERC passes on reused screens through
-// the shared reduced driver owner instead of sweeping every repeated subgraph independently.
-// Remaining divergence is the still-missing live subgraph/driver object model behind that owner.
+// the shared reduced driver owner instead of sweeping every repeated subgraph independently. For
+// reused-screen drivers, the reduced pass keeps the last page-ordered occurrence, matching the
+// exercised KiCad `m_subgraphs` traversal after the live item connection-map expansion rather than
+// keeping the first reduced occurrence. Remaining divergence is the still-missing live
+// subgraph/driver object model behind that owner.
 fn graph_run_erc_subgraphs(
     graph: &crate::connectivity::ReducedProjectNetGraph,
 ) -> Vec<&crate::connectivity::ReducedProjectSubgraphEntry> {
     let mut seen_driver_identities = std::collections::BTreeSet::new();
-
-    reduced_project_subgraphs(graph)
+    let mut subgraphs = reduced_project_subgraphs(graph)
         .iter()
+        .rev()
         .filter(|subgraph| {
             crate::connectivity::reduced_project_subgraph_driver_identity(subgraph)
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    subgraphs.reverse();
+    subgraphs
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

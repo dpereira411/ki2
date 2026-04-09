@@ -1320,21 +1320,66 @@ impl SchematicLoader {
 
     // Upstream parity: loader-side `UpdateSheetInstanceData` analogue. This local boundary keeps
     // page propagation on the shared loaded-sheet-path list before later screen page-state refresh,
-    // rather than matching KiCad's owning C++ object graph 1:1. Direct re-audit did not find
-    // another model-visible mismatch in the current page-field representation; remaining drift is
-    // limited to richer reused-screen/current-sheet state beyond `page_number`/`page_count`.
+    // rather than matching KiCad's owning C++ object graph 1:1. It now reads both root
+    // `sheet_instances` and per-sheet-item local `instances` page state before page sorting, so
+    // reused screens keep the same page-ordered occurrence metadata that KiCad's hierarchy list
+    // exposes to the connection graph. Remaining drift is limited to richer reused-screen/current
+    // sheet state beyond `page_number`/`page_count`.
     fn update_sheet_instance_data(&self, root_path: &Path, sheet_paths: &mut [LoadedSheetPath]) {
         let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
             return;
         };
-        let sheet_instances = &self.schematics[root_index].screen.sheet_instances;
+        let mut page_by_instance_path: HashMap<String, Option<String>> = self.schematics
+            [root_index]
+            .screen
+            .sheet_instances
+            .iter()
+            .map(|instance| {
+                let path = if instance.path == "/" {
+                    String::new()
+                } else {
+                    instance.path.clone()
+                };
+                (path, instance.page.clone())
+            })
+            .collect();
+
+        for parent_sheet_path in sheet_paths.iter() {
+            let Some(parent_index) = self
+                .loaded_by_canonical
+                .get(&parent_sheet_path.schematic_path)
+                .copied()
+            else {
+                continue;
+            };
+
+            for item in &self.schematics[parent_index].screen.items {
+                let SchItem::Sheet(sheet) = item else {
+                    continue;
+                };
+                let Some(sheet_uuid) = sheet.uuid.as_deref() else {
+                    continue;
+                };
+
+                let child_instance_path =
+                    format!("{}/{}", parent_sheet_path.symbol_path, sheet_uuid);
+                let Some(instance) = sheet.instances.iter().find(|instance| {
+                    instance.path == parent_sheet_path.symbol_path
+                        || instance.path == parent_sheet_path.instance_path
+                }) else {
+                    continue;
+                };
+
+                page_by_instance_path.insert(child_instance_path, instance.page.clone());
+            }
+        }
 
         for sheet_path in sheet_paths.iter_mut() {
-            if let Some(instance) = sheet_instances
-                .iter()
-                .find(|instance| instance.path == sheet_path.instance_path)
+            if let Some(page) = page_by_instance_path
+                .get(&sheet_path.instance_path)
+                .or_else(|| page_by_instance_path.get(&sheet_path.symbol_path))
             {
-                sheet_path.page = instance.page.clone();
+                sheet_path.page = page.clone();
             }
         }
 

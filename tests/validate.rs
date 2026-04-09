@@ -3084,6 +3084,41 @@ fn erc_reports_connected_driver_conflicts() {
 }
 
 #[test]
+fn erc_dynamic_power_reused_screen_keeps_upstream_driver_occurrence() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch",
+    );
+
+    if !path.exists() {
+        return;
+    }
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+    let conflicts = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "erc-multiple-net-names")
+        .collect::<Vec<_>>();
+
+    assert!(
+        conflicts.iter().any(|diagnostic| diagnostic.message.contains(
+            "Both REF_NODE and param_subsheet_2 are attached to the same items; REF_NODE will be used in the netlist"
+        )),
+        "{conflicts:#?}"
+    );
+    assert!(
+        conflicts.iter().all(|diagnostic| {
+            !diagnostic.message.contains("param_subsheet_1")
+                && !diagnostic
+                    .message
+                    .contains("Both REF_NODE and param_subsheet are")
+        }),
+        "{conflicts:#?}"
+    );
+}
+
+#[test]
 fn erc_ignores_sheet_pin_only_secondary_driver_names() {
     let dir = temp_dir_path("erc_sheet_pin_secondary_driver");
     fs::create_dir_all(&dir).expect("create temp dir");
