@@ -1693,8 +1693,9 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // - dangling no-connect markers with no pins or labels
 // instead of leaving the reduced ERC path on the older connected-only point-local check. Same-name
 // grouping on the real graph path now also keys from the graph-owned reduced driver connection
-// name instead of the parallel reduced subgraph `name` field. Remaining divergence is the fuller
-// hier-pin and marker attachment path.
+// name instead of the parallel reduced subgraph `name` field, and no-connect pin presence now
+// reads from graph-owned base-pin payload instead of re-walking projected symbol pins at report
+// time. Remaining divergence is the fuller hier-pin and marker attachment path.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -1750,14 +1751,13 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                         no_connect.at[1].to_bits(),
                     )
             });
-            let has_nc_pin = schematic.screen.items.iter().any(|item| match item {
-                SchItem::Symbol(symbol) => {
-                    projected_symbol_pin_info(symbol).into_iter().any(|pin| {
-                        pin.electrical_type.as_deref() == Some("no_connect")
-                            && points_equal(pin.at, no_connect.at)
-                    })
-                }
-                _ => false,
+            let has_nc_pin = subgraph.base_pins.iter().any(|base_pin| {
+                base_pin.electrical_type.as_deref() == Some("no_connect")
+                    && base_pin.key.at
+                        == crate::connectivity::PointKey(
+                            no_connect.at[0].to_bits(),
+                            no_connect.at[1].to_bits(),
+                        )
             });
 
             if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
