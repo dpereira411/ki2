@@ -39,6 +39,12 @@ Active phase order:
 Secondary product goal:
 - expose a CLI-facing API surface that behaves like `kicad-cli` for the exercised schematic paths
 
+Long-term product goal:
+- provide a KiCad-compatible CLI for agents across schematic, PCB, ERC, netlist, and BOM flows
+- add new agent-native CLI operations for read, validation, and later edit workflows
+- keep those agent-native commands layered on the same owning internals instead of creating
+  separate local state paths
+
 Feature completion standard:
 - every feature in scope must target 1:1 KiCad parity in owning code flow and behavior
 - "close enough" output is not sufficient for sign-off
@@ -52,6 +58,33 @@ Ownership rule:
 - connection-graph-owned connectivity, net naming, and subgraph facts should not be re-derived by
   ERC, export, or shown-text helpers once a shared graph owner exists
 - exporter code should format graph-owned/export-base-owned state, not rebuild connectivity locally
+
+Related planning docs:
+- `ARCHITECTURE_OWNERSHIP.md` records the major owner boundaries and anti-reconstruction rules
+- `CLI_ROADMAP.md` records compatibility-lane versus agent-lane command planning
+- `PARITY_INDEX.md` records the routine ledger that complements inline function comments
+
+## Product Lanes
+
+The repository now has two command lanes sharing one upstream-shaped engine.
+
+Compatibility lane:
+- KiCad-compatible CLI behavior where parity is the goal
+
+Agent lane:
+- intentionally richer machine-facing commands that go beyond KiCad CLI
+
+Current rule:
+- do not let agent-lane convenience create new owners of connectivity, hierarchy, library, or
+  export facts
+- agent-lane commands should project or mutate the same owning state used by compatibility-lane
+  commands
+
+First planned intentional command-surface divergence after the active strict-parity core:
+- a single design snapshot JSON command that emits one deterministic machine-facing JSON payload
+  with schematic, libraries, pins, net naming/connectivity, BOM-facing detail, and other
+  validation-facing state available from the owning internals
+- this command is an external projection only; it must not become a new owner of any fact
 
 ## Current State
 
@@ -224,6 +257,25 @@ Work this list from top to bottom unless direct upstream comparison reveals a re
      - KiCad job/config plumbing beyond direct CLI flags
 5. Final parser diagnostic wording polish
 6. Simulation-model parity last
+
+## Testing Strategy
+
+Tests should prove parity claims at the right layer instead of mechanically unit-testing every
+function.
+
+Required layers:
+- direct tests for parity-relevant leaf/helper routines where isolation is honest
+- branch-oriented tests for important owning routines
+- subsystem integration tests for parser/loader/graph/ERC/export interactions
+- real-project regression packs
+- differential comparisons against upstream KiCad or `kicad-cli` where practical
+
+Test-policy rules:
+- every upstream-significant branch should have executable evidence somewhere
+- local-only helpers should either have direct tests or be explicitly justified as covered by a
+  higher-level owner test
+- do not lock in a repo-local decomposition just because a helper exists; prefer testing the
+  owning parity behavior
 
 ## Connectivity Graph Requirements
 
@@ -1153,6 +1205,9 @@ Current status:
       - active live subgraph build now also reads strong-driver identity/kind/priority from the
         live driver owners themselves during owner attachment instead of zipping back through the
         reduced strong-driver vector for that metadata
+      - active live subgraph build now also follows the reduced chosen-driver slot directly onto
+        the live driver handle list during owner attachment instead of re-deriving chosen-driver
+        identity from reduced strong-driver records on that active path
       - hierarchy-chain chosen-driver rewrites on the active live graph now also clone directly
         from the chosen live driver handle instead of snapshotting a temporary reduced-shaped
         connection through the active propagation loop

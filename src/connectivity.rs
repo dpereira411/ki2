@@ -2604,8 +2604,11 @@ impl LiveReducedSubgraph {
     // parent item handles instead of sequencing those steps through free functions after handle
     // allocation. Strong-driver owner attachment on the active path now also reads identity/kind/
     // priority from the live driver owners themselves instead of zipping back through reduced
-    // strong-driver records during build. Remaining divergence is the still-missing fuller live
-    // driver-item graph, not reduced strong-driver metadata on the active attachment path.
+    // strong-driver records during build, and chosen-driver binding now follows the reduced chosen
+    // driver slot directly onto the live driver handle list instead of re-deriving chosen
+    // identity from the reduced strong-driver vector. Remaining divergence is the still-missing
+    // fuller live driver-item graph, not reduced strong-driver metadata on the active attachment
+    // path.
     fn attach_from_reduced(
         &mut self,
         handle: &LiveReducedSubgraphHandle,
@@ -2614,9 +2617,11 @@ impl LiveReducedSubgraph {
     ) {
         self.attach_topology_from_reduced(reduced_subgraph, live_subgraphs);
 
-        let chosen_identity = reduced_project_subgraph_driver_identity(reduced_subgraph).cloned();
         let chosen_connection = self.driver_connection.clone();
         let live_drivers = self.drivers.clone();
+        let chosen_driver = reduced_subgraph
+            .chosen_driver_index
+            .and_then(|index| live_drivers.get(index).cloned());
 
         for driver in &live_drivers {
             let driver_ref = driver.borrow();
@@ -2639,7 +2644,7 @@ impl LiveReducedSubgraph {
             *driver_ref = owner;
             drop(driver_ref);
 
-            self.attach_strong_driver(driver, chosen_identity.as_ref(), &chosen_connection);
+            self.attach_strong_driver(driver, chosen_driver.as_ref(), &chosen_connection);
         }
 
         self.refresh_base_pin_connections_from_driver(false);
@@ -2689,19 +2694,21 @@ impl LiveReducedSubgraph {
     // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
     // that branch open-coded in the surrounding builder. Symbol-pin and text-item branches now
     // compare through attached live owner-side driver connections against the already-seeded live
-    // subgraph driver handle. Chosen symbol-pin owners now also alias their item connection onto
-    // that chosen driver handle, while chosen text-item owners still keep split item-vs-driver
-    // connections and preserve shown-text ownership explicitly on the item owner. Remaining
-    // divergence is the still-missing fuller live driver-item object graph, not reduced
-    // chosen-connection snapshot matching on the active path.
+    // subgraph driver handle. Active build now follows the reduced chosen-driver slot onto the
+    // live driver handle list directly instead of re-deriving chosen identity from reduced strong
+    // drivers during owner attachment. Chosen symbol-pin owners now also alias their item
+    // connection onto that chosen driver handle, while chosen text-item owners still keep split
+    // item-vs-driver connections and preserve shown-text ownership explicitly on the item owner.
+    // Remaining divergence is the still-missing fuller live driver-item object graph, not reduced
+    // chosen-driver matching on the active path.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
-        chosen_identity: Option<&ReducedProjectDriverIdentity>,
+        chosen_driver: Option<&LiveProjectStrongDriverHandle>,
         chosen_connection: &LiveProjectConnectionHandle,
     ) {
-        let is_chosen_driver = chosen_identity
-            .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
+        let is_chosen_driver = chosen_driver
+            .map(|chosen| Rc::ptr_eq(driver, chosen))
             .unwrap_or_else(|| {
                 let driver_connection = driver.borrow().connection_handle();
                 *driver_connection.borrow() == *chosen_connection.borrow()
