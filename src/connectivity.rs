@@ -2607,6 +2607,32 @@ impl LiveReducedBasePin {
             priority,
         }
     }
+
+    // Upstream parity: local base-pin owner analogue for projecting graph-owned pin driver
+    // connections back out of the shared live graph. The reduced project graph still stores maps
+    // instead of live `SCH_PIN* -> SCH_CONNECTION*` lookups, but the pin owner now decides how its
+    // dedicated pin-driver connection is exported to those reduced maps instead of leaving that
+    // owner walk in an external collector loop.
+    fn project_driver_connection(
+        &self,
+        by_pin: &mut BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
+        by_location: &mut BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
+    ) {
+        let connection = self.driver_connection.snapshot();
+        if connection.connection_type == ReducedProjectConnectionType::None {
+            return;
+        }
+
+        by_pin.insert(self.pin.key.clone(), connection.clone());
+        by_location
+            .entry(ReducedProjectPinIdentityKey {
+                sheet_instance_path: self.pin.key.sheet_instance_path.clone(),
+                symbol_uuid: self.pin.key.symbol_uuid.clone(),
+                at: self.pin.key.at,
+                number: self.pin.key.number.clone(),
+            })
+            .or_insert(connection);
+    }
 }
 
 fn live_strong_driver_handle_snapshot(
@@ -3032,6 +3058,22 @@ impl LiveReducedSubgraph {
                 &mut target.connection,
                 &source_connection,
             );
+        }
+    }
+
+    // Upstream parity: local live-subgraph analogue for projecting graph-owned pin driver
+    // connections back out of the shared graph owner. The reduced caller surface still consumes
+    // pin-driver maps, but the shared live subgraph now delegates that projection to its live
+    // base-pin owners instead of an external free collector loop.
+    fn project_pin_driver_connections(
+        &self,
+        by_pin: &mut BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
+        by_location: &mut BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
+    ) {
+        for base_pin in &self.base_pins {
+            base_pin
+                .borrow()
+                .project_driver_connection(by_pin, by_location);
         }
     }
 }
@@ -4060,24 +4102,9 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
     let mut by_location = BTreeMap::new();
 
     for handle in live_subgraphs {
-        let subgraph = handle.borrow();
-        for base_pin in &subgraph.base_pins {
-            let base_pin = base_pin.borrow();
-            let connection = base_pin.driver_connection.snapshot();
-            if connection.connection_type == ReducedProjectConnectionType::None {
-                continue;
-            }
-
-            by_pin.insert(base_pin.pin.key.clone(), connection.clone());
-            by_location
-                .entry(ReducedProjectPinIdentityKey {
-                    sheet_instance_path: base_pin.pin.key.sheet_instance_path.clone(),
-                    symbol_uuid: base_pin.pin.key.symbol_uuid.clone(),
-                    at: base_pin.pin.key.at,
-                    number: base_pin.pin.key.number.clone(),
-                })
-                .or_insert(connection);
-        }
+        handle
+            .borrow()
+            .project_pin_driver_connections(&mut by_pin, &mut by_location);
     }
 
     (by_pin, by_location)
