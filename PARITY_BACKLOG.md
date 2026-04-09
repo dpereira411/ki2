@@ -871,6 +871,9 @@ Current status:
       - the project-graph symbol-pin lookup boundary now also keys by projected pin number, so
         stacked same-name pins can reach the shared graph without collapsing at the reduced API
         edge
+      - strong-driver and driver-name symbol-pin identity now also carries projected pin number,
+        so stacked same-position pins no longer collapse during reduced candidate ranking or live
+        symbol-pin owner attachment
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage

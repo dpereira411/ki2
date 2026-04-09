@@ -236,6 +236,7 @@ pub(crate) enum ReducedProjectDriverIdentity {
         schematic_path: std::path::PathBuf,
         symbol_uuid: Option<String>,
         at: PointKey,
+        pin_number: Option<String>,
     },
 }
 
@@ -2655,13 +2656,16 @@ fn attach_live_strong_driver_owners_to_handles(
                         priority,
                     }),
                 Some(ReducedProjectDriverIdentity::SymbolPin {
-                    symbol_uuid, at, ..
+                    symbol_uuid,
+                    at,
+                    pin_number,
+                    ..
                 }) => subgraph
                     .base_pins
                     .iter()
                     .find(|base_pin| {
                         let key = &base_pin.borrow().pin.key;
-                        key.symbol_uuid == symbol_uuid && key.at == at
+                        key.symbol_uuid == symbol_uuid && key.at == at && key.number == pin_number
                     })
                     .map(|base_pin| {
                         base_pin
@@ -8769,6 +8773,7 @@ enum ReducedLocalDriverIdentity {
     SymbolPin {
         symbol_uuid: Option<String>,
         at: PointKey,
+        pin_number: Option<String>,
     },
 }
 
@@ -8792,8 +8797,9 @@ struct ReducedDriverNameCandidate {
 // into fuller driver-item ownership without keeping driver names as a parallel string-only cache.
 // Connected symbol pins and sheet pins are now emitted one projected item at a time instead of
 // collapsing each symbol or sheet to one local winner before ranking, which is closer to KiCad's
-// per-item `m_drivers` collection. Remaining divergence is the still-missing live connection
-// object plus fuller power/bus-parent driver ownership.
+// per-item `m_drivers` collection, and symbol-pin driver identity now also carries pin number so
+// stacked same-position pins do not collapse before live owner attachment. Remaining divergence is
+// the still-missing live connection object plus fuller power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
@@ -8917,6 +8923,7 @@ where
                                     schematic_path: schematic_path.to_path_buf(),
                                     symbol_uuid: symbol.uuid.clone(),
                                     at: point_key(pin.at),
+                                    pin_number: pin.number.clone(),
                                 }),
                             });
                         }
@@ -8963,7 +8970,8 @@ where
 //   project graph to mimic `RunERC()` driver-instance de-duplication across reused screens
 // - connected symbol pins and sheet pins now contribute one candidate per projected item before
 //   ranking instead of collapsing each symbol or sheet to one local winner, which is closer to
-//   KiCad's per-item `ResolveDrivers()` candidate ordering
+//   KiCad's per-item `ResolveDrivers()` candidate ordering, and symbol-pin identity now carries
+//   pin number so stacked same-position pins stay distinct through reduced candidate ranking
 // Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
 // driver ownership.
 fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
@@ -9054,6 +9062,7 @@ where
                                         identity: Some(ReducedLocalDriverIdentity::SymbolPin {
                                             symbol_uuid: symbol.uuid.clone(),
                                             at: point_key(pin.at),
+                                            pin_number: pin.number.clone(),
                                         }),
                                     }
                                 })
@@ -9068,6 +9077,7 @@ where
                                         identity: Some(ReducedLocalDriverIdentity::SymbolPin {
                                             symbol_uuid: symbol.uuid.clone(),
                                             at: point_key(pin.at),
+                                            pin_number: pin.number.clone(),
                                         }),
                                     })
                             });
@@ -11494,6 +11504,7 @@ mod tests {
             Some(super::ReducedLocalDriverIdentity::SymbolPin {
                 symbol_uuid: symbol.uuid.clone(),
                 at: super::point_key([10.0, 0.0]),
+                pin_number: Some("2".to_string()),
             })
         );
 
@@ -12696,6 +12707,7 @@ mod tests {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     symbol_uuid: Some("sym".to_string()),
                     at: PointKey(10, 20),
+                    pin_number: Some("1".to_string()),
                 }),
             }],
             class: String::new(),
@@ -12738,6 +12750,7 @@ mod tests {
                 let owner = owner.upgrade().expect("symbol pin owner");
                 assert_eq!(owner.borrow().pin.key.symbol_uuid.as_deref(), Some("sym"));
                 assert_eq!(owner.borrow().pin.key.at, PointKey(10, 20));
+                assert_eq!(owner.borrow().pin.key.number.as_deref(), Some("1"));
                 assert_eq!(
                     owner.borrow().connection.borrow().connection_type,
                     super::ReducedProjectConnectionType::Net
@@ -12759,6 +12772,135 @@ mod tests {
             }
             _ => panic!("expected symbol pin strong-driver owner"),
         }
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_keep_stacked_symbol_pin_driver_owners_distinct() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "PWR".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            drivers: vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: 6,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "VCC".to_string(),
+                        local_name: "VCC".to_string(),
+                        full_local_name: "VCC".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(10, 20),
+                        pin_number: Some("1".to_string()),
+                    }),
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: 6,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "GND".to_string(),
+                        local_name: "GND".to_string(),
+                        full_local_name: "GND".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(10, 20),
+                        pin_number: Some("2".to_string()),
+                    }),
+                },
+            ],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![
+                super::ReducedProjectBasePin {
+                    key: super::ReducedNetBasePinKey {
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(10, 20),
+                        name: Some("PWR".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    number: Some("1".to_string()),
+                    electrical_type: Some("power_in".to_string()),
+                },
+                super::ReducedProjectBasePin {
+                    key: super::ReducedNetBasePinKey {
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(10, 20),
+                        name: Some("PWR".to_string()),
+                        number: Some("2".to_string()),
+                    },
+                    number: Some("2".to_string()),
+                    electrical_type: Some("power_in".to_string()),
+                },
+            ],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+        let first_owner = match &subgraph.drivers[0].borrow().owner {
+            super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().expect("first symbol pin owner")
+            }
+            _ => panic!("expected first symbol pin strong-driver owner"),
+        };
+        let second_owner = match &subgraph.drivers[1].borrow().owner {
+            super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().expect("second symbol pin owner")
+            }
+            _ => panic!("expected second symbol pin strong-driver owner"),
+        };
+
+        assert_eq!(first_owner.borrow().pin.key.number.as_deref(), Some("1"));
+        assert_eq!(second_owner.borrow().pin.key.number.as_deref(), Some("2"));
+        assert_eq!(first_owner.borrow().connection.name(), "VCC");
+        assert_eq!(second_owner.borrow().connection.name(), "GND");
     }
 
     #[test]
