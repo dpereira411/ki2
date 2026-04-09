@@ -264,12 +264,7 @@ pub(crate) struct ReducedProjectStrongDriver {
     pub(crate) identity: Option<ReducedProjectDriverIdentity>,
 }
 
-#[derive(Clone, Debug)]
-struct LiveProjectStrongDriver {
-    owner: LiveProjectStrongDriverOwner,
-}
-
-type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
+type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriverOwner>>;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
@@ -302,15 +297,13 @@ enum LiveProjectStrongDriverOwner {
     },
 }
 
-impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
+impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriverOwner {
     fn from(driver: ReducedProjectStrongDriver) -> Self {
-        Self {
-            owner: LiveProjectStrongDriverOwner::Floating {
-                identity: driver.identity,
-                connection: Rc::new(RefCell::new(driver.connection.into())),
-                kind: driver.kind,
-                priority: driver.priority,
-            },
+        LiveProjectStrongDriverOwner::Floating {
+            identity: driver.identity,
+            connection: Rc::new(RefCell::new(driver.connection.into())),
+            kind: driver.kind,
+            priority: driver.priority,
         }
     }
 }
@@ -403,27 +396,7 @@ impl LiveProjectStrongDriverOwner {
     }
 }
 
-impl LiveProjectStrongDriver {
-    // Upstream parity: local live-driver analogue for exercised reads from the chosen strong
-    // driver. The fuller live driver-item graph is still missing, but active callers now read kind,
-    // priority, identity, and attached connection through the shared owner object instead of
-    // helper functions outside the driver type.
-    fn kind(&self) -> ReducedProjectDriverKind {
-        self.owner.kind()
-    }
-
-    fn priority(&self) -> i32 {
-        self.owner.priority()
-    }
-
-    fn identity(&self) -> Option<ReducedProjectDriverIdentity> {
-        self.owner.identity()
-    }
-
-    fn connection_handle(&self) -> LiveProjectConnectionHandle {
-        self.owner.connection_handle()
-    }
-
+impl LiveProjectStrongDriverOwner {
     fn full_name(&self) -> String {
         self.connection_handle().borrow().name.clone()
     }
@@ -2805,7 +2778,7 @@ impl LiveReducedSubgraph {
             let identity = reduced_driver.identity.clone();
             let driver_kind = reduced_driver.kind;
             let priority = reduced_driver.priority;
-            let floating_connection = match &driver.borrow().owner {
+            let floating_connection = match &*driver.borrow() {
                 LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
                 _ => driver.borrow().connection_handle(),
             };
@@ -2817,7 +2790,7 @@ impl LiveReducedSubgraph {
                 priority,
             );
             let mut driver_ref = driver.borrow_mut();
-            driver_ref.owner = owner;
+            *driver_ref = owner;
             drop(driver_ref);
 
             self.attach_strong_driver(
@@ -2882,7 +2855,7 @@ impl LiveReducedSubgraph {
             .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
             .unwrap_or_else(|| {
                 if matches!(
-                    driver.borrow().owner,
+                    *driver.borrow(),
                     LiveProjectStrongDriverOwner::SymbolPin { .. }
                 ) {
                     let driver_connection = driver.borrow().connection_handle();
@@ -3248,9 +3221,7 @@ impl LiveReducedSubgraph {
                 subgraph.chosen_driver.clone()
             };
             if let Some(driver) = chosen_driver {
-                if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } =
-                    &driver.borrow().owner
-                {
+                if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } = &*driver.borrow() {
                     if let Some(base_pin) = owner.upgrade() {
                         base_pin.borrow_mut().refresh_from_owned_driver_connection();
                     }
@@ -13245,7 +13216,7 @@ mod tests {
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
         let subgraph = handles[0].borrow();
-        let owner = subgraph.drivers[0].borrow().owner.clone();
+        let owner = subgraph.drivers[0].borrow().clone();
 
         match owner {
             super::LiveProjectStrongDriverOwner::SheetPin { owner, .. } => {
@@ -13257,7 +13228,7 @@ mod tests {
                     .clone()
                     .expect("sheet pin driver owner");
                 assert!(!matches!(
-                    driver.borrow().owner,
+                    *driver.borrow(),
                     super::LiveProjectStrongDriverOwner::Floating { .. }
                 ));
                 let driver = driver.borrow().snapshot();
@@ -13355,7 +13326,7 @@ mod tests {
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
         let subgraph = handles[0].borrow();
-        let owner = subgraph.drivers[0].borrow().owner.clone();
+        let owner = subgraph.drivers[0].borrow().clone();
 
         match owner {
             super::LiveProjectStrongDriverOwner::Label { owner, .. } => {
@@ -13481,7 +13452,7 @@ mod tests {
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
         let subgraph = handles[0].borrow();
-        let owner = subgraph.drivers[0].borrow().owner.clone();
+        let owner = subgraph.drivers[0].borrow().clone();
 
         match owner {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
@@ -13500,7 +13471,7 @@ mod tests {
                     .clone()
                     .expect("symbol pin driver owner");
                 assert!(!matches!(
-                    driver.borrow().owner,
+                    *driver.borrow(),
                     super::LiveProjectStrongDriverOwner::Floating { .. }
                 ));
                 let driver = driver.borrow().snapshot();
@@ -13530,7 +13501,7 @@ mod tests {
         }
 
         let subgraph = handles[0].borrow();
-        let owner = match subgraph.drivers[0].borrow().owner.clone() {
+        let owner = match subgraph.drivers[0].borrow().clone() {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 owner.upgrade().expect("symbol pin owner")
             }
@@ -13636,7 +13607,7 @@ mod tests {
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
         let subgraph = handles[0].borrow();
-        let owner = match subgraph.drivers[0].borrow().owner.clone() {
+        let owner = match subgraph.drivers[0].borrow().clone() {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 owner.upgrade().expect("symbol pin owner")
             }
@@ -13891,13 +13862,13 @@ mod tests {
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
         let subgraph = handles[0].borrow();
-        let first_owner = match &subgraph.drivers[0].borrow().owner {
+        let first_owner = match &*subgraph.drivers[0].borrow() {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 owner.upgrade().expect("first symbol pin owner")
             }
             _ => panic!("expected first symbol pin strong-driver owner"),
         };
-        let second_owner = match &subgraph.drivers[1].borrow().owner {
+        let second_owner = match &*subgraph.drivers[1].borrow() {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 owner.upgrade().expect("second symbol pin owner")
             }
@@ -17457,7 +17428,7 @@ mod tests {
         let handles = build_live_reduced_subgraph_handles(&reduced);
         {
             let subgraph = handles[0].borrow();
-            let owner = match subgraph.drivers[0].borrow().owner.clone() {
+            let owner = match subgraph.drivers[0].borrow().clone() {
                 super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                     owner.upgrade().expect("symbol pin owner")
                 }

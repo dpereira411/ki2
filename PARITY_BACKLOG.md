@@ -1046,6 +1046,8 @@ Current status:
         live connection handles instead of `LiveReducedConnection` wrappers on those item owners
       - floating strong-driver owners now also keep direct shared live connection handles instead
         of `LiveReducedConnection` wrapper state on the fallback driver branch
+      - the active live strong-driver handle is now the owner itself instead of a one-field wrapper
+        around `LiveProjectStrongDriverOwner`
       - active bus-item connection ownership now also uses direct shared live connection handles
         instead of an `Option<LiveReducedConnection>` wrapper on the wire-item owner
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
