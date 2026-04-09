@@ -1003,6 +1003,8 @@ Current status:
       - active base-pin item connections now also live on direct shared live connection handles,
         so the pin owner no longer carries reduced wrapper state for either of its live pin
         connections
+      - active label, sheet-pin, and hier-port item connections now also live on direct shared
+        live connection handles instead of `LiveReducedConnection` wrappers on those item owners
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale

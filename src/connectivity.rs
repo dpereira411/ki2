@@ -385,13 +385,13 @@ impl LiveProjectStrongDriverOwner {
             LiveProjectStrongDriverOwner::Floating { connection, .. } => Some(connection.clone()),
             LiveProjectStrongDriverOwner::Label { owner, .. } => owner
                 .upgrade()
-                .map(|owner| owner.borrow().connection.clone()),
+                .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
             LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner
                 .upgrade()
-                .map(|owner| owner.borrow().connection.clone()),
+                .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
             LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
                 .upgrade()
-                .map(|owner| owner.borrow().connection.clone()),
+                .map(|owner| LiveReducedConnection::from_handle(owner.borrow().connection.clone())),
             LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner.upgrade().map(|owner| {
                 LiveReducedConnection::from_handle(owner.borrow().driver_connection.clone())
             }),
@@ -2139,7 +2139,7 @@ struct LiveReducedLabelLink {
     schematic_path: std::path::PathBuf,
     at: PointKey,
     kind: LabelKind,
-    connection: LiveReducedConnection,
+    connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
 type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
@@ -2149,7 +2149,7 @@ struct LiveReducedHierSheetPinLink {
     schematic_path: std::path::PathBuf,
     at: PointKey,
     child_sheet_uuid: Option<String>,
-    connection: LiveReducedConnection,
+    connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
 type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>>;
@@ -2158,7 +2158,7 @@ type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>
 struct LiveReducedHierPortLink {
     schematic_path: std::path::PathBuf,
     at: PointKey,
-    connection: LiveReducedConnection,
+    connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
 type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
@@ -2213,7 +2213,10 @@ impl LiveReducedLabelLink {
             return;
         }
 
-        self.connection.clone_from(driver_connection);
+        clone_live_connection_owner_into_live_connection_owner(
+            &mut self.connection.borrow_mut(),
+            &driver_connection.borrow(),
+        );
     }
 
     // Upstream parity: local live label-owner analogue for binding one exercised strong driver
@@ -2261,7 +2264,10 @@ impl LiveReducedHierSheetPinLink {
             return;
         }
 
-        self.connection.clone_from(driver_connection);
+        clone_live_connection_owner_into_live_connection_owner(
+            &mut self.connection.borrow_mut(),
+            &driver_connection.borrow(),
+        );
     }
 
     // Upstream parity: local live sheet-pin-owner analogue for exercised strong-driver binding.
@@ -2307,7 +2313,10 @@ impl LiveReducedHierPortLink {
             return;
         }
 
-        self.connection.clone_from(driver_connection);
+        clone_live_connection_owner_into_live_connection_owner(
+            &mut self.connection.borrow_mut(),
+            &driver_connection.borrow(),
+        );
     }
 
     // Upstream parity: local live hierarchical-port-owner analogue for exercised strong-driver
@@ -2462,13 +2471,13 @@ impl PartialEq for LiveReducedHierSheetPinLink {
             &self.schematic_path,
             self.at,
             &self.child_sheet_uuid,
-            &self.connection,
+            self.connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             &other.schematic_path,
             other.at,
             &other.child_sheet_uuid,
-            &other.connection,
+            other.connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
     }
@@ -2488,14 +2497,14 @@ impl Ord for LiveReducedHierSheetPinLink {
             &self.schematic_path,
             self.at,
             &self.child_sheet_uuid,
-            &self.connection,
+            self.connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 &other.schematic_path,
                 other.at,
                 &other.child_sheet_uuid,
-                &other.connection,
+                other.connection.borrow().snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
     }
@@ -2506,12 +2515,12 @@ impl PartialEq for LiveReducedHierPortLink {
         (
             &self.schematic_path,
             self.at,
-            &self.connection,
+            self.connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             &other.schematic_path,
             other.at,
-            &other.connection,
+            other.connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
     }
@@ -2530,13 +2539,13 @@ impl Ord for LiveReducedHierPortLink {
         (
             &self.schematic_path,
             self.at,
-            &self.connection,
+            self.connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 &other.schematic_path,
                 other.at,
-                &other.connection,
+                other.connection.borrow().snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
     }
@@ -3122,6 +3131,7 @@ impl LiveReducedSubgraph {
             let source = source.borrow();
             source
                 .connection
+                .borrow()
                 .project_onto_reduced(&mut target.connection);
         }
 
@@ -3129,6 +3139,7 @@ impl LiveReducedSubgraph {
             let source = source.borrow();
             source
                 .connection
+                .borrow()
                 .project_onto_reduced(&mut target.connection);
         }
 
@@ -4105,7 +4116,7 @@ fn build_live_reduced_subgraph_handles(
                             schematic_path: link.schematic_path.clone(),
                             at: link.at,
                             kind: link.kind,
-                            connection: LiveReducedConnection::new(link.connection),
+                            connection: Rc::new(RefCell::new(link.connection.into())),
                             driver: None,
                         }))
                     })
@@ -4119,7 +4130,7 @@ fn build_live_reduced_subgraph_handles(
                             schematic_path: pin.schematic_path.clone(),
                             at: pin.at,
                             child_sheet_uuid: pin.child_sheet_uuid,
-                            connection: LiveReducedConnection::new(pin.connection),
+                            connection: Rc::new(RefCell::new(pin.connection.into())),
                             driver: None,
                         }))
                     })
@@ -4132,7 +4143,7 @@ fn build_live_reduced_subgraph_handles(
                         Rc::new(RefCell::new(LiveReducedHierPortLink {
                             schematic_path: port.schematic_path.clone(),
                             at: port.at,
-                            connection: LiveReducedConnection::new(port.connection),
+                            connection: Rc::new(RefCell::new(port.connection.into())),
                             driver: None,
                         }))
                     })
@@ -10439,8 +10450,8 @@ mod tests {
                     members: Vec::new(),
                 }],
             });
-            subgraph.label_links[0].borrow_mut().connection =
-                LiveReducedConnection::new(ReducedProjectConnection {
+            subgraph.label_links[0].borrow_mut().connection = Rc::new(RefCell::new(
+                ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/LABEL".to_string(),
@@ -10456,7 +10467,9 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                });
+                }
+                .into(),
+            ));
         }
 
         apply_live_reduced_driver_connections_from_handles(&mut reduced, &live);
@@ -17407,7 +17420,7 @@ mod tests {
             connection.borrow().connection_type,
             ReducedProjectConnectionType::Net
         );
-        assert_eq!(connection.name(), "SIG");
+        assert_eq!(connection.borrow().name, "SIG");
     }
 
     #[test]
@@ -17499,7 +17512,7 @@ mod tests {
             connection.borrow().connection_type,
             ReducedProjectConnectionType::Net
         );
-        assert_eq!(connection.name(), "/LOCAL");
+        assert_eq!(connection.borrow().name, "/LOCAL");
         assert_eq!(connection.borrow().local_name, "LOCAL");
     }
 
