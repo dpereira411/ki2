@@ -3049,9 +3049,7 @@ fn erc_reports_similar_labels_that_differ_only_by_case() {
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-similar-labels"
             && diagnostic.severity == ki2::diagnostic::Severity::Warning
-            && diagnostic
-                .message
-                .contains("Similar labels differ only by case")
+            && diagnostic.message == "Labels are similar (lower/upper case difference only)"
     }));
 
     let _ = fs::remove_file(path);

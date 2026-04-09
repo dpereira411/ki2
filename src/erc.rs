@@ -3503,25 +3503,19 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
                             let (code, message) = match (kind, other.kind) {
                                 (SimilarLabelItemKind::Power, SimilarLabelItemKind::Power) => (
                                     "erc-similar-power",
-                                    format!(
-                                        "Similar power names differ only by case: '{}' and '{}'",
-                                        shown_text, other.shown_text
-                                    ),
+                                    "Power pins are similar (lower/upper case difference only)"
+                                        .to_string(),
                                 ),
                                 (SimilarLabelItemKind::Power, _)
                                 | (_, SimilarLabelItemKind::Power) => (
                                     "erc-similar-label-and-power",
-                                    format!(
-                                        "Similar label and power names differ only by case: '{}' and '{}'",
-                                        shown_text, other.shown_text
-                                    ),
+                                    "Power pin and label are similar (lower/upper case difference only)"
+                                        .to_string(),
                                 ),
                                 _ => (
                                     "erc-similar-labels",
-                                    format!(
-                                        "Similar labels differ only by case: '{}' and '{}'",
-                                        shown_text, other.shown_text
-                                    ),
+                                    "Labels are similar (lower/upper case difference only)"
+                                        .to_string(),
                                 ),
                             };
 
@@ -3565,17 +3559,13 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
                             let (code, message) = match other.kind {
                                 SimilarLabelItemKind::Power => (
                                     "erc-similar-power",
-                                    format!(
-                                        "Similar power names differ only by case: '{}' and '{}'",
-                                        shown_text, other.shown_text
-                                    ),
+                                    "Power pins are similar (lower/upper case difference only)"
+                                        .to_string(),
                                 ),
                                 _ => (
                                     "erc-similar-label-and-power",
-                                    format!(
-                                        "Similar label and power names differ only by case: '{}' and '{}'",
-                                        shown_text, other.shown_text
-                                    ),
+                                    "Power pin and label are similar (lower/upper case difference only)"
+                                        .to_string(),
                                 ),
                             };
 
