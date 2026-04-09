@@ -1125,6 +1125,9 @@ Current status:
         ownership instead of reading `resolved_connection.name`
       - production point-net lookup now reports the graph-owned reduced subgraph name directly
         instead of reading the reduced resolved-connection boundary name
+      - final reduced project-graph assembly now derives outward `resolved_connection` state from
+        the required reduced `driver_connection` owner instead of rebuilding a parallel connection
+        from raw fields during final graph assembly
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:

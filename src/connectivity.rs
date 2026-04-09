@@ -6640,6 +6640,9 @@ where
 // ownership is now widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
 // identity is not collapsed before pin net/class ownership is assigned, item-to-net facts now
 // derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps,
+// outward `resolved_connection` state is now also derived from the required reduced
+// `driver_connection` owner instead of being rebuilt from parallel raw fields during final graph
+// assembly,
 // whole-net views are derived from the shared subgraph owner instead of a second stored flattened
 // carrier, reduced label/sheet-pin/no-connect membership now rides on the shared subgraph owner
 // for graph-side ERC rules instead of per-sheet component rescans, and reduced driver identity now
@@ -7137,30 +7140,11 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             );
         }
         let net_identity = net_identities_by_name.get(&pending.name);
-        let subgraph_sheet = inputs
-            .sheet_paths
-            .iter()
-            .find(|sheet| sheet.instance_path == pending.sheet_instance_path)
-            .and_then(|sheet| {
-                inputs
-                    .schematics
-                    .iter()
-                    .find(|schematic| schematic.path == sheet.schematic_path)
-            })
-            .expect("pending reduced subgraph must resolve its source schematic");
         let resolved_name = net_identity
             .map(|net| net.name.clone())
             .unwrap_or_else(|| pending.name.clone());
-        let resolved_local_name = pending.driver_connection.local_name.clone();
-        let resolved_full_local_name = pending.driver_connection.full_local_name.clone();
-        let resolved_connection = build_reduced_project_connection(
-            subgraph_sheet,
-            pending.sheet_instance_path.clone(),
-            resolved_name.clone(),
-            resolved_local_name,
-            resolved_full_local_name,
-            pending.bus_members.clone(),
-        );
+        let mut resolved_connection = pending.driver_connection.clone();
+        resolved_connection.name = resolved_name.clone();
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
