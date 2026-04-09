@@ -806,6 +806,10 @@ Current status:
       - active non-test live strong-driver rank metadata no longer lives on copied driver fields;
         `kind` and `priority` now ride on the attached owner variant, with copied fields kept only
         for test/value-carrier scaffolding
+      - active live `SCH_CONNECTION::Clone()`-style refresh now clones one shared live connection
+        owner directly instead of round-tripping the whole connection through a reduced snapshot;
+        nested bus-member refresh still snapshots one source member handle at the alias boundary
+        until the fuller live member/pointer graph exists
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

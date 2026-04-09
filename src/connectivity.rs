@@ -1090,6 +1090,9 @@ fn clone_live_bus_member_into_live_bus_member(
 
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
+                if Rc::ptr_eq(&target.members[index], &source.members[index]) {
+                    continue;
+                }
                 clone_live_bus_member_into_live_bus_member(
                     &mut target.members[index].borrow_mut(),
                     &source.members[index].borrow(),
@@ -1107,6 +1110,23 @@ fn clone_live_bus_member_into_live_bus_member(
     } else {
         target.members = source.members.clone();
     }
+}
+
+fn clone_live_bus_member_handle_into_live_bus_member_handle(
+    target: &LiveProjectBusMemberHandle,
+    source: &LiveProjectBusMemberHandle,
+) {
+    if Rc::ptr_eq(target, source) {
+        return;
+    }
+
+    // Upstream parity: local live member analogue for the recursive `SCH_CONNECTION::Clone()`
+    // member path. This still snapshots one source member before mutating the target handle so
+    // the reduced live graph can avoid aliasing the same RefCell-backed member tree through two
+    // recursive paths. Remaining divergence is fuller live member/pointer ownership on the shared
+    // connection/subgraph graph.
+    let source_snapshot = live_bus_member_handle_snapshot(source);
+    clone_reduced_bus_member_into_live_bus_member(&mut target.borrow_mut(), &source_snapshot);
 }
 
 fn clone_live_bus_member_into_live_connection_owner(
@@ -1141,9 +1161,9 @@ fn clone_live_bus_member_into_live_connection_owner(
 
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
-                clone_live_bus_member_into_live_bus_member(
-                    &mut target.members[index].borrow_mut(),
-                    &source.members[index].borrow(),
+                clone_live_bus_member_handle_into_live_bus_member_handle(
+                    &target.members[index],
+                    &source.members[index],
                 );
             }
 
@@ -1589,9 +1609,9 @@ fn clone_live_connection_owner_into_live_bus_member(
 
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
-                clone_live_bus_member_into_live_bus_member(
-                    &mut target.members[index].borrow_mut(),
-                    &source.members[index].borrow(),
+                clone_live_bus_member_handle_into_live_bus_member_handle(
+                    &target.members[index],
+                    &source.members[index],
                 );
             }
 
@@ -1660,6 +1680,55 @@ fn clone_reduced_connection_into_live_connection_owner(
     }
 }
 
+fn clone_live_connection_owner_into_live_connection_owner(
+    target: &mut LiveProjectConnection,
+    source: &LiveProjectConnection,
+) {
+    let existing_local_name = target.local_name.clone();
+    let existing_members = target.members.clone();
+
+    target.net_code = source.net_code;
+    target.connection_type = source.connection_type;
+    target.name = source.name.clone();
+    if existing_local_name.is_empty() {
+        target.local_name = source.local_name.clone();
+    }
+    target.full_local_name = source.full_local_name.clone();
+    target.sheet_instance_path = source.sheet_instance_path.clone();
+
+    if matches!(
+        target.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) && matches!(
+        source.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) {
+        if existing_members.is_empty() {
+            target.members = source.members.clone();
+        } else {
+            target.members = existing_members;
+
+            let clone_limit = target.members.len().min(source.members.len());
+            for index in 0..clone_limit {
+                clone_live_bus_member_handle_into_live_bus_member_handle(
+                    &target.members[index],
+                    &source.members[index],
+                );
+            }
+
+            if target.members.len() > source.members.len() {
+                target.members.truncate(source.members.len());
+            } else if target.members.len() < source.members.len() {
+                target
+                    .members
+                    .extend(source.members[target.members.len()..].iter().cloned());
+            }
+        }
+    } else {
+        target.members = source.members.clone();
+    }
+}
+
 fn clone_live_connection_owner_into_reduced_connection(
     target: &mut ReducedProjectConnection,
     source: &LiveProjectConnection,
@@ -1724,13 +1793,16 @@ impl LiveReducedConnection {
     }
 
     // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This still operates
-    // on a reduced local connection carrier, but it now preserves existing local bus-member
-    // identity details while mutating a shared live connection owner instead of replacing a plain
-    // copied snapshot on every clone. Remaining divergence is fuller item/subgraph pointer
-    // topology beyond these local live connection owners.
+    // on a reduced local connection carrier, but active cloning now mutates one shared live
+    // connection owner directly instead of round-tripping through a reduced snapshot. Remaining
+    // divergence is fuller item/subgraph pointer topology beyond these local live connection
+    // owners.
     fn clone_from(&self, other: &LiveReducedConnection) {
-        let source = other.snapshot();
-        clone_reduced_connection_into_live_connection_owner(&mut self.borrow_mut(), &source);
+        if Rc::ptr_eq(&self.connection, &other.connection) {
+            return;
+        }
+        let source = other.borrow();
+        clone_live_connection_owner_into_live_connection_owner(&mut self.borrow_mut(), &source);
     }
 
     fn borrow(&self) -> Ref<'_, LiveProjectConnection> {
