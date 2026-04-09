@@ -1150,6 +1150,9 @@ Current status:
       - chosen-driver attachment on the active live subgraph path now compares against the
         already-seeded live subgraph driver handle instead of rehydrating a reduced chosen
         connection snapshot for equality during build-time owner binding
+      - active live subgraph build now also reads strong-driver identity/kind/priority from the
+        live driver owners themselves during owner attachment instead of zipping back through the
+        reduced strong-driver vector for that metadata
       - hierarchy-chain chosen-driver rewrites on the active live graph now also clone directly
         from the chosen live driver handle instead of snapshotting a temporary reduced-shaped
         connection through the active propagation loop

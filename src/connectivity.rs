@@ -2602,7 +2602,10 @@ impl LiveReducedSubgraph {
     // performs while constructing one live `CONNECTION_SUBGRAPH`. The active handle path now lets
     // the shared subgraph owner attach its own topology, strong drivers, initial pin refresh, and
     // parent item handles instead of sequencing those steps through free functions after handle
-    // allocation.
+    // allocation. Strong-driver owner attachment on the active path now also reads identity/kind/
+    // priority from the live driver owners themselves instead of zipping back through reduced
+    // strong-driver records during build. Remaining divergence is the still-missing fuller live
+    // driver-item graph, not reduced strong-driver metadata on the active attachment path.
     fn attach_from_reduced(
         &mut self,
         handle: &LiveReducedSubgraphHandle,
@@ -2615,14 +2618,16 @@ impl LiveReducedSubgraph {
         let chosen_connection = self.driver_connection.clone();
         let live_drivers = self.drivers.clone();
 
-        for (driver, reduced_driver) in live_drivers.iter().zip(reduced_subgraph.drivers.iter()) {
-            let identity = reduced_driver.identity.clone();
-            let driver_kind = reduced_driver.kind;
-            let priority = reduced_driver.priority;
+        for driver in &live_drivers {
+            let driver_ref = driver.borrow();
+            let identity = driver_ref.identity();
+            let driver_kind = driver_ref.kind();
+            let priority = driver_ref.priority();
             let floating_connection = match &*driver.borrow() {
                 LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
-                _ => driver.borrow().connection_handle(),
+                _ => driver_ref.connection_handle(),
             };
+            drop(driver_ref);
             let owner = self.attach_driver_owner_for_identity(
                 identity,
                 driver,
