@@ -107,6 +107,7 @@ struct ReducedErcPinContext {
     visible: bool,
     is_power_symbol: bool,
     path: std::path::PathBuf,
+    sheet_instance_path: String,
     reference: String,
     pin_number: String,
     pin_name: Option<String>,
@@ -268,6 +269,7 @@ fn reduced_erc_pin_context_from_base_pin(
         visible: base_pin.visible,
         is_power_symbol: base_pin.is_power_symbol,
         path: base_pin.schematic_path.clone(),
+        sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
         reference,
         pin_number,
         pin_name: base_pin.key.name.clone(),
@@ -532,8 +534,15 @@ fn reduced_preferred_missing_driver_pin<'a>(
         .or(needs_driver)
 }
 
+// Upstream parity: reduced local helper for the stacked-pin suppression branch inside
+// `ERC_TESTER::TestPinToPin()`. This is not a 1:1 KiCad `SCH_PIN` identity test because the Rust
+// tree still compares reduced projected pin context instead of live pin items, but it now also
+// keeps sheet-instance identity so reused-screen occurrences with the same schematic UUID do not
+// collapse into one stacked-pin match. Remaining divergence is fuller live pin ownership and
+// marker attachment.
 fn reduced_erc_pins_are_stacked(lhs: &ReducedErcPinContext, rhs: &ReducedErcPinContext) -> bool {
     lhs.path == rhs.path
+        && lhs.sheet_instance_path == rhs.sheet_instance_path
         && lhs.symbol_uuid == rhs.symbol_uuid
         && lhs.pin_type == rhs.pin_type
         && lhs.pin_name == rhs.pin_name
@@ -2069,10 +2078,11 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 ))
                 .copied()
                 .unwrap_or(false);
+            let graph_has_pins = all_pins > 0;
 
             let at = [f64::from_bits(label.at.0), f64::from_bits(label.at.1)];
 
-            if dangling
+            if (dangling && !graph_has_pins)
                 || (label.kind == LabelKind::Local
                     && local_pins == 0
                     && all_pins > 1
@@ -2093,7 +2103,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            if all_pins == 1 && !has_no_connect {
+            if label.kind != LabelKind::Hierarchical && all_pins == 1 && !has_no_connect {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-label-single-pin",
@@ -2175,39 +2185,92 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 
         for wire_item in &subgraph.wire_items {
             for endpoint in [wire_item.start, wire_item.end] {
+                let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+                let endpoint_matches = |point: crate::connectivity::PointKey| {
+                    points_equal(
+                        endpoint_at,
+                        [f64::from_bits(point.0), f64::from_bits(point.1)],
+                    )
+                };
                 let endpoint_has_owner = subgraph
                     .base_pins
                     .iter()
-                    .any(|base_pin| base_pin.key.at == endpoint)
+                    .any(|base_pin| endpoint_matches(base_pin.key.at))
                     || subgraph
                         .label_links
                         .iter()
-                        .any(|label| label.at == endpoint)
+                        .any(|label| endpoint_matches(label.at))
                     || subgraph
                         .hier_sheet_pins
                         .iter()
-                        .any(|pin| pin.at == endpoint)
-                    || subgraph.hier_ports.iter().any(|port| port.at == endpoint)
-                    || subgraph.no_connect_points.contains(&endpoint);
+                        .any(|pin| endpoint_matches(pin.at))
+                    || subgraph
+                        .hier_ports
+                        .iter()
+                        .any(|port| endpoint_matches(port.at))
+                    || subgraph
+                        .no_connect_points
+                        .iter()
+                        .copied()
+                        .any(endpoint_matches);
+                let endpoint_has_same_sheet_owner = !endpoint_has_owner
+                    && !subgraph.driver_connection.name.is_empty()
+                    && collect_reduced_project_subgraphs_by_name(
+                        &graph,
+                        &subgraph.driver_connection.name,
+                    )
+                    .into_iter()
+                    .filter(|neighbor| {
+                        neighbor.sheet_instance_path == subgraph.sheet_instance_path
+                            && neighbor.subgraph_code != subgraph.subgraph_code
+                    })
+                    .any(|neighbor| {
+                        neighbor
+                            .base_pins
+                            .iter()
+                            .any(|base_pin| endpoint_matches(base_pin.key.at))
+                            || neighbor
+                                .label_links
+                                .iter()
+                                .any(|label| endpoint_matches(label.at))
+                            || neighbor
+                                .hier_sheet_pins
+                                .iter()
+                                .any(|pin| endpoint_matches(pin.at))
+                            || neighbor
+                                .hier_ports
+                                .iter()
+                                .any(|port| endpoint_matches(port.at))
+                            || neighbor
+                                .no_connect_points
+                                .iter()
+                                .copied()
+                                .any(endpoint_matches)
+                    });
                 let endpoint_wire_count = subgraph
                     .wire_items
                     .iter()
                     .filter(|other| other.start == endpoint || other.end == endpoint)
                     .count();
 
-                if endpoint_has_owner || endpoint_wire_count > 1 {
+                if endpoint_has_owner || endpoint_has_same_sheet_owner || endpoint_wire_count > 1 {
                     continue;
                 }
 
-                let at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-unconnected-wire-endpoint",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: if wire_item.is_bus_entry {
-                        format!("Unconnected wire to bus entry at {}, {}", at[0], at[1])
+                        format!(
+                            "Unconnected wire to bus entry at {}, {}",
+                            endpoint_at[0], endpoint_at[1]
+                        )
                     } else {
-                        format!("Unconnected wire endpoint at {}, {}", at[0], at[1])
+                        format!(
+                            "Unconnected wire endpoint at {}, {}",
+                            endpoint_at[0], endpoint_at[1]
+                        )
                     },
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
@@ -3842,6 +3905,7 @@ mod tests {
             visible,
             is_power_symbol,
             path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: "/".to_string(),
             reference: reference.to_string(),
             pin_number: pin_number.to_string(),
             pin_name: Some(pin_number.to_string()),
@@ -3874,6 +3938,7 @@ mod tests {
             visible: true,
             is_power_symbol: false,
             path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: "/".to_string(),
             reference: "U1".to_string(),
             pin_number: "1".to_string(),
             pin_name: Some("IO".to_string()),
@@ -3885,6 +3950,7 @@ mod tests {
             visible: lhs.visible,
             is_power_symbol: lhs.is_power_symbol,
             path: lhs.path.clone(),
+            sheet_instance_path: lhs.sheet_instance_path.clone(),
             reference: lhs.reference.clone(),
             pin_number: "2".to_string(),
             pin_name: lhs.pin_name.clone(),
@@ -3895,6 +3961,36 @@ mod tests {
         assert!(super::reduced_erc_pins_are_stacked(&lhs, &rhs));
 
         rhs.pin_name = Some("ALT".to_string());
+        assert!(!super::reduced_erc_pins_are_stacked(&lhs, &rhs));
+    }
+
+    #[test]
+    fn stacked_pin_helper_keeps_reused_screen_occurrences_distinct() {
+        let lhs = ReducedErcPinContext {
+            at: [10.0, 20.0],
+            visible: true,
+            is_power_symbol: false,
+            path: std::path::PathBuf::from("shared_child.kicad_sch"),
+            sheet_instance_path: "/A".to_string(),
+            reference: "U1".to_string(),
+            pin_number: "2".to_string(),
+            pin_name: Some("OUT".to_string()),
+            symbol_uuid: Some("shared-sym".to_string()),
+            pin_type: ReducedPinType::Output,
+        };
+        let rhs = ReducedErcPinContext {
+            at: lhs.at,
+            visible: lhs.visible,
+            is_power_symbol: lhs.is_power_symbol,
+            path: lhs.path.clone(),
+            sheet_instance_path: "/B".to_string(),
+            reference: "U2".to_string(),
+            pin_number: lhs.pin_number.clone(),
+            pin_name: lhs.pin_name.clone(),
+            symbol_uuid: lhs.symbol_uuid.clone(),
+            pin_type: lhs.pin_type,
+        };
+
         assert!(!super::reduced_erc_pins_are_stacked(&lhs, &rhs));
     }
 }

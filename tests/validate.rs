@@ -5987,6 +5987,61 @@ fn erc_reports_conflicting_pin_types_on_same_net() {
 }
 
 #[test]
+fn erc_reports_reused_screen_pin_conflicts_in_issue10926_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue10926_1.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+    let pin_conflicts = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+        .collect::<Vec<_>>();
+
+    assert_eq!(pin_conflicts.len(), 3, "{pin_conflicts:#?}");
+    assert!(
+        pin_conflicts
+            .iter()
+            .all(|diagnostic| diagnostic.message == "Pins of type Output and Output are connected")
+    );
+    assert_eq!(
+        pin_conflicts
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| path.ends_with("issue10926_1_subsheet_1_1.kicad_sch"))
+            })
+            .count(),
+        2
+    );
+    assert_eq!(
+        pin_conflicts
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| path.ends_with("issue10926_1_subsheet_1.kicad_sch"))
+            })
+            .count(),
+        1
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-label-not-connected")
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-unconnected-wire-endpoint")
+    );
+}
+
+#[test]
 fn erc_uses_project_pin_map_overrides() {
     let dir = temp_dir_path("erc_pin_map_override");
     fs::create_dir_all(&dir).expect("create temp dir");
