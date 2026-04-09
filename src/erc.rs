@@ -1862,7 +1862,10 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
             let (unique_pin_count, unique_label_count) = if subgraph_name.is_empty() {
                 (local_unique_pins.len(), local_unique_labels.len())
             } else {
-                let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph_name);
+                let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph_name)
+                    .into_iter()
+                    .filter(|neighbor| neighbor.sheet_instance_path == subgraph.sheet_instance_path)
+                    .collect::<Vec<_>>();
                 let unique_pin_count = neighbors
                     .iter()
                     .flat_map(|neighbor| {

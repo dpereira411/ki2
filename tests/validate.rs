@@ -6258,6 +6258,31 @@ fn erc_ignores_false_bus_entry_and_no_connect_warnings_in_issue12814_usage_fixtu
 }
 
 #[test]
+fn erc_ignores_false_no_connect_warnings_in_issue13212_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue13212.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-no-connect-connected"),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-isolated-pin-label")
+            .count(),
+        2,
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn erc_ignores_false_bus_entry_warnings_in_issue12814_drive_fixture() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_1.kicad_sch");
