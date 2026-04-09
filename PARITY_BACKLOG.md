@@ -991,6 +991,9 @@ Current status:
         - hierarchy-chain propagation
         were then removed too, and the surviving tests for those branches now exercise the live
         owner wrappers instead of a second reduced-snapshot settle path
+      - reduced project-graph assembly no longer runs a second geometry-side bus-entry attachment
+        pass after live propagation; `connected_bus_subgraph_index` now reaches the reduced graph
+        only through live wire-item owner projection
       - live handle construction now also builds shared live subgraph handles directly instead of
         first building a temporary value-owned `Vec<LiveReducedSubgraph>` and wrapping it later
       - reduced connection/member projection at the graph boundary now belongs to the shared live
