@@ -200,6 +200,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) name: String,
     pub(crate) resolved_connection: ReducedProjectConnection,
     pub(crate) driver_connection: Option<ReducedProjectConnection>,
+    pub(crate) chosen_driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
@@ -332,20 +333,15 @@ pub(crate) fn reduced_project_strong_driver_full_name(driver: &ReducedProjectStr
     &driver.connection.name
 }
 
+// Upstream parity: reduced project-side owner for the chosen `CONNECTION_SUBGRAPH` driver item
+// identity after `ResolveDrivers()`. This now keeps the exact chosen driver identity projected out
+// of the reduced graph build instead of reconstructing it later from the chosen driver name, which
+// still diverges from KiCad's live object ownership but avoids same-name driver collapse above the
+// shared graph boundary.
 pub(crate) fn reduced_project_subgraph_driver_identity(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<&ReducedProjectDriverIdentity> {
-    let chosen_name = subgraph
-        .driver_connection
-        .as_ref()
-        .map(|connection| connection.name.as_str())
-        .unwrap_or_else(|| subgraph.resolved_connection.name.as_str());
-
-    subgraph
-        .drivers
-        .iter()
-        .find(|driver| reduced_project_strong_driver_full_name(driver) == chosen_name)
-        .and_then(|driver| driver.identity.as_ref())
+    subgraph.chosen_driver_identity.as_ref()
 }
 
 pub(crate) fn reduced_project_subgraph_non_bus_driver_priority(
@@ -6990,6 +6986,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     struct PendingProjectSubgraph {
         name: String,
         driver_connection: Option<ReducedProjectConnection>,
+        chosen_driver_identity: Option<ReducedProjectDriverIdentity>,
         drivers: Vec<ReducedProjectStrongDriver>,
         class: String,
         has_no_connect: bool,
@@ -7238,10 +7235,20 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         },
                     )
                 });
+                let chosen_driver_identity = driver_candidate
+                    .as_ref()
+                    .and_then(|candidate| candidate.identity.as_ref())
+                    .map(|identity| {
+                        reduced_local_driver_identity_to_project_identity(
+                            &sheet_path.schematic_path,
+                            identity,
+                        )
+                    });
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
                     driver_connection,
+                    chosen_driver_identity,
                     drivers: strong_drivers.clone(),
                     class: class.clone(),
                     has_no_connect,
@@ -7379,6 +7386,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
                 driver_connection: None,
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: true,
@@ -7507,6 +7515,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             name: resolved_name,
             resolved_connection,
             driver_connection: pending.driver_connection.clone(),
+            chosen_driver_identity: pending.chosen_driver_identity.clone(),
             drivers: pending.drivers.clone(),
             class: if pending.class.is_empty() {
                 net_identity
@@ -8205,12 +8214,13 @@ fn collect_reduced_subgraph_local_membership(
                         current_variant,
                         label,
                     );
-                    let full_name = match label.kind {
-                        LabelKind::Global | LabelKind::Directive => shown.clone(),
-                        LabelKind::Local | LabelKind::Hierarchical => {
-                            format!("{sheet_path_prefix}{shown}")
-                        }
+                    let source = match label.kind {
+                        LabelKind::Global => ReducedNetNameSource::GlobalLabel,
+                        LabelKind::Local => ReducedNetNameSource::LocalLabel,
+                        LabelKind::Hierarchical => ReducedNetNameSource::HierarchicalLabel,
+                        LabelKind::Directive => return None,
                     };
+                    let full_name = reduced_driver_full_name(&shown, source, &sheet_path_prefix);
                     let members = if reduced_text_is_bus(schematic, &shown) {
                         let member_sheet_prefix = if label.kind == LabelKind::Global {
                             ""
@@ -8415,6 +8425,11 @@ fn collect_reduced_subgraph_hierarchy_membership(
                         None,
                         pin,
                     );
+                    let full_name = reduced_driver_full_name(
+                        &shown,
+                        ReducedNetNameSource::SheetPin,
+                        &sheet_path_prefix,
+                    );
 
                     hier_sheet_pins.push(ReducedHierSheetPinLink {
                         at: point_key(pin.at),
@@ -8422,9 +8437,9 @@ fn collect_reduced_subgraph_hierarchy_membership(
                         connection: build_reduced_project_connection(
                             schematic,
                             parent_sheet_path.instance_path.clone(),
-                            format!("{sheet_path_prefix}{shown}"),
+                            full_name.clone(),
                             shown.clone(),
-                            format!("{sheet_path_prefix}{shown}"),
+                            full_name,
                             if reduced_text_is_bus(schematic, &shown) {
                                 collect_reduced_bus_member_objects_inner(
                                     schematic,
@@ -8455,15 +8470,20 @@ fn collect_reduced_subgraph_hierarchy_membership(
                     current_variant,
                     label,
                 );
+                let full_name = reduced_driver_full_name(
+                    &shown,
+                    ReducedNetNameSource::HierarchicalLabel,
+                    &sheet_path_prefix,
+                );
 
                 hier_ports.push(ReducedHierPortLink {
                     at: point_key(label.at),
                     connection: build_reduced_project_connection(
                         schematic,
                         parent_sheet_path.instance_path.clone(),
-                        format!("{sheet_path_prefix}{shown}"),
+                        full_name.clone(),
                         shown.clone(),
-                        format!("{sheet_path_prefix}{shown}"),
+                        full_name,
                         if reduced_text_is_bus(schematic, &shown) {
                             collect_reduced_bus_member_objects_inner(
                                 schematic,
@@ -9009,8 +9029,16 @@ fn reduced_driver_candidate_full_name(
     candidate: &ReducedDriverNameCandidate,
     sheet_path_prefix: &str,
 ) -> String {
+    reduced_driver_full_name(&candidate.text, candidate.source, sheet_path_prefix)
+}
+
+fn reduced_driver_full_name(
+    text: &str,
+    source: ReducedNetNameSource,
+    sheet_path_prefix: &str,
+) -> String {
     let prepend_path = matches!(
-        candidate.source,
+        source,
         ReducedNetNameSource::LocalLabel
             | ReducedNetNameSource::HierarchicalLabel
             | ReducedNetNameSource::SheetPin
@@ -9018,13 +9046,13 @@ fn reduced_driver_candidate_full_name(
     );
 
     if prepend_path {
-        if candidate.text.starts_with('/') {
-            candidate.text.clone()
+        if text.starts_with('/') {
+            text.to_string()
         } else {
-            format!("{sheet_path_prefix}{}", candidate.text)
+            format!("{sheet_path_prefix}{text}")
         }
     } else {
-        candidate.text.clone()
+        text.to_string()
     }
 }
 
@@ -9051,6 +9079,36 @@ struct ReducedDriverNameCandidate {
     text: String,
     source: ReducedNetNameSource,
     identity: Option<ReducedLocalDriverIdentity>,
+}
+
+// Upstream parity: reduced bridge from local `ResolveDrivers()` candidate identity into the
+// project-graph driver identity owner. This helper still exists because the reduced graph does not
+// yet project live `SCH_ITEM*` / `SCH_CONNECTION*` identity directly across the graph boundary.
+fn reduced_local_driver_identity_to_project_identity(
+    schematic_path: &std::path::Path,
+    identity: &ReducedLocalDriverIdentity,
+) -> ReducedProjectDriverIdentity {
+    match identity {
+        ReducedLocalDriverIdentity::Label { at, kind } => ReducedProjectDriverIdentity::Label {
+            schematic_path: schematic_path.to_path_buf(),
+            at: *at,
+            kind: *kind,
+        },
+        ReducedLocalDriverIdentity::SheetPin { at } => ReducedProjectDriverIdentity::SheetPin {
+            schematic_path: schematic_path.to_path_buf(),
+            at: *at,
+        },
+        ReducedLocalDriverIdentity::SymbolPin {
+            symbol_uuid,
+            at,
+            pin_number,
+        } => ReducedProjectDriverIdentity::SymbolPin {
+            schematic_path: schematic_path.to_path_buf(),
+            symbol_uuid: symbol_uuid.clone(),
+            at: *at,
+            pin_number: pin_number.clone(),
+        },
+    }
 }
 
 // Upstream parity: reduced local analogue for the strong-driver collection inside
@@ -9093,13 +9151,13 @@ where
                     }) =>
             {
                 let text = shown_label_text(label);
-                let full_name = match label.kind {
-                    LabelKind::Global => text.clone(),
-                    LabelKind::Local | LabelKind::Hierarchical => {
-                        format!("{sheet_path_prefix}{text}")
-                    }
+                let source = match label.kind {
+                    LabelKind::Global => ReducedNetNameSource::GlobalLabel,
+                    LabelKind::Local => ReducedNetNameSource::LocalLabel,
+                    LabelKind::Hierarchical => ReducedNetNameSource::HierarchicalLabel,
                     LabelKind::Directive => continue,
                 };
+                let full_name = reduced_driver_full_name(&text, source, sheet_path_prefix);
 
                 drivers.push(ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
@@ -9108,7 +9166,7 @@ where
                         schematic,
                         sheet_instance_path,
                         text.clone(),
-                        full_name.clone(),
+                        full_name,
                         if label.kind == LabelKind::Global {
                             ""
                         } else {
@@ -9130,6 +9188,11 @@ where
                     })
                 }) {
                     let shown = shown_sheet_pin_text(sheet, pin);
+                    let full_name = reduced_driver_full_name(
+                        &shown,
+                        ReducedNetNameSource::SheetPin,
+                        sheet_path_prefix,
+                    );
 
                     drivers.push(ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::SheetPin,
@@ -9138,7 +9201,7 @@ where
                             schematic,
                             sheet_instance_path,
                             shown.clone(),
-                            format!("{sheet_path_prefix}{shown}"),
+                            full_name,
                             sheet_path_prefix,
                         ),
                         identity: Some(ReducedProjectDriverIdentity::SheetPin {
@@ -9160,6 +9223,18 @@ where
                         reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
                     {
                         if let Some(text) = symbol_value_text(symbol) {
+                            let local_power = symbol
+                                .lib_symbol
+                                .as_ref()
+                                .is_some_and(|lib_symbol| lib_symbol.local_power);
+                            let source = if local_power {
+                                ReducedNetNameSource::LocalPowerPin
+                            } else {
+                                ReducedNetNameSource::GlobalPowerPin
+                            };
+                            let full_name =
+                                reduced_driver_full_name(&text, source, sheet_path_prefix);
+
                             drivers.push(ReducedProjectStrongDriver {
                                 kind: ReducedProjectDriverKind::PowerPin,
                                 priority,
@@ -9167,24 +9242,8 @@ where
                                     schematic,
                                     sheet_instance_path,
                                     text.clone(),
-                                    if symbol
-                                        .lib_symbol
-                                        .as_ref()
-                                        .is_some_and(|lib_symbol| lib_symbol.local_power)
-                                    {
-                                        format!("{sheet_path_prefix}{text}")
-                                    } else {
-                                        text.clone()
-                                    },
-                                    if symbol
-                                        .lib_symbol
-                                        .as_ref()
-                                        .is_some_and(|lib_symbol| lib_symbol.local_power)
-                                    {
-                                        sheet_path_prefix
-                                    } else {
-                                        ""
-                                    },
+                                    full_name,
+                                    if local_power { sheet_path_prefix } else { "" },
                                 ),
                                 identity: Some(ReducedProjectDriverIdentity::SymbolPin {
                                     schematic_path: schematic_path.to_path_buf(),
@@ -10049,6 +10108,7 @@ mod tests {
                 }],
             },
             driver_connection: None,
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -10154,6 +10214,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10202,6 +10263,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10284,6 +10346,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10332,6 +10395,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10388,6 +10452,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10442,6 +10507,7 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10533,6 +10599,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             }),
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -10672,6 +10739,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -10720,6 +10788,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -12312,6 +12381,7 @@ mod tests {
                 ],
             },
             driver_connection: None,
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -12358,6 +12428,7 @@ mod tests {
                 members: Vec::new(),
             },
             driver_connection: None,
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -12434,6 +12505,7 @@ mod tests {
                 ],
             },
             driver_connection: None,
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -12480,6 +12552,7 @@ mod tests {
                 members: Vec::new(),
             },
             driver_connection: None,
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -12562,6 +12635,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -12630,6 +12704,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 6,
@@ -12697,6 +12772,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -12935,6 +13011,7 @@ mod tests {
                 }],
             },
             driver_connection: None,
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -13026,6 +13103,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
+            chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::SheetPin,
                 priority: 1,
@@ -13125,6 +13203,12 @@ mod tests {
                 full_local_name: "PWR".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
+            }),
+            chosen_driver_identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                symbol_uuid: Some("sym".to_string()),
+                at: PointKey(10, 20),
+                pin_number: Some("1".to_string()),
             }),
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
@@ -13260,6 +13344,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
+            chosen_driver_identity: None,
             drivers: vec![
                 ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
@@ -13424,6 +13509,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -13483,6 +13569,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -13556,6 +13643,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: None,
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -13602,6 +13690,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: None,
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -13686,6 +13775,7 @@ mod tests {
                     }],
                 },
                 driver_connection: None,
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -13726,6 +13816,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: None,
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -13929,6 +14020,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14000,6 +14092,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14038,6 +14131,7 @@ mod tests {
                 name: "/RENAMED1".to_string(),
                 resolved_connection: connection.clone(),
                 driver_connection: Some(connection.clone()),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14118,6 +14212,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14233,6 +14328,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14288,6 +14384,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14389,6 +14486,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14444,6 +14542,7 @@ mod tests {
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14537,6 +14636,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14591,6 +14691,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14680,6 +14781,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14734,6 +14836,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 6,
@@ -14839,6 +14942,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14882,6 +14986,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -14974,6 +15079,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -15017,6 +15123,7 @@ mod tests {
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -15118,6 +15225,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -15177,6 +15285,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -15204,6 +15313,7 @@ mod tests {
                 name: "/RENAMED1".to_string(),
                 resolved_connection: connection.clone(),
                 driver_connection: Some(connection.clone()),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -15272,6 +15382,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -15350,6 +15461,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 4,
@@ -15418,6 +15530,7 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
@@ -15480,6 +15593,74 @@ mod tests {
     }
 
     #[test]
+    fn reduced_project_subgraph_driver_identity_keeps_exact_chosen_identity() {
+        let chosen_connection = ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "/SIG".to_string(),
+            local_name: "SIG".to_string(),
+            full_local_name: "/SIG".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+        let label_identity = super::ReducedProjectDriverIdentity::Label {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            kind: super::reduced_label_kind_sort_key(LabelKind::Local),
+        };
+        let sheet_pin_identity = super::ReducedProjectDriverIdentity::SheetPin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(10, 0),
+        };
+        let subgraph = ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: chosen_connection.clone(),
+            driver_connection: Some(chosen_connection.clone()),
+            chosen_driver_identity: Some(sheet_pin_identity.clone()),
+            drivers: vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: 7,
+                    connection: chosen_connection.clone(),
+                    identity: Some(label_identity),
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: 1,
+                    connection: chosen_connection.clone(),
+                    identity: Some(sheet_pin_identity.clone()),
+                },
+            ],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        };
+
+        assert_eq!(
+            super::reduced_project_subgraph_driver_identity(&subgraph),
+            Some(&sheet_pin_identity)
+        );
+    }
+
+    #[test]
     fn reduced_global_secondary_driver_promotion_updates_matching_global_subgraph() {
         let chosen = ReducedProjectConnection {
             net_code: 0,
@@ -15498,6 +15679,7 @@ mod tests {
                 name: "VCC".to_string(),
                 resolved_connection: chosen.clone(),
                 driver_connection: Some(chosen.clone()),
+                chosen_driver_identity: None,
                 drivers: vec![
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
@@ -15562,6 +15744,7 @@ mod tests {
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
@@ -15636,6 +15819,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
@@ -15708,6 +15892,7 @@ mod tests {
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
@@ -15781,6 +15966,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -15859,6 +16045,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -15937,6 +16124,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -16026,6 +16214,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             }),
+            chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
             has_no_connect: false,
@@ -16099,6 +16288,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
+            chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::Label,
                 priority: 7,
@@ -16191,6 +16381,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -16250,6 +16441,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -16319,6 +16511,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,
@@ -16378,6 +16571,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
+                chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
                 has_no_connect: false,

@@ -775,6 +775,10 @@ Current status:
         live driver-item objects
       - reduced-path ERC and reduced-path driver filtering now also read driver names through those
         connection owners instead of a separate reduced strong-driver string cache
+      - reduced project subgraphs now also keep the exact chosen driver identity projected at
+        graph-build time instead of reconstructing it later from the chosen driver name, so
+        same-name driver candidates do not collapse before reduced reused-screen driver-instance
+        de-dup and live owner attachment
       - reduced/ERC reused-screen driver-instance de-dup now derives chosen driver identity from
         the chosen driver connection plus the owned strong-driver list instead of a separate pending
         subgraph identity cache
