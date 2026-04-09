@@ -248,6 +248,53 @@ pub(crate) struct ReducedProjectStrongDriver {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct LiveProjectStrongDriver {
+    kind: ReducedProjectDriverKind,
+    priority: i32,
+    name: String,
+    full_name: String,
+}
+
+type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
+
+impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
+    fn from(driver: ReducedProjectStrongDriver) -> Self {
+        Self {
+            kind: driver.kind,
+            priority: driver.priority,
+            name: driver.name,
+            full_name: driver.full_name,
+        }
+    }
+}
+
+impl LiveProjectStrongDriver {
+    fn snapshot(&self) -> ReducedProjectStrongDriver {
+        ReducedProjectStrongDriver {
+            kind: self.kind,
+            priority: self.priority,
+            name: self.name.clone(),
+            full_name: self.full_name.clone(),
+        }
+    }
+}
+
+fn reduced_strong_drivers_into_live_handles(
+    drivers: Vec<ReducedProjectStrongDriver>,
+) -> Vec<LiveProjectStrongDriverHandle> {
+    drivers
+        .into_iter()
+        .map(|driver| Rc::new(RefCell::new(driver.into())))
+        .collect()
+}
+
+fn live_strong_driver_handles_to_snapshots(
+    drivers: &[LiveProjectStrongDriverHandle],
+) -> Vec<ReducedProjectStrongDriver> {
+    drivers.iter().map(|driver| driver.borrow().snapshot()).collect()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct ReducedProjectPinIdentityKey {
     sheet_instance_path: String,
     symbol_uuid: Option<String>,
@@ -1681,7 +1728,7 @@ struct LiveReducedSubgraph {
     driver_connection: LiveReducedConnection,
     #[cfg(test)]
     driver_identity: Option<ReducedProjectDriverIdentity>,
-    drivers: Vec<ReducedProjectStrongDriver>,
+    drivers: Vec<LiveProjectStrongDriverHandle>,
     sheet_instance_path: String,
     bus_neighbor_links: Vec<LiveReducedSubgraphLinkHandle>,
     bus_parent_links: Vec<LiveReducedSubgraphLinkHandle>,
@@ -1744,7 +1791,8 @@ impl PartialEq for LiveReducedSubgraph {
             && live_reduced_subgraph_driver_priority(self)
                 == live_reduced_subgraph_driver_priority(other)
             && live_reduced_subgraph_driver_identity_eq(self, other)
-            && self.drivers == other.drivers
+            && live_strong_driver_handles_to_snapshots(&self.drivers)
+                == live_strong_driver_handles_to_snapshots(&other.drivers)
             && self.sheet_instance_path == other.sheet_instance_path
             && self.bus_neighbor_links == other.bus_neighbor_links
             && self.bus_parent_links == other.bus_parent_links
@@ -1821,7 +1869,7 @@ fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 
     subgraph
         .drivers
         .first()
-        .map(|driver| driver.priority)
+        .map(|driver| driver.borrow().priority)
         .or_else(|| {
             (!matches!(
                 subgraph.driver_connection.borrow().connection_type,
@@ -1975,7 +2023,7 @@ fn build_live_reduced_subgraphs(
             )),
             #[cfg(test)]
             driver_identity: subgraph.driver_identity.clone(),
-            drivers: subgraph.drivers.clone(),
+            drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
             sheet_instance_path: subgraph.sheet_instance_path.clone(),
             bus_neighbor_links: subgraph
                 .bus_neighbor_links
@@ -3837,11 +3885,11 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
     let mut promoted = Vec::new();
 
     for secondary_driver in secondary_drivers {
-        if secondary_driver.full_name == chosen_connection.name() {
+        if secondary_driver.borrow().full_name == chosen_connection.name() {
             continue;
         }
 
-        let secondary_is_global = secondary_driver.priority >= 6;
+        let secondary_is_global = secondary_driver.borrow().priority >= 6;
 
         for handle in live_subgraphs.iter() {
             if Rc::ptr_eq(handle, start) {
@@ -3856,7 +3904,9 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
                 .borrow()
                 .drivers
                 .iter()
-                .any(|candidate_driver| candidate_driver.full_name == secondary_driver.full_name)
+                .any(|candidate_driver| {
+                    candidate_driver.borrow().full_name == secondary_driver.borrow().full_name
+                })
             {
                 continue;
             }
