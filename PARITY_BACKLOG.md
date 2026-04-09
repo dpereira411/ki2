@@ -1029,6 +1029,9 @@ Current status:
         - reduced projection
       - active base-pin driver connections now live on direct shared live connection handles
         instead of a second `LiveReducedConnection` wrapper on the pin owner
+      - live base-pin build now seeds that direct driver handle from the reduced per-pin
+        `driver_connection` owner itself instead of collapsing it back onto the item connection
+        during handle construction
       - active base-pin item connections now also live on direct shared live connection handles,
         so the pin owner no longer carries reduced wrapper state for either of its live pin
         connections

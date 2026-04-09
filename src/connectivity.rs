@@ -4355,7 +4355,10 @@ fn live_subgraph_is_self_driven_sheet_pin(subgraph: &LiveReducedSubgraph) -> boo
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
 // graph propagation. This still wraps the existing reduced live subgraph carrier instead of a full
 // local `CONNECTION_SUBGRAPH` analogue, but it now constructs the active graph directly as shared
-// live handles instead of first building a temporary value-owned live-subgraph vector.
+// live handles instead of first building a temporary value-owned live-subgraph vector. Base-pin
+// item and pin-driver connection owners now also seed from their distinct reduced owners here
+// instead of collapsing the pin-driver side back onto the item connection during handle
+// construction.
 fn build_live_reduced_subgraph_handles(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraphHandle> {
@@ -4414,7 +4417,9 @@ fn build_live_reduced_subgraph_handles(
                                 electrical_type: pin.electrical_type.clone(),
                             },
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
-                            driver_connection: Rc::new(RefCell::new(pin.connection.clone().into())),
+                            driver_connection: Rc::new(RefCell::new(
+                                pin.driver_connection.clone().into(),
+                            )),
                             driver: None,
                         }))
                     })
@@ -17412,11 +17417,11 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: ReducedProjectConnection {
-                    net_code: 1,
+                    net_code: 2,
                     connection_type: ReducedProjectConnectionType::Net,
-                    name: "SIG".to_string(),
-                    local_name: "SIG".to_string(),
-                    full_local_name: "SIG".to_string(),
+                    name: "DRV".to_string(),
+                    local_name: "DRV".to_string(),
+                    full_local_name: "DRV".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
@@ -17447,6 +17452,7 @@ mod tests {
         assert_eq!(snapshot.number.as_deref(), Some("7"));
         assert_eq!(snapshot.electrical_type.as_deref(), Some("bidirectional"));
         assert_eq!(snapshot.connection.local_name, "SIG");
+        assert_eq!(snapshot.driver_connection.local_name, "DRV");
     }
 
     #[test]
