@@ -910,6 +910,8 @@ Current status:
       - live base-pin owners now also keep immutable pin identity separately from the shared live
         connection owner instead of shadowing a second copied reduced pin connection inside the
         same live carrier
+      - attached live strong-driver identity now derives from the shared live item owners
+        themselves instead of staying copied on the live driver wrapper after owner attachment
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage

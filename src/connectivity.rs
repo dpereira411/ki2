@@ -259,8 +259,6 @@ pub(crate) struct ReducedProjectStrongDriver {
 
 #[derive(Clone, Debug)]
 struct LiveProjectStrongDriver {
-    #[cfg(test)]
-    identity: Option<ReducedProjectDriverIdentity>,
     owner: LiveProjectStrongDriverOwner,
 }
 
@@ -270,6 +268,7 @@ type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
 #[allow(dead_code)]
 enum LiveProjectStrongDriverOwner {
     Floating {
+        identity: Option<ReducedProjectDriverIdentity>,
         connection: LiveReducedConnection,
         kind: ReducedProjectDriverKind,
         priority: i32,
@@ -299,9 +298,8 @@ enum LiveProjectStrongDriverOwner {
 impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
     fn from(driver: ReducedProjectStrongDriver) -> Self {
         Self {
-            #[cfg(test)]
-            identity: driver.identity,
             owner: LiveProjectStrongDriverOwner::Floating {
+                identity: driver.identity,
                 connection: LiveReducedConnection::new(driver.connection),
                 kind: driver.kind,
                 priority: driver.priority,
@@ -317,10 +315,7 @@ impl LiveProjectStrongDriver {
             kind: live_project_strong_driver_kind(self),
             priority: live_project_strong_driver_priority(self),
             connection,
-            #[cfg(test)]
-            identity: self.identity.clone(),
-            #[cfg(not(test))]
-            identity: None,
+            identity: live_project_strong_driver_identity(self),
         }
     }
 }
@@ -394,6 +389,26 @@ fn live_project_strong_driver_priority(driver: &LiveProjectStrongDriver) -> i32 
         | LiveProjectStrongDriverOwner::SheetPin { priority, .. }
         | LiveProjectStrongDriverOwner::HierPort { priority, .. }
         | LiveProjectStrongDriverOwner::SymbolPin { priority, .. } => *priority,
+    }
+}
+
+fn live_project_strong_driver_identity(
+    driver: &LiveProjectStrongDriver,
+) -> Option<ReducedProjectDriverIdentity> {
+    match &driver.owner {
+        LiveProjectStrongDriverOwner::Floating { identity, .. } => identity.clone(),
+        LiveProjectStrongDriverOwner::Label { owner, .. } => owner
+            .upgrade()
+            .and_then(|owner| owner.borrow().identity.clone()),
+        LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner
+            .upgrade()
+            .and_then(|owner| owner.borrow().identity.clone()),
+        LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
+            .upgrade()
+            .and_then(|owner| owner.borrow().identity.clone()),
+        LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
+            .upgrade()
+            .and_then(|owner| owner.borrow().pin.identity.clone()),
     }
 }
 
@@ -2097,6 +2112,7 @@ impl Ord for LiveReducedConnection {
 struct LiveReducedLabelLink {
     at: PointKey,
     kind: LabelKind,
+    identity: Option<ReducedProjectDriverIdentity>,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2106,6 +2122,7 @@ type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
 struct LiveReducedHierSheetPinLink {
     at: PointKey,
     child_sheet_uuid: Option<String>,
+    identity: Option<ReducedProjectDriverIdentity>,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2114,6 +2131,7 @@ type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>
 #[derive(Clone, Debug)]
 struct LiveReducedHierPortLink {
     at: PointKey,
+    identity: Option<ReducedProjectDriverIdentity>,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2122,6 +2140,7 @@ type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 #[derive(Clone, Debug)]
 struct LiveReducedBasePinPayload {
     key: ReducedNetBasePinKey,
+    identity: Option<ReducedProjectDriverIdentity>,
 }
 
 #[derive(Clone, Debug)]
@@ -2704,7 +2723,9 @@ fn attach_live_strong_driver_owners_to_handles(
                             .iter()
                             .find(|port| port.borrow().at == at)
                             .map(|port| {
-                                port.borrow_mut().driver = Some(driver.clone());
+                                let mut port_ref = port.borrow_mut();
+                                port_ref.identity = identity.clone();
+                                port_ref.driver = Some(driver.clone());
                                 LiveProjectStrongDriverOwner::HierPort {
                                     owner: Rc::downgrade(port),
                                     kind: driver_kind,
@@ -2712,6 +2733,7 @@ fn attach_live_strong_driver_owners_to_handles(
                                 }
                             })
                             .unwrap_or(LiveProjectStrongDriverOwner::Floating {
+                                identity: identity.clone(),
                                 connection: floating_connection.clone(),
                                 kind: driver_kind,
                                 priority,
@@ -2725,7 +2747,9 @@ fn attach_live_strong_driver_owners_to_handles(
                                 link.at == at && reduced_label_kind_sort_key(link.kind) == kind
                             })
                             .map(|link| {
-                                link.borrow_mut().driver = Some(driver.clone());
+                                let mut link_ref = link.borrow_mut();
+                                link_ref.identity = identity.clone();
+                                link_ref.driver = Some(driver.clone());
                                 LiveProjectStrongDriverOwner::Label {
                                     owner: Rc::downgrade(link),
                                     kind: driver_kind,
@@ -2733,6 +2757,7 @@ fn attach_live_strong_driver_owners_to_handles(
                                 }
                             })
                             .unwrap_or(LiveProjectStrongDriverOwner::Floating {
+                                identity: identity.clone(),
                                 connection: floating_connection.clone(),
                                 kind: driver_kind,
                                 priority,
@@ -2744,7 +2769,9 @@ fn attach_live_strong_driver_owners_to_handles(
                     .iter()
                     .find(|pin| pin.borrow().at == at)
                     .map(|pin| {
-                        pin.borrow_mut().driver = Some(driver.clone());
+                        let mut pin_ref = pin.borrow_mut();
+                        pin_ref.identity = identity.clone();
+                        pin_ref.driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SheetPin {
                             owner: Rc::downgrade(pin),
                             kind: driver_kind,
@@ -2752,28 +2779,33 @@ fn attach_live_strong_driver_owners_to_handles(
                         }
                     })
                     .unwrap_or(LiveProjectStrongDriverOwner::Floating {
+                        identity: identity.clone(),
                         connection: floating_connection.clone(),
                         kind: driver_kind,
                         priority,
                     }),
                 Some(ReducedProjectDriverIdentity::SymbolPin {
-                    symbol_uuid,
+                    ref symbol_uuid,
                     at,
-                    pin_number,
+                    ref pin_number,
                     ..
                 }) => subgraph
                     .base_pins
                     .iter()
                     .find(|base_pin| {
                         let key = &base_pin.borrow().pin.key;
-                        key.symbol_uuid == symbol_uuid && key.at == at && key.number == pin_number
+                        key.symbol_uuid.as_ref() == symbol_uuid.as_ref()
+                            && key.at == at
+                            && key.number.as_ref() == pin_number.as_ref()
                     })
                     .map(|base_pin| {
-                        base_pin
-                            .borrow()
-                            .connection
-                            .clone_from(&floating_connection);
-                        base_pin.borrow_mut().driver = Some(driver.clone());
+                        {
+                            let base_pin_ref = base_pin.borrow();
+                            base_pin_ref.connection.clone_from(&floating_connection);
+                        }
+                        let mut base_pin_ref = base_pin.borrow_mut();
+                        base_pin_ref.pin.identity = identity.clone();
+                        base_pin_ref.driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SymbolPin {
                             owner: Rc::downgrade(base_pin),
                             kind: driver_kind,
@@ -2781,11 +2813,13 @@ fn attach_live_strong_driver_owners_to_handles(
                         }
                     })
                     .unwrap_or(LiveProjectStrongDriverOwner::Floating {
+                        identity: identity.clone(),
                         connection: floating_connection.clone(),
                         kind: driver_kind,
                         priority,
                     }),
                 None => LiveProjectStrongDriverOwner::Floating {
+                    identity,
                     connection: floating_connection,
                     kind: driver_kind,
                     priority,
@@ -2967,6 +3001,7 @@ fn build_live_reduced_subgraphs(
                     Rc::new(RefCell::new(LiveReducedBasePin {
                         pin: LiveReducedBasePinPayload {
                             key: pin.key.clone(),
+                            identity: None,
                         },
                         connection: LiveReducedConnection::new(pin.connection.clone()),
                         driver: None,
@@ -2987,6 +3022,7 @@ fn build_live_reduced_subgraphs(
                     Rc::new(RefCell::new(LiveReducedLabelLink {
                         at: link.at,
                         kind: link.kind,
+                        identity: None,
                         connection: LiveReducedConnection::new(link.connection),
                         driver: None,
                     }))
@@ -3000,6 +3036,7 @@ fn build_live_reduced_subgraphs(
                     Rc::new(RefCell::new(LiveReducedHierSheetPinLink {
                         at: pin.at,
                         child_sheet_uuid: pin.child_sheet_uuid,
+                        identity: None,
                         connection: LiveReducedConnection::new(pin.connection),
                         driver: None,
                     }))
@@ -3012,6 +3049,7 @@ fn build_live_reduced_subgraphs(
                 .map(|port| {
                     Rc::new(RefCell::new(LiveReducedHierPortLink {
                         at: port.at,
+                        identity: None,
                         connection: LiveReducedConnection::new(port.connection),
                         driver: None,
                     }))
@@ -13334,6 +13372,13 @@ mod tests {
                 assert_eq!(driver.connection.local_name, "SIG");
                 assert_eq!(driver.connection.name, "/SIG");
                 assert_eq!(driver.priority, 1);
+                assert!(matches!(
+                    driver.identity,
+                    Some(super::ReducedProjectDriverIdentity::SheetPin {
+                        at: PointKey(10, 20),
+                        ..
+                    })
+                ));
             }
             _ => panic!("expected sheet pin strong-driver owner"),
         }
@@ -13456,6 +13501,15 @@ mod tests {
                 assert_eq!(driver.connection.local_name, "PWR");
                 assert_eq!(driver.connection.name, "PWR");
                 assert_eq!(driver.priority, 6);
+                assert!(matches!(
+                    driver.identity,
+                    Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                        symbol_uuid: Some(ref uuid),
+                        at: PointKey(10, 20),
+                        pin_number: Some(ref pin_number),
+                        ..
+                    }) if uuid == "sym" && pin_number == "1"
+                ));
             }
             _ => panic!("expected symbol pin strong-driver owner"),
         }
