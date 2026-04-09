@@ -902,6 +902,11 @@ Current status:
         `CONNECTION_TYPE::NONE`; exercised global power pins now start with their pin-owned power
         name while ordinary pins still fall back to the chosen subgraph driver when their seeded
         local name stays empty
+      - ordinary symbol pins now also seed their base-pin owners from the reduced
+        `SCH_PIN::GetDefaultNetName()` path before driver resolution, and symbol-pin driver-name
+        lookup now ignores those auto-generated pin-owned names when the graph has a better chosen
+        driver, so connected labeled nets do not regress while per-pin live owners stop starting
+        blank
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage

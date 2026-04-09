@@ -6861,7 +6861,9 @@ where
                 .then(|| symbol_reference(symbol))
                 .flatten();
 
-            for pin in projected_symbol_pin_info(symbol) {
+            let unit_pins = projected_symbol_pin_info(symbol);
+
+            for pin in unit_pins.iter() {
                 let Some(base_pin_number) = pin.number.clone() else {
                     continue;
                 };
@@ -6889,7 +6891,8 @@ where
                     electrical_type: pin.electrical_type.clone(),
                     connection: reduced_seeded_symbol_pin_connection(
                         symbol,
-                        &pin,
+                        pin,
+                        &unit_pins,
                         sheet_instance_path,
                     ),
                 };
@@ -8596,10 +8599,11 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
 // graph-owned per-pin driver connections projected from the live base-pin owners, and both the
 // named and by-location lookup edges now include projected pin number so stacked pins do not
-// collapse to one driver-name query. Base-pin owners now also start with `updatePinConnectivity()`
-//-style net connections, so this lookup filters empty pin-owned names before falling back to the
-// chosen subgraph driver. Remaining divergence is fuller live connection-object caching and item
-// ownership.
+// collapse to one driver-name query. Base-pin owners now also start with
+// `updatePinConnectivity()`-style seeded names, so this lookup ignores auto-generated pin-owned
+// names when the graph has a better chosen driver and only reports the pin-owned name directly for
+// exercised power-pin and pin-default branches. Remaining divergence is fuller live
+// connection-object caching and item ownership.
 pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8624,7 +8628,9 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
                 ))
         })
         .and_then(|connection| {
-            (!connection.local_name.is_empty()).then(|| connection.local_name.clone())
+            (!connection.local_name.is_empty()
+                && !is_auto_generated_net_name(&connection.local_name))
+            .then(|| connection.local_name.clone())
         })
         .or_else(|| {
             resolve_reduced_project_subgraph_for_symbol_pin(
@@ -8923,12 +8929,13 @@ fn symbol_reference_text(symbol: &Symbol) -> Option<String> {
 // Upstream parity: reduced local analogue for the per-pin `SCH_CONNECTION` seeding KiCad performs
 // in `updateSymbolConnectivity()` / `updatePinConnectivity()` before `ResolveDrivers()`. This is
 // still reduced projected pin state rather than a live `SCH_PIN`, but it now gives every base-pin
-// owner a net-typed connection from setup time and only seeds a name for exercised global power
-// pins, matching the upstream setup split more closely than starting most base pins as
-// `CONNECTION_TYPE::NONE`.
+// owner a net-typed connection plus the exercised power-pin or default-net seeded name from setup
+// time, matching the upstream per-pin seed path more closely than starting most base pins as
+// `CONNECTION_TYPE::NONE` or leaving ordinary pins unnamed until later graph ownership attaches.
 fn reduced_seeded_symbol_pin_connection(
     symbol: &Symbol,
     pin: &ProjectedSymbolPin,
+    unit_pins: &[ProjectedSymbolPin],
     sheet_instance_path: &str,
 ) -> ReducedProjectConnection {
     let mut connection = ReducedProjectConnection {
@@ -8947,6 +8954,10 @@ fn reduced_seeded_symbol_pin_connection(
             connection.local_name = name.clone();
             connection.full_local_name = name;
         }
+    } else if let Some(name) = reduced_symbol_pin_default_net_name(symbol, pin, unit_pins, false) {
+        connection.name = name.clone();
+        connection.local_name = name.clone();
+        connection.full_local_name = name;
     }
 
     connection
@@ -11899,6 +11910,115 @@ mod tests {
     }
 
     #[test]
+    fn reduced_project_driver_name_for_symbol_pin_prefers_resolved_driver_over_seeded_default() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("73050000-0000-0000-0000-000000000901".to_string());
+
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let graph = super::ReducedProjectNetGraph {
+            subgraphs: vec![super::ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "SIG".to_string(),
+                resolved_connection: super::ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: super::ReducedProjectConnectionType::Net,
+                    name: "SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: Some(super::ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: super::ReducedProjectConnectionType::Net,
+                    name: "SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }),
+                chosen_driver_identity: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            }],
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::from([(
+                super::ReducedProjectPinIdentityKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: symbol.uuid.clone(),
+                    at: PointKey(0, 0),
+                    number: Some("1".to_string()),
+                },
+                0,
+            )]),
+            pin_driver_connections: BTreeMap::new(),
+            pin_driver_connections_by_location: BTreeMap::from([(
+                super::ReducedProjectPinIdentityKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: symbol.uuid.clone(),
+                    at: PointKey(0, 0),
+                    number: Some("1".to_string()),
+                },
+                super::ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: super::ReducedProjectConnectionType::Net,
+                    name: "Net-(U1-Pad1)".to_string(),
+                    local_name: "Net-(U1-Pad1)".to_string(),
+                    full_local_name: "Net-(U1-Pad1)".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            )]),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_symbol_pin(
+                &graph,
+                &sheet_path,
+                &symbol,
+                [0.0, 0.0],
+                None,
+                Some("1"),
+            )
+            .as_deref(),
+            Some("SIG")
+        );
+    }
+
+    #[test]
     fn reduced_symbol_pin_default_net_name_uses_effective_stacked_pad_number() {
         let mut symbol = crate::model::Symbol::new();
         symbol.uuid = Some("73050000-0000-0000-0000-000000000777".to_string());
@@ -11927,6 +12047,34 @@ mod tests {
             .expect("default net name");
 
         assert_eq!(name, "Net-(U1-A-Pad2)");
+    }
+
+    #[test]
+    fn reduced_seeded_symbol_pin_connection_uses_default_net_name_for_ordinary_pin() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("73050000-0000-0000-0000-000000000778".to_string());
+        symbol.set_field_text(
+            crate::model::PropertyKind::SymbolReference,
+            "U1".to_string(),
+        );
+
+        let pin = super::ProjectedSymbolPin {
+            at: [0.0, 0.0],
+            name: Some("A".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+        };
+        let unit_pins = vec![pin.clone()];
+
+        let connection = super::reduced_seeded_symbol_pin_connection(&symbol, &pin, &unit_pins, "");
+
+        assert_eq!(
+            connection.connection_type,
+            super::ReducedProjectConnectionType::Net
+        );
+        assert_eq!(connection.name, "Net-(U1-A)");
+        assert_eq!(connection.local_name, "Net-(U1-A)");
+        assert_eq!(connection.full_local_name, "Net-(U1-A)");
     }
 
     #[test]
