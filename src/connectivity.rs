@@ -1,6 +1,4 @@
 use std::cell::RefCell;
-#[cfg(test)]
-use std::cell::{Ref, RefMut};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::{Rc, Weak};
@@ -1858,77 +1856,6 @@ fn clone_live_connection_owner_into_live_base_pin_connection_owner(
         target.local_name = existing_local_name;
     } else {
         target.local_name = source.local_name.clone();
-    }
-}
-
-#[cfg(test)]
-#[derive(Clone)]
-struct LiveReducedConnection {
-    connection: Rc<RefCell<LiveProjectConnection>>,
-}
-
-#[cfg(test)]
-impl LiveReducedConnection {
-    fn new(connection: ReducedProjectConnection) -> Self {
-        Self {
-            connection: Rc::new(RefCell::new(connection.into())),
-        }
-    }
-
-    // Upstream parity: reduced local analogue for `SCH_CONNECTION::Clone()`. This still operates
-    // on a reduced local connection carrier, but active cloning now mutates one shared live
-    // connection owner directly instead of round-tripping through a reduced snapshot. Remaining
-    // divergence is fuller item/subgraph pointer topology beyond these local live connection
-    // owners.
-    fn clone_from(&self, other: &LiveReducedConnection) {
-        if Rc::ptr_eq(&self.connection, &other.connection) {
-            return;
-        }
-        let source = other.borrow();
-        clone_live_connection_owner_into_live_connection_owner(&mut self.borrow_mut(), &source);
-    }
-
-    fn borrow(&self) -> Ref<'_, LiveProjectConnection> {
-        self.connection.borrow()
-    }
-
-    fn borrow_mut(&self) -> RefMut<'_, LiveProjectConnection> {
-        self.connection.borrow_mut()
-    }
-
-    fn snapshot(&self) -> ReducedProjectConnection {
-        self.borrow().snapshot()
-    }
-}
-
-#[cfg(test)]
-impl std::fmt::Debug for LiveReducedConnection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.borrow().fmt(f)
-    }
-}
-
-#[cfg(test)]
-impl PartialEq for LiveReducedConnection {
-    fn eq(&self, other: &Self) -> bool {
-        self.snapshot() == other.snapshot()
-    }
-}
-
-#[cfg(test)]
-impl Eq for LiveReducedConnection {}
-
-#[cfg(test)]
-impl PartialOrd for LiveReducedConnection {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-#[cfg(test)]
-impl Ord for LiveReducedConnection {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.snapshot().cmp(&other.snapshot())
     }
 }
 
@@ -8954,12 +8881,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveReducedConnection, LiveReducedSubgraph, LiveReducedSubgraphHandle, PointKey,
-        ReducedBusMember, ReducedBusMemberKind, ReducedHierPortLink, ReducedHierSheetPinLink,
-        ReducedLabelLink, ReducedProjectBusNeighborLink, ReducedProjectConnection,
-        ReducedProjectConnectionType, ReducedProjectDriverKind, ReducedProjectStrongDriver,
-        ReducedProjectSubgraphEntry, ReducedSubgraphWireItem,
-        apply_live_reduced_driver_connections_from_handles,
+        LiveReducedSubgraph, LiveReducedSubgraphHandle, PointKey, ReducedBusMember,
+        ReducedBusMemberKind, ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
+        ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
+        ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
+        ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
         clone_reduced_connection_into_live_connection_owner,
         collect_live_reduced_propagation_component_from_handles,
@@ -9185,44 +9111,51 @@ mod tests {
 
     #[test]
     fn live_reduced_connection_clone_preserves_existing_bus_member_identity() {
-        let target = LiveReducedConnection::new(ReducedProjectConnection {
-            net_code: 0,
-            connection_type: ReducedProjectConnectionType::Bus,
-            name: "/OLD".to_string(),
-            local_name: "OLD".to_string(),
-            full_local_name: "/OLD".to_string(),
-            sheet_instance_path: String::new(),
-            members: vec![ReducedBusMember {
+        let target = Rc::new(RefCell::new(super::LiveProjectConnection::from(
+            ReducedProjectConnection {
                 net_code: 0,
-                name: "OLD1".to_string(),
-                local_name: "OLD1".to_string(),
-                full_local_name: "/OLD1".to_string(),
-                vector_index: Some(1),
-                kind: ReducedBusMemberKind::Net,
-                members: Vec::new(),
-            }],
-        });
-        let source = LiveReducedConnection::new(ReducedProjectConnection {
-            net_code: 0,
-            connection_type: ReducedProjectConnectionType::Bus,
-            name: "/RENAMED".to_string(),
-            local_name: "RENAMED".to_string(),
-            full_local_name: "/RENAMED".to_string(),
-            sheet_instance_path: "/child".to_string(),
-            members: vec![ReducedBusMember {
-                net_code: 7,
-                name: "RENAMED1".to_string(),
-                local_name: "RENAMED1".to_string(),
-                full_local_name: "/RENAMED1".to_string(),
-                vector_index: None,
-                kind: ReducedBusMemberKind::Net,
-                members: Vec::new(),
-            }],
-        });
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "/OLD".to_string(),
+                local_name: "OLD".to_string(),
+                full_local_name: "/OLD".to_string(),
+                sheet_instance_path: String::new(),
+                members: vec![ReducedBusMember {
+                    net_code: 0,
+                    name: "OLD1".to_string(),
+                    local_name: "OLD1".to_string(),
+                    full_local_name: "/OLD1".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            },
+        )));
+        let source = Rc::new(RefCell::new(super::LiveProjectConnection::from(
+            ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "/RENAMED".to_string(),
+                local_name: "RENAMED".to_string(),
+                full_local_name: "/RENAMED".to_string(),
+                sheet_instance_path: "/child".to_string(),
+                members: vec![ReducedBusMember {
+                    net_code: 7,
+                    name: "RENAMED1".to_string(),
+                    local_name: "RENAMED1".to_string(),
+                    full_local_name: "/RENAMED1".to_string(),
+                    vector_index: None,
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            },
+        )));
 
-        target.clone_from(&source);
+        super::clone_live_connection_owner_into_live_connection_owner(
+            &mut target.borrow_mut(),
+            &source.borrow(),
+        );
 
-        let target_connection = target.snapshot();
+        let target_connection = target.borrow().snapshot();
         assert_eq!(target_connection.name, "/RENAMED");
         assert_eq!(target_connection.local_name, "OLD");
         assert_eq!(target_connection.sheet_instance_path, "/child");
