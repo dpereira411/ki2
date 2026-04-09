@@ -6065,6 +6065,74 @@ fn erc_uses_project_pin_map_overrides() {
 }
 
 #[test]
+fn erc_reports_unspecified_pins_connected_to_power_inputs() {
+    let path = temp_schematic(
+        "erc_unspecified_power_input_warning",
+        r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Connector_Generic:Conn_01x01"
+      (property "Reference" "J" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "Conn_01x01" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "Conn_01x01_1_1"
+        (pin unspecified line
+          (at 0 0 180)
+          (length 2.54)
+          (name "Pin_1" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))))
+    (symbol "power:GND"
+      (power)
+      (pin_numbers hide)
+      (pin_names (offset 0) hide)
+      (property "Reference" "#PWR" (id 0) (at 0 -6.35 0) (effects (font (size 1 1)) (hide)))
+      (property "Value" "GND" (id 1) (at 0 -3.81 0) (effects (font (size 1 1))))
+      (symbol "GND_0_1"
+        (polyline
+          (pts
+            (xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27))
+          (stroke (width 0) (type default))
+          (fill (type none))))
+      (symbol "GND_1_1"
+        (pin power_in line
+          (at 0 0 270)
+          (length 0)
+          (name "~" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Connector_Generic:Conn_01x01")
+    (at 0 0 0)
+    (uuid "73930000-0000-0000-0000-000000000212")
+    (property "Reference" "J1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "Conn_01x01" (at 0 0 0) (effects (font (size 1 1)))))
+  (symbol
+    (lib_id "power:GND")
+    (at 10 0 0)
+    (uuid "73930000-0000-0000-0000-000000000213")
+    (property "Reference" "#PWR01" (at 10 0 0) (effects (font (size 1 1)) (hide)))
+    (property "Value" "GND" (at 10 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+)"##,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-warning")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(
+        diagnostics[0].message,
+        "Pins of type Unspecified and Power input are connected"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_skips_stacked_same_symbol_pin_conflicts() {
     let path = temp_schematic(
         "erc_stacked_same_symbol_conflict_skip",
@@ -31925,6 +31993,44 @@ fn hidden_lib_text_converts_to_named_user_field() {
     assert_eq!(extra_fields[1].text.as_deref(), Some("B"));
     assert_eq!(extra_fields[1].field_id, Some(0));
     assert_eq!(extra_fields[1].field_ordinal, Some(43));
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn parser_materializes_common_lib_symbol_units_without_panicking() {
+    let src = r#"(kicad_sch
+  (version 20231120)
+  (generator "eeschema")
+  (uuid "63000000-0000-0000-0000-00000000007d")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:GND"
+      (power)
+      (pin_numbers hide)
+      (pin_names (offset 0) hide)
+      (symbol "GND_0_1"
+        (polyline
+          (pts
+            (xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27))
+          (stroke (width 0) (type default))
+          (fill (type none))))
+      (symbol "GND_1_1"
+        (pin power_in line
+          (at 0 0 270)
+          (length 0)
+          (name "~" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27))))))))
+)"#;
+    let path = temp_schematic("parser_common_lib_symbol_unit", src);
+    let schematic = parse_schematic_file(Path::new(&path)).expect("must parse");
+    let lib_symbol = &schematic.screen.lib_symbols[0];
+    let unit = &lib_symbol.units[0];
+
+    assert_eq!(unit.unit_number, 1);
+    assert_eq!(unit.body_style, 1);
+    assert!(unit.draw_items.iter().any(|item| item.kind == "polyline"));
+    assert!(unit.draw_items.iter().any(|item| item.kind == "pin"));
 
     let _ = fs::remove_file(path);
 }

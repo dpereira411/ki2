@@ -5705,10 +5705,8 @@ where
                 continue;
             }
 
-            let reference = symbol
-                .in_netlist
-                .then(|| symbol_reference(symbol))
-                .flatten();
+            let shown_reference = symbol_reference(symbol);
+            let reference = symbol.in_netlist.then(|| shown_reference.clone()).flatten();
 
             let unit_pins = projected_symbol_pin_info(symbol);
 
@@ -5737,7 +5735,7 @@ where
                         name: pin.name.clone(),
                         number: pin.number.clone(),
                     },
-                    reference: reference.clone(),
+                    reference: shown_reference.clone(),
                     number: pin.number.clone(),
                     electrical_type: pin.electrical_type.clone(),
                     visible: pin.visible,

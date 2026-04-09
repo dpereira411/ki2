@@ -2465,11 +2465,14 @@ mod tests {
         symbol
             .units
             .sort_by_key(|unit| (unit.unit_number, unit.body_style));
+        let materialized_unit_number = item.unit_number.max(1);
+        let materialized_body_style = item.body_style.max(1);
         let index = symbol
             .units
             .iter()
             .position(|existing| {
-                existing.unit_number == item.unit_number && existing.body_style == item.body_style
+                existing.unit_number == materialized_unit_number
+                    && existing.body_style == materialized_body_style
             })
             .expect("materialized lib symbol unit must exist");
         symbol.units[index].draw_item_kinds.push(item.kind.clone());

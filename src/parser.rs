@@ -924,6 +924,15 @@ impl KiCadSchematicParser {
         }
     }
 
+    // upstream: SCH_IO_KICAD_SEXPR_PARSER::parseLibSymbol
+    // parity_status: partial
+    // local_kind: upstream-native
+    // divergence: still lacks some final legacy/version acceptance polish outside the exercised
+    // local-lib symbol branches; common-unit child symbols like `*_0_1` now normalize onto the
+    // materialized unit slot instead of panicking
+    // local_only_reason: none
+    // replaced_by: none
+    // remove_when: none
     fn parse_lib_symbol(&mut self) -> Result<LibSymbol, Error> {
         let _ = self.need_unquoted_symbol_atom("symbol")?;
         let raw_name = self
@@ -947,6 +956,8 @@ impl KiCadSchematicParser {
                                  name: String,
                                  unit_number: i32,
                                  body_style: i32| {
+            let materialized_unit_number = unit_number.max(1);
+            let materialized_body_style = body_style.max(1);
             let unit_count = unit_number.max(1);
             let body_style_count = body_style.max(1);
 
@@ -984,7 +995,8 @@ impl KiCadSchematicParser {
                 .units
                 .iter()
                 .position(|existing| {
-                    existing.unit_number == unit_number && existing.body_style == body_style
+                    existing.unit_number == materialized_unit_number
+                        && existing.body_style == materialized_body_style
                 })
                 .expect("materialized lib symbol unit must exist");
             symbol.units[index].name = name;
@@ -6285,12 +6297,14 @@ impl KiCadSchematicParser {
                                         .units
                                         .sort_by_key(|unit| (unit.unit_number, unit.body_style));
 
+                                    let materialized_unit_number = item.unit_number.max(1);
+                                    let materialized_body_style = item.body_style.max(1);
                                     let unit_index = target
                                         .units
                                         .iter()
                                         .position(|existing| {
-                                            existing.unit_number == item.unit_number
-                                                && existing.body_style == item.body_style
+                                            existing.unit_number == materialized_unit_number
+                                                && existing.body_style == materialized_body_style
                                         })
                                         .expect("materialized lib symbol unit must exist");
                                     target.units[unit_index].name = format!(
