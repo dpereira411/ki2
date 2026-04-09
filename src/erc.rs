@@ -1,8 +1,7 @@
 use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_connection_points, collect_reduced_label_component_snapshots,
-    collect_reduced_project_net_graph, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name,
+    collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
     reduced_project_symbol_pin_inventory, resolve_reduced_project_subgraph_at,
@@ -3565,13 +3564,7 @@ pub fn check_footprint_filters(project: &SchematicProject) -> Vec<Diagnostic> {
 // marker attachment path.
 pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    let graph = collect_reduced_project_net_graph(
-        &project.schematics,
-        &project.sheet_paths,
-        project.project.as_ref(),
-        project.current_variant(),
-        false,
-    );
+    let graph = project.reduced_project_net_graph(false);
 
     for sheet_path in &project.sheet_paths {
         for pin_inventory in
