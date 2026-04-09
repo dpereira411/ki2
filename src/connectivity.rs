@@ -3445,12 +3445,24 @@ impl LiveReducedSubgraph {
         component
     }
 
+    // Upstream parity: local live-subgraph analogue for the `global_subgraphs` snapshot KiCad
+    // builds once from `!m_local_driver` candidates before the secondary-driver promotion pass.
+    fn collect_global_subgraph_handles(
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+    ) -> Vec<LiveReducedSubgraphHandle> {
+        live_subgraphs
+            .iter()
+            .filter(|handle| !live_subgraph_has_local_driver(&handle.borrow()))
+            .cloned()
+            .collect()
+    }
+
     // Upstream parity: local live-subgraph analogue for the global-secondary-driver promotion
     // branch KiCad runs before neighbor propagation. The active path now keeps the promotion walk
     // on the shared subgraph owner instead of an outer free helper around the handle graph.
     fn refresh_global_secondary_driver_promotions(
         start: &LiveReducedSubgraphHandle,
-        live_subgraphs: &[LiveReducedSubgraphHandle],
+        global_subgraphs: &[LiveReducedSubgraphHandle],
     ) -> Vec<LiveReducedSubgraphHandle> {
         if live_subgraph_has_local_driver(&start.borrow())
             || live_subgraph_strong_driver_count(&start.borrow()) < 2
@@ -3471,12 +3483,8 @@ impl LiveReducedSubgraph {
             let secondary_is_global =
                 secondary_driver.borrow().priority() >= reduced_global_power_pin_driver_priority();
 
-            for handle in live_subgraphs.iter() {
+            for handle in global_subgraphs.iter() {
                 if Rc::ptr_eq(handle, start) {
-                    continue;
-                }
-
-                if live_subgraph_has_local_driver(&handle.borrow()) {
                     continue;
                 }
 
@@ -3516,6 +3524,7 @@ impl LiveReducedSubgraph {
     fn propagate_neighbors_from_selected_start(
         start: &LiveReducedSubgraphHandle,
         live_subgraphs: &[LiveReducedSubgraphHandle],
+        global_subgraphs: &[LiveReducedSubgraphHandle],
         force: bool,
         visiting: &mut BTreeSet<usize>,
         stale_members: &mut Vec<LiveProjectBusMemberHandle>,
@@ -3527,12 +3536,14 @@ impl LiveReducedSubgraph {
         }
 
         if !force {
-            let promoted = Self::refresh_global_secondary_driver_promotions(start, live_subgraphs);
+            let promoted =
+                Self::refresh_global_secondary_driver_promotions(start, global_subgraphs);
 
             for promoted_handle in promoted {
                 Self::propagate_neighbors_from_selected_start(
                     &promoted_handle,
                     live_subgraphs,
+                    global_subgraphs,
                     false,
                     visiting,
                     stale_members,
@@ -3581,6 +3592,7 @@ impl LiveReducedSubgraph {
             Self::propagate_neighbors_from_selected_start(
                 &handle,
                 live_subgraphs,
+                global_subgraphs,
                 force,
                 visiting,
                 stale_members,
@@ -3592,6 +3604,7 @@ impl LiveReducedSubgraph {
             Self::propagate_neighbors_from_selected_start(
                 start,
                 live_subgraphs,
+                global_subgraphs,
                 force,
                 visiting,
                 stale_members,
@@ -3605,6 +3618,7 @@ impl LiveReducedSubgraph {
     fn propagate_neighbors(
         start: &LiveReducedSubgraphHandle,
         live_subgraphs: &[LiveReducedSubgraphHandle],
+        global_subgraphs: &[LiveReducedSubgraphHandle],
         force: bool,
         visiting: &mut BTreeSet<usize>,
         stale_members: &mut Vec<LiveProjectBusMemberHandle>,
@@ -3612,6 +3626,7 @@ impl LiveReducedSubgraph {
         Self::propagate_neighbors_from_selected_start(
             start,
             live_subgraphs,
+            global_subgraphs,
             force,
             visiting,
             stale_members,
@@ -3626,6 +3641,7 @@ impl LiveReducedSubgraph {
         let max_roots = live_subgraphs
             .len()
             .saturating_mul(live_subgraphs.len().max(1));
+        let global_subgraphs = Self::collect_global_subgraph_handles(live_subgraphs);
         let mut roots = 0;
 
         for start in live_subgraphs {
@@ -3643,6 +3659,7 @@ impl LiveReducedSubgraph {
             Self::propagate_neighbors(
                 start,
                 live_subgraphs,
+                &global_subgraphs,
                 force,
                 &mut visiting,
                 &mut stale_members,
@@ -15930,12 +15947,15 @@ mod tests {
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
         live_subgraphs[0].borrow_mut().dirty = false;
         live_subgraphs[1].borrow_mut().dirty = false;
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
 
         let mut visiting = std::collections::BTreeSet::new();
         let mut stale_members = Vec::new();
         LiveReducedSubgraph::propagate_neighbors_from_selected_start(
             &live_subgraphs[0],
             &live_subgraphs,
+            &global_subgraphs,
             false,
             &mut visiting,
             &mut stale_members,
@@ -16867,6 +16887,63 @@ mod tests {
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
             },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 4,
+                code: 4,
+                name: "PWR_ALT".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR_ALT".to_string(),
+                    local_name: "PWR_ALT".to_string(),
+                    full_local_name: "/same-sheet/PWR_ALT".to_string(),
+                    sheet_instance_path: "/same-sheet".to_string(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR_ALT".to_string(),
+                    local_name: "PWR_ALT".to_string(),
+                    full_local_name: "/same-sheet/PWR_ALT".to_string(),
+                    sheet_instance_path: "/same-sheet".to_string(),
+                    members: Vec::new(),
+                },
+                chosen_driver_index: None,
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: 4,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR_ALT".to_string(),
+                        local_name: "PWR_ALT".to_string(),
+                        full_local_name: "/same-sheet/PWR_ALT".to_string(),
+                        sheet_instance_path: "/same-sheet".to_string(),
+                        members: Vec::new(),
+                    },
+                    identity: None,
+                }],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/same-sheet".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
         ];
 
         refresh_reduced_live_graph_propagation(&mut graph);
@@ -16877,6 +16954,8 @@ mod tests {
         assert_eq!(graph[1].base_pins[0].connection.local_name, "PWR_ALT");
         assert_eq!(graph[2].name, "PWR_ALT");
         assert_eq!(graph[2].driver_connection.name, "PWR_ALT");
+        assert_eq!(graph[3].name, "PWR_ALT");
+        assert_eq!(graph[3].driver_connection.full_local_name, "/same-sheet/PWR_ALT");
     }
 
     #[test]
