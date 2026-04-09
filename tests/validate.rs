@@ -6135,11 +6135,53 @@ fn erc_reports_input_pins_without_driver() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-missing-driver")
+        .filter(|diagnostic| diagnostic.code == "erc-pin-not-driven")
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].message, "Input pin is not driven");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn erc_reports_power_input_pins_without_power_driver() {
+    let path = temp_schematic(
+        "erc_missing_power_driver",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73941000-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:PWRIN"
+      (symbol "PWRIN_1_1"
+        (pin power_in line
+          (at 0 0 0)
+          (length 2.54)
+          (name "VCC")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:PWRIN")
+    (at 0 0 0)
+    (uuid "73941000-0000-0000-0000-000000000002"))
+  (symbol
+    (lib_id "Device:PWRIN")
+    (at 10 0 0)
+    (uuid "73941000-0000-0000-0000-000000000003"))
+  (wire (pts (xy 0 0) (xy 10 0)))
+)"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-power-pin-not-driven")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "Power input pin is not driven");
 
     let _ = fs::remove_file(path);
 }

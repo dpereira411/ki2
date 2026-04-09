@@ -337,19 +337,6 @@ fn configured_rule_severity(
     }
 }
 
-fn configured_missing_driver_severity(
-    project: &SchematicProject,
-    message: &str,
-) -> Option<Severity> {
-    let settings_key = if message.starts_with("Power input pin") {
-        "power_pin_not_driven"
-    } else {
-        "pin_not_driven"
-    };
-
-    configured_rule_severity(project, settings_key, Some(Severity::Error))
-}
-
 fn apply_configured_rule_severity(
     project: &SchematicProject,
     mut diagnostic: Diagnostic,
@@ -406,7 +393,12 @@ fn apply_configured_rule_severity(
         "erc-pin-to-pin-error" => {
             configured_rule_severity(project, "pin_to_pin", Some(Severity::Error))
         }
-        "erc-missing-driver" => configured_missing_driver_severity(project, &diagnostic.message),
+        "erc-pin-not-driven" => {
+            configured_rule_severity(project, "pin_not_driven", Some(Severity::Error))
+        }
+        "erc-power-pin-not-driven" => {
+            configured_rule_severity(project, "power_pin_not_driven", Some(Severity::Error))
+        }
         "erc-driver-conflict" => {
             configured_rule_severity(project, "multiple_net_names", Some(Severity::Warning))
         }
@@ -2796,10 +2788,12 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 // override slice on top of the upstream default matrix instead of hard-coding only the defaults,
 // reads exercised per-pin ERC context from shared graph-owned pin payload instead of re-walking
 // symbols at report time, prefers visible non-power pins for the reduced `needsDriver` report
-// target, skips same-symbol stacked pins before pin-map conflict checks, and now reports the
-// conflicting pin-type pair like upstream instead of dropping that branch detail into a generic
-// point-only message. Remaining divergence is richer settings, multi-marker emission, and the
-// fuller live graph ownership behind the reduced carrier.
+// target, skips same-symbol stacked pins before pin-map conflict checks, reports the conflicting
+// pin-type pair like upstream instead of dropping that branch detail into a generic point-only
+// message, and now also emits separate reduced missing-driver codes for ordinary versus power-input
+// nets so severity policy follows KiCad's owning ERC item split instead of message text. Remaining
+// divergence is richer settings, multi-marker emission, and the fuller live graph ownership behind
+// the reduced carrier.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2956,7 +2950,11 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 
             diagnostics.push(Diagnostic {
                 severity: Severity::Warning,
-                code: "erc-missing-driver",
+                code: if pin.pin_type == ReducedPinType::PowerIn {
+                    "erc-power-pin-not-driven"
+                } else {
+                    "erc-pin-not-driven"
+                },
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: article.to_string(),
                 path: Some(pin.path.clone()),
