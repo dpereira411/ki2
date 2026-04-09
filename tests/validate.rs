@@ -3438,7 +3438,7 @@ fn erc_reports_dangling_directive_labels() {
     let project = SchematicProject::from_load_result(loaded);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-label-not-connected")
+        .filter(|diagnostic| diagnostic.code == "erc-label-dangling")
         .collect::<Vec<_>>();
 
     assert!(
@@ -3492,7 +3492,7 @@ fn erc_deduplicates_reused_screen_label_checks_by_driver_instance() {
     let project = SchematicProject::from_load_result(loaded);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-label-not-connected")
+        .filter(|diagnostic| diagnostic.code == "erc-label-dangling")
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
@@ -4001,7 +4001,7 @@ fn erc_allows_connected_directive_labels() {
 
     assert!(
         !diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "erc-label-not-connected"
+            diagnostic.code == "erc-label-dangling"
                 && diagnostic.message.contains("Directive label")
         }),
         "{diagnostics:#?}"
@@ -5894,7 +5894,7 @@ fn erc_reports_labels_connected_to_only_one_pin() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+        .filter(|diagnostic| diagnostic.code == "erc-isolated-pin-label")
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
@@ -5923,7 +5923,7 @@ fn erc_reports_local_labels_not_connected_to_pins() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-label-not-connected")
+        .filter(|diagnostic| diagnostic.code == "erc-label-dangling")
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 2);
@@ -6027,7 +6027,7 @@ fn erc_reports_reused_screen_pin_conflicts_in_issue10926_fixture() {
     assert!(
         diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code != "erc-label-not-connected")
+            .all(|diagnostic| diagnostic.code != "erc-label-dangling")
     );
     assert!(
         diagnostics
@@ -6062,7 +6062,7 @@ fn erc_reports_root_sheet_hier_label_and_driver_gaps_in_issue10926_child_fixture
     assert_eq!(
         diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+            .filter(|diagnostic| diagnostic.code == "erc-isolated-pin-label")
             .count(),
         2
     );
@@ -6117,7 +6117,7 @@ fn erc_reports_dangling_global_label_on_no_connect_line_fixture() {
 
     assert!(
         diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "erc-label-not-connected"
+            diagnostic.code == "erc-label-dangling"
                 && diagnostic.message == "Label not connected"
         }),
         "{diagnostics:#?}"
@@ -6200,7 +6200,7 @@ fn erc_ignores_false_bus_entry_and_no_connect_warnings_in_issue12814_usage_fixtu
     assert_eq!(
         diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+            .filter(|diagnostic| diagnostic.code == "erc-isolated-pin-label")
             .count(),
         3,
         "{diagnostics:#?}"
@@ -6246,7 +6246,7 @@ fn erc_ignores_false_bus_entry_warnings_in_issue12814_drive_fixture() {
     assert_eq!(
         diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+            .filter(|diagnostic| diagnostic.code == "erc-isolated-pin-label")
             .count(),
         2,
         "{diagnostics:#?}"

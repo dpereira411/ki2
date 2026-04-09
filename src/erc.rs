@@ -359,10 +359,10 @@ fn apply_configured_rule_severity(
         "erc-nc-pin-connected" | "erc-no-connect-connected" => {
             configured_rule_severity(project, "no_connect_connected", Some(Severity::Warning))
         }
-        "erc-label-not-connected" => {
+        "erc-label-dangling" => {
             configured_rule_severity(project, "label_dangling", Some(Severity::Error))
         }
-        "erc-label-single-pin" => {
+        "erc-isolated-pin-label" => {
             configured_rule_severity(project, "isolated_pin_label", Some(Severity::Warning))
         }
         "erc-unconnected-wire-endpoint" => configured_rule_severity(
@@ -2220,7 +2220,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
-                    code: "erc-label-not-connected",
+                    code: "erc-label-dangling",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: "Label not connected".to_string(),
                     path: Some(sheet_path.schematic_path.clone()),
@@ -2234,7 +2234,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             if all_pins == 1 && !has_no_connect {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
-                    code: "erc-label-single-pin",
+                    code: "erc-isolated-pin-label",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: "Label connected to only one pin".to_string(),
                     path: Some(sheet_path.schematic_path.clone()),
@@ -2269,7 +2269,7 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
             {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
-                    code: "erc-label-not-connected",
+                    code: "erc-label-dangling",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: "Label not connected".to_string(),
                     path: Some(sheet_path.schematic_path.clone()),
