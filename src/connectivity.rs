@@ -2611,7 +2611,7 @@ struct LiveReducedSubgraphWireItem {
     start: PointKey,
     end: PointKey,
     is_bus_entry: bool,
-    connection: Option<LiveReducedConnection>,
+    connection: Option<LiveProjectConnectionHandle>,
     connected_bus_item_handle: Option<Weak<RefCell<LiveReducedSubgraphWireItem>>>,
     parent_subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
@@ -3031,7 +3031,7 @@ impl LiveReducedSubgraph {
         for item in &self.bus_items {
             let mut item_ref = item.borrow_mut();
             item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
-            item_ref.connection = Some(self.driver_connection.clone());
+            item_ref.connection = Some(self.driver_connection.connection.clone());
         }
         for item in &self.wire_items {
             item.borrow_mut().parent_subgraph_handle = Some(Rc::downgrade(handle));
@@ -13154,9 +13154,9 @@ mod tests {
             .connection
             .clone()
             .expect("attached live bus connection");
-        assert!(super::live_connection_handle_clone_eq(
-            &attached_bus_connection,
-            &shared.borrow().driver_connection
+        assert!(super::live_connection_clone_eq(
+            &attached_bus_connection.borrow(),
+            &shared.borrow().driver_connection.borrow()
         ));
     }
 
