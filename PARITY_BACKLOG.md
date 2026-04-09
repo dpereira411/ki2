@@ -1208,6 +1208,12 @@ Current status:
         the chosen reduced driver now lives as an owner index into the reduced driver list, and
         chosen-driver identity is derived from that chosen driver owner on reduced ERC/live-build
         paths
+      - shown-text local-name preservation for label/sheet-pin/hier-port owners now lives on the
+        live item owners themselves instead of a special text-item clone helper on the shared
+        connection carrier
+      - chosen text-item owners still keep split item-vs-driver connections on the active path,
+        but reduced projection now replays shown-text local names from explicit owner state rather
+        than relying on connection-clone heuristics
       - after those removals, the remaining helper/wrapper survivors are semantically real owner
         boundaries or boundary projection scaffolding, not another duplicate propagation engine
     - concrete next unblock path:

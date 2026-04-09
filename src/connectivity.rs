@@ -1819,21 +1819,6 @@ fn clone_live_connection_owner_into_live_connection_owner(
     target.clone_from_live_connection(source);
 }
 
-// Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` behavior
-// the exercised label/sheet-pin/hier-port branches need during `UpdateItemConnections()`. This
-// still operates on the reduced local connection carrier, but shown-text preservation now belongs
-// to the item-owner clone path instead of the shared connection clone itself.
-fn clone_live_connection_owner_into_live_item_connection_owner(
-    target: &mut LiveProjectConnection,
-    source: &LiveProjectConnection,
-) {
-    let existing_local_name = target.local_name.clone();
-    clone_live_connection_owner_into_live_connection_owner(target, source);
-    if !existing_local_name.is_empty() {
-        target.local_name = existing_local_name;
-    }
-}
-
 #[cfg(test)]
 fn clone_reduced_connection_into_live_connection_owner(
     target: &mut LiveProjectConnection,
@@ -1872,6 +1857,7 @@ struct LiveReducedLabelLink {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    shown_text_local_name: String,
     parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
@@ -1884,6 +1870,7 @@ struct LiveReducedHierSheetPinLink {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    shown_text_local_name: String,
     parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>>;
@@ -1895,6 +1882,7 @@ struct LiveReducedHierPortLink {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
+    shown_text_local_name: String,
     parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
@@ -1929,8 +1917,9 @@ impl LiveReducedLabelLink {
     // Upstream parity: local item-owner analogue for the exercised
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()` label branch. This still mutates a reduced
     // live item carrier instead of a real `SCH_LABEL`, but the label owner now decides whether to
-    // adopt the chosen live connection and keeps the `item != m_driver` skip on the owner path
-    // instead of leaving that policy in a separate helper loop.
+    // adopt the chosen live connection, keeps shown-text local-name ownership on the label owner,
+    // and keeps the `item != m_driver` skip on the owner path instead of leaving that policy in a
+    // separate helper loop.
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
@@ -1951,10 +1940,13 @@ impl LiveReducedLabelLink {
             return;
         }
 
-        clone_live_connection_owner_into_live_item_connection_owner(
+        clone_live_connection_owner_into_live_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
+        if !self.shown_text_local_name.is_empty() {
+            self.connection.borrow_mut().local_name = self.shown_text_local_name.clone();
+        }
     }
 
     // Upstream parity: local live label-owner analogue for binding one exercised strong driver
@@ -1981,12 +1973,20 @@ impl LiveReducedLabelLink {
             priority,
         }
     }
+
+    fn project_item_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
+        self.connection.borrow().project_onto_reduced(target);
+        if !self.shown_text_local_name.is_empty() {
+            target.local_name = self.shown_text_local_name.clone();
+        }
+    }
 }
 
 impl LiveReducedHierSheetPinLink {
     // Upstream parity: local item-owner analogue for the exercised sheet-pin branch of
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still runs on a reduced live link owner
-    // instead of a real `SCH_SHEET_PIN`, but the owner now applies the chosen-driver skip and
+    // instead of a real `SCH_SHEET_PIN`, but the owner now applies the chosen-driver skip,
+    // keeps shown-text local-name ownership on the sheet-pin owner, and applies the
     // connection-kind guard directly.
     fn refresh_from_driver_connection(
         &mut self,
@@ -2008,10 +2008,13 @@ impl LiveReducedHierSheetPinLink {
             return;
         }
 
-        clone_live_connection_owner_into_live_item_connection_owner(
+        clone_live_connection_owner_into_live_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
+        if !self.shown_text_local_name.is_empty() {
+            self.connection.borrow_mut().local_name = self.shown_text_local_name.clone();
+        }
     }
 
     // Upstream parity: local live sheet-pin-owner analogue for exercised strong-driver binding.
@@ -2037,12 +2040,20 @@ impl LiveReducedHierSheetPinLink {
             priority,
         }
     }
+
+    fn project_item_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
+        self.connection.borrow().project_onto_reduced(target);
+        if !self.shown_text_local_name.is_empty() {
+            target.local_name = self.shown_text_local_name.clone();
+        }
+    }
 }
 
 impl LiveReducedHierPortLink {
     // Upstream parity: local item-owner analogue for the exercised hierarchical-port branch of
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. The live owner still wraps reduced payload,
-    // but it now owns the exercised update decision instead of helper-side branch duplication.
+    // but it now owns shown-text local-name preservation and the exercised update decision instead
+    // of helper-side branch duplication.
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
@@ -2063,10 +2074,13 @@ impl LiveReducedHierPortLink {
             return;
         }
 
-        clone_live_connection_owner_into_live_item_connection_owner(
+        clone_live_connection_owner_into_live_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
+        if !self.shown_text_local_name.is_empty() {
+            self.connection.borrow_mut().local_name = self.shown_text_local_name.clone();
+        }
     }
 
     // Upstream parity: local live hierarchical-port-owner analogue for exercised strong-driver
@@ -2089,6 +2103,13 @@ impl LiveReducedHierPortLink {
             owner: Rc::downgrade(owner),
             kind,
             priority,
+        }
+    }
+
+    fn project_item_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
+        self.connection.borrow().project_onto_reduced(target);
+        if !self.shown_text_local_name.is_empty() {
+            target.local_name = self.shown_text_local_name.clone();
         }
     }
 }
@@ -2203,6 +2224,7 @@ impl PartialEq for LiveReducedHierSheetPinLink {
             &self.schematic_path,
             self.at,
             &self.child_sheet_uuid,
+            &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
@@ -2210,6 +2232,7 @@ impl PartialEq for LiveReducedHierSheetPinLink {
             &other.schematic_path,
             other.at,
             &other.child_sheet_uuid,
+            &other.shown_text_local_name,
             other.connection.borrow().snapshot(),
             other.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
@@ -2231,6 +2254,7 @@ impl Ord for LiveReducedHierSheetPinLink {
             &self.schematic_path,
             self.at,
             &self.child_sheet_uuid,
+            &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
@@ -2239,6 +2263,7 @@ impl Ord for LiveReducedHierSheetPinLink {
                 &other.schematic_path,
                 other.at,
                 &other.child_sheet_uuid,
+                &other.shown_text_local_name,
                 other.connection.borrow().snapshot(),
                 other.driver_connection.borrow().snapshot(),
                 live_optional_driver_snapshot(&other.driver),
@@ -2251,12 +2276,14 @@ impl PartialEq for LiveReducedHierPortLink {
         (
             &self.schematic_path,
             self.at,
+            &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             &other.schematic_path,
             other.at,
+            &other.shown_text_local_name,
             other.connection.borrow().snapshot(),
             other.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
@@ -2277,6 +2304,7 @@ impl Ord for LiveReducedHierPortLink {
         (
             &self.schematic_path,
             self.at,
+            &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
@@ -2284,6 +2312,7 @@ impl Ord for LiveReducedHierPortLink {
             .cmp(&(
                 &other.schematic_path,
                 other.at,
+                &other.shown_text_local_name,
                 other.connection.borrow().snapshot(),
                 other.driver_connection.borrow().snapshot(),
                 live_optional_driver_snapshot(&other.driver),
@@ -2661,10 +2690,10 @@ impl LiveReducedSubgraph {
     // that branch open-coded in the surrounding builder. Symbol-pin and text-item branches now
     // compare through attached live owner-side driver connections against the already-seeded live
     // subgraph driver handle. Chosen symbol-pin owners now also alias their item connection onto
-    // that chosen driver handle, closer to KiCad's shared `SCH_PIN::Connection()` /
-    // `m_driver_connection` path. Remaining divergence is the still-missing fuller live
-    // driver-item object graph, not reduced chosen-connection snapshot matching on the active
-    // path.
+    // that chosen driver handle, while chosen text-item owners still keep split item-vs-driver
+    // connections and preserve shown-text ownership explicitly on the item owner. Remaining
+    // divergence is the still-missing fuller live driver-item object graph, not reduced
+    // chosen-connection snapshot matching on the active path.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
@@ -2681,12 +2710,18 @@ impl LiveReducedSubgraph {
         if is_chosen_driver {
             self.chosen_driver = Some(driver.clone());
             self.driver_connection = driver.borrow().connection_handle();
-            if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } = &*driver.borrow() {
-                if let Some(base_pin) = owner.upgrade() {
-                    base_pin
-                        .borrow_mut()
-                        .adopt_driver_connection_as_item_connection();
+            match &*driver.borrow() {
+                LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                    if let Some(base_pin) = owner.upgrade() {
+                        base_pin
+                            .borrow_mut()
+                            .adopt_driver_connection_as_item_connection();
+                    }
                 }
+                LiveProjectStrongDriverOwner::Label { .. }
+                | LiveProjectStrongDriverOwner::SheetPin { .. }
+                | LiveProjectStrongDriverOwner::HierPort { .. }
+                | LiveProjectStrongDriverOwner::Floating { .. } => {}
             }
         }
     }
@@ -2961,10 +2996,7 @@ impl LiveReducedSubgraph {
 
         for (target, source) in reduced.label_links.iter_mut().zip(self.label_links.iter()) {
             let source = source.borrow();
-            source
-                .connection
-                .borrow()
-                .project_onto_reduced(&mut target.connection);
+            source.project_item_connection_onto_reduced(&mut target.connection);
         }
 
         for (target, source) in reduced
@@ -2973,18 +3005,12 @@ impl LiveReducedSubgraph {
             .zip(self.hier_sheet_pins.iter())
         {
             let source = source.borrow();
-            source
-                .connection
-                .borrow()
-                .project_onto_reduced(&mut target.connection);
+            source.project_item_connection_onto_reduced(&mut target.connection);
         }
 
         for (target, source) in reduced.hier_ports.iter_mut().zip(self.hier_ports.iter()) {
             let source = source.borrow();
-            source
-                .connection
-                .borrow()
-                .project_onto_reduced(&mut target.connection);
+            source.project_item_connection_onto_reduced(&mut target.connection);
         }
 
         for (target, source) in reduced.base_pins.iter_mut().zip(self.base_pins.iter()) {
@@ -4275,6 +4301,7 @@ fn build_live_reduced_subgraph_handles(
                                 link.connection.clone().into(),
                             )),
                             driver: None,
+                            shown_text_local_name: link.connection.local_name.clone(),
                             parent_subgraph_handle: Weak::new(),
                         }))
                     })
@@ -4291,6 +4318,7 @@ fn build_live_reduced_subgraph_handles(
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver: None,
+                            shown_text_local_name: pin.connection.local_name.clone(),
                             parent_subgraph_handle: Weak::new(),
                         }))
                     })
@@ -4308,6 +4336,7 @@ fn build_live_reduced_subgraph_handles(
                                 port.connection.clone().into(),
                             )),
                             driver: None,
+                            shown_text_local_name: port.connection.local_name.clone(),
                             parent_subgraph_handle: Weak::new(),
                         }))
                     })
@@ -12934,8 +12963,13 @@ mod tests {
             _ => panic!("expected label strong-driver owner"),
         };
 
+        assert!(!Rc::ptr_eq(
+            &owner.borrow().connection,
+            &owner.borrow().driver_connection
+        ));
         assert_eq!(owner.borrow().connection.borrow().name, "ITEM");
         assert_eq!(owner.borrow().driver_connection.borrow().name, "/SIG");
+        assert_eq!(owner.borrow().shown_text_local_name, "ITEM");
         assert!(subgraph.chosen_driver.is_some());
         assert_eq!(subgraph.driver_connection.borrow().name, "/SIG");
     }
@@ -16660,6 +16694,7 @@ impl PartialEq for LiveReducedLabelLink {
             &self.schematic_path,
             self.at,
             self.kind,
+            &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
@@ -16667,6 +16702,7 @@ impl PartialEq for LiveReducedLabelLink {
             &other.schematic_path,
             other.at,
             other.kind,
+            &other.shown_text_local_name,
             other.connection.borrow().snapshot(),
             other.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
