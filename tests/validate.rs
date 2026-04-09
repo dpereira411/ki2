@@ -3444,7 +3444,7 @@ fn erc_reports_dangling_directive_labels() {
     assert!(
         diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.message == "Directive label is not connected at 5, 0")
+            .any(|diagnostic| diagnostic.message == "Label not connected")
     );
 
     let _ = fs::remove_file(path);

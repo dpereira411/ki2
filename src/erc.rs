@@ -2264,7 +2264,7 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         };
         for component in collect_reduced_label_component_snapshots(schematic) {
-            for label in component
+            for _label in component
                 .labels
                 .iter()
                 .filter(|label| label.kind == LabelKind::Directive && label.dangling)
@@ -2273,10 +2273,7 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
                     severity: Severity::Error,
                     code: "erc-label-not-connected",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Directive label is not connected at {}, {}",
-                        label.at[0], label.at[1]
-                    ),
+                    message: "Label not connected".to_string(),
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,
