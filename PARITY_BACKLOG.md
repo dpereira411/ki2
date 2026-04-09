@@ -816,6 +816,9 @@ Current status:
       - once a live strong driver attaches to a live item owner, its fallback driver-side
         connection carrier is dropped on the active path; the fallback now remains only for
         unattached/test edges
+      - active hierarchy-chain, secondary-driver promotion, stale-member replay, and parent-member
+        dirty checks now compare clone-equivalent live connection/member owners directly instead of
+        snapshotting before/after reduced connections during recursive propagation
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

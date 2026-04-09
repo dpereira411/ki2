@@ -1382,6 +1382,31 @@ fn live_bus_member_handles_cmp(
     live_bus_member_handle_snapshot(left).cmp(&live_bus_member_handle_snapshot(right))
 }
 
+fn live_bus_member_handles_clone_eq(
+    target: &[LiveProjectBusMemberHandle],
+    source: &[LiveProjectBusMemberHandle],
+) -> bool {
+    if target.len() != source.len() {
+        return false;
+    }
+
+    target
+        .iter()
+        .zip(source.iter())
+        .all(|(target, source)| live_bus_member_handle_clone_eq(target, source))
+}
+
+fn live_bus_member_handle_clone_eq(
+    target: &LiveProjectBusMemberHandle,
+    source: &LiveProjectBusMemberHandle,
+) -> bool {
+    if Rc::ptr_eq(target, source) {
+        return true;
+    }
+
+    live_bus_member_clone_eq(&target.borrow(), &source.borrow())
+}
+
 fn reduced_bus_members_into_live_handles(
     members: Vec<ReducedBusMember>,
 ) -> Vec<LiveProjectBusMemberHandle> {
@@ -1428,6 +1453,41 @@ impl LiveProjectBusMember {
     }
 }
 
+fn live_bus_member_clone_eq(target: &LiveProjectBusMember, source: &LiveProjectBusMember) -> bool {
+    if target.net_code != source.net_code
+        || target.name != source.name
+        || target.full_local_name != source.full_local_name
+        || target.kind != source.kind
+    {
+        return false;
+    }
+
+    if target.local_name.is_empty() && target.local_name != source.local_name {
+        return false;
+    }
+
+    if target.vector_index.is_none() && target.vector_index != source.vector_index {
+        return false;
+    }
+
+    if matches!(target.kind, ReducedBusMemberKind::Bus)
+        && matches!(source.kind, ReducedBusMemberKind::Bus)
+    {
+        if target.members.is_empty() {
+            live_bus_member_handles_clone_eq(&target.members, &source.members)
+        } else {
+            target.members.len() == source.members.len()
+                && target.members.iter().zip(source.members.iter()).all(
+                    |(target_member, source_member)| {
+                        live_bus_member_handle_clone_eq(target_member, source_member)
+                    },
+                )
+        }
+    } else {
+        live_bus_member_handles_clone_eq(&target.members, &source.members)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct LiveProjectConnection {
     net_code: usize,
@@ -1464,6 +1524,99 @@ impl LiveProjectConnection {
             sheet_instance_path: self.sheet_instance_path.clone(),
             members: live_bus_member_handles_to_snapshots(&self.members),
         }
+    }
+}
+
+fn live_connection_clone_eq(
+    target: &LiveProjectConnection,
+    source: &LiveProjectConnection,
+) -> bool {
+    if target.net_code != source.net_code
+        || target.connection_type != source.connection_type
+        || target.name != source.name
+        || target.full_local_name != source.full_local_name
+        || target.sheet_instance_path != source.sheet_instance_path
+    {
+        return false;
+    }
+
+    if target.local_name.is_empty() && target.local_name != source.local_name {
+        return false;
+    }
+
+    if matches!(
+        target.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) && matches!(
+        source.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) {
+        if target.members.is_empty() {
+            live_bus_member_handles_clone_eq(&target.members, &source.members)
+        } else {
+            target.members.len() == source.members.len()
+                && target.members.iter().zip(source.members.iter()).all(
+                    |(target_member, source_member)| {
+                        live_bus_member_handle_clone_eq(target_member, source_member)
+                    },
+                )
+        }
+    } else {
+        live_bus_member_handles_clone_eq(&target.members, &source.members)
+    }
+}
+
+fn live_connection_handle_clone_eq(
+    target: &LiveReducedConnection,
+    source: &LiveReducedConnection,
+) -> bool {
+    if Rc::ptr_eq(&target.connection, &source.connection) {
+        return true;
+    }
+
+    live_connection_clone_eq(&target.borrow(), &source.borrow())
+}
+
+fn live_bus_member_clone_eq_to_connection(
+    target: &LiveProjectBusMember,
+    source: &LiveProjectConnection,
+) -> bool {
+    if target.net_code != source.net_code
+        || target.name != source.name
+        || target.full_local_name != source.full_local_name
+        || target.kind
+            != match source.connection_type {
+                ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
+                    ReducedBusMemberKind::Bus
+                }
+                _ => ReducedBusMemberKind::Net,
+            }
+    {
+        return false;
+    }
+
+    if target.local_name.is_empty() && target.local_name != source.local_name {
+        return false;
+    }
+
+    if matches!(target.kind, ReducedBusMemberKind::Bus)
+        && matches!(
+            source.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        )
+    {
+        if target.members.is_empty() {
+            live_bus_member_handles_clone_eq(&target.members, &source.members)
+        } else {
+            target.members.len() == source.members.len()
+                && target.members.iter().zip(source.members.iter()).all(
+                    |(target_member, source_member)| {
+                        live_bus_member_handle_clone_eq(target_member, source_member)
+                    },
+                )
+        }
+    } else {
+        live_bus_member_handles_clone_eq(&target.members, &source.members)
     }
 }
 
@@ -4323,10 +4476,10 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
 
     for handle in visited {
         let mut subgraph = handle.borrow_mut();
-        let current_connection = subgraph.driver_connection.snapshot();
+        let changed =
+            !live_connection_handle_clone_eq(&subgraph.driver_connection, &chosen_connection);
         subgraph.driver_connection.clone_from(&chosen_connection);
-        let refreshed_connection = subgraph.driver_connection.snapshot();
-        subgraph.dirty = refreshed_connection != current_connection;
+        subgraph.dirty = changed;
     }
 }
 
@@ -4393,7 +4546,8 @@ fn collect_live_reduced_propagation_component_from_handles(
 // live subgraph owner. The active recursion now promotes the shared live connection owner itself
 // instead of snapshotting the chosen connection through reduced carriers, while still revisiting
 // shared subgraph handles by handle identity and narrow live-owner reads instead of cloning whole
-// live subgraph wrappers.
+// live subgraph wrappers. Active equality checks now also compare clone-equivalent live connection
+// owners directly instead of snapshotting reduced connections.
 fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
     start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -4436,10 +4590,8 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
             }
 
             let same_connection = {
-                let chosen = chosen_connection.borrow();
                 let handle_ref = handle.borrow();
-                let candidate = handle_ref.driver_connection.borrow();
-                *candidate == *chosen
+                live_connection_handle_clone_eq(&handle_ref.driver_connection, &chosen_connection)
             };
             if same_connection {
                 continue;
@@ -4467,8 +4619,10 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
 ) {
     // Upstream parity: local live-handle analogue for the hierarchy-chain propagation branch
     // inside `propagateToNeighbors()`. This now consumes the recursive walk's explicit dirty
-    // subset instead of re-reading dirty state inside the helper, while still diverging from
-    // upstream's fuller `CONNECTION_SUBGRAPH` object graph and item-pointer topology.
+    // subset instead of re-reading dirty state inside the helper, and active dirty checks now
+    // compare clone-equivalent live connection owners directly instead of snapshotting before and
+    // after mutation. Remaining divergence is upstream's fuller `CONNECTION_SUBGRAPH` object graph
+    // and item-pointer topology.
     for handle in component {
         let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
 
@@ -4664,7 +4818,9 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
     // child net. This still stores reduced bus members on the live subgraph owner, but it now
     // consumes the recursive walk's explicit dirty child subset and follows the attached live
     // parent handle plus shared live connection owner instead of recovering the parent through
-    // copied source indexes or whole live subgraph clones first.
+    // copied source indexes or whole live subgraph clones first. Active dirty checks now compare the
+    // target member against the incoming live connection by clone semantics instead of snapshotting
+    // reduced before/after members.
     for child_handle in component {
         let child_connection = child_handle.borrow().driver_connection.clone();
         if child_connection.borrow().connection_type != ReducedProjectConnectionType::Net {
@@ -4705,12 +4861,15 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 ) else {
                     continue;
                 };
-                let old_member = member.borrow().clone();
+                let changed = !live_bus_member_clone_eq_to_connection(
+                    &member.borrow(),
+                    &child_connection.borrow(),
+                );
                 clone_live_connection_owner_into_live_bus_member(
                     &mut member.borrow_mut(),
                     &child_connection.borrow(),
                 );
-                *member.borrow() != old_member
+                changed
             };
 
             if changed {
@@ -4749,12 +4908,12 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
                 if Rc::ptr_eq(&member, stale_member) {
                     continue;
                 }
-                let old_member = member.borrow().clone();
+                let changed = !live_bus_member_handle_clone_eq(&member, stale_member);
                 clone_live_bus_member_into_live_bus_member(
                     &mut member.borrow_mut(),
                     &stale_member.borrow(),
                 );
-                *member.borrow() != old_member
+                changed
             };
 
             if changed {
@@ -4786,8 +4945,8 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
     // connection owners, and handle-keyed refresh state over copied link or subgraph indexes.
     // This helper still rebuilds reduced link carriers because the repo does not yet keep a fuller
     // local `CONNECTION_SUBGRAPH` payload for neighbor topology, but it now marks the live owner
-    // dirty when those attached links change so recursive revisits follow live dirty-state
-    // directly instead of whole-subgraph equality checks.
+    // dirty when those attached links change so recursive revisits follow live dirty-state directly
+    // instead of whole-subgraph equality checks.
     let mut refreshed_parent_links = BTreeMap::<usize, Vec<LiveReducedSubgraphLinkHandle>>::new();
 
     for child_handle in component {
@@ -4984,9 +5143,12 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                 if old_candidate_name == old_name {
                     let changed = {
                         let candidate = candidate_handle.borrow();
-                        let before = candidate.driver_connection.snapshot();
+                        let changed = !live_connection_handle_clone_eq(
+                            &candidate.driver_connection,
+                            &connection,
+                        );
                         candidate.driver_connection.clone_from(&connection);
-                        candidate.driver_connection.snapshot() != before
+                        changed
                     };
                     if changed {
                         sync_live_reduced_item_connections_from_driver_handle(&candidate_handle);
