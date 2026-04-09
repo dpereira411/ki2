@@ -1179,29 +1179,7 @@ fn clone_reduced_connection_into_live_bus_member(
     member: &mut LiveProjectBusMember,
     connection: &ReducedProjectConnection,
 ) {
-    let existing_local_name = member.local_name.clone();
-    let existing_vector_index = member.vector_index;
-    member.net_code = connection.net_code;
-    member.name = connection.local_name.clone();
-    if existing_local_name.is_empty() {
-        member.local_name = connection.local_name.clone();
-    }
-    member.full_local_name = connection.full_local_name.clone();
-    member.kind = match connection.connection_type {
-        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
-            ReducedBusMemberKind::Bus
-        }
-        _ => ReducedBusMemberKind::Net,
-    };
-    if existing_vector_index.is_some() {
-        member.vector_index = existing_vector_index;
-    }
-
-    if member.kind == ReducedBusMemberKind::Bus {
-        member.members = reduced_bus_members_into_live_handles(connection.members.clone());
-    } else {
-        member.members.clear();
-    }
+    member.clone_from_reduced_connection(connection);
 }
 
 fn clone_live_bus_member_into_live_bus_member(
@@ -1551,6 +1529,37 @@ impl LiveProjectBusMember {
             vector_index: self.vector_index,
             kind: self.kind.clone(),
             members: live_bus_member_handles_to_snapshots(&self.members),
+        }
+    }
+
+    // Upstream parity: local live-owner bridge toward cloning one propagated reduced connection
+    // into a live bus-member owner. This still serves compatibility paths fed by reduced
+    // connections, but it keeps that mutation on the shared live bus-member owner instead of
+    // open-coding reduced-to-live field updates at each call site.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn clone_from_reduced_connection(&mut self, connection: &ReducedProjectConnection) {
+        let existing_local_name = self.local_name.clone();
+        let existing_vector_index = self.vector_index;
+        self.net_code = connection.net_code;
+        self.name = connection.local_name.clone();
+        if existing_local_name.is_empty() {
+            self.local_name = connection.local_name.clone();
+        }
+        self.full_local_name = connection.full_local_name.clone();
+        self.kind = match connection.connection_type {
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup => {
+                ReducedBusMemberKind::Bus
+            }
+            _ => ReducedBusMemberKind::Net,
+        };
+        if existing_vector_index.is_some() {
+            self.vector_index = existing_vector_index;
+        }
+
+        if self.kind == ReducedBusMemberKind::Bus {
+            self.members = reduced_bus_members_into_live_handles(connection.members.clone());
+        } else {
+            self.members.clear();
         }
     }
 }
@@ -4847,7 +4856,9 @@ fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProje
 // Upstream parity: reduced local analogue for the multiple-parent rename/recache branch KiCad
 // runs before the final graph caches are rebuilt. This still projects back onto the reduced graph
 // instead of mutating live name indexes in place, but it moves the parent-member clone and
-// same-name subgraph rename onto the shared live subgraph owner before the reduced cache rebuild.
+// same-name subgraph rename onto the shared live subgraph owner before the reduced cache rebuild,
+// and now mutates the existing live connection owner on that compatibility path instead of
+// swapping in a fresh rebuilt connection value.
 #[cfg(test)]
 fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
     live_subgraphs: &mut [LiveReducedSubgraph],
@@ -4900,9 +4911,10 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
             for candidate_index in candidate_indexes {
                 let old_candidate_name = live_subgraphs[candidate_index].driver_connection.name();
                 if old_candidate_name == old_name {
-                    *live_subgraphs[candidate_index]
+                    live_subgraphs[candidate_index]
                         .driver_connection
-                        .borrow_mut() = connection.clone().into();
+                        .borrow_mut()
+                        .clone_from_reduced_connection(&connection);
                     sync_live_reduced_item_connections_from_driver(
                         &mut live_subgraphs[candidate_index],
                     );
