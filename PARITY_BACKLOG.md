@@ -767,6 +767,9 @@ Current status:
         the subgraph driver list, so active global secondary-driver promotion reads
         priority/full-name through shared live driver identity instead of copied metadata blobs on
         the item side
+      - the temporary `LiveStrongDriverMetadata` helper shim is gone; active live item-owner
+        equality/tests now compare through real shared strong-driver snapshots instead of a
+        parallel metadata carrier
       - strong drivers now also carry connection owners on both the reduced and live path, so
         driver names stop living only as parallel string fields while the graph moves toward fuller
         live driver-item objects

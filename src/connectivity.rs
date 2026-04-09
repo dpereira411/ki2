@@ -256,15 +256,6 @@ struct LiveProjectStrongDriver {
 
 type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct LiveStrongDriverMetadata {
-    kind: ReducedProjectDriverKind,
-    priority: i32,
-    name: String,
-    full_name: String,
-    identity: Option<ReducedProjectDriverIdentity>,
-}
-
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 enum LiveProjectStrongDriverOwner {
@@ -294,17 +285,6 @@ impl LiveProjectStrongDriver {
             kind: self.kind,
             priority: self.priority,
             connection,
-            identity: self.identity.clone(),
-        }
-    }
-
-    fn metadata(&self) -> LiveStrongDriverMetadata {
-        let connection = self.connection.borrow();
-        LiveStrongDriverMetadata {
-            kind: self.kind,
-            priority: self.priority,
-            name: connection.local_name.clone(),
-            full_name: connection.name.clone(),
             identity: self.identity.clone(),
         }
     }
@@ -367,39 +347,35 @@ fn live_strong_driver_handles_to_snapshots(
         .collect()
 }
 
-fn live_strong_driver_metadata_from_owner(
+fn live_strong_driver_from_owner(
     owner: &LiveProjectStrongDriverOwner,
-) -> Option<LiveStrongDriverMetadata> {
+) -> Option<LiveProjectStrongDriverHandle> {
     match owner {
         LiveProjectStrongDriverOwner::None => None,
         LiveProjectStrongDriverOwner::Label(owner) => owner
             .upgrade()
-            .and_then(|owner| owner.borrow().driver.as_ref().cloned())
-            .map(|driver| driver.borrow().metadata()),
+            .and_then(|owner| owner.borrow().driver.as_ref().cloned()),
         LiveProjectStrongDriverOwner::SheetPin(owner) => owner
             .upgrade()
-            .and_then(|owner| owner.borrow().driver.as_ref().cloned())
-            .map(|driver| driver.borrow().metadata()),
+            .and_then(|owner| owner.borrow().driver.as_ref().cloned()),
         LiveProjectStrongDriverOwner::HierPort(owner) => owner
             .upgrade()
-            .and_then(|owner| owner.borrow().driver.as_ref().cloned())
-            .map(|driver| driver.borrow().metadata()),
+            .and_then(|owner| owner.borrow().driver.as_ref().cloned()),
         LiveProjectStrongDriverOwner::SymbolPin(owner) => owner
             .upgrade()
-            .and_then(|owner| owner.borrow().driver.as_ref().cloned())
-            .map(|driver| driver.borrow().metadata()),
+            .and_then(|owner| owner.borrow().driver.as_ref().cloned()),
     }
 }
 
 fn live_project_strong_driver_priority(driver: &LiveProjectStrongDriver) -> i32 {
-    live_strong_driver_metadata_from_owner(&driver.owner)
-        .map(|driver| driver.priority)
+    live_strong_driver_from_owner(&driver.owner)
+        .map(|driver| driver.borrow().priority)
         .unwrap_or(driver.priority)
 }
 
 fn live_project_strong_driver_full_name(driver: &LiveProjectStrongDriver) -> String {
-    live_strong_driver_metadata_from_owner(&driver.owner)
-        .map(|driver| driver.full_name)
+    live_strong_driver_from_owner(&driver.owner)
+        .map(|driver| driver.borrow().connection.name())
         .unwrap_or_else(|| driver.connection.name())
 }
 
@@ -1777,16 +1753,16 @@ struct LiveReducedBasePin {
 
 type LiveReducedBasePinHandle = Rc<RefCell<LiveReducedBasePin>>;
 
-fn live_strong_driver_handle_metadata(
+fn live_strong_driver_handle_snapshot(
     driver: &LiveProjectStrongDriverHandle,
-) -> LiveStrongDriverMetadata {
-    driver.borrow().metadata()
+) -> ReducedProjectStrongDriver {
+    driver.borrow().snapshot()
 }
 
-fn live_optional_driver_metadata(
+fn live_optional_driver_snapshot(
     driver: &Option<LiveProjectStrongDriverHandle>,
-) -> Option<LiveStrongDriverMetadata> {
-    driver.as_ref().map(live_strong_driver_handle_metadata)
+) -> Option<ReducedProjectStrongDriver> {
+    driver.as_ref().map(live_strong_driver_handle_snapshot)
 }
 
 impl PartialEq for LiveReducedHierSheetPinLink {
@@ -1795,12 +1771,12 @@ impl PartialEq for LiveReducedHierSheetPinLink {
             self.at,
             &self.child_sheet_uuid,
             &self.connection,
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         ) == (
             other.at,
             &other.child_sheet_uuid,
             &other.connection,
-            live_optional_driver_metadata(&other.driver),
+            live_optional_driver_snapshot(&other.driver),
         )
     }
 }
@@ -1819,13 +1795,13 @@ impl Ord for LiveReducedHierSheetPinLink {
             self.at,
             &self.child_sheet_uuid,
             &self.connection,
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 other.at,
                 &other.child_sheet_uuid,
                 &other.connection,
-                live_optional_driver_metadata(&other.driver),
+                live_optional_driver_snapshot(&other.driver),
             ))
     }
 }
@@ -1835,11 +1811,11 @@ impl PartialEq for LiveReducedHierPortLink {
         (
             self.at,
             &self.connection,
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         ) == (
             other.at,
             &other.connection,
-            live_optional_driver_metadata(&other.driver),
+            live_optional_driver_snapshot(&other.driver),
         )
     }
 }
@@ -1857,12 +1833,12 @@ impl Ord for LiveReducedHierPortLink {
         (
             self.at,
             &self.connection,
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 other.at,
                 &other.connection,
-                live_optional_driver_metadata(&other.driver),
+                live_optional_driver_snapshot(&other.driver),
             ))
     }
 }
@@ -1871,10 +1847,10 @@ impl PartialEq for LiveReducedBasePin {
     fn eq(&self, other: &Self) -> bool {
         (
             self.key.clone(),
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         ) == (
             other.key.clone(),
-            live_optional_driver_metadata(&other.driver),
+            live_optional_driver_snapshot(&other.driver),
         )
     }
 }
@@ -1891,11 +1867,11 @@ impl Ord for LiveReducedBasePin {
     fn cmp(&self, other: &Self) -> Ordering {
         (
             self.key.clone(),
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 other.key.clone(),
-                live_optional_driver_metadata(&other.driver),
+                live_optional_driver_snapshot(&other.driver),
             ))
     }
 }
@@ -11581,9 +11557,9 @@ mod tests {
                     .driver
                     .clone()
                     .expect("sheet pin driver owner");
-                let driver = driver.borrow().metadata();
-                assert_eq!(driver.name, "SIG");
-                assert_eq!(driver.full_name, "/SIG");
+                let driver = driver.borrow().snapshot();
+                assert_eq!(driver.connection.local_name, "SIG");
+                assert_eq!(driver.connection.name, "/SIG");
                 assert_eq!(driver.priority, 1);
             }
             _ => panic!("expected sheet pin strong-driver owner"),
@@ -11672,9 +11648,9 @@ mod tests {
                     .driver
                     .clone()
                     .expect("symbol pin driver owner");
-                let driver = driver.borrow().metadata();
-                assert_eq!(driver.name, "PWR");
-                assert_eq!(driver.full_name, "PWR");
+                let driver = driver.borrow().snapshot();
+                assert_eq!(driver.connection.local_name, "PWR");
+                assert_eq!(driver.connection.name, "PWR");
                 assert_eq!(driver.priority, 6);
             }
             _ => panic!("expected symbol pin strong-driver owner"),
@@ -14443,12 +14419,12 @@ impl PartialEq for LiveReducedLabelLink {
             self.at,
             self.kind,
             &self.connection,
-            live_optional_driver_metadata(&self.driver),
+            live_optional_driver_snapshot(&self.driver),
         ) == (
             other.at,
             other.kind,
             &other.connection,
-            live_optional_driver_metadata(&other.driver),
+            live_optional_driver_snapshot(&other.driver),
         )
     }
 }
