@@ -6111,6 +6111,59 @@ fn erc_reports_dangling_symbol_pins_in_issue11926_fixture() {
 }
 
 #[test]
+fn erc_ignores_false_bus_entry_and_no_connect_warnings_in_issue12814_usage_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_2.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-unconnected-wire-endpoint"),
+        "{diagnostics:#?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-no-connect-dangling"),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+            .count(),
+        1,
+        "{diagnostics:#?}"
+    );
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-pin-not-connected"
+            && diagnostic.message
+                == "Hierarchical label 'A[0..2]' in root sheet cannot be connected to non-existent parent sheet"
+    }));
+}
+
+#[test]
+fn erc_ignores_false_bus_entry_warnings_in_issue12814_drive_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_1.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-unconnected-wire-endpoint"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn erc_uses_project_pin_map_overrides() {
     let dir = temp_dir_path("erc_pin_map_override");
     fs::create_dir_all(&dir).expect("create temp dir");

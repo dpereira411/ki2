@@ -1911,7 +1911,11 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 
         let mut has_other_connections = !subgraph.label_links.is_empty()
             || !subgraph.hier_sheet_pins.is_empty()
-            || !subgraph.hier_ports.is_empty();
+            || !subgraph.hier_ports.is_empty()
+            || subgraph
+                .drivers
+                .iter()
+                .any(|driver| driver.kind == ReducedProjectDriverKind::PowerPin);
         let pins = subgraph
             .base_pins
             .iter()
@@ -1923,7 +1927,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         }
 
-        if !has_other_connections && pins.len() > 1 && !pins[0].is_power_symbol {
+        if !has_other_connections && pins.len() > 1 {
             for test_pin in pins.iter().skip(1) {
                 if test_pin.key != pins[0].key {
                     has_other_connections = true;
@@ -2311,6 +2315,10 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     .iter()
                     .any(|base_pin| endpoint_matches(base_pin.key.at))
                     || subgraph
+                        .bus_items
+                        .iter()
+                        .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
+                    || subgraph
                         .label_links
                         .iter()
                         .any(|label| endpoint_matches(label.at))
@@ -2364,7 +2372,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                 let endpoint_wire_count = subgraph
                     .wire_items
                     .iter()
-                    .filter(|other| other.start == endpoint || other.end == endpoint)
+                    .filter(|other| endpoint_matches(other.start) || endpoint_matches(other.end))
                     .count();
 
                 if endpoint_has_owner || endpoint_has_same_sheet_owner || endpoint_wire_count > 1 {
@@ -4009,7 +4017,6 @@ pub fn check_field_name_whitespace(project: &SchematicProject) -> Vec<Diagnostic
 #[cfg(test)]
 mod tests {
     use super::{ReducedErcPinContext, ReducedPinType, reduced_preferred_missing_driver_pin};
-
     fn test_pin(
         reference: &str,
         pin_number: &str,

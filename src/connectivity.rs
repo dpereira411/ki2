@@ -5275,11 +5275,18 @@ fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
 // Upstream parity: reduced local connection-point owner used before subgraph grouping. This still
 // stores reduced members instead of live `SCH_ITEM*`, but symbol-pin dedup now keys by both symbol
 // UUID and pin number so stacked pins stay distinct the way separate `SCH_PIN` items do upstream.
+// It also now merges near-equal projected/item points onto one connection-point owner instead of
+// splitting them by raw float bits, matching the exercised KiCad geometry behavior more closely on
+// the shared graph path.
 fn push_connection_member(
     snapshot: &mut BTreeMap<PointKey, ConnectionPointSnapshot>,
     member: ConnectionMember,
 ) {
-    let key = point_key(member.at);
+    let key = snapshot
+        .keys()
+        .copied()
+        .find(|key| points_equal(member.at, [f64::from_bits(key.0), f64::from_bits(key.1)]))
+        .unwrap_or_else(|| point_key(member.at));
     let entry = snapshot
         .entry(key)
         .or_insert_with(|| ConnectionPointSnapshot {
