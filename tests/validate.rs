@@ -6088,6 +6088,29 @@ fn erc_reports_root_sheet_hier_label_and_driver_gaps_in_issue10926_child_fixture
 }
 
 #[test]
+fn erc_reports_dangling_symbol_pins_in_issue11926_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue11926.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+            .count(),
+        2,
+        "{diagnostics:#?}"
+    );
+    assert!(diagnostics.iter().all(|diagnostic| {
+        diagnostic.code != "erc-no-connect-connected"
+            && diagnostic.code != "erc-no-connect-dangling"
+    }));
+}
+
+#[test]
 fn erc_uses_project_pin_map_overrides() {
     let dir = temp_dir_path("erc_pin_map_override");
     fs::create_dir_all(&dir).expect("create temp dir");

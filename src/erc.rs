@@ -1740,16 +1740,44 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // branches:
 // - connected no-connect markers on same-name nets
 // - dangling no-connect markers with no pins or labels
+// - plain one-pin dangling subgraphs without a no-connect marker
 // instead of leaving the reduced ERC path on the older connected-only point-local check. Same-name
 // grouping on the real graph path now also keys from the graph-owned reduced driver connection
-// name instead of the parallel reduced subgraph `name` field, and no-connect pin presence now
-// reads from graph-owned base-pin payload instead of re-walking projected symbol pins at report
-// time. Remaining divergence is the fuller hier-pin and marker attachment path.
+// name instead of the parallel reduced subgraph `name` field, and no-connect pin presence plus the
+// exercised dangling-pin branch now read graph-owned base-pin payload instead of re-walking
+// projected symbol pins at report time. Remaining divergence is the fuller hier-pin and marker
+// attachment path plus KiCad's extra multi-pin power-symbol dangling branch.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
     let mut seen = std::collections::BTreeSet::new();
     let mut seen_driver_identities = std::collections::BTreeSet::new();
+    let mut global_label_cache = std::collections::BTreeSet::new();
+    let mut local_label_cache = std::collections::BTreeSet::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        for item in &schematic.screen.items {
+            let SchItem::Label(label) = item else {
+                continue;
+            };
+
+            let shown_text = shown_label_text(project, sheet_path, label);
+
+            match label.kind {
+                LabelKind::Global => {
+                    global_label_cache.insert(shown_text);
+                }
+                LabelKind::Local | LabelKind::Hierarchical => {
+                    local_label_cache.insert((sheet_path.instance_path.clone(), shown_text));
+                }
+                LabelKind::Directive => {}
+            }
+        }
+    }
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -1866,6 +1894,92 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: "No-connect marker is attached to a connected net".to_string(),
                 path: Some(sheet_path.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
+        }
+    }
+
+    for subgraph in reduced_project_subgraphs(&graph) {
+        if subgraph.has_no_connect
+            || !subgraph.no_connect_points.is_empty()
+            || subgraph.base_pins.is_empty()
+        {
+            continue;
+        }
+
+        let mut has_other_connections = !subgraph.label_links.is_empty()
+            || !subgraph.hier_sheet_pins.is_empty()
+            || !subgraph.hier_ports.is_empty();
+        let pins = subgraph
+            .base_pins
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        if pins.is_empty() {
+            continue;
+        }
+
+        if !has_other_connections && pins.len() > 1 && !pins[0].is_power_symbol {
+            for test_pin in pins.iter().skip(1) {
+                if test_pin.key != pins[0].key {
+                    has_other_connections = true;
+                    break;
+                }
+            }
+        }
+
+        let mut pin = pins[0];
+
+        for test_pin in &pins {
+            if test_pin.electrical_type.as_deref() == Some("power_in") && !test_pin.is_power_symbol
+            {
+                pin = test_pin;
+                break;
+            }
+        }
+
+        if !has_other_connections && !pin.is_power_symbol {
+            if global_label_cache.contains(&pin.connection.name)
+                || local_label_cache.contains(&(
+                    subgraph.sheet_instance_path.clone(),
+                    pin.connection.local_name.clone(),
+                ))
+            {
+                has_other_connections = true;
+            }
+        }
+
+        let same_name_has_no_connect_sibling = (subgraph
+            .driver_connection
+            .name
+            .starts_with("Net-(")
+            || subgraph.driver_connection.name.starts_with("unconnected-("))
+            && collect_reduced_project_subgraphs_by_name(&graph, &subgraph.driver_connection.name)
+                .iter()
+                .any(|neighbor| {
+                    neighbor.sheet_instance_path == subgraph.sheet_instance_path
+                        && neighbor.subgraph_code != subgraph.subgraph_code
+                        && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
+                });
+
+        if same_name_has_no_connect_sibling {
+            continue;
+        }
+
+        if !has_other_connections
+            && pin.electrical_type.as_deref() != Some("no_connect")
+            && pin.electrical_type.as_deref() != Some("not_connected")
+        {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-pin-not-connected",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: "Pin not connected".to_string(),
+                path: Some(pin.schematic_path.clone()),
                 span: None,
                 line: None,
                 column: None,
