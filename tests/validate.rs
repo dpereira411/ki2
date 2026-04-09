@@ -6042,6 +6042,52 @@ fn erc_reports_reused_screen_pin_conflicts_in_issue10926_fixture() {
 }
 
 #[test]
+fn erc_reports_root_sheet_hier_label_and_driver_gaps_in_issue10926_child_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue10926_1_subsheet_1.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+            .count(),
+        1
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+            .count(),
+        2
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+            .count(),
+        2
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-driven")
+            .count(),
+        1
+    );
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "erc-pin-not-driven"
+                && diagnostic.message == "Input pin not driven by any Output pins"
+        }),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn erc_uses_project_pin_map_overrides() {
     let dir = temp_dir_path("erc_pin_map_override");
     fs::create_dir_all(&dir).expect("create temp dir");
@@ -6262,7 +6308,10 @@ fn erc_reports_input_pins_without_driver() {
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].message, "Input pin is not driven");
+    assert_eq!(
+        diagnostics[0].message,
+        "Input pin not driven by any Output pins"
+    );
 
     let _ = fs::remove_file(path);
 }
@@ -6304,7 +6353,10 @@ fn erc_reports_power_input_pins_without_power_driver() {
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].message, "Power input pin is not driven");
+    assert_eq!(
+        diagnostics[0].message,
+        "Input Power pin not driven by any Output Power pins"
+    );
 
     let _ = fs::remove_file(path);
 }

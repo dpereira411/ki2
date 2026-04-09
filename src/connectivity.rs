@@ -6660,8 +6660,9 @@ pub(crate) fn collect_reduced_project_net_graph(
 // and whole-net grouping now reads net names from the required reduced `driver_connection` owner
 // instead of a parallel reduced subgraph `name` field. Whole-net base pins now also stay on shared
 // reduced base-pin owners instead of collapsing to keys, so ERC/export callers can keep graph-owned
-// per-pin context at the whole-net boundary. Write-time exporters still do their own emitted-code
-// assignment like KiCad `makeListOfNets()`.
+// per-pin context at the whole-net boundary, including node-less one-pin nets that still need ERC
+// driver checks. Write-time exporters still do their own emitted-code assignment like KiCad
+// `makeListOfNets()`.
 pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
@@ -6791,7 +6792,14 @@ pub(crate) fn collect_reduced_project_net_map(
         .filter_map(
             |((code, name), (class, has_no_connect, nodes, base_pins))| {
                 let nodes = nodes.into_values().collect::<Vec<_>>();
-                (!nodes.is_empty()).then_some((code, name, class, has_no_connect, nodes, base_pins))
+                ((!nodes.is_empty()) || !base_pins.is_empty()).then_some((
+                    code,
+                    name,
+                    class,
+                    has_no_connect,
+                    nodes,
+                    base_pins,
+                ))
             },
         )
         .map(

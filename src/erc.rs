@@ -2103,7 +2103,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            if label.kind != LabelKind::Hierarchical && all_pins == 1 && !has_no_connect {
+            if all_pins == 1 && !has_no_connect {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-label-single-pin",
@@ -2881,7 +2881,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
             .filter_map(reduced_erc_pin_context_from_base_pin)
             .collect::<Vec<_>>();
 
-        if pins.len() < 2 {
+        if pins.is_empty() {
             continue;
         }
 
@@ -2913,24 +2913,27 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
         let mut mismatches = Vec::<PinMismatch>::new();
         let mut mismatch_weights = BTreeMap::<usize, usize>::new();
 
-        for (index, lhs_pin) in pins.iter().enumerate() {
-            for (rhs_index, rhs_pin) in pins.iter().enumerate().skip(index + 1) {
-                if reduced_erc_pins_are_stacked(lhs_pin, rhs_pin) {
-                    continue;
-                }
+        if pins.len() >= 2 {
+            for (index, lhs_pin) in pins.iter().enumerate() {
+                for (rhs_index, rhs_pin) in pins.iter().enumerate().skip(index + 1) {
+                    if reduced_erc_pins_are_stacked(lhs_pin, rhs_pin) {
+                        continue;
+                    }
 
-                let conflict = configured_pin_conflict(project, lhs_pin.pin_type, rhs_pin.pin_type);
-                if conflict == PinConflict::Ok {
-                    continue;
-                }
+                    let conflict =
+                        configured_pin_conflict(project, lhs_pin.pin_type, rhs_pin.pin_type);
+                    if conflict == PinConflict::Ok {
+                        continue;
+                    }
 
-                mismatches.push(PinMismatch {
-                    lhs: index,
-                    rhs: rhs_index,
-                    conflict,
-                });
-                mismatch_weights.insert(index, reduced_pin_type_weight(lhs_pin.pin_type));
-                mismatch_weights.insert(rhs_index, reduced_pin_type_weight(rhs_pin.pin_type));
+                    mismatches.push(PinMismatch {
+                        lhs: index,
+                        rhs: rhs_index,
+                        conflict,
+                    });
+                    mismatch_weights.insert(index, reduced_pin_type_weight(lhs_pin.pin_type));
+                    mismatch_weights.insert(rhs_index, reduced_pin_type_weight(rhs_pin.pin_type));
+                }
             }
         }
 
@@ -3014,9 +3017,9 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 
         if let Some(pin) = preferred_missing_driver {
             let article = if pin.pin_type == ReducedPinType::PowerIn {
-                "Power input pin is not driven"
+                "Input Power pin not driven by any Output Power pins"
             } else {
-                "Input pin is not driven"
+                "Input pin not driven by any Output pins"
             };
 
             diagnostics.push(Diagnostic {
