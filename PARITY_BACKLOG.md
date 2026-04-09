@@ -1214,6 +1214,9 @@ Current status:
       - chosen text-item owners still keep split item-vs-driver connections on the active path,
         but reduced projection now replays shown-text local names from explicit owner state rather
         than relying on connection-clone heuristics
+      - bus-entry wire owners now attach directly to the connected live bus subgraph instead of
+        routing that ownership through an attached live bus-item proxy, and reduced projection
+        derives `connected_bus_subgraph_index` from that direct live subgraph handle
       - after those removals, the remaining helper/wrapper survivors are semantically real owner
         boundaries or boundary projection scaffolding, not another duplicate propagation engine
     - concrete next unblock path:
