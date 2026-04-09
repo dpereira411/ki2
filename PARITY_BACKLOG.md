@@ -751,15 +751,18 @@ Current status:
         reads; it is the member/driver payload itself:
         - active live connection member trees, live bus-link payloads, and stale-member replay now
           share local live member owners instead of copying member values through each refresh step
-        - active live strong-driver lists now also sit on shared local driver owners instead of
+      - active live strong-driver lists now also sit on shared local driver owners instead of
           copied reduced strong-driver structs
+      - compatibility item-update paths now derive the exercised self-driven symbol-pin and
+        sheet-pin branches from base-pin / hierarchy ownership instead of reading copied
+        `driver_identity` branch state during updates
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
       2. move live name recache and the remaining projection/boundary bus-member ownership onto
          that same connection/member owner instead of cloning reduced snapshots through recursive
          revisits, with the next gap now concentrated in projection and the still-missing fuller
-         live driver-item owner rather than copied structs
+         live driver-item owner rather than copied structs or copied driver-identity branches
       3. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time

@@ -291,7 +291,10 @@ fn reduced_strong_drivers_into_live_handles(
 fn live_strong_driver_handles_to_snapshots(
     drivers: &[LiveProjectStrongDriverHandle],
 ) -> Vec<ReducedProjectStrongDriver> {
-    drivers.iter().map(|driver| driver.borrow().snapshot()).collect()
+    drivers
+        .iter()
+        .map(|driver| driver.borrow().snapshot())
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -740,7 +743,8 @@ fn match_live_bus_member_mut<'a>(
 
         if member_ref.kind == ReducedBusMemberKind::Bus {
             drop(member_ref);
-            if let Some(found) = match_live_bus_member_mut(&mut member.borrow_mut().members, search) {
+            if let Some(found) = match_live_bus_member_mut(&mut member.borrow_mut().members, search)
+            {
                 return Some(found);
             }
         } else if member_ref.local_name == search.local_name {
@@ -1181,7 +1185,10 @@ fn reduced_bus_members_into_live_handles(
 fn live_bus_member_handles_to_snapshots(
     members: &[LiveProjectBusMemberHandle],
 ) -> Vec<ReducedBusMember> {
-    members.iter().map(live_bus_member_handle_snapshot).collect()
+    members
+        .iter()
+        .map(live_bus_member_handle_snapshot)
+        .collect()
 }
 
 impl From<ReducedBusMember> for LiveProjectBusMember {
@@ -1889,7 +1896,23 @@ fn live_subgraph_is_self_driven_symbol_pin(subgraph: &LiveReducedSubgraph) -> bo
 fn live_subgraph_is_self_driven_sheet_pin(subgraph: &LiveReducedSubgraph) -> bool {
     live_subgraph_strong_driver_count(subgraph) == 0
         && subgraph.base_pins.is_empty()
-        && !subgraph.hier_sheet_pins.is_empty()
+        && (!subgraph.hier_sheet_pins.is_empty()
+            || {
+                #[cfg(test)]
+                {
+                    subgraph.hier_parent_index.is_some() || !subgraph.hier_child_indexes.is_empty()
+                }
+                #[cfg(not(test))]
+                {
+                    false
+                }
+            }
+            || subgraph
+                .hier_parent_handle
+                .as_ref()
+                .and_then(Weak::upgrade)
+                .is_some()
+            || !subgraph.hier_child_handles.is_empty())
 }
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
@@ -3341,10 +3364,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
             let neighbor_index = link.borrow().subgraph_index;
             let parent_member = {
                 let parent_connection = live_subgraphs[parent_index].driver_connection.borrow();
-                match_live_bus_member_live(
-                    &parent_connection.members,
-                    &link_member.borrow(),
-                )
+                match_live_bus_member_live(&parent_connection.members, &link_member.borrow())
             };
             let Some(parent_member) = parent_member else {
                 continue;
@@ -3396,12 +3416,10 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 let old_member = link_member.clone();
                 let mut parent_connection_mut =
                     live_subgraphs[parent_index].driver_connection.borrow_mut();
-                if let Some(member) =
-                    match_live_bus_member_mut_live(
-                        &mut parent_connection_mut.members,
-                        &link_member.borrow(),
-                    )
-                {
+                if let Some(member) = match_live_bus_member_mut_live(
+                    &mut parent_connection_mut.members,
+                    &link_member.borrow(),
+                ) {
                     clone_reduced_connection_into_live_bus_member(
                         &mut member.borrow_mut(),
                         &promoted,
@@ -3900,14 +3918,9 @@ fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
                 continue;
             }
 
-            if !handle
-                .borrow()
-                .drivers
-                .iter()
-                .any(|candidate_driver| {
-                    candidate_driver.borrow().full_name == secondary_driver.borrow().full_name
-                })
-            {
+            if !handle.borrow().drivers.iter().any(|candidate_driver| {
+                candidate_driver.borrow().full_name == secondary_driver.borrow().full_name
+            }) {
                 continue;
             }
 
@@ -4187,12 +4200,10 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 let parent = parent_handle.borrow();
                 let mut parent_connection = parent.driver_connection.borrow_mut();
                 let link_member = link.borrow().member.clone();
-                let Some(member) =
-                    match_live_bus_member_mut_live(
-                        &mut parent_connection.members,
-                        &link_member.borrow(),
-                    )
-                else {
+                let Some(member) = match_live_bus_member_mut_live(
+                    &mut parent_connection.members,
+                    &link_member.borrow(),
+                ) else {
                     continue;
                 };
                 let old_member = member.borrow().clone();
@@ -4233,10 +4244,7 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
                 let subgraph = handle.borrow();
                 let mut connection = subgraph.driver_connection.borrow_mut();
                 let Some(member) =
-                    match_live_bus_member_mut_live(
-                        &mut connection.members,
-                        &stale_member.borrow(),
-                    )
+                    match_live_bus_member_mut_live(&mut connection.members, &stale_member.borrow())
                 else {
                     continue;
                 };
@@ -4435,8 +4443,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                 let Some(member) = match_live_bus_member_mut_live(
                     &mut parent_connection.members,
                     &link_member.borrow(),
-                )
-                else {
+                ) else {
                     continue;
                 };
 
@@ -4702,12 +4709,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
     for index in 0..live_subgraphs.len() {
         sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
 
-        if live_subgraph_strong_driver_count(&live_subgraphs[index]) == 0
-            && live_subgraph_base_pin_count(&live_subgraphs[index]) == 1
-            && matches!(
-                live_subgraphs[index].driver_identity,
-                Some(ReducedProjectDriverIdentity::SymbolPin { .. })
-            )
+        if live_subgraph_is_self_driven_symbol_pin(&live_subgraphs[index])
             && live_subgraphs[index]
                 .driver_connection
                 .borrow()
@@ -4723,16 +4725,15 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
             sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
         }
 
-        if matches!(
-            live_subgraphs[index].driver_identity,
-            Some(ReducedProjectDriverIdentity::SheetPin { .. })
-        ) && matches!(
-            live_subgraphs[index]
-                .driver_connection
-                .borrow()
-                .connection_type,
-            ReducedProjectConnectionType::Net
-        ) {
+        if live_subgraph_is_self_driven_sheet_pin(&live_subgraphs[index])
+            && matches!(
+                live_subgraphs[index]
+                    .driver_connection
+                    .borrow()
+                    .connection_type,
+                ReducedProjectConnectionType::Net
+            )
+        {
             if let Some((connection_type, members)) = live_subgraphs[index]
                 .hier_child_indexes
                 .iter()
@@ -8141,6 +8142,22 @@ fn reduced_force_no_connect_net_name(name: &str) -> String {
     name.replacen("Net-(", "unconnected-(", 1)
 }
 
+#[cfg(test)]
+fn reduced_subgraph_is_self_driven_symbol_pin(subgraph: &ReducedProjectSubgraphEntry) -> bool {
+    subgraph.drivers.is_empty()
+        && subgraph.base_pins.len() == 1
+        && subgraph.hier_sheet_pins.is_empty()
+}
+
+#[cfg(test)]
+fn reduced_subgraph_is_self_driven_sheet_pin(subgraph: &ReducedProjectSubgraphEntry) -> bool {
+    subgraph.drivers.is_empty()
+        && subgraph.base_pins.is_empty()
+        && (!subgraph.hier_sheet_pins.is_empty()
+            || subgraph.hier_parent_index.is_some()
+            || !subgraph.hier_child_indexes.is_empty())
+}
+
 // Upstream parity: reduced local analogue for the post-propagation
 // `CONNECTION_SUBGRAPH::UpdateItemConnections()` follow-up inside `buildConnectionGraph()`. This
 // is not a 1:1 live item-connection mutation because the Rust tree still rewrites reduced subgraph
@@ -8171,13 +8188,7 @@ fn refresh_reduced_post_propagation_item_connections(
     let mut updates = Vec::<PostPropagationUpdate>::new();
 
     for (index, subgraph) in reduced_subgraphs.iter().enumerate() {
-        if subgraph.drivers.is_empty()
-            && subgraph.base_pins.len() == 1
-            && matches!(
-                subgraph.driver_identity,
-                Some(ReducedProjectDriverIdentity::SymbolPin { .. })
-            )
-        {
+        if reduced_subgraph_is_self_driven_symbol_pin(subgraph) {
             let mut connection = reduced_subgraph_driver_connection(subgraph);
 
             if connection.name.contains("Net-(") {
@@ -8189,18 +8200,16 @@ fn refresh_reduced_post_propagation_item_connections(
             }
         }
 
-        if matches!(
-            subgraph.driver_identity,
-            Some(ReducedProjectDriverIdentity::SheetPin { .. })
-        ) && subgraph
-            .driver_connection
-            .as_ref()
-            .is_some_and(|connection| {
-                matches!(
-                    connection.connection_type,
-                    ReducedProjectConnectionType::Net
-                )
-            })
+        if reduced_subgraph_is_self_driven_sheet_pin(subgraph)
+            && subgraph
+                .driver_connection
+                .as_ref()
+                .is_some_and(|connection| {
+                    matches!(
+                        connection.connection_type,
+                        ReducedProjectConnectionType::Net
+                    )
+                })
         {
             if let Some((connection_type, members)) =
                 subgraph.hier_child_indexes.iter().find_map(|child_index| {
