@@ -1095,6 +1095,9 @@ Current status:
       - production reduced graph consumers now also read subgraph `driver_connection` as required
         owner state for exercised netcode assignment and child-name collection instead of branching
         around an optional reduced driver connection on the real graph path
+      - the active reduced helper path now also requires materialized subgraph driver connections
+        instead of falling back to `resolved_connection`, and the remaining `driver_connection:
+        None` fixtures now live only in pre-build pending state or older manual test scaffolding
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
