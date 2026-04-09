@@ -3500,7 +3500,6 @@ impl LiveReducedSubgraph {
                 }
 
                 sync_live_reduced_item_connections_from_driver_handle(handle);
-                handle.borrow_mut().dirty = true;
                 promoted.push(handle.clone());
             }
         }
@@ -3515,15 +3514,16 @@ impl LiveReducedSubgraph {
     // local `CONNECTION_SUBGRAPH` analogue, but the shared subgraph owner now owns recursive dirty
     // traversal, component discovery, hierarchy propagation, secondary-driver promotion, and
     // revisit scheduling instead of coordinating those steps from free helpers around the graph.
-    fn propagate_neighbors(
+    fn propagate_neighbors_from_selected_start(
         start: &LiveReducedSubgraphHandle,
         live_subgraphs: &[LiveReducedSubgraphHandle],
         force: bool,
         visiting: &mut BTreeSet<usize>,
         stale_members: &mut Vec<LiveProjectBusMemberHandle>,
+        selected_clean_start: bool,
     ) {
         let start_id = live_subgraph_handle_id(start);
-        if !start.borrow().dirty || !visiting.insert(start_id) {
+        if (!start.borrow().dirty && !selected_clean_start) || !visiting.insert(start_id) {
             return;
         }
 
@@ -3531,22 +3531,27 @@ impl LiveReducedSubgraph {
             let promoted = Self::refresh_global_secondary_driver_promotions(start, live_subgraphs);
 
             for promoted_handle in promoted {
-                Self::propagate_neighbors(
+                Self::propagate_neighbors_from_selected_start(
                     &promoted_handle,
                     live_subgraphs,
                     false,
                     visiting,
                     stale_members,
+                    true,
                 );
             }
         }
 
         let active = Self::collect_propagation_component_handles(start, live_subgraphs);
-        let dirty_active = active
+        let mut dirty_active = active
             .iter()
             .filter(|handle| handle.borrow().dirty)
             .cloned()
             .collect::<Vec<_>>();
+
+        if selected_clean_start && !dirty_active.iter().any(|handle| Rc::ptr_eq(handle, start)) {
+            dirty_active.push(start.clone());
+        }
 
         for handle in &dirty_active {
             handle.borrow_mut().dirty = false;
@@ -3574,12 +3579,45 @@ impl LiveReducedSubgraph {
 
         visiting.remove(&start_id);
         for handle in recurse_targets {
-            Self::propagate_neighbors(&handle, live_subgraphs, force, visiting, stale_members);
+            Self::propagate_neighbors_from_selected_start(
+                &handle,
+                live_subgraphs,
+                force,
+                visiting,
+                stale_members,
+                false,
+            );
         }
 
         if start.borrow().dirty {
-            Self::propagate_neighbors(start, live_subgraphs, force, visiting, stale_members);
+            Self::propagate_neighbors_from_selected_start(
+                start,
+                live_subgraphs,
+                force,
+                visiting,
+                stale_members,
+                false,
+            );
         }
+    }
+
+    // Upstream parity: thin entrypoint for ordinary dirty-root traversal into the selected-start
+    // propagation walk above.
+    fn propagate_neighbors(
+        start: &LiveReducedSubgraphHandle,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+        force: bool,
+        visiting: &mut BTreeSet<usize>,
+        stale_members: &mut Vec<LiveProjectBusMemberHandle>,
+    ) {
+        Self::propagate_neighbors_from_selected_start(
+            start,
+            live_subgraphs,
+            force,
+            visiting,
+            stale_members,
+            false,
+        );
     }
 
     // Upstream parity: local live-subgraph analogue for the repeated dirty-root walk KiCad drives
@@ -15724,6 +15762,160 @@ mod tests {
             "/PWR"
         );
         assert!(!live_subgraphs[0].borrow().dirty);
+    }
+
+    #[test]
+    fn reduced_live_selected_clean_bus_root_still_propagates_neighbors() {
+        let mut graph = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/BUS".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "BUS".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 1,
+                }],
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/OLD".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD".to_string(),
+                    local_name: "OLD".to_string(),
+                    full_local_name: "/OLD".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/OLD".to_string(),
+                    local_name: "OLD".to_string(),
+                    full_local_name: "/OLD".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(1, 1),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: vec![ReducedProjectBusNeighborLink {
+                    member: ReducedBusMember {
+                        net_code: 0,
+                        name: "SIG1".to_string(),
+                        local_name: "SIG1".to_string(),
+                        full_local_name: "/SIG1".to_string(),
+                        vector_index: Some(1),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    },
+                    subgraph_index: 0,
+                }],
+                bus_parent_indexes: vec![0],
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[0].borrow_mut().dirty = false;
+        live_subgraphs[1].borrow_mut().dirty = false;
+
+        let mut visiting = std::collections::BTreeSet::new();
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_neighbors_from_selected_start(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            false,
+            &mut visiting,
+            &mut stale_members,
+            true,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[1].name, "/SIG1");
+        assert_eq!(graph[1].resolved_connection.full_local_name, "/SIG1");
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
+        assert!(!live_subgraphs[0].borrow().dirty);
+        assert!(!live_subgraphs[1].borrow().dirty);
     }
 
     #[test]
