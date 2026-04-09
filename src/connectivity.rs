@@ -395,18 +395,6 @@ impl LiveProjectStrongDriverOwner {
     }
 }
 
-fn empty_live_project_connection_handle() -> LiveProjectConnectionHandle {
-    Rc::new(RefCell::new(LiveProjectConnection {
-        net_code: 0,
-        connection_type: ReducedProjectConnectionType::None,
-        name: String::new(),
-        local_name: String::new(),
-        full_local_name: String::new(),
-        sheet_instance_path: String::new(),
-        members: Vec::new(),
-    }))
-}
-
 impl LiveProjectStrongDriverOwner {
     fn full_name(&self) -> String {
         self.connection_handle().borrow().name.clone()
@@ -4179,7 +4167,8 @@ fn live_subgraph_is_self_driven_sheet_pin(subgraph: &LiveReducedSubgraph) -> boo
 // live handles instead of first building a temporary value-owned live-subgraph vector. Base-pin
 // item and pin-driver connection owners now also seed from their distinct reduced owners here
 // instead of collapsing the pin-driver side back onto the item connection during handle
-// construction.
+// construction, and exercised text-item driver owners now also seed from their reduced
+// item-owned connections instead of starting from empty `NONE` sentinels before attachment.
 fn build_live_reduced_subgraph_handles(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraphHandle> {
@@ -4264,7 +4253,9 @@ fn build_live_reduced_subgraph_handles(
                             at: link.at,
                             kind: link.kind,
                             connection: Rc::new(RefCell::new(link.connection.clone().into())),
-                            driver_connection: empty_live_project_connection_handle(),
+                            driver_connection: Rc::new(RefCell::new(
+                                link.connection.clone().into(),
+                            )),
                             driver: None,
                             parent_subgraph_handle: Weak::new(),
                         }))
@@ -4280,7 +4271,7 @@ fn build_live_reduced_subgraph_handles(
                             at: pin.at,
                             child_sheet_uuid: pin.child_sheet_uuid,
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
-                            driver_connection: empty_live_project_connection_handle(),
+                            driver_connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver: None,
                             parent_subgraph_handle: Weak::new(),
                         }))
@@ -4295,7 +4286,9 @@ fn build_live_reduced_subgraph_handles(
                             schematic_path: port.schematic_path.clone(),
                             at: port.at,
                             connection: Rc::new(RefCell::new(port.connection.clone().into())),
-                            driver_connection: empty_live_project_connection_handle(),
+                            driver_connection: Rc::new(RefCell::new(
+                                port.connection.clone().into(),
+                            )),
                             driver: None,
                             parent_subgraph_handle: Weak::new(),
                         }))
@@ -12214,6 +12207,122 @@ mod tests {
             }
             _ => panic!("expected sheet pin strong-driver owner"),
         }
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_seed_text_driver_owners() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            chosen_driver_identity: None,
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(5, 6),
+                kind: LabelKind::Global,
+                connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(10, 20),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 2,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/CHILD".to_string(),
+                    local_name: "CHILD".to_string(),
+                    full_local_name: "/CHILD".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            hier_ports: vec![ReducedHierPortLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(30, 40),
+                connection: ReducedProjectConnection {
+                    net_code: 3,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/PORT".to_string(),
+                    local_name: "PORT".to_string(),
+                    full_local_name: "/PORT".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                },
+            }],
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+
+        let label = subgraph.label_links[0].borrow();
+        assert!(!Rc::ptr_eq(&label.connection, &label.driver_connection));
+        assert!(super::live_connection_clone_eq(
+            &label.connection.borrow(),
+            &label.driver_connection.borrow()
+        ));
+
+        let sheet_pin = subgraph.hier_sheet_pins[0].borrow();
+        assert!(!Rc::ptr_eq(
+            &sheet_pin.connection,
+            &sheet_pin.driver_connection
+        ));
+        assert!(super::live_connection_clone_eq(
+            &sheet_pin.connection.borrow(),
+            &sheet_pin.driver_connection.borrow()
+        ));
+
+        let hier_port = subgraph.hier_ports[0].borrow();
+        assert!(!Rc::ptr_eq(
+            &hier_port.connection,
+            &hier_port.driver_connection
+        ));
+        assert!(super::live_connection_clone_eq(
+            &hier_port.connection.borrow(),
+            &hier_port.driver_connection.borrow()
+        ));
     }
 
     #[test]
