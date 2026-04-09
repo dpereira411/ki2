@@ -3428,11 +3428,11 @@ impl LiveReducedSubgraph {
 
         for handle in &visited {
             let target_connection = handle.borrow().driver_connection.clone();
-            let changed = clone_live_connection_handle_from_handle_if_changed(
+            clone_live_connection_handle_from_handle_if_changed(
                 &target_connection,
                 &chosen_connection,
             );
-            handle.borrow_mut().dirty = changed;
+            handle.borrow_mut().dirty = false;
         }
 
         if chosen_is_bus {
