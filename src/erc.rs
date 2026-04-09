@@ -1617,13 +1617,15 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
                 .count();
 
             if touching_segments > 1 {
+                let report_x = (label.at[0] * 10_000.0).round() as i64;
+                let report_y = (label.at[1] * 10_000.0).round() as i64;
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
                     code: "erc-label-multiple-wires",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: format!(
                         "Label connects more than one wire at {}, {}",
-                        label.at[0], label.at[1]
+                        report_x, report_y
                     ),
                     path: Some(schematic.path.clone()),
                     span: None,
