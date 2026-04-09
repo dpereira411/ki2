@@ -2861,6 +2861,28 @@ struct LiveReducedSubgraph {
 }
 
 impl LiveReducedSubgraph {
+    // Upstream parity: local live-subgraph analogue for binding one exercised strong driver onto
+    // the shared subgraph owner during driver resolution. This still seeds from reduced projected
+    // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
+    // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
+    // that branch open-coded in the surrounding builder.
+    fn attach_strong_driver(
+        &mut self,
+        driver: &LiveProjectStrongDriverHandle,
+        reduced_driver: &ReducedProjectStrongDriver,
+        chosen_identity: Option<&ReducedProjectDriverIdentity>,
+        chosen_connection: &ReducedProjectConnection,
+    ) {
+        let is_chosen_driver = chosen_identity
+            .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
+            .unwrap_or_else(|| reduced_driver.connection == *chosen_connection);
+
+        if is_chosen_driver {
+            self.chosen_driver = Some(driver.clone());
+            self.driver_connection = driver.borrow().connection();
+        }
+    }
+
     // Upstream parity: local live-subgraph analogue for the exercised pin portion of
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still mutates reduced live pin owners
     // instead of real `SCH_PIN`s, but the shared live subgraph owner now drives the current pin
@@ -3435,15 +3457,12 @@ fn attach_live_strong_driver_owners_to_handles(
             driver_ref.owner = owner;
             drop(driver_ref);
 
-            let is_chosen_driver = chosen_identity
-                .as_ref()
-                .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
-                .unwrap_or_else(|| reduced_driver.connection == chosen_connection);
-
-            if is_chosen_driver {
-                subgraph.chosen_driver = Some(driver.clone());
-                subgraph.driver_connection = driver.borrow().connection();
-            }
+            subgraph.attach_strong_driver(
+                driver,
+                reduced_driver,
+                chosen_identity.as_ref(),
+                &chosen_connection,
+            );
         }
     }
 }
