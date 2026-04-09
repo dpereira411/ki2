@@ -2665,6 +2665,64 @@ struct LiveReducedSubgraph {
     dirty: bool,
 }
 
+impl LiveReducedSubgraph {
+    // Upstream parity: local live-subgraph analogue for the exercised pin portion of
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still mutates reduced live pin owners
+    // instead of real `SCH_PIN`s, but the shared live subgraph owner now drives the current pin
+    // refresh flow for both active and compatibility paths.
+    fn refresh_base_pin_connections_from_driver(
+        &mut self,
+        refresh_attached_strong_driver_pins: bool,
+    ) {
+        let driver_connection = self.driver_connection.clone();
+        let driver_connection_type = driver_connection.borrow().connection_type;
+        let chosen_driver = self.chosen_driver.clone();
+
+        for base_pin in &self.base_pins {
+            base_pin.borrow_mut().refresh_from_driver_connection(
+                chosen_driver.as_ref(),
+                &driver_connection,
+                driver_connection_type,
+                refresh_attached_strong_driver_pins,
+            );
+        }
+    }
+
+    // Upstream parity: local live-subgraph analogue for the exercised
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()` item refresh. This still mutates reduced live
+    // item owners instead of real `SCH_ITEM*`, but the shared live subgraph owner now drives the
+    // label/sheet-pin/hier-port/base-pin refresh flow for both active and compatibility paths.
+    fn refresh_item_connections_from_driver(&mut self) {
+        let driver_connection = self.driver_connection.clone();
+        let driver_connection_type = driver_connection.borrow().connection_type;
+        let chosen_driver = self.chosen_driver.clone();
+
+        for link in &self.label_links {
+            link.borrow_mut().refresh_from_driver_connection(
+                chosen_driver.as_ref(),
+                &driver_connection,
+                driver_connection_type,
+            );
+        }
+        for pin in &self.hier_sheet_pins {
+            pin.borrow_mut().refresh_from_driver_connection(
+                chosen_driver.as_ref(),
+                &driver_connection,
+                driver_connection_type,
+            );
+        }
+        for port in &self.hier_ports {
+            port.borrow_mut().refresh_from_driver_connection(
+                chosen_driver.as_ref(),
+                &driver_connection,
+                driver_connection_type,
+            );
+        }
+
+        self.refresh_base_pin_connections_from_driver(true);
+    }
+}
+
 #[cfg(test)]
 fn live_reduced_subgraph_extra_projection_eq(
     left: &LiveReducedSubgraph,
@@ -3155,19 +3213,9 @@ fn sync_live_reduced_base_pin_connections_from_driver_handle(
     handle: &LiveReducedSubgraphHandle,
     refresh_attached_strong_driver_pins: bool,
 ) {
-    let driver_connection = handle.borrow().driver_connection.clone();
-    let driver_connection_type = driver_connection.borrow().connection_type;
-    let subgraph = handle.borrow_mut();
-    let chosen_driver = subgraph.chosen_driver.clone();
-
-    for base_pin in &subgraph.base_pins {
-        base_pin.borrow_mut().refresh_from_driver_connection(
-            chosen_driver.as_ref(),
-            &driver_connection,
-            driver_connection_type,
-            refresh_attached_strong_driver_pins,
-        );
-    }
+    handle
+        .borrow_mut()
+        .refresh_base_pin_connections_from_driver(refresh_attached_strong_driver_pins);
 }
 
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
@@ -3180,35 +3228,7 @@ fn sync_live_reduced_base_pin_connections_from_driver_handle(
 // live strong-driver handle from the subgraph owner instead of rediscovering it from names after
 // attachment.
 fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
-    let driver_connection = handle.borrow().driver_connection.clone();
-    let driver_connection_type = driver_connection.borrow().connection_type;
-    let subgraph = handle.borrow_mut();
-    let chosen_driver = subgraph.chosen_driver.clone();
-
-    for link in &subgraph.label_links {
-        link.borrow_mut().refresh_from_driver_connection(
-            chosen_driver.as_ref(),
-            &driver_connection,
-            driver_connection_type,
-        );
-    }
-    for pin in &subgraph.hier_sheet_pins {
-        pin.borrow_mut().refresh_from_driver_connection(
-            chosen_driver.as_ref(),
-            &driver_connection,
-            driver_connection_type,
-        );
-    }
-    for port in &subgraph.hier_ports {
-        port.borrow_mut().refresh_from_driver_connection(
-            chosen_driver.as_ref(),
-            &driver_connection,
-            driver_connection_type,
-        );
-    }
-
-    drop(subgraph);
-    sync_live_reduced_base_pin_connections_from_driver_handle(handle, true);
+    handle.borrow_mut().refresh_item_connections_from_driver();
 }
 
 // Upstream parity: reduced local builder for live graph-owned text and hierarchy link connection
@@ -3775,64 +3795,7 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
 // rediscovering it from names after attachment.
 #[cfg(test)]
 fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubgraph) {
-    let driver_connection = subgraph.driver_connection.clone();
-    let driver_connection_type = driver_connection.borrow().connection_type;
-    let chosen_driver = subgraph.chosen_driver.clone();
-
-    for link in &subgraph.label_links {
-        if chosen_driver
-            .as_ref()
-            .zip(link.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
-            driver_connection_type,
-            link.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        link.borrow_mut().connection.clone_from(&driver_connection);
-    }
-    for pin in &subgraph.hier_sheet_pins {
-        if chosen_driver
-            .as_ref()
-            .zip(pin.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
-            driver_connection_type,
-            pin.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        pin.borrow_mut().connection.clone_from(&driver_connection);
-    }
-    for port in &subgraph.hier_ports {
-        if chosen_driver
-            .as_ref()
-            .zip(port.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
-            driver_connection_type,
-            port.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        port.borrow_mut().connection.clone_from(&driver_connection);
-    }
+    subgraph.refresh_item_connections_from_driver();
 }
 
 // Upstream parity: reduced local bridge for pushing live graph-owned connection state back onto the
