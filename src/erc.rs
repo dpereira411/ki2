@@ -2210,8 +2210,6 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 .unwrap_or(false);
             let graph_has_pins = all_pins > 0;
 
-            let at = [f64::from_bits(label.at.0), f64::from_bits(label.at.1)];
-
             if (dangling && !graph_has_pins)
                 || (label.kind == LabelKind::Local
                     && local_pins == 0
@@ -2224,7 +2222,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     severity: Severity::Error,
                     code: "erc-label-not-connected",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!("Label is not connected at {}, {}", at[0], at[1]),
+                    message: "Label not connected".to_string(),
                     path: Some(sheet_path.schematic_path.clone()),
                     span: None,
                     line: None,

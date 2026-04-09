@@ -3496,7 +3496,7 @@ fn erc_deduplicates_reused_screen_label_checks_by_driver_instance() {
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].message, "Label is not connected at 5, 0");
+    assert_eq!(diagnostics[0].message, "Label not connected");
 
     let _ = fs::remove_file(root_path);
     let _ = fs::remove_file(child_path);
@@ -6115,7 +6115,7 @@ fn erc_reports_dangling_global_label_on_no_connect_line_fixture() {
     assert!(
         diagnostics.iter().any(|diagnostic| {
             diagnostic.code == "erc-label-not-connected"
-                && diagnostic.message == "Label is not connected at 63.5, 30.48"
+                && diagnostic.message == "Label not connected"
         }),
         "{diagnostics:#?}"
     );
