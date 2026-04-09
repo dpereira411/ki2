@@ -2531,7 +2531,10 @@ impl LiveReducedBasePin {
     // Upstream parity: local pin-owner analogue for the exercised pin branch of
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still updates a reduced live base-pin
     // owner instead of a real `SCH_PIN`, but the owner now decides whether to preserve setup-time
-    // pin-owned state, skip the chosen driver, and adopt the chosen live connection.
+    // pin-owned state, skip the chosen driver, and adopt the chosen live connection. Attached
+    // strong-driver pins now also widen their dedicated pin-driver connection owner onto that same
+    // chosen net identity while preserving explicit pin-owned local driver text, so active
+    // symbol-pin driver reads stop staying on pre-propagation setup snapshots after graph updates.
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
@@ -2561,6 +2564,13 @@ impl LiveReducedBasePin {
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
+
+        if refresh_attached_strong_driver_pins && self.driver.is_some() {
+            clone_live_connection_owner_into_live_base_pin_connection_owner(
+                &mut self.driver_connection.borrow_mut(),
+                &driver_connection.borrow(),
+            );
+        }
     }
 
     // Upstream parity: local base-pin owner analogue for the exercised chosen-driver self-update
@@ -17730,6 +17740,10 @@ mod tests {
         assert_eq!(reduced[0].base_pins[0].connection.local_name, "VCC");
         assert_eq!(reduced[0].base_pins[0].connection.full_local_name, "/SIG");
         assert_eq!(reduced[0].base_pins[0].connection.net_code, 1);
+        assert_eq!(reduced[0].drivers[1].connection.name, "/SIG");
+        assert_eq!(reduced[0].drivers[1].connection.local_name, "VCC");
+        assert_eq!(reduced[0].drivers[1].connection.full_local_name, "/SIG");
+        assert_eq!(reduced[0].drivers[1].connection.net_code, 1);
     }
 
     #[test]
