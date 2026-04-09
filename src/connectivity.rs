@@ -2832,7 +2832,9 @@ fn attach_live_strong_driver_owners_to_handles(
 
             let is_chosen_driver = chosen_identity
                 .as_ref()
-                .map(|identity| live_project_strong_driver_identity(&driver.borrow()).as_ref() == Some(identity))
+                .map(|identity| {
+                    live_project_strong_driver_identity(&driver.borrow()).as_ref() == Some(identity)
+                })
                 .unwrap_or_else(|| reduced_driver.connection == chosen_connection);
 
             if is_chosen_driver {
@@ -8960,6 +8962,20 @@ fn reduced_power_pin_driver_priority(
     Some(if lib_symbol.local_power { 5 } else { 6 })
 }
 
+// Upstream parity: reduced local analogue for the shown-name text KiCad seeds onto power-pin
+// `SCH_CONNECTION`s. This still runs on projected pin data instead of a live `SCH_PIN`, but it
+// now prefers the projected pin shown name before falling back to the symbol value, which keeps
+// exercised multi-pin power symbols on per-pin names instead of collapsing every power pin on the
+// symbol to one shared value string.
+fn reduced_power_pin_driver_text(symbol: &Symbol, pin: &ProjectedSymbolPin) -> Option<String> {
+    pin.name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && *name != "~")
+        .map(str::to_string)
+        .or_else(|| symbol_value_text(symbol))
+}
+
 fn symbol_value_text(symbol: &Symbol) -> Option<String> {
     symbol
         .properties
@@ -8980,8 +8996,10 @@ fn symbol_reference_text(symbol: &Symbol) -> Option<String> {
 // in `updateSymbolConnectivity()` / `updatePinConnectivity()` before `ResolveDrivers()`. This is
 // still reduced projected pin state rather than a live `SCH_PIN`, but it now gives every base-pin
 // owner a net-typed connection plus the exercised power-pin or default-net seeded name from setup
-// time, matching the upstream per-pin seed path more closely than starting most base pins as
-// `CONNECTION_TYPE::NONE` or leaving ordinary pins unnamed until later graph ownership attaches.
+// time. Power-pin seeding now prefers the projected pin shown name before the symbol value so
+// multi-pin power symbols keep per-pin names on their live base-pin owners, which matches the
+// upstream per-pin seed path more closely than starting most base pins as `CONNECTION_TYPE::NONE`
+// or leaving ordinary pins unnamed until later graph ownership attaches.
 fn reduced_seeded_symbol_pin_connection(
     symbol: &Symbol,
     pin: &ProjectedSymbolPin,
@@ -8999,7 +9017,7 @@ fn reduced_seeded_symbol_pin_connection(
     };
 
     if reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref()) == Some(6) {
-        if let Some(name) = symbol_value_text(symbol) {
+        if let Some(name) = reduced_power_pin_driver_text(symbol, pin) {
             connection.name = name.clone();
             connection.local_name = name.clone();
             connection.full_local_name = name;
@@ -9184,8 +9202,10 @@ fn reduced_local_driver_identity_to_project_identity(
 // Connected symbol pins and sheet pins are now emitted one projected item at a time instead of
 // collapsing each symbol or sheet to one local winner before ranking, which is closer to KiCad's
 // per-item `m_drivers` collection, and symbol-pin driver identity now also carries pin number so
-// stacked same-position pins do not collapse before live owner attachment. Remaining divergence is
-// the still-missing live connection object plus fuller power/bus-parent driver ownership.
+// stacked same-position pins do not collapse before live owner attachment. Reduced power-pin
+// drivers now also prefer the projected pin shown name before the symbol value so multi-pin power
+// symbols keep per-pin driver text through the shared graph owner. Remaining divergence is the
+// still-missing live connection object plus fuller power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
@@ -9283,7 +9303,7 @@ where
                     if let Some(priority) =
                         reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
                     {
-                        if let Some(text) = symbol_value_text(symbol) {
+                        if let Some(text) = reduced_power_pin_driver_text(symbol, pin) {
                             let local_power = symbol
                                 .lib_symbol
                                 .as_ref()
@@ -9359,6 +9379,8 @@ where
 //   ranking instead of collapsing each symbol or sheet to one local winner, which is closer to
 //   KiCad's per-item `ResolveDrivers()` candidate ordering, and symbol-pin identity now carries
 //   pin number so stacked same-position pins stay distinct through reduced candidate ranking
+// - reduced power-pin drivers now prefer the projected pin shown name before the symbol value so
+//   multi-pin power symbols keep per-pin driver text through reduced ranking
 // Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
 // driver ownership.
 fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
@@ -9430,7 +9452,7 @@ where
                     let candidate =
                         reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref())
                             .and_then(|priority| {
-                                symbol_value_text(symbol).map(|text| {
+                                reduced_power_pin_driver_text(symbol, pin).map(|text| {
                                     let source = if symbol
                                         .lib_symbol
                                         .as_ref()
@@ -11821,6 +11843,95 @@ mod tests {
 
         assert_eq!(driver_name, "VCC");
         assert_eq!(net_name.name, "SIG");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_driver_name_for_multi_pin_power_symbol_uses_per_pin_name() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_multi_power_pin_driver_name_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:SplitGround"
+      (power)
+      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "SplitGround" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "SplitGround_1_1"
+        (pin power_in line (at 0 0 180) (length 2.54)
+          (name "GND" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin power_in line (at 10 0 0) (length 2.54)
+          (name "AGND" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "power:SplitGround")
+    (uuid "73050000-0000-0000-0000-000000000311")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "SplitGround" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "VCC" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "SIG" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"##,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("power symbol");
+
+        let gnd_driver = crate::connectivity::resolve_reduced_project_driver_name_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [0.0, 0.0],
+            Some("GND"),
+            Some("1"),
+        )
+        .expect("gnd driver name");
+        let agnd_driver = crate::connectivity::resolve_reduced_project_driver_name_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [10.0, 0.0],
+            Some("AGND"),
+            Some("2"),
+        )
+        .expect("agnd driver name");
+
+        assert_eq!(gnd_driver, "GND");
+        assert_eq!(agnd_driver, "AGND");
 
         let _ = fs::remove_file(path);
     }
