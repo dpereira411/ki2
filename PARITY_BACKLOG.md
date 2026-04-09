@@ -825,6 +825,9 @@ Current status:
       - live bus-entry attachment now points at shared live bus-item owners, and projection derives
         the parent subgraph from that bus item owner instead of storing the attached bus only as a
         subgraph pointer/index edge
+      - live bus items now also carry a shared live connection owner from their parent subgraph,
+        so attached bus-entry items can follow an item-owned bus connection path instead of
+        hopping back through the parent subgraph just to read the bus connection
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
