@@ -320,6 +320,23 @@ pub(crate) fn reduced_project_strong_driver_full_name(driver: &ReducedProjectStr
     &driver.connection.name
 }
 
+pub(crate) fn reduced_project_subgraph_driver_identity(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<&ReducedProjectDriverIdentity> {
+    let chosen_name = subgraph
+        .driver_connection
+        .as_ref()
+        .map(|connection| connection.name.as_str())
+        .unwrap_or_else(|| subgraph.resolved_connection.name.as_str());
+
+    subgraph
+        .drivers
+        .iter()
+        .find(|driver| reduced_project_strong_driver_full_name(driver) == chosen_name)
+        .and_then(|driver| driver.identity.as_ref())
+        .or(subgraph.driver_identity.as_ref())
+}
+
 fn reduced_strong_drivers_into_live_handles(
     drivers: Vec<ReducedProjectStrongDriver>,
 ) -> Vec<LiveProjectStrongDriverHandle> {
@@ -5155,7 +5172,8 @@ fn refresh_reduced_global_secondary_driver_promotions(
         }
 
         for secondary_driver in reduced_subgraphs[subgraph_index].drivers.clone() {
-            if reduced_project_strong_driver_full_name(&secondary_driver) == chosen_connection.name {
+            if reduced_project_strong_driver_full_name(&secondary_driver) == chosen_connection.name
+            {
                 continue;
             }
 
@@ -6199,7 +6217,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     struct PendingProjectSubgraph {
         name: String,
         driver_connection: Option<ReducedProjectConnection>,
-        driver_identity: Option<ReducedProjectDriverIdentity>,
         drivers: Vec<ReducedProjectStrongDriver>,
         non_bus_driver_priority: Option<i32>,
         class: String,
@@ -6344,12 +6361,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         )
                     },
                 );
-                let driver_identity = driver_candidate.as_ref().and_then(|candidate| {
-                    candidate
-                        .identity
-                        .as_ref()
-                        .map(|identity| identity.to_project_identity(&sheet_path.schematic_path))
-                });
                 let strong_drivers = collect_reduced_strong_drivers(
                     schematic,
                     &sheet_path.schematic_path,
@@ -6465,7 +6476,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 pending_subgraphs.push(PendingProjectSubgraph {
                     name: entry.name.clone(),
                     driver_connection,
-                    driver_identity,
                     drivers: strong_drivers.clone(),
                     non_bus_driver_priority,
                     class: class.clone(),
@@ -6603,7 +6613,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
                 driver_connection: None,
-                driver_identity: None,
                 drivers: Vec::new(),
                 non_bus_driver_priority: None,
                 class: String::new(),
@@ -6727,13 +6736,20 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             resolved_full_local_name,
             pending.bus_members.clone(),
         );
+        let driver_identity = pending.driver_connection.as_ref().and_then(|connection| {
+            pending
+                .drivers
+                .iter()
+                .find(|driver| reduced_project_strong_driver_full_name(driver) == connection.name)
+                .and_then(|driver| driver.identity.clone())
+        });
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
             driver_connection: pending.driver_connection.clone(),
-            driver_identity: pending.driver_identity.clone(),
+            driver_identity,
             drivers: pending.drivers.clone(),
             non_bus_driver_priority: pending.non_bus_driver_priority,
             class: if pending.class.is_empty() {
@@ -8178,32 +8194,6 @@ enum ReducedLocalDriverIdentity {
     },
 }
 
-impl ReducedLocalDriverIdentity {
-    fn to_project_identity(
-        &self,
-        schematic_path: &std::path::Path,
-    ) -> ReducedProjectDriverIdentity {
-        match self {
-            ReducedLocalDriverIdentity::Label { at, kind } => ReducedProjectDriverIdentity::Label {
-                schematic_path: schematic_path.to_path_buf(),
-                at: *at,
-                kind: *kind,
-            },
-            ReducedLocalDriverIdentity::SheetPin { at } => ReducedProjectDriverIdentity::SheetPin {
-                schematic_path: schematic_path.to_path_buf(),
-                at: *at,
-            },
-            ReducedLocalDriverIdentity::SymbolPin { symbol_uuid, at } => {
-                ReducedProjectDriverIdentity::SymbolPin {
-                    schematic_path: schematic_path.to_path_buf(),
-                    symbol_uuid: symbol_uuid.clone(),
-                    at: *at,
-                }
-            }
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ReducedDriverNameCandidate {
     priority: i32,
@@ -8308,12 +8298,10 @@ where
                     }
                 })
                 .max_by(|lhs, rhs| {
-                    lhs.priority
-                        .cmp(&rhs.priority)
-                        .then_with(|| {
-                            reduced_project_strong_driver_name(rhs)
-                                .cmp(reduced_project_strong_driver_name(lhs))
-                        })
+                    lhs.priority.cmp(&rhs.priority).then_with(|| {
+                        reduced_project_strong_driver_name(rhs)
+                            .cmp(reduced_project_strong_driver_name(lhs))
+                    })
                 }),
             SchItem::Symbol(symbol) => {
                 let unit_pins = projected_symbol_pin_info(symbol);
@@ -8375,12 +8363,9 @@ where
         .collect::<Vec<_>>();
 
     drivers.sort_by(|lhs, rhs| {
-        rhs.priority
-            .cmp(&lhs.priority)
-            .then_with(|| {
-                reduced_project_strong_driver_name(lhs)
-                    .cmp(reduced_project_strong_driver_name(rhs))
-            })
+        rhs.priority.cmp(&lhs.priority).then_with(|| {
+            reduced_project_strong_driver_name(lhs).cmp(reduced_project_strong_driver_name(rhs))
+        })
     });
     drivers
 }
@@ -10460,14 +10445,9 @@ mod tests {
                 .full_local_name,
             child_sheet.instance_path
         );
-        assert!(
-            by_point
-                .drivers
-                .iter()
-                .any(|driver| {
-                    super::reduced_project_strong_driver_name(driver) == child_sheet.instance_path
-                })
-        );
+        assert!(by_point.drivers.iter().any(|driver| {
+            super::reduced_project_strong_driver_name(driver) == child_sheet.instance_path
+        }));
 
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);

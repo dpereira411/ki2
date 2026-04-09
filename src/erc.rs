@@ -75,9 +75,7 @@ fn graph_run_erc_subgraphs(
     collect_reduced_project_subgraphs(project, false)
         .into_iter()
         .filter(|subgraph| {
-            subgraph
-                .driver_identity
-                .as_ref()
+            crate::connectivity::reduced_project_subgraph_driver_identity(subgraph)
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
         })
         .collect()
@@ -1740,9 +1738,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             };
 
-            if subgraph
-                .driver_identity
-                .as_ref()
+            if crate::connectivity::reduced_project_subgraph_driver_identity(&subgraph)
                 .is_some_and(|identity| !seen_driver_identities.insert(identity.clone()))
             {
                 continue;

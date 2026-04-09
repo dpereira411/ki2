@@ -772,6 +772,9 @@ Current status:
         live driver-item objects
       - reduced-path ERC and reduced-path driver filtering now also read driver names through those
         connection owners instead of a separate reduced strong-driver string cache
+      - reduced/ERC reused-screen driver-instance de-dup now derives chosen driver identity from
+        the chosen driver connection plus the owned strong-driver list instead of a separate pending
+        subgraph identity cache
       - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
         exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
