@@ -837,6 +837,8 @@ Current status:
         on the symbol-pin driver owner instead of routing that state through the optional base-pin
         carrier
       - live base pins now always carry a live connection owner instead of an optional carrier
+      - attached symbol-pin drivers now also seed the base-pin live connection owner from the
+        pin-owned driver connection instead of leaving that owner blank
       - remaining gap is the richer per-pin update/selection logic on that owner for multi-pin
         power-pin/base-pin branches
     - concrete next unblock path:

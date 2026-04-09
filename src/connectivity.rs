@@ -2553,8 +2553,10 @@ fn attach_live_hierarchy_links_to_handles(
 // a detached copied struct, and now also attaches those item owners back onto the same shared live
 // strong-driver owners used by the subgraph driver list. Active strong-driver connection reads now
 // prefer those shared item owners, and symbol-pin strong drivers now carry their own live
-// connection owner directly on the symbol-pin driver owner instead of routing that state through
-// the optional base-pin item connection carrier. Live strong drivers now always carry their
+// connection owner directly on the symbol-pin driver owner instead of routing active reads through
+// the base-pin item connection carrier. The attached base pin now also seeds its own live
+// connection owner from that symbol-pin driver so later per-pin item branches have a real owner to
+// update without borrowing the whole subgraph driver. Live strong drivers now always carry their
 // kind/priority/connection through one owner graph, with unattached drivers living on a floating
 // owner until attachment upgrades them to a concrete item owner. Remaining divergence is the
 // fuller live driver-item object graph and the still-missing live `SCH_CONNECTION` /
@@ -2648,6 +2650,10 @@ fn attach_live_strong_driver_owners_to_handles(
                         key.symbol_uuid == symbol_uuid && key.at == at
                     })
                     .map(|base_pin| {
+                        base_pin
+                            .borrow()
+                            .connection
+                            .clone_from(&floating_connection);
                         base_pin.borrow_mut().driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SymbolPin {
                             owner: Rc::downgrade(base_pin),
@@ -12102,8 +12108,9 @@ mod tests {
                 assert_eq!(owner.borrow().key.at, PointKey(10, 20));
                 assert_eq!(
                     owner.borrow().connection.borrow().connection_type,
-                    super::ReducedProjectConnectionType::None
+                    super::ReducedProjectConnectionType::Net
                 );
+                assert_eq!(owner.borrow().connection.name(), "PWR");
                 let driver = owner
                     .borrow()
                     .driver
