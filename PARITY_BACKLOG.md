@@ -810,6 +810,9 @@ Current status:
         owner directly instead of round-tripping the whole connection through a reduced snapshot;
         nested bus-member refresh still snapshots one source member handle at the alias boundary
         until the fuller live member/pointer graph exists
+      - active strong-driver connection/name reads now prefer shared live item owners, including
+        symbol-pin drivers through widened base-pin connection ownership, instead of leaning on a
+        parallel driver-side connection carrier on the active path
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
