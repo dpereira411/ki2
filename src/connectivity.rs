@@ -3512,6 +3512,10 @@ impl LiveReducedSubgraph {
                     continue;
                 }
 
+                if live_subgraph_has_local_driver(&handle.borrow()) {
+                    continue;
+                }
+
                 if !secondary_is_global && handle.borrow().sheet_instance_path != start_sheet {
                     continue;
                 }
@@ -8267,6 +8271,13 @@ fn rule_area_contains_connected_component(
     })
 }
 
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority label branches
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for reduced label-kind priority values
+// local_only_reason: none
+// replaced_by: fuller live `SCH_LABEL_BASE` driver item owner
+// remove_when: label priority reads directly from live KiCad-shaped item owners
 fn reduced_label_driver_priority(label: &Label) -> i32 {
     match label.kind {
         LabelKind::Global => 7,
