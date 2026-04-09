@@ -4380,7 +4380,7 @@ fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 
                 subgraph.driver_connection.borrow().connection_type,
                 ReducedProjectConnectionType::None
             ))
-            .then_some(1)
+            .then_some(reduced_pin_driver_priority())
         })
         .unwrap_or(0)
 }
@@ -8281,11 +8281,22 @@ fn rule_area_contains_connected_component(
 // remove_when: label priority reads directly from live KiCad-shaped item owners
 fn reduced_label_driver_priority(label: &Label) -> i32 {
     match label.kind {
-        LabelKind::Global => 7,
-        LabelKind::Local => 4,
+        LabelKind::Global => reduced_global_label_driver_priority(),
+        LabelKind::Local => reduced_local_label_driver_priority(),
         LabelKind::Hierarchical => reduced_hierarchical_label_driver_priority(),
-        LabelKind::Directive => 0,
+        LabelKind::Directive => reduced_none_driver_priority(),
     }
+}
+
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority default/none branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_ITEM` driver item owner
+// remove_when: driver priority reads directly from live KiCad-shaped item owners
+fn reduced_none_driver_priority() -> i32 {
+    0
 }
 
 // upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_HIER_LABEL_T branch
@@ -8297,6 +8308,28 @@ fn reduced_label_driver_priority(label: &Label) -> i32 {
 // remove_when: hierarchical-label priority reads directly from live KiCad-shaped item owners
 fn reduced_hierarchical_label_driver_priority() -> i32 {
     3
+}
+
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_LABEL_T branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_LABEL` driver item owner
+// remove_when: local-label priority reads directly from live KiCad-shaped item owners
+fn reduced_local_label_driver_priority() -> i32 {
+    4
+}
+
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_GLOBAL_LABEL_T branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_GLOBALLABEL` driver item owner
+// remove_when: global-label priority reads directly from live KiCad-shaped item owners
+fn reduced_global_label_driver_priority() -> i32 {
+    7
 }
 
 // upstream: CONNECTION_SUBGRAPH::ResolveDrivers candidate_cmp sheet-pin shape branch
@@ -8349,6 +8382,17 @@ fn reduced_global_power_pin_driver_priority() -> i32 {
     6
 }
 
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority local power-pin branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_PIN` driver item owner
+// remove_when: local-power priority reads directly from live KiCad-shaped item owners
+fn reduced_local_power_pin_driver_priority() -> i32 {
+    5
+}
+
 fn reduced_power_pin_driver_priority(
     symbol: &Symbol,
     electrical_type: Option<&str>,
@@ -8359,7 +8403,11 @@ fn reduced_power_pin_driver_priority(
         return None;
     }
 
-    Some(if lib_symbol.local_power { 5 } else { 6 })
+    Some(if lib_symbol.local_power {
+        reduced_local_power_pin_driver_priority()
+    } else {
+        reduced_global_power_pin_driver_priority()
+    })
 }
 
 // Upstream parity: reduced local analogue for the shown-name text KiCad seeds onto power-pin
