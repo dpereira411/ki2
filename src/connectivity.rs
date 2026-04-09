@@ -3383,13 +3383,13 @@ impl LiveReducedSubgraph {
 
         let mut best_handle = start.clone();
         let mut highest = live_reduced_subgraph_driver_priority(&start.borrow());
-        let mut best_is_strong = highest >= 3;
+        let mut best_is_strong = highest >= reduced_hierarchical_label_driver_priority();
         let mut best_name = start.borrow().driver_connection.borrow().name.clone();
 
-        if highest < 6 {
+        if highest < reduced_global_power_pin_driver_priority() {
             for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
                 let priority = live_reduced_subgraph_driver_priority(&handle.borrow());
-                let candidate_strong = priority >= 3;
+                let candidate_strong = priority >= reduced_hierarchical_label_driver_priority();
                 let candidate_name = handle.borrow().driver_connection.borrow().name.clone();
                 let candidate_depth =
                     reduced_sheet_path_depth(&handle.borrow().sheet_instance_path);
@@ -3398,7 +3398,7 @@ impl LiveReducedSubgraph {
                 let shorter_path = candidate_depth < best_depth;
                 let as_good_path = candidate_depth <= best_depth;
 
-                if (priority >= 6)
+                if (priority >= reduced_global_power_pin_driver_priority())
                     || (!best_is_strong && candidate_strong)
                     || (priority > highest && candidate_strong)
                     || (priority == highest && candidate_strong && shorter_path)
@@ -3505,7 +3505,8 @@ impl LiveReducedSubgraph {
                 continue;
             }
 
-            let secondary_is_global = secondary_driver.borrow().priority() >= 6;
+            let secondary_is_global =
+                secondary_driver.borrow().priority() >= reduced_global_power_pin_driver_priority();
 
             for handle in live_subgraphs.iter() {
                 if Rc::ptr_eq(handle, start) {
@@ -3743,7 +3744,9 @@ impl LiveReducedSubgraph {
                     }
                 }
 
-                if live_reduced_subgraph_driver_priority(&neighbor_handle.borrow()) >= 6 {
+                if live_reduced_subgraph_driver_priority(&neighbor_handle.borrow())
+                    >= reduced_global_power_pin_driver_priority()
+                {
                     let old_member = current_link_member.clone();
                     let refreshed_member = {
                         let parent = parent_handle.borrow();
@@ -4360,7 +4363,7 @@ fn live_subgraph_strong_driver_count(subgraph: &LiveReducedSubgraph) -> usize {
 }
 
 fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
-    live_reduced_subgraph_driver_priority(subgraph) < 6
+    live_reduced_subgraph_driver_priority(subgraph) < reduced_global_power_pin_driver_priority()
 }
 
 fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
@@ -8326,6 +8329,28 @@ fn reduced_sheet_pin_driver_priority() -> i32 {
     2
 }
 
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_PIN_T non-power branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_PIN` driver item owner
+// remove_when: pin priority reads directly from live KiCad-shaped item owners
+fn reduced_pin_driver_priority() -> i32 {
+    1
+}
+
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority global power-pin branch
+// parity_status: same
+// local_kind: upstream-native
+// divergence: none for the reduced priority value
+// local_only_reason: none
+// replaced_by: fuller live `SCH_PIN` driver item owner
+// remove_when: global-power priority reads directly from live KiCad-shaped item owners
+fn reduced_global_power_pin_driver_priority() -> i32 {
+    6
+}
+
 fn reduced_power_pin_driver_priority(
     symbol: &Symbol,
     electrical_type: Option<&str>,
@@ -8935,7 +8960,7 @@ where
                             .or_else(|| {
                                 reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
                                     .map(|text| ReducedDriverNameCandidate {
-                                        priority: 1,
+                                        priority: reduced_pin_driver_priority(),
                                         sheet_pin_rank: 0,
                                         text,
                                         source: ReducedNetNameSource::SymbolPinDefault,
