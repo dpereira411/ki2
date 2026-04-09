@@ -969,6 +969,8 @@ Current status:
       - the duplicate value-owned post-propagation item-refresh compatibility path was also
         redirected onto that same handle graph and removed, so exercised live item refresh now
         goes through one shared handle-based owner path in both active and compatibility coverage
+      - live handle construction now also builds shared live subgraph handles directly instead of
+        first building a temporary value-owned `Vec<LiveReducedSubgraph>` and wrapping it later
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale

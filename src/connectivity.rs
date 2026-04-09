@@ -3034,14 +3034,155 @@ fn live_subgraph_is_self_driven_sheet_pin(subgraph: &LiveReducedSubgraph) -> boo
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
 // graph propagation. This still wraps the existing reduced live subgraph carrier instead of a full
-// local `CONNECTION_SUBGRAPH` analogue, but it moves the active recursive graph build off whole
-// value-owned subgraph moves and onto shared live handles.
+// local `CONNECTION_SUBGRAPH` analogue, but it now constructs the active graph directly as shared
+// live handles instead of first building a temporary value-owned live-subgraph vector.
 fn build_live_reduced_subgraph_handles(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraphHandle> {
-    let handles = build_live_reduced_subgraphs(reduced_subgraphs)
-        .into_iter()
-        .map(|subgraph| Rc::new(RefCell::new(subgraph)))
+    let handles = reduced_subgraphs
+        .iter()
+        .enumerate()
+        .map(|(_index, subgraph)| {
+            Rc::new(RefCell::new(LiveReducedSubgraph {
+                #[cfg(test)]
+                source_index: _index,
+                driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
+                    subgraph,
+                )),
+                drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
+                chosen_driver: None,
+                sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                bus_neighbor_links: subgraph
+                    .bus_neighbor_links
+                    .iter()
+                    .cloned()
+                    .map(|link| {
+                        Rc::new(RefCell::new(LiveReducedSubgraphLink {
+                            member: Rc::new(RefCell::new(link.member.into())),
+                            #[cfg(test)]
+                            subgraph_index: link.subgraph_index,
+                            subgraph_handle: None,
+                        }))
+                    })
+                    .collect(),
+                bus_parent_links: subgraph
+                    .bus_parent_links
+                    .iter()
+                    .cloned()
+                    .map(|link| {
+                        Rc::new(RefCell::new(LiveReducedSubgraphLink {
+                            member: Rc::new(RefCell::new(link.member.into())),
+                            #[cfg(test)]
+                            subgraph_index: link.subgraph_index,
+                            subgraph_handle: None,
+                        }))
+                    })
+                    .collect(),
+                #[cfg(test)]
+                bus_parent_indexes: subgraph.bus_parent_indexes.clone(),
+                bus_parent_handles: Vec::new(),
+                base_pins: subgraph
+                    .base_pins
+                    .iter()
+                    .cloned()
+                    .map(|pin| {
+                        Rc::new(RefCell::new(LiveReducedBasePin {
+                            pin: LiveReducedBasePinPayload {
+                                schematic_path: pin.schematic_path.clone(),
+                                key: pin.key.clone(),
+                                number: pin.number.clone(),
+                                electrical_type: pin.electrical_type.clone(),
+                            },
+                            connection: LiveReducedConnection::new(pin.connection.clone()),
+                            driver_connection: LiveReducedConnection::new(pin.connection.clone()),
+                            driver: None,
+                        }))
+                    })
+                    .collect(),
+                #[cfg(test)]
+                hier_parent_index: subgraph.hier_parent_index,
+                #[cfg(test)]
+                hier_child_indexes: subgraph.hier_child_indexes.clone(),
+                hier_parent_handle: None,
+                hier_child_handles: Vec::new(),
+                label_links: subgraph
+                    .label_links
+                    .iter()
+                    .cloned()
+                    .map(|link| {
+                        Rc::new(RefCell::new(LiveReducedLabelLink {
+                            schematic_path: link.schematic_path.clone(),
+                            at: link.at,
+                            kind: link.kind,
+                            connection: LiveReducedConnection::new(link.connection),
+                            driver: None,
+                        }))
+                    })
+                    .collect(),
+                hier_sheet_pins: subgraph
+                    .hier_sheet_pins
+                    .iter()
+                    .cloned()
+                    .map(|pin| {
+                        Rc::new(RefCell::new(LiveReducedHierSheetPinLink {
+                            schematic_path: pin.schematic_path.clone(),
+                            at: pin.at,
+                            child_sheet_uuid: pin.child_sheet_uuid,
+                            connection: LiveReducedConnection::new(pin.connection),
+                            driver: None,
+                        }))
+                    })
+                    .collect(),
+                hier_ports: subgraph
+                    .hier_ports
+                    .iter()
+                    .cloned()
+                    .map(|port| {
+                        Rc::new(RefCell::new(LiveReducedHierPortLink {
+                            schematic_path: port.schematic_path.clone(),
+                            at: port.at,
+                            connection: LiveReducedConnection::new(port.connection),
+                            driver: None,
+                        }))
+                    })
+                    .collect(),
+                bus_items: subgraph
+                    .bus_items
+                    .iter()
+                    .cloned()
+                    .map(|item| {
+                        Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
+                            start: item.start,
+                            end: item.end,
+                            is_bus_entry: item.is_bus_entry,
+                            connection: None,
+                            #[cfg(test)]
+                            connected_bus_connection: None,
+                            connected_bus_item_handle: None,
+                            parent_subgraph_handle: None,
+                        }))
+                    })
+                    .collect(),
+                wire_items: subgraph
+                    .wire_items
+                    .iter()
+                    .cloned()
+                    .map(|item| {
+                        Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
+                            start: item.start,
+                            end: item.end,
+                            is_bus_entry: item.is_bus_entry,
+                            connection: None,
+                            #[cfg(test)]
+                            connected_bus_connection: None,
+                            connected_bus_item_handle: None,
+                            parent_subgraph_handle: None,
+                        }))
+                    })
+                    .collect(),
+                dirty: true,
+            }))
+        })
         .collect::<Vec<_>>();
     attach_live_subgraph_links_to_handles(&handles, reduced_subgraphs);
     attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
@@ -3325,176 +3466,6 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
     handle.borrow_mut().refresh_item_connections_from_driver();
 }
 
-// Upstream parity: reduced local builder for live graph-owned text and hierarchy link connection
-// carriers. This is still not pointer-shared `SCH_ITEM` ownership, but it lets the live graph keep
-// per-item connection state on shared local item owners instead of projecting every
-// label/sheet-pin/hier-port/wire-item from the chosen subgraph driver only at the end of
-// propagation. The active payload now also keeps shared live base-pin payload directly instead of
-// a copied base-pin count summary, seeds every base pin from an `updatePinConnectivity()`-style
-// net connection at build time, derives driver priority from the shared live driver owner instead
-// of caching one more copied summary field, and attaches the exercised label/sheet-pin/symbol-pin
-// strong drivers back onto shared live item owners via the same shared live strong-driver owners
-// used by the subgraph driver list. Those live strong-driver owners now also keep a live
-// connection carrier instead of parallel live name fields, and symbol-pin driver identity now
-// derives from the live base-pin owner payload instead of copied per-pin side state. Remaining
-// divergence is the still-missing fuller live driver-item object graph.
-fn build_live_reduced_subgraphs(
-    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
-) -> Vec<LiveReducedSubgraph> {
-    let live_subgraphs = reduced_subgraphs
-        .iter()
-        .enumerate()
-        .map(|(_index, subgraph)| LiveReducedSubgraph {
-            #[cfg(test)]
-            source_index: _index,
-            driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
-                subgraph,
-            )),
-            drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
-            chosen_driver: None,
-            sheet_instance_path: subgraph.sheet_instance_path.clone(),
-            bus_neighbor_links: subgraph
-                .bus_neighbor_links
-                .iter()
-                .cloned()
-                .map(|link| {
-                    Rc::new(RefCell::new(LiveReducedSubgraphLink {
-                        member: Rc::new(RefCell::new(link.member.into())),
-                        #[cfg(test)]
-                        subgraph_index: link.subgraph_index,
-                        subgraph_handle: None,
-                    }))
-                })
-                .collect(),
-            bus_parent_links: subgraph
-                .bus_parent_links
-                .iter()
-                .cloned()
-                .map(|link| {
-                    Rc::new(RefCell::new(LiveReducedSubgraphLink {
-                        member: Rc::new(RefCell::new(link.member.into())),
-                        #[cfg(test)]
-                        subgraph_index: link.subgraph_index,
-                        subgraph_handle: None,
-                    }))
-                })
-                .collect(),
-            #[cfg(test)]
-            bus_parent_indexes: subgraph.bus_parent_indexes.clone(),
-            bus_parent_handles: Vec::new(),
-            base_pins: subgraph
-                .base_pins
-                .iter()
-                .cloned()
-                .map(|pin| {
-                    Rc::new(RefCell::new(LiveReducedBasePin {
-                        pin: LiveReducedBasePinPayload {
-                            schematic_path: pin.schematic_path.clone(),
-                            key: pin.key.clone(),
-                            number: pin.number.clone(),
-                            electrical_type: pin.electrical_type.clone(),
-                        },
-                        connection: LiveReducedConnection::new(pin.connection.clone()),
-                        driver_connection: LiveReducedConnection::new(pin.connection.clone()),
-                        driver: None,
-                    }))
-                })
-                .collect(),
-            #[cfg(test)]
-            hier_parent_index: subgraph.hier_parent_index,
-            #[cfg(test)]
-            hier_child_indexes: subgraph.hier_child_indexes.clone(),
-            hier_parent_handle: None,
-            hier_child_handles: Vec::new(),
-            label_links: subgraph
-                .label_links
-                .iter()
-                .cloned()
-                .map(|link| {
-                    Rc::new(RefCell::new(LiveReducedLabelLink {
-                        schematic_path: link.schematic_path.clone(),
-                        at: link.at,
-                        kind: link.kind,
-                        connection: LiveReducedConnection::new(link.connection),
-                        driver: None,
-                    }))
-                })
-                .collect(),
-            hier_sheet_pins: subgraph
-                .hier_sheet_pins
-                .iter()
-                .cloned()
-                .map(|pin| {
-                    Rc::new(RefCell::new(LiveReducedHierSheetPinLink {
-                        schematic_path: pin.schematic_path.clone(),
-                        at: pin.at,
-                        child_sheet_uuid: pin.child_sheet_uuid,
-                        connection: LiveReducedConnection::new(pin.connection),
-                        driver: None,
-                    }))
-                })
-                .collect(),
-            hier_ports: subgraph
-                .hier_ports
-                .iter()
-                .cloned()
-                .map(|port| {
-                    Rc::new(RefCell::new(LiveReducedHierPortLink {
-                        schematic_path: port.schematic_path.clone(),
-                        at: port.at,
-                        connection: LiveReducedConnection::new(port.connection),
-                        driver: None,
-                    }))
-                })
-                .collect(),
-            bus_items: subgraph
-                .bus_items
-                .iter()
-                .cloned()
-                .map(|item| {
-                    Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
-                        start: item.start,
-                        end: item.end,
-                        is_bus_entry: item.is_bus_entry,
-                        connection: None,
-                        #[cfg(test)]
-                        connected_bus_connection: None,
-                        connected_bus_item_handle: None,
-                        parent_subgraph_handle: None,
-                    }))
-                })
-                .collect(),
-            wire_items: subgraph
-                .wire_items
-                .iter()
-                .cloned()
-                .map(|item| {
-                    Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
-                        start: item.start,
-                        end: item.end,
-                        is_bus_entry: item.is_bus_entry,
-                        connection: None,
-                        #[cfg(test)]
-                        connected_bus_connection: None,
-                        connected_bus_item_handle: None,
-                        parent_subgraph_handle: None,
-                    }))
-                })
-                .collect(),
-            dirty: true,
-        })
-        .collect::<Vec<_>>();
-
-    #[cfg(test)]
-    {
-        let mut live_subgraphs = live_subgraphs;
-        attach_live_connected_bus_items(&mut live_subgraphs);
-        live_subgraphs
-    }
-    #[cfg(not(test))]
-    live_subgraphs
-}
-
 // Upstream parity: local bridge for connected-bus ownership on the shared live subgraph graph.
 // This still uses reduced wire geometry instead of real `SCH_BUS_WIRE_ENTRY` / `SCH_LINE*`
 // pointers, but bus and wire items on the active live graph now keep shared local item owners,
@@ -3587,79 +3558,6 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
             drop(item);
             let mut item = item_handle.borrow_mut();
             item.connected_bus_item_handle = attached_bus;
-        }
-    }
-}
-
-// Upstream parity: reduced local analogue for the bus-entry connected-bus item owner during live
-// graph build. This still identifies the attached bus from reduced wire geometry and stores a live
-// local connection owner instead of real `SCH_LINE*` item pointers, but it
-// moves connected-bus ownership onto the live graph objects so later live graph updates can follow
-// the attached bus connection owner directly. Live wire-item ownership is now shared on the active
-// live graph instead of copied per-subgraph wrapper state. Remaining divergence is that the
-// wire-item payload itself is still a reduced carrier rather than a fuller live item/pointer
-// object.
-#[cfg(test)]
-fn attach_live_connected_bus_items(live_subgraphs: &mut [LiveReducedSubgraph]) {
-    let bus_subgraphs = live_subgraphs
-        .iter()
-        .enumerate()
-        .filter(|(_, subgraph)| !subgraph.bus_items.is_empty())
-        .map(|(index, subgraph)| {
-            (
-                index,
-                subgraph.sheet_instance_path.clone(),
-                subgraph.bus_items.clone(),
-                subgraph.driver_connection.clone(),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    for subgraph in live_subgraphs.iter_mut() {
-        for item_handle in &subgraph.wire_items {
-            if !item_handle.borrow().is_bus_entry {
-                continue;
-            }
-            let item = item_handle.borrow();
-
-            #[cfg(test)]
-            let attached_bus = bus_subgraphs
-                .iter()
-                .find(|(_, sheet_instance_path, bus_items, _)| {
-                    *sheet_instance_path == subgraph.sheet_instance_path
-                        && bus_items.iter().any(|bus_item| {
-                            let bus_item = bus_item.borrow();
-                            point_on_wire_segment(
-                                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
-                                [
-                                    f64::from_bits(bus_item.start.0),
-                                    f64::from_bits(bus_item.start.1),
-                                ],
-                                [
-                                    f64::from_bits(bus_item.end.0),
-                                    f64::from_bits(bus_item.end.1),
-                                ],
-                            ) || point_on_wire_segment(
-                                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
-                                [
-                                    f64::from_bits(bus_item.start.0),
-                                    f64::from_bits(bus_item.start.1),
-                                ],
-                                [
-                                    f64::from_bits(bus_item.end.0),
-                                    f64::from_bits(bus_item.end.1),
-                                ],
-                            )
-                        })
-                })
-                .map(|(index, _, _, connection)| (*index, connection.clone()));
-
-            drop(item);
-            #[cfg(test)]
-            {
-                item_handle.borrow_mut().connected_bus_connection =
-                    attached_bus.map(|(_, connection)| connection);
-            }
         }
     }
 }
