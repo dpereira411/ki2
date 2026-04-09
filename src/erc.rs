@@ -1895,7 +1895,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 severity: Severity::Error,
                 code: "erc-no-connect-connected",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: "No-connect marker is attached to a connected net".to_string(),
+                message: "A pin with a \"no connection\" flag is connected".to_string(),
                 path: Some(sheet_path.schematic_path.clone()),
                 span: None,
                 line: None,

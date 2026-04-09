@@ -5770,7 +5770,7 @@ fn erc_reports_connected_no_connect_markers_across_named_subgraphs() {
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].message,
-        "No-connect marker is attached to a connected net"
+        "A pin with a \"no connection\" flag is connected"
     );
 
     let _ = fs::remove_file(path);
