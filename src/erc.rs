@@ -1,9 +1,9 @@
 use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_connection_points, collect_reduced_label_component_snapshots,
-    collect_reduced_project_net_map, collect_reduced_project_subgraphs,
-    collect_reduced_project_subgraphs_by_name, collect_reduced_project_symbol_pins,
-    projected_symbol_pin_info, reduced_bus_member_full_local_names,
+    collect_reduced_project_net_graph, collect_reduced_project_net_map,
+    collect_reduced_project_subgraphs, collect_reduced_project_subgraphs_by_name,
+    collect_reduced_project_symbol_pins, reduced_bus_member_full_local_names,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index,
     resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_no_connect,
 };
@@ -3524,11 +3524,21 @@ pub fn check_footprint_filters(project: &SchematicProject) -> Vec<Diagnostic> {
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestStackedPinNotation()`. This is not
-// a 1:1 KiCad marker pass because the Rust tree still validates projected lib-pin numbers instead
-// of live `SCH_PIN` objects, but it preserves the exercised bracketed stacked-pin syntax rule and
-// only warns on numbers that resemble stacked notation but do not parse like KiCad's helper.
+// a 1:1 KiCad marker pass because the Rust tree still validates reduced graph-owned pin payloads
+// instead of live `SCH_PIN` objects, but it now consumes the shared graph-owned per-symbol pin
+// inventory instead of re-projecting symbol pins ad hoc on the ERC path, preserves the exercised
+// bracketed stacked-pin syntax rule, and only warns on numbers that resemble stacked notation but
+// do not parse like KiCad's helper. Remaining divergence is the fuller live pin object layer and
+// marker attachment path.
 pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = collect_reduced_project_net_graph(
+        &project.schematics,
+        &project.sheet_paths,
+        project.project.as_ref(),
+        project.current_variant(),
+        false,
+    );
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -3539,7 +3549,7 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
                 continue;
             };
 
-            for pin in projected_symbol_pin_info(symbol) {
+            for pin in collect_reduced_project_symbol_pins(&graph, sheet_path, symbol) {
                 let Some(number) = pin.number.as_deref() else {
                     continue;
                 };
