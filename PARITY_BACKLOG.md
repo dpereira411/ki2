@@ -976,6 +976,8 @@ Current status:
         graph
       - same-name cache entry insertion/recache now also goes through the live subgraph owner
         instead of rebuilding cache keys from free helper code around the active handle graph
+      - reduced bus parent/neighbor link projection now also goes through the live link owner
+        instead of a free helper rebuilding member + target-subgraph projection around it
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale

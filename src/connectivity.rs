@@ -2668,6 +2668,40 @@ impl Ord for LiveReducedSubgraphLink {
     }
 }
 
+impl LiveReducedSubgraphLink {
+    // Upstream parity: local live-link analogue for the reduced bus-link projection boundary after
+    // graph mutation. Consumers still read reduced parent/neighbor links, but the shared live link
+    // owner now decides which member and target subgraph index it projects instead of leaving that
+    // boundary logic in a free helper around the owner graph.
+    fn projection_index(&self, live_subgraphs: &[LiveReducedSubgraphHandle]) -> usize {
+        self.subgraph_handle
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .map(|subgraph| live_subgraph_projection_index(live_subgraphs, &subgraph))
+            .unwrap_or_else(|| {
+                #[cfg(test)]
+                {
+                    self.subgraph_index
+                }
+
+                #[cfg(not(test))]
+                {
+                    unreachable!("active live bus link lookup requires an attached subgraph handle")
+                }
+            })
+    }
+
+    fn project_onto_reduced(
+        &self,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+    ) -> ReducedProjectBusNeighborLink {
+        ReducedProjectBusNeighborLink {
+            member: live_bus_member_handle_snapshot(&self.member),
+            subgraph_index: self.projection_index(live_subgraphs),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraph {
     #[cfg(test)]
@@ -3630,52 +3664,11 @@ fn attach_live_connected_bus_items_to_handles(live_subgraphs: &[LiveReducedSubgr
     }
 }
 
-fn reduced_project_bus_link_from_live(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    link: &LiveReducedSubgraphLinkHandle,
-) -> ReducedProjectBusNeighborLink {
-    let link = link.borrow();
-    ReducedProjectBusNeighborLink {
-        member: live_bus_member_handle_snapshot(&link.member),
-        subgraph_index: link
-            .subgraph_handle
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .map(|subgraph| live_subgraph_projection_index(live_subgraphs, &subgraph))
-            .unwrap_or_else(|| {
-                #[cfg(test)]
-                {
-                    link.subgraph_index
-                }
-
-                #[cfg(not(test))]
-                {
-                    unreachable!("live bus link projection requires an attached subgraph handle")
-                }
-            }),
-    }
-}
-
 fn live_subgraph_link_index(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     link: &LiveReducedSubgraphLinkHandle,
 ) -> usize {
-    let link = link.borrow();
-    link.subgraph_handle
-        .as_ref()
-        .and_then(Weak::upgrade)
-        .map(|subgraph| live_subgraph_projection_index(live_subgraphs, &subgraph))
-        .unwrap_or_else(|| {
-            #[cfg(test)]
-            {
-                link.subgraph_index
-            }
-
-            #[cfg(not(test))]
-            {
-                unreachable!("active live bus link lookup requires an attached subgraph handle")
-            }
-        })
+    link.borrow().projection_index(live_subgraphs)
 }
 
 // Upstream parity: active live graph traversal should follow the attached live subgraph topology,
@@ -3859,12 +3852,12 @@ fn apply_live_reduced_driver_connections_from_handles(
         reduced.bus_neighbor_links = live
             .bus_neighbor_links
             .iter()
-            .map(|link| reduced_project_bus_link_from_live(live_subgraphs, link))
+            .map(|link| link.borrow().project_onto_reduced(live_subgraphs))
             .collect();
         reduced.bus_parent_links = live
             .bus_parent_links
             .iter()
-            .map(|link| reduced_project_bus_link_from_live(live_subgraphs, link))
+            .map(|link| link.borrow().project_onto_reduced(live_subgraphs))
             .collect();
         let (hier_parent_index, hier_child_indexes) =
             reduced_project_hierarchy_indexes_from_live_subgraph(live_subgraphs, &live);
