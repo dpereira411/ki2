@@ -397,7 +397,7 @@ fn apply_configured_rule_severity(
         "erc-power-pin-not-driven" => {
             configured_rule_severity(project, "power_pin_not_driven", Some(Severity::Error))
         }
-        "erc-driver-conflict" => {
+        "erc-multiple-net-names" => {
             configured_rule_severity(project, "multiple_net_names", Some(Severity::Warning))
         }
         "erc-single-global-label" => configured_rule_severity(project, "single_global_label", None),
@@ -3213,7 +3213,7 @@ pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
 
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
-            code: "erc-driver-conflict",
+            code: "erc-multiple-net-names",
             kind: crate::diagnostic::DiagnosticKind::Validation,
             message: format!(
                 "Both {primary_name} and {secondary_name} are attached to the same items; {primary_name} will be used in the netlist"

@@ -3075,7 +3075,7 @@ fn erc_reports_connected_driver_conflicts() {
     let diagnostics = erc::run(&project);
 
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "erc-driver-conflict"
+        diagnostic.code == "erc-multiple-net-names"
             && diagnostic.severity == ki2::diagnostic::Severity::Warning
             && diagnostic
                 .message
@@ -3130,7 +3130,7 @@ fn erc_ignores_sheet_pin_only_secondary_driver_names() {
     assert!(
         !diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "erc-driver-conflict"),
+            .any(|diagnostic| diagnostic.code == "erc-multiple-net-names"),
         "sheet-pin-only secondary drivers should not emit driver conflicts"
     );
 
@@ -6299,7 +6299,7 @@ fn erc_ignores_false_bus_entry_warnings_in_issue12814_drive_fixture() {
     assert!(
         diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code != "erc-driver-conflict"),
+            .all(|diagnostic| diagnostic.code != "erc-multiple-net-names"),
         "{diagnostics:#?}"
     );
     assert!(
