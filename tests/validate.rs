@@ -6111,6 +6111,33 @@ fn erc_reports_dangling_symbol_pins_in_issue11926_fixture() {
 }
 
 #[test]
+fn erc_reports_hidden_unconnected_pins_in_issue6588_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue6588.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+            .count(),
+        1,
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+            .count(),
+        2,
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn erc_ignores_false_bus_entry_and_no_connect_warnings_in_issue12814_usage_fixture() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_2.kicad_sch");

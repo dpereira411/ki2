@@ -1929,7 +1929,9 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 
         if !has_other_connections && pins.len() > 1 {
             for test_pin in pins.iter().skip(1) {
-                if test_pin.key != pins[0].key {
+                let shares_symbol_point = test_pin.key.symbol_uuid == pins[0].key.symbol_uuid
+                    && test_pin.key.at == pins[0].key.at;
+                if test_pin.key != pins[0].key && !shares_symbol_point {
                     has_other_connections = true;
                     break;
                 }
