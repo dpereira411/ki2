@@ -8689,10 +8689,10 @@ struct ReducedDriverNameCandidate {
 // instead of collapsing every strong driver to bare names, and now also carries stable reduced
 // driver identity plus a reduced connection owner so the later live graph can widen this payload
 // into fuller driver-item ownership without keeping driver names as a parallel string-only cache.
-// Connected symbol pins are now emitted one projected pin at a time instead of collapsing each
-// symbol to the first matching pin before ranking, which is closer to KiCad's per-`SCH_PIN`
-// `m_drivers` collection. Remaining divergence is the still-missing live connection object plus
-// fuller power/bus-parent driver ownership.
+// Connected symbol pins and sheet pins are now emitted one projected item at a time instead of
+// collapsing each symbol or sheet to one local winner before ranking, which is closer to KiCad's
+// per-item `m_drivers` collection. Remaining divergence is the still-missing live connection
+// object plus fuller power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
@@ -8749,42 +8749,29 @@ where
                 });
             }
             SchItem::Sheet(sheet) => {
-                if let Some(driver) = sheet
-                    .pins
-                    .iter()
-                    .filter(|pin| {
-                        connected_component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::SheetPin
-                                && points_equal(member.at, pin.at)
-                        })
+                for pin in sheet.pins.iter().filter(|pin| {
+                    connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::SheetPin
+                            && points_equal(member.at, pin.at)
                     })
-                    .map(|pin| {
-                        let shown = shown_sheet_pin_text(sheet, pin);
+                }) {
+                    let shown = shown_sheet_pin_text(sheet, pin);
 
-                        ReducedProjectStrongDriver {
-                            kind: ReducedProjectDriverKind::SheetPin,
-                            priority: reduced_sheet_pin_driver_rank(pin.shape),
-                            connection: build_reduced_project_driver_connection(
-                                schematic,
-                                sheet_instance_path,
-                                shown.clone(),
-                                format!("{sheet_path_prefix}{shown}"),
-                                sheet_path_prefix,
-                            ),
-                            identity: Some(ReducedProjectDriverIdentity::SheetPin {
-                                schematic_path: schematic_path.to_path_buf(),
-                                at: point_key(pin.at),
-                            }),
-                        }
-                    })
-                    .max_by(|lhs, rhs| {
-                        lhs.priority.cmp(&rhs.priority).then_with(|| {
-                            reduced_project_strong_driver_name(rhs)
-                                .cmp(reduced_project_strong_driver_name(lhs))
-                        })
-                    })
-                {
-                    drivers.push(driver);
+                    drivers.push(ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::SheetPin,
+                        priority: reduced_sheet_pin_driver_rank(pin.shape),
+                        connection: build_reduced_project_driver_connection(
+                            schematic,
+                            sheet_instance_path,
+                            shown.clone(),
+                            format!("{sheet_path_prefix}{shown}"),
+                            sheet_path_prefix,
+                        ),
+                        identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                            schematic_path: schematic_path.to_path_buf(),
+                            at: point_key(pin.at),
+                        }),
+                    });
                 }
             }
             SchItem::Symbol(symbol) => {
@@ -8875,9 +8862,9 @@ where
 //   current reduced driver path does not recurse back into itself
 // - the winning reduced driver now also carries enough stable local identity for the shared
 //   project graph to mimic `RunERC()` driver-instance de-duplication across reused screens
-// - connected symbol pins now contribute one candidate per projected pin before ranking instead of
-//   collapsing each symbol to the first connected pin, which is closer to KiCad's per-`SCH_PIN`
-//   `ResolveDrivers()` candidate ordering
+// - connected symbol pins and sheet pins now contribute one candidate per projected item before
+//   ranking instead of collapsing each symbol or sheet to one local winner, which is closer to
+//   KiCad's per-item `ResolveDrivers()` candidate ordering
 // Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
 // driver ownership.
 fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
@@ -8921,16 +8908,13 @@ where
                 });
             }
             SchItem::Sheet(sheet) => {
-                if let Some(candidate) = sheet
-                    .pins
-                    .iter()
-                    .filter(|pin| {
-                        connected_component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::SheetPin
-                                && points_equal(member.at, pin.at)
-                        })
+                for pin in sheet.pins.iter().filter(|pin| {
+                    connected_component.members.iter().any(|member| {
+                        member.kind == ConnectionMemberKind::SheetPin
+                            && points_equal(member.at, pin.at)
                     })
-                    .map(|pin| ReducedDriverNameCandidate {
+                }) {
+                    candidates.push(ReducedDriverNameCandidate {
                         priority: 0,
                         sheet_pin_rank: reduced_sheet_pin_driver_rank(pin.shape),
                         text: shown_sheet_pin_text(sheet, pin),
@@ -8938,14 +8922,7 @@ where
                         identity: Some(ReducedLocalDriverIdentity::SheetPin {
                             at: point_key(pin.at),
                         }),
-                    })
-                    .max_by(|lhs, rhs| {
-                        lhs.sheet_pin_rank
-                            .cmp(&rhs.sheet_pin_rank)
-                            .then_with(|| rhs.text.cmp(&lhs.text))
-                    })
-                {
-                    candidates.push(candidate);
+                    });
                 }
             }
             SchItem::Symbol(symbol) => {
@@ -11419,6 +11396,83 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_driver_name_candidate_ranks_connected_sheet_pins_individually() {
+        let root_path = env::temp_dir().join(format!(
+            "ki2_connectivity_sheet_pin_driver_candidates_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let child_path = env::temp_dir().join(format!(
+            "ki2_connectivity_sheet_pin_driver_candidates_child_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &root_path,
+            format!(
+                r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 5) (xy 20 5)))
+  (sheet (at 0 0) (size 20 10)
+    (uuid "73050000-0000-0000-0000-000000000501")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "Z" input (at 0 5 180) (uuid "73050000-0000-0000-0000-000000000502"))
+    (pin "A" input (at 20 5 0) (uuid "73050000-0000-0000-0000-000000000503"))))"#,
+                child_path.display()
+            ),
+        )
+        .expect("write root schematic");
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4"))"#,
+        )
+        .expect("write child schematic");
+
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let schematic = loaded
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+            .expect("root schematic");
+        let component = super::connection_component_at(schematic, [20.0, 5.0]).expect("component");
+        let candidate = super::resolve_reduced_driver_name_candidate_on_component(
+            schematic,
+            &component,
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        )
+        .expect("driver candidate");
+
+        assert_eq!(candidate.text, "A");
+        assert_eq!(
+            candidate.identity,
+            Some(super::ReducedLocalDriverIdentity::SheetPin {
+                at: super::point_key([20.0, 5.0]),
+            })
+        );
+
+        let _ = fs::remove_file(&root_path);
+        let _ = fs::remove_file(&child_path);
     }
 
     #[test]

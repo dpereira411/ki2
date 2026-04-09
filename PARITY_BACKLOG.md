@@ -846,6 +846,10 @@ Current status:
         connected symbol pins as separate projected candidates instead of collapsing each symbol to
         the first matching pin before ranking, which is closer to KiCad's per-`SCH_PIN`
         `ResolveDrivers()` ordering
+      - reduced strong-driver collection and reduced driver-name candidate ranking now also keep
+        connected sheet pins as separate candidates instead of collapsing each `SCH_SHEET` to one
+        local winner before ranking, which is closer to KiCad's per-`SCH_SHEET_PIN`
+        `ResolveDrivers()` ordering
       - reduced/live subgraphs now also preserve richer base-pin payload:
         `ReducedProjectBasePin { key, number, electrical_type }`
         so the graph no longer has to collapse pin-owned state to bare `ReducedNetBasePinKey`
