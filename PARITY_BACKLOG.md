@@ -958,14 +958,21 @@ Current status:
         - live base-pin owners now also carry explicit pin-local text preservation state for
           attached strong-driver branches instead of re-deriving that choice from
           `local_name` string shapes on every clone
-        - reduced base-pin projection now also carries that explicit pin-local text preservation
+      - reduced base-pin projection now also carries that explicit pin-local text preservation
           state, so reduced symbol-pin driver-name lookup no longer guesses from `Net-(` string
           shapes when deciding whether to report the pin-owned name or the chosen driver name
-        - label/sheet-pin/hier-port item-owner refresh now also preserves shown-text local names
-          on an item-owner clone path instead of relying on the shared live connection clone to
-          keep non-empty `local_name` values for every net connection in the graph
-        - the shared live subgraph owner now drives both the active handle path and the
-          compatibility live-subgraph path for that refresh flow
+      - label/sheet-pin/hier-port item-owner refresh now also preserves shown-text local names
+        on an item-owner clone path instead of relying on the shared live connection clone to
+        keep non-empty `local_name` values for every net connection in the graph
+      - the remaining small reduced-live compatibility wrappers for:
+        - bus parent-member refresh
+        - bus-link member rematch
+        - multiple-bus-parent rename
+        - post-propagation item refresh
+        were then removed from the test surface too, and those tests now call the shared live
+        subgraph owner methods directly instead of rebuilding a reduced wrapper pass first
+      - the shared live subgraph owner now drives both the active handle path and the
+        compatibility live-subgraph path for that refresh flow
       - active reduced projection of chosen-driver state, strong-driver snapshots, label/sheet-pin/
         hier-port/base-pin connections now also lives on the shared live subgraph owner instead of
         duplicated boundary loops
