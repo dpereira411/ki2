@@ -2667,19 +2667,18 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                     .to_string(),
             );
         }
-        if let Some(driver_connection) = &subgraph.driver_connection {
-            if driver_connection.connection_type
-                == crate::connectivity::ReducedProjectConnectionType::Net
-                && !driver_connection.full_local_name.is_empty()
-                && !bus_members
-                    .iter()
-                    .any(|member| member == &driver_connection.full_local_name)
-                && !test_names
-                    .iter()
-                    .any(|existing| existing == &driver_connection.full_local_name)
-            {
-                test_names.push(driver_connection.full_local_name.clone());
-            }
+        let driver_connection = &subgraph.driver_connection;
+        if driver_connection.connection_type
+            == crate::connectivity::ReducedProjectConnectionType::Net
+            && !driver_connection.full_local_name.is_empty()
+            && !bus_members
+                .iter()
+                .any(|member| member == &driver_connection.full_local_name)
+            && !test_names
+                .iter()
+                .any(|existing| existing == &driver_connection.full_local_name)
+        {
+            test_names.push(driver_connection.full_local_name.clone());
         }
         for connection in subgraph
             .label_links
@@ -2716,10 +2715,8 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             );
         }
         if test_names.is_empty() {
-            if let Some(driver_connection) = &subgraph.driver_connection {
-                if !driver_connection.full_local_name.is_empty() {
-                    test_names.push(driver_connection.full_local_name.clone());
-                }
+            if !driver_connection.full_local_name.is_empty() {
+                test_names.push(driver_connection.full_local_name.clone());
             }
         }
 
@@ -2739,10 +2736,8 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         }
 
         let net_name = test_names.first().cloned().unwrap_or_else(|| {
-            if let Some(driver_connection) = &subgraph.driver_connection {
-                if !driver_connection.full_local_name.is_empty() {
-                    return driver_connection.full_local_name.clone();
-                }
+            if !driver_connection.full_local_name.is_empty() {
+                return driver_connection.full_local_name.clone();
             }
 
             if subgraph.resolved_connection.name.is_empty() {

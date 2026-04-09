@@ -206,7 +206,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) code: usize,
     pub(crate) name: String,
     pub(crate) resolved_connection: ReducedProjectConnection,
-    pub(crate) driver_connection: Option<ReducedProjectConnection>,
+    pub(crate) driver_connection: ReducedProjectConnection,
     pub(crate) chosen_driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
     pub(crate) class: String,
@@ -1036,13 +1036,7 @@ fn clone_reduced_connection_into_subgraph(
 ) {
     subgraph.name = connection.name.clone();
     clone_reduced_connection_into_live_connection(&mut subgraph.resolved_connection, connection);
-    clone_reduced_connection_into_live_connection(
-        subgraph
-            .driver_connection
-            .as_mut()
-            .expect("reduced parity helpers require a materialized subgraph driver connection"),
-        connection,
-    );
+    clone_reduced_connection_into_live_connection(&mut subgraph.driver_connection, connection);
 
     for link in &mut subgraph.label_links {
         clone_reduced_connection_into_live_connection(&mut link.connection, connection);
@@ -1193,9 +1187,7 @@ fn reduced_sheet_path_depth(sheet_instance_path: &str) -> usize {
 fn reduced_subgraph_driver_connection(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> ReducedProjectConnection {
-    subgraph.driver_connection.clone().expect(
-        "active reduced graph and reduced parity helpers require a materialized subgraph driver connection",
-    )
+    subgraph.driver_connection.clone()
 }
 
 #[cfg(test)]
@@ -3147,10 +3139,7 @@ impl LiveReducedSubgraph {
         let live_driver = self.driver_connection.borrow();
         reduced.name = live_driver.name.clone();
         live_driver.project_onto_reduced(&mut reduced.resolved_connection);
-        let driver_connection = reduced
-            .driver_connection
-            .get_or_insert_with(|| live_driver.snapshot());
-        live_driver.project_onto_reduced(driver_connection);
+        live_driver.project_onto_reduced(&mut reduced.driver_connection);
         reduced.drivers = live_strong_driver_handles_to_snapshots(&self.drivers);
         reduced.chosen_driver_identity = self
             .chosen_driver
@@ -4923,14 +4912,7 @@ fn refresh_reduced_multiple_bus_parent_names(
             continue;
         }
 
-        let connection = reduced_subgraphs[subgraph_index]
-            .driver_connection
-            .clone()
-            .unwrap_or_else(|| {
-                reduced_subgraphs[subgraph_index]
-                    .resolved_connection
-                    .clone()
-            });
+        let connection = reduced_subgraphs[subgraph_index].driver_connection.clone();
 
         if connection.connection_type != ReducedProjectConnectionType::Net {
             continue;
@@ -4957,16 +4939,9 @@ fn refresh_reduced_multiple_bus_parent_names(
                 continue;
             };
 
-            if let Some(member) = match_reduced_bus_member_mut(
-                &mut parent
-                    .driver_connection
-                    .as_mut()
-                    .expect(
-                        "reduced parity helpers require a materialized parent subgraph driver connection",
-                    )
-                    .members,
-                &link.member,
-            ) {
+            if let Some(member) =
+                match_reduced_bus_member_mut(&mut parent.driver_connection.members, &link.member)
+            {
                 clone_reduced_connection_into_bus_member(member, &connection);
             }
 
@@ -5045,16 +5020,9 @@ fn refresh_reduced_bus_members_from_neighbor_connections(
                 link.member.clone().into()
             };
 
-            if let Some(member) = match_reduced_bus_member_mut(
-                &mut parent
-                    .driver_connection
-                    .as_mut()
-                    .expect(
-                        "reduced parity helpers require a materialized parent subgraph driver connection",
-                    )
-                    .members,
-                &link.member,
-            ) {
+            if let Some(member) =
+                match_reduced_bus_member_mut(&mut parent.driver_connection.members, &link.member)
+            {
                 clone_reduced_connection_into_bus_member(member, &child_connection);
             }
 
@@ -5510,14 +5478,7 @@ fn refresh_reduced_global_secondary_driver_promotions(
         .collect::<Vec<_>>();
 
     for subgraph_index in 0..reduced_subgraphs.len() {
-        let chosen_connection = reduced_subgraphs[subgraph_index]
-            .driver_connection
-            .clone()
-            .unwrap_or_else(|| {
-                reduced_subgraphs[subgraph_index]
-                    .resolved_connection
-                    .clone()
-            });
+        let chosen_connection = reduced_subgraphs[subgraph_index].driver_connection.clone();
         let chosen_priority = reduced_subgraph_driver_priority(&reduced_subgraphs[subgraph_index]);
 
         if chosen_priority < 6 || reduced_subgraphs[subgraph_index].drivers.len() < 2 {
@@ -5652,13 +5613,7 @@ fn rebuild_reduced_project_graph_name_caches(
             let code = *net_codes.entry(subgraph.name.clone()).or_insert(next_code);
             subgraph.code = code;
             assign_reduced_connection_net_codes(&mut subgraph.resolved_connection, &mut net_codes);
-            assign_reduced_connection_net_codes(
-                subgraph
-                    .driver_connection
-                    .as_mut()
-                    .expect("production reduced graph materializes subgraph driver connection"),
-                &mut net_codes,
-            );
+            assign_reduced_connection_net_codes(&mut subgraph.driver_connection, &mut net_codes);
 
             for link in &mut subgraph.label_links {
                 assign_reduced_connection_net_codes(&mut link.connection, &mut net_codes);
@@ -7193,7 +7148,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
-            driver_connection: Some(pending.driver_connection.clone()),
+            driver_connection: pending.driver_connection.clone(),
             chosen_driver_identity: pending.chosen_driver_identity.clone(),
             drivers: pending.drivers.clone(),
             class: if pending.class.is_empty() {
@@ -7387,10 +7342,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .map(|connection| connection.full_local_name.clone())
                 .collect::<Vec<_>>();
 
-            let driver_connection = child
-                .driver_connection
-                .as_ref()
-                .expect("production reduced graph materializes subgraph driver connection");
+            let driver_connection = &child.driver_connection;
             if !driver_connection.full_local_name.is_empty() {
                 child_names.push(driver_connection.full_local_name.clone());
             } else if !child.resolved_connection.name.is_empty() {
@@ -7782,12 +7734,8 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_at(graph, sheet_path, at).and_then(|subgraph| {
-        subgraph
-            .driver_connection
-            .as_ref()
-            .map(|connection| connection.local_name.clone())
-    })
+    resolve_reduced_project_subgraph_at(graph, sheet_path, at)
+        .map(|subgraph| subgraph.driver_connection.local_name.clone())
 }
 
 fn reduced_project_pin_identity_key(
@@ -8323,12 +8271,7 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
         resolve_reduced_project_subgraph_for_symbol_pin(
             graph, sheet_path, symbol, at, pin_name, pin_number,
         )
-        .and_then(|subgraph| {
-            subgraph
-                .driver_connection
-                .as_ref()
-                .map(|connection| connection.local_name.clone())
-        })
+        .map(|subgraph| subgraph.driver_connection.local_name.clone())
     })
 }
 
@@ -9289,23 +9232,15 @@ fn refresh_reduced_post_propagation_item_connections(
         }
 
         if reduced_subgraph_is_self_driven_sheet_pin(subgraph)
-            && subgraph
-                .driver_connection
-                .as_ref()
-                .is_some_and(|connection| {
-                    matches!(
-                        connection.connection_type,
-                        ReducedProjectConnectionType::Net
-                    )
-                })
+            && matches!(
+                subgraph.driver_connection.connection_type,
+                ReducedProjectConnectionType::Net
+            )
         {
             if let Some((connection_type, members)) =
                 subgraph.hier_child_indexes.iter().find_map(|child_index| {
                     reduced_subgraphs.get(*child_index).and_then(|child| {
-                        let child_connection = child
-                            .driver_connection
-                            .as_ref()
-                            .unwrap_or(&child.resolved_connection);
+                        let child_connection = &child.driver_connection;
 
                         matches!(
                             child_connection.connection_type,
@@ -9899,7 +9834,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "/OLD".to_string(),
@@ -9915,7 +9850,7 @@ mod tests {
                     kind: ReducedBusMemberKind::Net,
                     members: Vec::new(),
                 }],
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -10014,7 +9949,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -10022,7 +9957,7 @@ mod tests {
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10063,7 +9998,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/ENTRY".to_string(),
@@ -10071,7 +10006,7 @@ mod tests {
                     full_local_name: "/ENTRY".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10138,7 +10073,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -10154,7 +10089,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10195,7 +10130,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/SIG0".to_string(),
@@ -10203,7 +10138,7 @@ mod tests {
                     full_local_name: "/SIG0".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10252,7 +10187,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/TOP".to_string(),
@@ -10260,7 +10195,7 @@ mod tests {
                     full_local_name: "/TOP".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10308,7 +10243,7 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/CHILD".to_string(),
@@ -10316,7 +10251,7 @@ mod tests {
                     full_local_name: "/CHILD".to_string(),
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10393,7 +10328,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "/OLD".to_string(),
@@ -10409,7 +10344,7 @@ mod tests {
                     kind: ReducedBusMemberKind::Net,
                     members: Vec::new(),
                 }],
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -10539,7 +10474,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -10555,7 +10490,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10596,7 +10531,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
@@ -10604,7 +10539,7 @@ mod tests {
                     full_local_name: "/OLD1".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -10912,14 +10847,7 @@ mod tests {
         assert_eq!(by_sheet.name, "/Child/SIG");
         assert_eq!(by_sheet.resolved_connection.name, "/Child/SIG");
         assert_eq!(by_sheet.resolved_connection.local_name, "SIG");
-        assert_eq!(
-            by_sheet
-                .driver_connection
-                .as_ref()
-                .expect("driver connection")
-                .local_name,
-            "SIG"
-        );
+        assert_eq!(by_sheet.driver_connection.local_name, "SIG");
 
         let by_point = resolve_reduced_project_subgraph_at(&graph, child_sheet, [10.0, 0.0])
             .expect("point subgraph");
@@ -11150,11 +11078,7 @@ mod tests {
             child_sheet.instance_path
         );
         assert_eq!(
-            by_point
-                .driver_connection
-                .as_ref()
-                .expect("driver connection")
-                .full_local_name,
+            by_point.driver_connection.full_local_name,
             child_sheet.instance_path
         );
         assert!(by_point.drivers.iter().any(|driver| {
@@ -11742,7 +11666,7 @@ mod tests {
                     sheet_instance_path: sheet_path.instance_path.clone(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(super::ReducedProjectConnection {
+                driver_connection: super::ReducedProjectConnection {
                     net_code: 0,
                     connection_type: super::ReducedProjectConnectionType::Net,
                     name: "PWR".to_string(),
@@ -11750,7 +11674,7 @@ mod tests {
                     full_local_name: "PWR".to_string(),
                     sheet_instance_path: sheet_path.instance_path.clone(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -11919,7 +11843,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(super::ReducedProjectConnection {
+                driver_connection: super::ReducedProjectConnection {
                     net_code: 1,
                     connection_type: super::ReducedProjectConnectionType::Net,
                     name: "SIG".to_string(),
@@ -11927,7 +11851,7 @@ mod tests {
                     full_local_name: "SIG".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -12554,7 +12478,7 @@ mod tests {
                     },
                 ],
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "BUS".to_string(),
@@ -12581,7 +12505,7 @@ mod tests {
                         members: Vec::new(),
                     },
                 ],
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -12628,7 +12552,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/OLD1".to_string(),
@@ -12636,7 +12560,7 @@ mod tests {
                 full_local_name: "/OLD1".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -12713,7 +12637,7 @@ mod tests {
                     },
                 ],
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "BUS".to_string(),
@@ -12740,7 +12664,7 @@ mod tests {
                         members: Vec::new(),
                     },
                 ],
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -12787,7 +12711,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/OLD1".to_string(),
@@ -12795,7 +12719,7 @@ mod tests {
                 full_local_name: "/OLD1".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -12862,7 +12786,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -12878,7 +12802,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -12939,7 +12863,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
@@ -12947,7 +12871,7 @@ mod tests {
                     full_local_name: "/PWR".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
@@ -13007,7 +12931,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
@@ -13015,7 +12939,7 @@ mod tests {
                     full_local_name: "/OLD1".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -13263,7 +13187,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "/BUS".to_string(),
@@ -13279,7 +13203,7 @@ mod tests {
                     kind: ReducedBusMemberKind::Net,
                     members: Vec::new(),
                 }],
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -13363,7 +13287,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/SIG".to_string(),
@@ -13371,7 +13295,7 @@ mod tests {
                 full_local_name: "/SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::SheetPin,
@@ -13481,7 +13405,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/SIG".to_string(),
@@ -13489,7 +13413,7 @@ mod tests {
                 full_local_name: "/SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::Label,
@@ -13594,7 +13518,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "PWR".to_string(),
@@ -13602,7 +13526,7 @@ mod tests {
                 full_local_name: "PWR".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 symbol_uuid: Some("sym".to_string()),
@@ -13754,7 +13678,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "PWR".to_string(),
@@ -13762,7 +13686,7 @@ mod tests {
                 full_local_name: "PWR".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
@@ -13871,7 +13795,7 @@ mod tests {
             code: 1,
             name: "SEEDED".to_string(),
             resolved_connection: chosen.clone(),
-            driver_connection: Some(chosen.clone()),
+            driver_connection: chosen.clone(),
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
@@ -13958,7 +13882,7 @@ mod tests {
             code: 1,
             name: "/SIG".to_string(),
             resolved_connection: chosen.clone(),
-            driver_connection: Some(chosen.clone()),
+            driver_connection: chosen.clone(),
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::Label,
@@ -14034,7 +13958,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "PWR".to_string(),
@@ -14042,7 +13966,7 @@ mod tests {
                 full_local_name: "PWR".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![
                 ReducedProjectStrongDriver {
@@ -14211,7 +14135,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -14227,7 +14151,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14279,7 +14203,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/SIG0".to_string(),
@@ -14287,7 +14211,7 @@ mod tests {
                     full_local_name: "/SIG0".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14361,7 +14285,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/CHILD".to_string(),
@@ -14369,7 +14293,7 @@ mod tests {
                     full_local_name: "/CHILD".to_string(),
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14417,7 +14341,7 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -14433,7 +14357,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14519,7 +14443,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/SIG0".to_string(),
@@ -14527,7 +14451,7 @@ mod tests {
                     full_local_name: "/SIG0".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14568,7 +14492,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/SIG0".to_string(),
@@ -14576,7 +14500,7 @@ mod tests {
                     full_local_name: "/SIG0".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14639,7 +14563,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -14655,7 +14579,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14702,7 +14626,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
@@ -14710,7 +14634,7 @@ mod tests {
                     full_local_name: "/OLD1".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -14984,7 +14908,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_A".to_string(),
@@ -15000,7 +14924,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15057,7 +14981,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_B".to_string(),
@@ -15073,7 +14997,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15113,7 +15037,7 @@ mod tests {
                 code: 3,
                 name: "/RENAMED1".to_string(),
                 resolved_connection: connection.clone(),
-                driver_connection: Some(connection.clone()),
+                driver_connection: connection.clone(),
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15187,7 +15111,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
@@ -15195,7 +15119,7 @@ mod tests {
                     full_local_name: "/OLD1".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15297,7 +15221,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -15313,7 +15237,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15362,7 +15286,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
@@ -15370,7 +15294,7 @@ mod tests {
                     full_local_name: "/PWR".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15457,7 +15381,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -15473,7 +15397,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15522,7 +15446,7 @@ mod tests {
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
@@ -15530,7 +15454,7 @@ mod tests {
                     full_local_name: "/PWR".to_string(),
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15609,7 +15533,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -15625,7 +15549,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15672,7 +15596,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD".to_string(),
@@ -15680,7 +15604,7 @@ mod tests {
                     full_local_name: "/OLD".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15720,14 +15644,7 @@ mod tests {
 
         assert_eq!(graph[1].name, "/SIG1");
         assert_eq!(graph[1].resolved_connection.full_local_name, "/SIG1");
-        assert_eq!(
-            graph[1]
-                .driver_connection
-                .as_ref()
-                .expect("neighbor driver")
-                .full_local_name,
-            "/SIG1"
-        );
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
     }
 
     #[test]
@@ -15754,7 +15671,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -15770,7 +15687,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15817,7 +15734,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
@@ -15825,7 +15742,7 @@ mod tests {
                     full_local_name: "/PWR".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
@@ -15881,12 +15798,7 @@ mod tests {
             "/PWR"
         );
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("bus driver")
-                .members[0]
-                .full_local_name,
+            graph[0].driver_connection.members[0].full_local_name,
             "/PWR"
         );
     }
@@ -15915,7 +15827,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -15931,7 +15843,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -15967,7 +15879,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
@@ -15975,7 +15887,7 @@ mod tests {
                     full_local_name: "/PWR".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16018,12 +15930,7 @@ mod tests {
             "/PWR"
         );
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("bus driver")
-                .members[0]
-                .full_local_name,
+            graph[0].driver_connection.members[0].full_local_name,
             "/PWR"
         );
     }
@@ -16052,7 +15959,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -16068,7 +15975,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16104,7 +16011,7 @@ mod tests {
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/PWR".to_string(),
@@ -16112,7 +16019,7 @@ mod tests {
                     full_local_name: "/PWR".to_string(),
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16155,12 +16062,7 @@ mod tests {
             "/OLD1"
         );
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("bus driver")
-                .members[0]
-                .full_local_name,
+            graph[0].driver_connection.members[0].full_local_name,
             "/OLD1"
         );
     }
@@ -16198,7 +16100,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_A".to_string(),
@@ -16214,7 +16116,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16258,7 +16160,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS_B".to_string(),
@@ -16274,7 +16176,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16302,7 +16204,7 @@ mod tests {
                 code: 3,
                 name: "/RENAMED1".to_string(),
                 resolved_connection: connection.clone(),
-                driver_connection: Some(connection.clone()),
+                driver_connection: connection.clone(),
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16363,7 +16265,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/OLD1".to_string(),
@@ -16371,7 +16273,7 @@ mod tests {
                     full_local_name: "/OLD1".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -16443,7 +16345,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/ROOT_SIG".to_string(),
@@ -16451,7 +16353,7 @@ mod tests {
                     full_local_name: "/ROOT_SIG".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
@@ -16513,7 +16415,7 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/Child/GLOBAL_SIG".to_string(),
@@ -16521,7 +16423,7 @@ mod tests {
                     full_local_name: "/Child/GLOBAL_SIG".to_string(),
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
@@ -16576,11 +16478,7 @@ mod tests {
         assert_eq!(graph[0].name, "/Child/GLOBAL_SIG");
         assert_eq!(graph[1].name, "/Child/GLOBAL_SIG");
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("root driver")
-                .full_local_name,
+            graph[0].driver_connection.full_local_name,
             "/Child/GLOBAL_SIG"
         );
     }
@@ -16610,7 +16508,7 @@ mod tests {
             code: 1,
             name: "/SIG".to_string(),
             resolved_connection: chosen_connection.clone(),
-            driver_connection: Some(chosen_connection.clone()),
+            driver_connection: chosen_connection.clone(),
             chosen_driver_identity: Some(sheet_pin_identity.clone()),
             drivers: vec![
                 ReducedProjectStrongDriver {
@@ -16671,7 +16569,7 @@ mod tests {
                 code: 1,
                 name: "VCC".to_string(),
                 resolved_connection: chosen.clone(),
-                driver_connection: Some(chosen.clone()),
+                driver_connection: chosen.clone(),
                 chosen_driver_identity: None,
                 drivers: vec![
                     ReducedProjectStrongDriver {
@@ -16728,7 +16626,7 @@ mod tests {
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "PWR_ALT".to_string(),
@@ -16736,7 +16634,7 @@ mod tests {
                     full_local_name: "PWR_ALT".to_string(),
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
@@ -16777,14 +16675,7 @@ mod tests {
         refresh_reduced_global_secondary_driver_promotions(&mut graph);
 
         assert_eq!(graph[1].name, "VCC");
-        assert_eq!(
-            graph[1]
-                .driver_connection
-                .as_ref()
-                .expect("promoted driver")
-                .name,
-            "VCC"
-        );
+        assert_eq!(graph[1].driver_connection.name, "VCC");
     }
 
     #[test]
@@ -16803,7 +16694,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "VCC".to_string(),
@@ -16811,7 +16702,7 @@ mod tests {
                     full_local_name: "VCC".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![
                     ReducedProjectStrongDriver {
@@ -16876,7 +16767,7 @@ mod tests {
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "PWR_ALT".to_string(),
@@ -16884,7 +16775,7 @@ mod tests {
                     full_local_name: "PWR_ALT".to_string(),
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
@@ -16925,14 +16816,7 @@ mod tests {
         refresh_reduced_live_graph_propagation(&mut graph);
 
         assert_eq!(graph[1].name, "VCC");
-        assert_eq!(
-            graph[1]
-                .driver_connection
-                .as_ref()
-                .expect("promoted driver")
-                .name,
-            "VCC"
-        );
+        assert_eq!(graph[1].driver_connection.name, "VCC");
     }
 
     #[test]
@@ -16950,7 +16834,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "Net-(R1-Pad1)".to_string(),
@@ -16958,7 +16842,7 @@ mod tests {
                 full_local_name: "Net-(R1-Pad1)".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -17014,14 +16898,7 @@ mod tests {
         refresh_reduced_post_propagation_item_connections(&mut graph);
 
         assert_eq!(graph[0].name, "unconnected-(R1-Pad1)");
-        assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("driver connection")
-                .name,
-            "unconnected-(R1-Pad1)"
-        );
+        assert_eq!(graph[0].driver_connection.name, "unconnected-(R1-Pad1)");
     }
 
     #[test]
@@ -17039,7 +16916,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "Net-(R1-Pad1)".to_string(),
@@ -17047,7 +16924,7 @@ mod tests {
                 full_local_name: "Net-(R1-Pad1)".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -17103,14 +16980,7 @@ mod tests {
         refresh_reduced_live_post_propagation_item_connections(&mut graph);
 
         assert_eq!(graph[0].name, "unconnected-(R1-Pad1)");
-        assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("driver connection")
-                .name,
-            "unconnected-(R1-Pad1)"
-        );
+        assert_eq!(graph[0].driver_connection.name, "unconnected-(R1-Pad1)");
     }
 
     #[test]
@@ -17128,7 +16998,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "Net-(R1-Pad1)".to_string(),
@@ -17136,7 +17006,7 @@ mod tests {
                 full_local_name: "Net-(R1-Pad1)".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -17212,7 +17082,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/SIG".to_string(),
@@ -17220,7 +17090,7 @@ mod tests {
                 full_local_name: "/SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::Label,
@@ -17338,7 +17208,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/SIG".to_string(),
@@ -17346,7 +17216,7 @@ mod tests {
                 full_local_name: "/SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![
                 ReducedProjectStrongDriver {
@@ -17475,7 +17345,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/SIG".to_string(),
@@ -17483,7 +17353,7 @@ mod tests {
                 full_local_name: "/SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![
                 ReducedProjectStrongDriver {
@@ -17616,7 +17486,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 0,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "Net-(R1-Pad1)".to_string(),
@@ -17624,7 +17494,7 @@ mod tests {
                 full_local_name: "Net-(R1-Pad1)".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -17700,7 +17570,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "PWR".to_string(),
@@ -17708,7 +17578,7 @@ mod tests {
                 full_local_name: "PWR".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
@@ -17821,7 +17691,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "PWR".to_string(),
@@ -17829,7 +17699,7 @@ mod tests {
                 full_local_name: "PWR".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: Some(chosen_identity.clone()),
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
@@ -17916,7 +17786,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "SIG".to_string(),
@@ -17924,7 +17794,7 @@ mod tests {
                 full_local_name: "SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -18015,7 +17885,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Bus,
                 name: "BUS".to_string(),
@@ -18031,7 +17901,7 @@ mod tests {
                     kind: ReducedBusMemberKind::Net,
                     members: Vec::new(),
                 }],
-            }),
+            },
             chosen_driver_identity: None,
             drivers: Vec::new(),
             class: String::new(),
@@ -18098,7 +17968,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             },
-            driver_connection: Some(ReducedProjectConnection {
+            driver_connection: ReducedProjectConnection {
                 net_code: 1,
                 connection_type: ReducedProjectConnectionType::Net,
                 name: "/SIG".to_string(),
@@ -18106,7 +17976,7 @@ mod tests {
                 full_local_name: "/SIG".to_string(),
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
-            }),
+            },
             chosen_driver_identity: None,
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::Label,
@@ -18192,7 +18062,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/BUS".to_string(),
@@ -18200,7 +18070,7 @@ mod tests {
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -18244,7 +18114,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -18260,7 +18130,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -18288,20 +18158,11 @@ mod tests {
         refresh_reduced_post_propagation_item_connections(&mut graph);
 
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("parent driver")
-                .connection_type,
+            graph[0].driver_connection.connection_type,
             ReducedProjectConnectionType::Bus
         );
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("parent driver")
-                .members[0]
-                .full_local_name,
+            graph[0].driver_connection.members[0].full_local_name,
             "/child/BUS0"
         );
     }
@@ -18322,7 +18183,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
                     name: "/BUS".to_string(),
@@ -18330,7 +18191,7 @@ mod tests {
                     full_local_name: "/BUS".to_string(),
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -18374,7 +18235,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 },
-                driver_connection: Some(ReducedProjectConnection {
+                driver_connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
                     name: "/BUS".to_string(),
@@ -18390,7 +18251,7 @@ mod tests {
                         kind: ReducedBusMemberKind::Net,
                         members: Vec::new(),
                     }],
-                }),
+                },
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -18418,20 +18279,11 @@ mod tests {
         refresh_reduced_live_post_propagation_item_connections(&mut graph);
 
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("parent driver")
-                .connection_type,
+            graph[0].driver_connection.connection_type,
             ReducedProjectConnectionType::Bus
         );
         assert_eq!(
-            graph[0]
-                .driver_connection
-                .as_ref()
-                .expect("parent driver")
-                .members[0]
-                .full_local_name,
+            graph[0].driver_connection.members[0].full_local_name,
             "/child/BUS0"
         );
     }
