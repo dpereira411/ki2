@@ -974,6 +974,8 @@ Current status:
       - reduced connection/member projection at the graph boundary now belongs to the shared live
         connection and bus-member owners themselves instead of free clone helpers outside the owner
         graph
+      - same-name cache entry insertion/recache now also goes through the live subgraph owner
+        instead of rebuilding cache keys from free helper code around the active handle graph
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale

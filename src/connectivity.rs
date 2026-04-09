@@ -2846,6 +2846,74 @@ impl LiveReducedSubgraph {
                 .project_driver_connection(by_pin, by_location);
         }
     }
+
+    // Upstream parity: local live-subgraph analogue for the same-name cache keys KiCad rebuilds
+    // around propagated `CONNECTION_SUBGRAPH`s. The graph still keeps reduced cache maps instead
+    // of full live subgraph objects, but the shared live subgraph owner now decides which name and
+    // prefix entries belong in those caches instead of free helpers rebuilding keys around it.
+    fn cache_name(&self) -> String {
+        self.driver_connection.name()
+    }
+
+    fn cache_prefix_name(&self) -> Option<String> {
+        let name = self.cache_name();
+        name.contains('[')
+            .then(|| format!("{}[]", name.split('[').next().unwrap_or("")))
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn insert_into_index_name_caches(
+        &self,
+        subgraphs_by_name: &mut BTreeMap<String, Vec<usize>>,
+        subgraphs_by_sheet_and_name: &mut BTreeMap<(String, String), Vec<usize>>,
+        subgraph_index: usize,
+    ) {
+        let name = self.cache_name();
+        subgraphs_by_name
+            .entry(name.clone())
+            .or_default()
+            .push(subgraph_index);
+
+        if let Some(prefix_only) = self.cache_prefix_name() {
+            subgraphs_by_name
+                .entry(prefix_only)
+                .or_default()
+                .push(subgraph_index);
+        }
+
+        subgraphs_by_sheet_and_name
+            .entry((self.sheet_instance_path.clone(), name))
+            .or_default()
+            .push(subgraph_index);
+    }
+
+    fn insert_into_handle_name_caches(
+        &self,
+        subgraphs_by_name: &mut BTreeMap<String, Vec<LiveReducedSubgraphHandle>>,
+        subgraphs_by_sheet_and_name: &mut BTreeMap<
+            (String, String),
+            Vec<LiveReducedSubgraphHandle>,
+        >,
+        subgraph_handle: &LiveReducedSubgraphHandle,
+    ) {
+        let name = self.cache_name();
+        subgraphs_by_name
+            .entry(name.clone())
+            .or_default()
+            .push(subgraph_handle.clone());
+
+        if let Some(prefix_only) = self.cache_prefix_name() {
+            subgraphs_by_name
+                .entry(prefix_only)
+                .or_default()
+                .push(subgraph_handle.clone());
+        }
+
+        subgraphs_by_sheet_and_name
+            .entry((self.sheet_instance_path.clone(), name))
+            .or_default()
+            .push(subgraph_handle.clone());
+    }
 }
 
 #[cfg(test)]
@@ -3831,24 +3899,11 @@ fn build_live_reduced_name_caches_from_handles(
 
     for (index, handle) in live_subgraphs.iter().enumerate() {
         let subgraph = handle.borrow();
-        let name = subgraph.driver_connection.name();
-        subgraphs_by_name
-            .entry(name.clone())
-            .or_default()
-            .push(index);
-
-        if name.contains('[') {
-            let prefix_only = format!("{}[]", name.split('[').next().unwrap_or(""));
-            subgraphs_by_name
-                .entry(prefix_only)
-                .or_default()
-                .push(index);
-        }
-
-        subgraphs_by_sheet_and_name
-            .entry((subgraph.sheet_instance_path.clone(), name))
-            .or_default()
-            .push(index);
+        subgraph.insert_into_index_name_caches(
+            &mut subgraphs_by_name,
+            &mut subgraphs_by_sheet_and_name,
+            index,
+        );
     }
 
     (subgraphs_by_name, subgraphs_by_sheet_and_name)
@@ -3866,24 +3921,11 @@ fn build_live_reduced_name_handle_caches_from_handles(
 
     for handle in live_subgraphs {
         let subgraph = handle.borrow();
-        let name = subgraph.driver_connection.name();
-        subgraphs_by_name
-            .entry(name.clone())
-            .or_default()
-            .push(handle.clone());
-
-        if name.contains('[') {
-            let prefix_only = format!("{}[]", name.split('[').next().unwrap_or(""));
-            subgraphs_by_name
-                .entry(prefix_only)
-                .or_default()
-                .push(handle.clone());
-        }
-
-        subgraphs_by_sheet_and_name
-            .entry((subgraph.sheet_instance_path.clone(), name))
-            .or_default()
-            .push(handle.clone());
+        subgraph.insert_into_handle_name_caches(
+            &mut subgraphs_by_name,
+            &mut subgraphs_by_sheet_and_name,
+            handle,
+        );
     }
 
     (subgraphs_by_name, subgraphs_by_sheet_and_name)
@@ -3921,24 +3963,11 @@ fn recache_live_reduced_subgraph_name_from_handles(
     }
 
     let subgraph = live_subgraphs[subgraph_index].borrow();
-    let new_name = subgraph.driver_connection.name();
-    subgraphs_by_name
-        .entry(new_name.clone())
-        .or_default()
-        .push(subgraph_index);
-
-    if new_name.contains('[') {
-        let new_prefix_only = format!("{}[]", new_name.split('[').next().unwrap_or(""));
-        subgraphs_by_name
-            .entry(new_prefix_only)
-            .or_default()
-            .push(subgraph_index);
-    }
-
-    subgraphs_by_sheet_and_name
-        .entry((subgraph.sheet_instance_path.clone(), new_name))
-        .or_default()
-        .push(subgraph_index);
+    subgraph.insert_into_index_name_caches(
+        subgraphs_by_name,
+        subgraphs_by_sheet_and_name,
+        subgraph_index,
+    );
 }
 
 fn recache_live_reduced_subgraph_name_handle_cache_from_handles(
@@ -3964,24 +3993,11 @@ fn recache_live_reduced_subgraph_name_handle_cache_from_handles(
         handles.retain(|handle| !Rc::ptr_eq(handle, subgraph_handle));
     }
 
-    let new_name = subgraph.driver_connection.name();
-    subgraphs_by_name
-        .entry(new_name.clone())
-        .or_default()
-        .push(subgraph_handle.clone());
-
-    if new_name.contains('[') {
-        let new_prefix_only = format!("{}[]", new_name.split('[').next().unwrap_or(""));
-        subgraphs_by_name
-            .entry(new_prefix_only)
-            .or_default()
-            .push(subgraph_handle.clone());
-    }
-
-    subgraphs_by_sheet_and_name
-        .entry((subgraph.sheet_instance_path.clone(), new_name))
-        .or_default()
-        .push(subgraph_handle.clone());
+    subgraph.insert_into_handle_name_caches(
+        subgraphs_by_name,
+        subgraphs_by_sheet_and_name,
+        subgraph_handle,
+    );
 }
 
 #[allow(dead_code)]
