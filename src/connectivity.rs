@@ -286,7 +286,6 @@ enum LiveProjectStrongDriverOwner {
     },
     SymbolPin {
         owner: Weak<RefCell<LiveReducedBasePin>>,
-        connection: LiveReducedConnection,
         kind: ReducedProjectDriverKind,
         priority: i32,
     },
@@ -412,7 +411,9 @@ fn live_project_strong_driver_connection(
         LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner
             .upgrade()
             .map(|owner| owner.borrow().connection.clone()),
-        LiveProjectStrongDriverOwner::SymbolPin { connection, .. } => Some(connection.clone()),
+        LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => owner
+            .upgrade()
+            .map(|owner| owner.borrow().connection.clone()),
     }
     .expect("live strong driver owner requires an attached connection owner")
 }
@@ -2563,15 +2564,15 @@ fn attach_live_hierarchy_links_to_handles(
 // drivers to shared live item owners on the active graph instead of leaving every strong driver as
 // a detached copied struct, and now also attaches those item owners back onto the same shared live
 // strong-driver owners used by the subgraph driver list. Active strong-driver connection reads now
-// prefer those shared item owners, and symbol-pin strong drivers now carry their own live
-// connection owner directly on the symbol-pin driver owner instead of routing active reads through
-// the base-pin item connection carrier. The attached base pin now also seeds its own live
-// connection owner from that symbol-pin driver so later per-pin item branches have a real owner to
-// update without borrowing the whole subgraph driver. Live strong drivers now always carry their
-// kind/priority/connection through one owner graph, with unattached drivers living on a floating
-// owner until attachment upgrades them to a concrete item owner. Remaining divergence is the
-// fuller live driver-item object graph and the still-missing live `SCH_CONNECTION` /
-// `CONNECTION_SUBGRAPH` object graph behind these handles.
+// prefer those shared item owners, and symbol-pin strong drivers now read their connection through
+// the attached base-pin owner instead of carrying a second driver-side connection cache. The
+// attached base pin still seeds its own live connection owner from the floating strong-driver
+// connection so later per-pin item branches have a real owner to update without borrowing the
+// whole subgraph driver. Live strong drivers now always carry their kind/priority/connection
+// through one owner graph, with unattached drivers living on a floating owner until attachment
+// upgrades them to a concrete item owner. Remaining divergence is the fuller live driver-item
+// object graph and the still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph
+// behind these handles.
 fn attach_live_strong_driver_owners_to_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
@@ -2668,7 +2669,6 @@ fn attach_live_strong_driver_owners_to_handles(
                         base_pin.borrow_mut().driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SymbolPin {
                             owner: Rc::downgrade(base_pin),
-                            connection: floating_connection.clone(),
                             kind: driver_kind,
                             priority,
                         }
