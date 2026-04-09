@@ -94,6 +94,7 @@ pub(crate) struct ReducedProjectBasePin {
     pub(crate) key: ReducedNetBasePinKey,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
+    pub(crate) connection: ReducedProjectConnection,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2070,18 +2071,6 @@ impl LiveReducedConnection {
     }
 }
 
-fn empty_live_reduced_connection() -> LiveReducedConnection {
-    LiveReducedConnection::new(ReducedProjectConnection {
-        net_code: 0,
-        connection_type: ReducedProjectConnectionType::None,
-        name: String::new(),
-        local_name: String::new(),
-        full_local_name: String::new(),
-        sheet_instance_path: String::new(),
-        members: Vec::new(),
-    })
-}
-
 impl std::fmt::Debug for LiveReducedConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.borrow().fmt(f)
@@ -2914,12 +2903,13 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // per-item connection state on shared local item owners instead of projecting every
 // label/sheet-pin/hier-port/wire-item from the chosen subgraph driver only at the end of
 // propagation. The active payload now also keeps shared live base-pin payload directly instead of
-// a copied base-pin count summary and derives driver priority from the shared live driver owner
-// instead of caching one more copied summary field, and now also attaches the exercised
-// label/sheet-pin/symbol-pin strong drivers back onto shared live item owners via the same shared
-// live strong-driver owners used by the subgraph driver list. Those live strong-driver owners now
-// also keep a live connection carrier instead of parallel live name fields. Remaining divergence
-// is the still-missing fuller live driver-item object graph.
+// a copied base-pin count summary, seeds every base pin from an `updatePinConnectivity()`-style
+// net connection at build time, derives driver priority from the shared live driver owner instead
+// of caching one more copied summary field, and attaches the exercised label/sheet-pin/symbol-pin
+// strong drivers back onto shared live item owners via the same shared live strong-driver owners
+// used by the subgraph driver list. Those live strong-driver owners now also keep a live
+// connection carrier instead of parallel live name fields. Remaining divergence is the
+// still-missing fuller live driver-item object graph.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -2970,8 +2960,8 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|pin| {
                     Rc::new(RefCell::new(LiveReducedBasePin {
+                        connection: LiveReducedConnection::new(pin.connection.clone()),
                         pin,
-                        connection: empty_live_reduced_connection(),
                         driver: None,
                     }))
                 })
@@ -6901,6 +6891,11 @@ where
                     },
                     number: pin.number.clone(),
                     electrical_type: pin.electrical_type.clone(),
+                    connection: reduced_seeded_symbol_pin_connection(
+                        symbol,
+                        &pin,
+                        sheet_instance_path,
+                    ),
                 };
                 base_pins.push(base_pin);
 
@@ -8581,8 +8576,10 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
 // graph-owned per-pin driver connections projected from the live base-pin owners, and both the
 // named and by-location lookup edges now include projected pin number so stacked pins do not
-// collapse to one driver-name query. Remaining divergence is fuller live connection-object caching
-// and item ownership.
+// collapse to one driver-name query. Base-pin owners now also start with `updatePinConnectivity()`
+//-style net connections, so this lookup filters empty pin-owned names before falling back to the
+// chosen subgraph driver. Remaining divergence is fuller live connection-object caching and item
+// ownership.
 pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8606,7 +8603,9 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
                     sheet_path, symbol, at, pin_number,
                 ))
         })
-        .map(|connection| connection.local_name.clone())
+        .and_then(|connection| {
+            (!connection.local_name.is_empty()).then(|| connection.local_name.clone())
+        })
         .or_else(|| {
             resolve_reduced_project_subgraph_for_symbol_pin(
                 graph, sheet_path, symbol, at, pin_name, pin_number,
@@ -8899,6 +8898,38 @@ fn symbol_reference_text(symbol: &Symbol) -> Option<String> {
         .iter()
         .find(|property| property.kind == crate::model::PropertyKind::SymbolReference)
         .map(|property| property.value.clone())
+}
+
+// Upstream parity: reduced local analogue for the per-pin `SCH_CONNECTION` seeding KiCad performs
+// in `updateSymbolConnectivity()` / `updatePinConnectivity()` before `ResolveDrivers()`. This is
+// still reduced projected pin state rather than a live `SCH_PIN`, but it now gives every base-pin
+// owner a net-typed connection from setup time and only seeds a name for exercised global power
+// pins, matching the upstream setup split more closely than starting most base pins as
+// `CONNECTION_TYPE::NONE`.
+fn reduced_seeded_symbol_pin_connection(
+    symbol: &Symbol,
+    pin: &ProjectedSymbolPin,
+    sheet_instance_path: &str,
+) -> ReducedProjectConnection {
+    let mut connection = ReducedProjectConnection {
+        net_code: 0,
+        connection_type: ReducedProjectConnectionType::Net,
+        name: String::new(),
+        local_name: String::new(),
+        full_local_name: String::new(),
+        sheet_instance_path: sheet_instance_path.to_string(),
+        members: Vec::new(),
+    };
+
+    if reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref()) == Some(6) {
+        if let Some(name) = symbol_value_text(symbol) {
+            connection.name = name.clone();
+            connection.local_name = name.clone();
+            connection.full_local_name = name;
+        }
+    }
+
+    connection
 }
 
 // Upstream parity: reduced local analogue for `SCH_PIN::GetDefaultNetName()`. This still runs on
@@ -13130,6 +13161,15 @@ mod tests {
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -13277,6 +13317,15 @@ mod tests {
                     },
                     number: Some("1".to_string()),
                     electrical_type: Some("power_in".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "VCC".to_string(),
+                        local_name: "VCC".to_string(),
+                        full_local_name: "VCC".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
                 },
                 super::ReducedProjectBasePin {
                     key: super::ReducedNetBasePinKey {
@@ -13288,6 +13337,15 @@ mod tests {
                     },
                     number: Some("2".to_string()),
                     electrical_type: Some("power_in".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "GND".to_string(),
+                        local_name: "GND".to_string(),
+                        full_local_name: "GND".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
                 },
             ],
             label_links: Vec::new(),
@@ -15740,6 +15798,15 @@ mod tests {
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -15809,6 +15876,15 @@ mod tests {
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -15878,6 +15954,15 @@ mod tests {
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: String::new(),
+                    local_name: String::new(),
+                    full_local_name: String::new(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),

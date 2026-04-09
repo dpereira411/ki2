@@ -893,20 +893,34 @@ Current status:
         connection owner, closer to KiCad's `m_driver_connection = m_driver->Connection(...)`
         branch instead of keeping an active parallel subgraph-owned connection copy after driver
         attachment
+      - reduced/live base-pin payload now also carries an `updatePinConnectivity()`-style seeded
+        pin-owned net connection, so live base-pin owners no longer start from
+        `CONNECTION_TYPE::NONE`; exercised global power pins now start with their pin-owned power
+        name while ordinary pins still fall back to the chosen subgraph driver when their seeded
+        local name stays empty
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage
+      - the next concrete missing pin behavior is earlier than driver ranking:
+        KiCad's `updateSymbolConnectivity()` / `updatePinConnectivity()` seeds a live
+        `SCH_CONNECTION` on every `SCH_PIN` before `ResolveDrivers()`, while the current reduced
+        live graph still only gives many base-pin owners meaningful live connection state once a
+        pin later becomes a chosen or attached strong driver
     - concrete next unblock path:
-      1. replace the reduced wrapper connections inside the recursive walk with a live local
+      1. widen reduced/live base-pin payload so every projected pin can carry its own
+         `updateSymbolConnectivity()`-style seeded live connection before driver resolution,
+         instead of starting most base-pin owners empty and backfilling only the exercised driver
+         branches later
+      2. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
-      2. move live name recache and the remaining projection/boundary bus-member ownership onto
+      3. move live name recache and the remaining projection/boundary bus-member ownership onto
          that same connection/member owner instead of cloning reduced snapshots through recursive
          revisits, with the next gap now concentrated in projection and the still-missing fuller
          live driver-item owner rather than copied structs or copied driver-identity branches
-      3. widen the new live bus-entry and item-side owners into fuller live item/connection
+      4. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time
-      4. remove the remaining reduced search/rematch adapters around the new live member payload
+      5. remove the remaining reduced search/rematch adapters around the new live member payload
          so propagation and link refresh stop rebuilding `ReducedBusMember` keys on the active path
       5. replace the current reduced live subgraph handle payload with a fuller local
          `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
