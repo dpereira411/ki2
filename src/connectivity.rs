@@ -6105,17 +6105,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         wire_items: Vec<ReducedSubgraphWireItem>,
     }
 
-    fn chosen_reduced_driver_index(
-        drivers: &[ReducedProjectStrongDriver],
-        identity: Option<&ReducedProjectDriverIdentity>,
-    ) -> Option<usize> {
-        identity.and_then(|identity| {
-            drivers
-                .iter()
-                .position(|driver| driver.identity.as_ref() == Some(identity))
-        })
-    }
-
     let mut all_base_pins_by_net = BTreeMap::<String, Vec<ReducedNetBasePinKey>>::new();
     let mut pending_subgraphs = Vec::<PendingProjectSubgraph>::new();
     let mut candidates = BTreeMap::<
@@ -6210,38 +6199,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 )
                 .expect("project reduced subgraph must keep its source component");
 
-                let driver_candidate = resolve_reduced_driver_name_candidate_on_component(
-                    schematic,
-                    &connected_component,
-                    |label| {
-                        shown_label_text_without_connectivity(
-                            inputs.schematics,
-                            inputs.sheet_paths,
-                            sheet_path,
-                            inputs.project,
-                            inputs.current_variant,
-                            label,
-                        )
-                    },
-                    |sheet, pin| {
-                        let Some(child_sheet_path) =
-                            child_sheet_path_for_sheet(inputs.sheet_paths, sheet_path, sheet)
-                        else {
-                            return pin.name.clone();
-                        };
-
-                        shown_sheet_pin_text(
-                            inputs.schematics,
-                            inputs.sheet_paths,
-                            sheet_path,
-                            child_sheet_path,
-                            inputs.project,
-                            inputs.current_variant,
-                            None,
-                            pin,
-                        )
-                    },
-                );
                 let strong_drivers = collect_reduced_strong_drivers(
                     schematic,
                     &sheet_path.schematic_path,
@@ -6337,24 +6294,13 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     schematic,
                     &sheet_path.instance_path,
                     &entry.name,
-                    driver_candidate.as_ref(),
-                    &sheet_path_prefix,
+                    strong_drivers.first(),
                     &bus_members,
                     &label_links,
                     &hier_sheet_pins,
                     &hier_ports,
                 );
-                let chosen_driver_identity = driver_candidate
-                    .as_ref()
-                    .and_then(|candidate| candidate.identity.as_ref())
-                    .map(|identity| {
-                        reduced_local_driver_identity_to_project_identity(
-                            &sheet_path.schematic_path,
-                            identity,
-                        )
-                    });
-                let chosen_driver_index =
-                    chosen_reduced_driver_index(&strong_drivers, chosen_driver_identity.as_ref());
+                let chosen_driver_index = (!strong_drivers.is_empty()).then_some(0);
                 let pending_name = driver_connection.name.clone();
 
                 pending_subgraphs.push(PendingProjectSubgraph {
@@ -6499,7 +6445,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 &sheet_path.instance_path,
                 "",
                 None,
-                &sheet_path_prefix,
                 &[],
                 &label_links,
                 &hier_sheet_pins,
@@ -8634,21 +8579,22 @@ fn build_pending_reduced_subgraph_driver_connection(
     schematic: &Schematic,
     sheet_instance_path: &str,
     resolved_name: &str,
-    driver_candidate: Option<&ReducedDriverNameCandidate>,
-    sheet_path_prefix: &str,
+    chosen_driver: Option<&ReducedProjectStrongDriver>,
     bus_members: &[ReducedBusMember],
     label_links: &[ReducedLabelLink],
     hier_sheet_pins: &[ReducedHierSheetPinLink],
     hier_ports: &[ReducedHierPortLink],
 ) -> ReducedProjectConnection {
-    if let Some(candidate) = driver_candidate {
+    if let Some(driver) = chosen_driver {
+        let local_name = driver.connection.local_name.clone();
+        let full_local_name = driver.connection.full_local_name.clone();
         return build_reduced_project_connection(
             schematic,
             sheet_instance_path.to_string(),
             resolved_name.to_string(),
-            candidate.text.clone(),
-            reduced_driver_candidate_full_name(candidate, sheet_path_prefix),
-            if reduced_text_is_bus(schematic, &candidate.text) {
+            local_name.clone(),
+            full_local_name,
+            if reduced_text_is_bus(schematic, &local_name) {
                 bus_members.to_vec()
             } else {
                 Vec::new()
@@ -8693,36 +8639,6 @@ fn build_pending_reduced_subgraph_driver_connection(
         full_local_name,
         bus_members.to_vec(),
     )
-}
-
-// Upstream parity: reduced bridge from local `ResolveDrivers()` candidate identity into the
-// project-graph driver identity owner. This helper still exists because the reduced graph does not
-// yet project live `SCH_ITEM*` / `SCH_CONNECTION*` identity directly across the graph boundary.
-fn reduced_local_driver_identity_to_project_identity(
-    schematic_path: &std::path::Path,
-    identity: &ReducedLocalDriverIdentity,
-) -> ReducedProjectDriverIdentity {
-    match identity {
-        ReducedLocalDriverIdentity::Label { at, kind } => ReducedProjectDriverIdentity::Label {
-            schematic_path: schematic_path.to_path_buf(),
-            at: *at,
-            kind: *kind,
-        },
-        ReducedLocalDriverIdentity::SheetPin { at } => ReducedProjectDriverIdentity::SheetPin {
-            schematic_path: schematic_path.to_path_buf(),
-            at: *at,
-        },
-        ReducedLocalDriverIdentity::SymbolPin {
-            symbol_uuid,
-            at,
-            pin_number,
-        } => ReducedProjectDriverIdentity::SymbolPin {
-            schematic_path: schematic_path.to_path_buf(),
-            symbol_uuid: symbol_uuid.clone(),
-            at: *at,
-            pin_number: pin_number.clone(),
-        },
-    }
 }
 
 // Upstream parity: reduced local analogue for the driver collection inside
