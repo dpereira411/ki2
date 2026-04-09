@@ -1098,6 +1098,9 @@ Current status:
       - the active reduced helper path now also requires materialized subgraph driver connections
         instead of falling back to `resolved_connection`, and the remaining `driver_connection:
         None` fixtures now live only in pre-build pending state or older manual test scaffolding
+      - pending reduced graph assembly now also materializes subgraph `driver_connection` directly
+        instead of carrying an optional pending driver owner and reconstructing fallback
+        local/full-local names later in final reduced graph assembly
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

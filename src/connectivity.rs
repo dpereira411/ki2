@@ -6670,7 +6670,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 ) -> ReducedProjectNetGraph {
     struct PendingProjectSubgraph {
         name: String,
-        driver_connection: Option<ReducedProjectConnection>,
+        driver_connection: ReducedProjectConnection,
         chosen_driver_identity: Option<ReducedProjectDriverIdentity>,
         drivers: Vec<ReducedProjectStrongDriver>,
         class: String,
@@ -6906,20 +6906,17 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 );
                 bus_members.sort();
                 bus_members.dedup();
-                let driver_connection = driver_candidate.as_ref().map(|candidate| {
-                    build_reduced_project_connection(
-                        schematic,
-                        sheet_path.instance_path.clone(),
-                        entry.name.clone(),
-                        candidate.text.clone(),
-                        reduced_driver_candidate_full_name(candidate, &sheet_path_prefix),
-                        if reduced_text_is_bus(schematic, &candidate.text) {
-                            bus_members.clone()
-                        } else {
-                            Vec::new()
-                        },
-                    )
-                });
+                let driver_connection = build_pending_reduced_subgraph_driver_connection(
+                    schematic,
+                    &sheet_path.instance_path,
+                    &entry.name,
+                    driver_candidate.as_ref(),
+                    &sheet_path_prefix,
+                    &bus_members,
+                    &label_links,
+                    &hier_sheet_pins,
+                    &hier_ports,
+                );
                 let chosen_driver_identity = driver_candidate
                     .as_ref()
                     .and_then(|candidate| candidate.identity.as_ref())
@@ -7068,17 +7065,21 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 &connected_component,
             );
 
+            let driver_connection = build_pending_reduced_subgraph_driver_connection(
+                schematic,
+                &sheet_path.instance_path,
+                "",
+                None,
+                &sheet_path_prefix,
+                &[],
+                &label_links,
+                &hier_sheet_pins,
+                &hier_ports,
+            );
+
             pending_subgraphs.push(PendingProjectSubgraph {
                 name: String::new(),
-                driver_connection: Some(ReducedProjectConnection {
-                    net_code: 0,
-                    connection_type: ReducedProjectConnectionType::Net,
-                    name: "/TOP".to_string(),
-                    local_name: "TOP".to_string(),
-                    full_local_name: "/TOP".to_string(),
-                    sheet_instance_path: String::new(),
-                    members: Vec::new(),
-                }),
+                driver_connection,
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
                 class: String::new(),
@@ -7168,32 +7169,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         let resolved_name = net_identity
             .map(|net| net.name.clone())
             .unwrap_or_else(|| pending.name.clone());
-        let resolved_local_name = if let Some(driver_connection) = &pending.driver_connection {
-            driver_connection.local_name.clone()
-        } else if let Some(connection) = pending
-            .label_links
-            .iter()
-            .map(|link| &link.connection)
-            .chain(pending.hier_sheet_pins.iter().map(|pin| &pin.connection))
-            .chain(pending.hier_ports.iter().map(|port| &port.connection))
-            .find(|connection| {
-                matches!(
-                    connection.connection_type,
-                    ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-                )
-            })
-        {
-            connection.local_name.clone()
-        } else {
-            reduced_short_net_name(&resolved_name)
-        };
-        let resolved_full_local_name = if let Some(driver_connection) = &pending.driver_connection {
-            driver_connection.full_local_name.clone()
-        } else if !resolved_name.is_empty() {
-            resolved_name.clone()
-        } else {
-            resolved_local_name.clone()
-        };
+        let resolved_local_name = pending.driver_connection.local_name.clone();
+        let resolved_full_local_name = pending.driver_connection.full_local_name.clone();
         let resolved_connection = build_reduced_project_connection(
             subgraph_sheet,
             pending.sheet_instance_path.clone(),
@@ -7202,16 +7179,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             resolved_full_local_name,
             pending.bus_members.clone(),
         );
-        let driver_connection = pending
-            .driver_connection
-            .clone()
-            .unwrap_or_else(|| resolved_connection.clone());
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
-            driver_connection: Some(driver_connection),
+            driver_connection: Some(pending.driver_connection.clone()),
             chosen_driver_identity: pending.chosen_driver_identity.clone(),
             drivers: pending.drivers.clone(),
             class: if pending.class.is_empty() {
@@ -8811,6 +8784,76 @@ struct ReducedDriverNameCandidate {
     text: String,
     source: ReducedNetNameSource,
     identity: Option<ReducedLocalDriverIdentity>,
+}
+
+// Upstream parity: reduced local bridge for the pending subgraph driver connection KiCad keeps on
+// the owning graph object while building one connection subgraph. The Rust tree still assembles a
+// reduced driver connection before the fuller live object graph exists, but pending reduced graph
+// build now materializes that owner directly instead of carrying an optional driver connection and
+// reconstructing fallback local/full-local names later.
+fn build_pending_reduced_subgraph_driver_connection(
+    schematic: &Schematic,
+    sheet_instance_path: &str,
+    resolved_name: &str,
+    driver_candidate: Option<&ReducedDriverNameCandidate>,
+    sheet_path_prefix: &str,
+    bus_members: &[ReducedBusMember],
+    label_links: &[ReducedLabelLink],
+    hier_sheet_pins: &[ReducedHierSheetPinLink],
+    hier_ports: &[ReducedHierPortLink],
+) -> ReducedProjectConnection {
+    if let Some(candidate) = driver_candidate {
+        return build_reduced_project_connection(
+            schematic,
+            sheet_instance_path.to_string(),
+            resolved_name.to_string(),
+            candidate.text.clone(),
+            reduced_driver_candidate_full_name(candidate, sheet_path_prefix),
+            if reduced_text_is_bus(schematic, &candidate.text) {
+                bus_members.to_vec()
+            } else {
+                Vec::new()
+            },
+        );
+    }
+
+    if let Some(connection) = label_links
+        .iter()
+        .map(|link| &link.connection)
+        .chain(hier_sheet_pins.iter().map(|pin| &pin.connection))
+        .chain(hier_ports.iter().map(|port| &port.connection))
+        .find(|connection| {
+            matches!(
+                connection.connection_type,
+                ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+            )
+        })
+    {
+        return build_reduced_project_connection(
+            schematic,
+            sheet_instance_path.to_string(),
+            resolved_name.to_string(),
+            connection.local_name.clone(),
+            connection.full_local_name.clone(),
+            bus_members.to_vec(),
+        );
+    }
+
+    let local_name = reduced_short_net_name(resolved_name);
+    let full_local_name = if !resolved_name.is_empty() {
+        resolved_name.to_string()
+    } else {
+        local_name.clone()
+    };
+
+    build_reduced_project_connection(
+        schematic,
+        sheet_instance_path.to_string(),
+        resolved_name.to_string(),
+        local_name,
+        full_local_name,
+        bus_members.to_vec(),
+    )
 }
 
 // Upstream parity: reduced bridge from local `ResolveDrivers()` candidate identity into the
