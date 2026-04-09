@@ -819,6 +819,9 @@ Current status:
       - active hierarchy-chain, secondary-driver promotion, stale-member replay, and parent-member
         dirty checks now compare clone-equivalent live connection/member owners directly instead of
         snapshotting before/after reduced connections during recursive propagation
+      - live strong drivers now carry kind/priority/connection through one owner graph:
+        unattached drivers sit on a floating owner and attachment upgrades them to concrete item
+        owners instead of splitting real state between `owner` and a second fallback carrier
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
