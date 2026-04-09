@@ -1114,6 +1114,17 @@ Current status:
       - hierarchy-chain chosen-driver rewrites on the active live graph now also clone directly
         from the chosen live driver handle instead of snapshotting a temporary reduced-shaped
         connection through the active propagation loop
+      - remaining active live wrappers are now semantically real ownership boundaries rather than
+        accidental reduced carryovers:
+        - floating strong-driver owners before attachment
+        - `connected_bus_item_handle` on bus-entry wire items
+        - root/no-parent hierarchy state on subgraphs and item owners
+      - remaining `.snapshot()` use on the exercised graph path is now projection or test/equality
+        scaffolding rather than active propagation fallback
+      - production child-name collection now falls back through required `driver_connection`
+        ownership instead of reading `resolved_connection.name`
+      - production point-net lookup now reports the graph-owned reduced subgraph name directly
+        instead of reading the reduced resolved-connection boundary name
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
     - concrete next unblock path:

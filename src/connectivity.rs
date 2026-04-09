@@ -7363,8 +7363,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             let driver_connection = &child.driver_connection;
             if !driver_connection.full_local_name.is_empty() {
                 child_names.push(driver_connection.full_local_name.clone());
-            } else if !child.resolved_connection.name.is_empty() {
-                child_names.push(child.resolved_connection.name.clone());
+            } else if !driver_connection.name.is_empty() {
+                child_names.push(driver_connection.name.clone());
             }
 
             for member in &member_leaves {
@@ -8297,9 +8297,9 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
 // `CONNECTION_GRAPH::GetSubgraphForItem()` / `GetResolvedSubgraphName()` on the project graph
 // path. This is not a 1:1 KiCad item map because the Rust tree still keys the lookup by `(sheet
 // instance path, reduced subgraph anchor)` instead of a live item-owned `CONNECTION_SUBGRAPH`,
-// but it now derives the reported net name through the shared reduced resolved-connection owner
-// instead of only the older flattened subgraph name field. Remaining divergence is fuller item
-// identity for labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
+// but it now reports the graph-owned subgraph name directly instead of re-deriving the point net
+// name from reduced connection boundary state. Remaining divergence is fuller item identity for
+// labels, wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_net_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8308,7 +8308,7 @@ pub(crate) fn resolve_reduced_project_net_at(
     resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
         ReducedProjectNetIdentity {
             code: subgraph.code,
-            name: subgraph.resolved_connection.name.clone(),
+            name: subgraph.name.clone(),
             class: subgraph.class.clone(),
             has_no_connect: subgraph.has_no_connect,
         }
