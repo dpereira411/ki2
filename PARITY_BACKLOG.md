@@ -960,6 +960,15 @@ Current status:
       - active reduced projection of chosen-driver state, strong-driver snapshots, label/sheet-pin/
         hier-port/base-pin connections now also lives on the shared live subgraph owner instead of
         duplicated boundary loops
+      - compatibility test wrappers for hierarchy and bus propagation now also run through the
+        same handle-based live graph path as the active build instead of a second value-owned live
+        subgraph implementation
+      - the duplicate value-owned live hierarchy/bus compatibility path was removed after that
+        redirect, so the remaining live graph code now centers on one shared-handle engine rather
+        than parallel handle and value-owned propagation implementations
+      - the duplicate value-owned post-propagation item-refresh compatibility path was also
+        redirected onto that same handle graph and removed, so exercised live item refresh now
+        goes through one shared handle-based owner path in both active and compatibility coverage
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
@@ -975,6 +984,13 @@ Current status:
         - projection/deterministic-order edges
         - the still-missing fuller live pin / `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object
           graph
+      - after removing the duplicate value-owned live propagation path, the next structural gap is
+        no longer another compatibility-engine cleanup; it is the fuller live object payload behind
+        the current shared handles:
+        - live item/pointer topology beyond reduced owner wrappers
+        - fuller live pin object/update behavior for multi-pin power/base-pin branches
+        - fuller live connection/subgraph object ownership instead of reduced carriers with
+          projection adapters at the boundary
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

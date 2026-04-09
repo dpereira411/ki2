@@ -1836,60 +1836,6 @@ fn live_bus_member_clone_eq_to_connection(
     }
 }
 
-#[cfg(test)]
-fn clone_reduced_bus_member_into_live_bus_member(
-    target: &mut LiveProjectBusMember,
-    source: &ReducedBusMember,
-) {
-    let existing_local_name = target.local_name.clone();
-    let existing_vector_index = target.vector_index;
-    let existing_members = target.members.clone();
-
-    target.net_code = source.net_code;
-    target.name = source.name.clone();
-    if existing_local_name.is_empty() {
-        target.local_name = source.local_name.clone();
-    }
-    target.full_local_name = source.full_local_name.clone();
-    if existing_vector_index.is_some() {
-        target.vector_index = existing_vector_index;
-    } else {
-        target.vector_index = source.vector_index;
-    }
-    target.kind = source.kind.clone();
-
-    if matches!(target.kind, ReducedBusMemberKind::Bus)
-        && matches!(source.kind, ReducedBusMemberKind::Bus)
-    {
-        if existing_members.is_empty() {
-            target.members = reduced_bus_members_into_live_handles(source.members.clone());
-        } else {
-            target.members = existing_members;
-
-            let clone_limit = target.members.len().min(source.members.len());
-            for index in 0..clone_limit {
-                clone_reduced_bus_member_into_live_bus_member(
-                    &mut target.members[index].borrow_mut(),
-                    &source.members[index],
-                );
-            }
-
-            if target.members.len() > source.members.len() {
-                target.members.truncate(source.members.len());
-            } else if target.members.len() < source.members.len() {
-                target.members.extend(
-                    source.members[target.members.len()..]
-                        .iter()
-                        .cloned()
-                        .map(|member| Rc::new(RefCell::new(member.into()))),
-                );
-            }
-        }
-    } else {
-        target.members = reduced_bus_members_into_live_handles(source.members.clone());
-    }
-}
-
 fn clone_live_bus_member_into_reduced_bus_member(
     target: &mut ReducedBusMember,
     source: &LiveProjectBusMember,
@@ -3920,54 +3866,6 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
     (by_pin, by_location)
 }
 
-// Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
-// KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
-// wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
-// owners synchronized with the current live subgraph driver before the final reduced projection
-// and now also preserves KiCad's exercised bus/net mismatch skip plus the `item != m_driver`
-// guard by reading the already-chosen live strong-driver handle from the subgraph owner instead of
-// rediscovering it from names after attachment.
-#[cfg(test)]
-fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubgraph) {
-    subgraph.refresh_item_connections_from_driver();
-}
-
-// Upstream parity: reduced local bridge for pushing live graph-owned connection state back onto the
-// reduced project graph query surface. This is still a projection step because the repo does not
-// yet keep live item-owned connection pointers, but it now writes the live per-link connection
-// owners instead of blasting the chosen driver connection onto every label/sheet-pin/hier-port.
-#[cfg(test)]
-fn apply_live_reduced_driver_connections(
-    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
-    live_subgraphs: &[LiveReducedSubgraph],
-) {
-    for (index, live) in live_subgraphs.iter().enumerate() {
-        let reduced = &mut reduced_subgraphs[index];
-        live.project_driver_and_item_state_onto_reduced(reduced);
-
-        reduced.bus_neighbor_links = live
-            .bus_neighbor_links
-            .iter()
-            .map(|link| reduced_project_bus_link_from_live(&[], link))
-            .collect();
-        reduced.bus_parent_links = live
-            .bus_parent_links
-            .iter()
-            .map(|link| reduced_project_bus_link_from_live(&[], link))
-            .collect();
-        reduced.bus_parent_indexes = live.bus_parent_indexes.clone();
-        for (target, source) in reduced.wire_items.iter_mut().zip(live.wire_items.iter()) {
-            let source = source.borrow();
-            target.connected_bus_subgraph_index = source
-                .connected_bus_item_handle
-                .as_ref()
-                .and_then(Weak::upgrade)
-                .and_then(|bus| live_subgraph_handle_from_wire_item(&bus))
-                .map(|bus| bus.borrow().source_index);
-        }
-    }
-}
-
 // Upstream parity: local bridge for projecting the active shared live subgraph owner back onto
 // the reduced graph query surface. This still ends in a reduced projection because consumers do
 // not yet keep live item/subgraph pointers, but the active recursive graph build now mutates one
@@ -5509,75 +5407,16 @@ fn refresh_reduced_live_graph_propagation_with_handles(
 }
 
 // Upstream parity: reduced local analogue for the post-propagation item-connection update KiCad
-// performs after subgraph names settle. This still projects back onto reduced subgraph snapshots
-// instead of mutating live item-owned `SCH_CONNECTION` objects, but it now refreshes live
-// label/sheet-pin/hier-port connection owners before the final reduced projection instead of
-// treating every item connection as an end-of-pass clone of the chosen driver. The active live
-// path now derives the exercised self-driven symbol-pin and sheet-pin branches from shared live
-// base-pin and sheet-pin payload instead of a copied live driver-identity summary.
+// performs after subgraph names settle. The active and compatibility test paths now both run this
+// through the shared-handle live graph instead of a second value-owned live-subgraph pass.
+// Remaining divergence is the still-missing fuller live item/pointer graph behind those handles.
 #[cfg(test)]
 fn refresh_reduced_live_post_propagation_item_connections(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
-    let mut live_subgraphs = build_live_reduced_subgraphs(reduced_subgraphs);
-    refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(&mut live_subgraphs);
-    apply_live_reduced_driver_connections(reduced_subgraphs, &live_subgraphs);
-}
-
-#[cfg(test)]
-fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
-    live_subgraphs: &mut [LiveReducedSubgraph],
-) {
-    for index in 0..live_subgraphs.len() {
-        sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
-
-        if live_subgraph_is_self_driven_symbol_pin(&live_subgraphs[index])
-            && live_subgraphs[index]
-                .driver_connection
-                .borrow()
-                .name
-                .contains("Net-(")
-        {
-            live_subgraphs[index]
-                .driver_connection
-                .borrow_mut()
-                .force_no_connect_name();
-            sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
-        }
-
-        if live_subgraph_is_self_driven_sheet_pin(&live_subgraphs[index])
-            && matches!(
-                live_subgraphs[index]
-                    .driver_connection
-                    .borrow()
-                    .connection_type,
-                ReducedProjectConnectionType::Net
-            )
-        {
-            if let Some((connection_type, members)) = live_subgraphs[index]
-                .hier_child_indexes
-                .iter()
-                .find_map(|child_index| {
-                    let child_connection = live_subgraphs[*child_index].driver_connection.borrow();
-
-                    matches!(
-                        child_connection.connection_type,
-                        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-                    )
-                    .then_some((
-                        child_connection.connection_type,
-                        child_connection.members.clone(),
-                    ))
-                })
-            {
-                let mut connection = live_subgraphs[index].driver_connection.borrow_mut();
-                connection.connection_type = connection_type;
-                connection.members = members;
-                drop(connection);
-                sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
-            }
-        }
-    }
+    let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
+    refresh_reduced_live_post_propagation_item_connections_on_handles(&live_subgraphs);
+    apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
 // Upstream parity: reduced local analogue for the global-secondary-driver promotion branch inside
