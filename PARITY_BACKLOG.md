@@ -1000,6 +1000,9 @@ Current status:
         - multiple-bus-parent rename and same-name recache
       - active base-pin driver connections now live on direct shared live connection handles
         instead of a second `LiveReducedConnection` wrapper on the pin owner
+      - active base-pin item connections now also live on direct shared live connection handles,
+        so the pin owner no longer carries reduced wrapper state for either of its live pin
+        connections
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale

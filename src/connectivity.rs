@@ -2180,7 +2180,7 @@ struct LiveReducedBasePinPayload {
 // the live pin carrier.
 struct LiveReducedBasePin {
     pin: LiveReducedBasePinPayload,
-    connection: LiveReducedConnection,
+    connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2549,7 +2549,7 @@ impl PartialEq for LiveReducedBasePin {
             self.pin.key.clone(),
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
-            self.connection.snapshot(),
+            self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
@@ -2557,7 +2557,7 @@ impl PartialEq for LiveReducedBasePin {
             other.pin.key.clone(),
             other.pin.number.clone(),
             other.pin.electrical_type.clone(),
-            other.connection.snapshot(),
+            other.connection.borrow().snapshot(),
             other.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
@@ -2579,7 +2579,7 @@ impl Ord for LiveReducedBasePin {
             self.pin.key.clone(),
             self.pin.number.clone(),
             self.pin.electrical_type.clone(),
-            self.connection.snapshot(),
+            self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
@@ -2588,7 +2588,7 @@ impl Ord for LiveReducedBasePin {
                 other.pin.key.clone(),
                 other.pin.number.clone(),
                 other.pin.electrical_type.clone(),
-                other.connection.snapshot(),
+                other.connection.borrow().snapshot(),
                 other.driver_connection.borrow().snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
@@ -3110,6 +3110,7 @@ impl LiveReducedSubgraph {
             let source = source.borrow();
             source
                 .connection
+                .borrow()
                 .project_onto_reduced(&mut target.connection);
         }
 
@@ -3135,6 +3136,7 @@ impl LiveReducedSubgraph {
             let source = source.borrow();
             source
                 .connection
+                .borrow()
                 .project_onto_reduced(&mut target.connection);
         }
     }
@@ -3864,7 +3866,7 @@ fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> Reduced
         key: base_pin.pin.key.clone(),
         number: base_pin.pin.number.clone(),
         electrical_type: base_pin.pin.electrical_type.clone(),
-        connection: base_pin.connection.snapshot(),
+        connection: base_pin.connection.borrow().snapshot(),
     }
 }
 
@@ -4082,7 +4084,7 @@ fn build_live_reduced_subgraph_handles(
                                 number: pin.number.clone(),
                                 electrical_type: pin.electrical_type.clone(),
                             },
-                            connection: LiveReducedConnection::new(pin.connection.clone()),
+                            connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver: None,
                         }))
@@ -13460,7 +13462,7 @@ mod tests {
                     owner.borrow().connection.borrow().connection_type,
                     super::ReducedProjectConnectionType::Net
                 );
-                assert_eq!(owner.borrow().connection.name(), "PWR");
+                assert_eq!(owner.borrow().connection.borrow().name, "PWR");
                 let driver = owner
                     .borrow()
                     .driver
@@ -13504,7 +13506,7 @@ mod tests {
             _ => panic!("expected symbol pin strong-driver owner"),
         };
         assert_eq!(owner.borrow().driver_connection.borrow().name, "RENAMED");
-        assert_eq!(owner.borrow().connection.name(), "PWR");
+        assert_eq!(owner.borrow().connection.borrow().name, "PWR");
     }
 
     #[test]
@@ -13653,8 +13655,8 @@ mod tests {
 
         assert_eq!(first_owner.borrow().pin.key.number.as_deref(), Some("1"));
         assert_eq!(second_owner.borrow().pin.key.number.as_deref(), Some("2"));
-        assert_eq!(first_owner.borrow().connection.name(), "VCC");
-        assert_eq!(second_owner.borrow().connection.name(), "GND");
+        assert_eq!(first_owner.borrow().connection.borrow().name, "VCC");
+        assert_eq!(second_owner.borrow().connection.borrow().name, "GND");
     }
 
     #[test]
@@ -16583,7 +16585,7 @@ mod tests {
 
         let connection = handles[0].borrow().base_pins[0].borrow().connection.clone();
 
-        assert_eq!(connection.name(), "unconnected-(R1-Pad1)");
+        assert_eq!(connection.borrow().name, "unconnected-(R1-Pad1)");
     }
 
     #[test]
@@ -16699,7 +16701,7 @@ mod tests {
         super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
 
         let connection = handles[0].borrow().base_pins[0].borrow().connection.clone();
-        assert_eq!(connection.name(), "/SIG");
+        assert_eq!(connection.borrow().name, "/SIG");
         assert_eq!(connection.borrow().local_name, "SIG");
     }
 
@@ -16825,7 +16827,7 @@ mod tests {
         super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
 
         let connection = handles[0].borrow().base_pins[0].borrow().connection.clone();
-        assert_eq!(connection.name(), "/SIG");
+        assert_eq!(connection.borrow().name, "/SIG");
         assert_eq!(connection.borrow().local_name, "VCC");
         assert_eq!(connection.borrow().full_local_name, "/SIG");
         assert_eq!(connection.borrow().net_code, 1);
