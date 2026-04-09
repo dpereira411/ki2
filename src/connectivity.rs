@@ -1809,6 +1809,44 @@ impl LiveProjectConnection {
         self.full_local_name = reduced_force_no_connect_net_name(&self.full_local_name);
     }
 
+    // Upstream parity: local connection-owner analogue for the exercised bus-member lookup paths
+    // inside live graph propagation. This still walks reduced live member owners instead of a
+    // fuller `SCH_CONNECTION` object graph, but active callers now ask the connection owner for
+    // member matches instead of reaching through raw `.members` vectors.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn find_member(&self, search: &ReducedBusMember) -> Option<LiveProjectBusMemberHandle> {
+        match_live_bus_member(&self.members, search)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn find_member_live(
+        &self,
+        search: &LiveProjectBusMember,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        match_live_bus_member_live(&self.members, search)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn find_member_for_connection(
+        &self,
+        search: &LiveProjectConnection,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        match_live_bus_member_connection(&self.members, search)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn find_member_mut(&mut self, search: &ReducedBusMember) -> Option<LiveProjectBusMemberHandle> {
+        match_live_bus_member_mut(&mut self.members, search)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn find_member_mut_live(
+        &mut self,
+        search: &LiveProjectBusMember,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        match_live_bus_member_mut_live(&mut self.members, search)
+    }
+
     fn snapshot(&self) -> ReducedProjectConnection {
         ReducedProjectConnection {
             net_code: self.net_code,
@@ -4239,7 +4277,7 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
             }
 
             let mut connection = subgraph.driver_connection.borrow_mut();
-            if let Some(member) = match_live_bus_member_mut(&mut connection.members, stale_member) {
+            if let Some(member) = connection.find_member_mut(stale_member) {
                 let old_member = member.borrow().clone();
                 clone_reduced_connection_into_live_bus_member(
                     &mut member.borrow_mut(),
@@ -4678,7 +4716,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
             let neighbor_index = link.borrow().subgraph_index;
             let parent_member = {
                 let parent_connection = live_subgraphs[parent_index].driver_connection.borrow();
-                match_live_bus_member_live(&parent_connection.members, &link_member.borrow())
+                parent_connection.find_member_live(&link_member.borrow())
             };
             let Some(parent_member) = parent_member else {
                 continue;
@@ -4718,7 +4756,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
 
                 let parent_has_search = {
                     let parent_connection = live_subgraphs[parent_index].driver_connection.borrow();
-                    match_live_bus_member(&parent_connection.members, &search).is_some()
+                    parent_connection.find_member(&search).is_some()
                 };
                 if parent_has_search {
                     continue;
@@ -4730,10 +4768,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 let old_member = link_member.clone();
                 let mut parent_connection_mut =
                     live_subgraphs[parent_index].driver_connection.borrow_mut();
-                if let Some(member) = match_live_bus_member_mut_live(
-                    &mut parent_connection_mut.members,
-                    &link_member.borrow(),
-                ) {
+                if let Some(member) =
+                    parent_connection_mut.find_member_mut_live(&link_member.borrow())
+                {
                     clone_reduced_connection_into_live_bus_member(
                         &mut member.borrow_mut(),
                         &promoted,
@@ -4842,23 +4879,18 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
                 members: child_connection.members.clone(),
             };
 
-            if match_live_bus_member(
-                &live_subgraphs[parent_index]
-                    .driver_connection
-                    .borrow()
-                    .members,
-                &search,
-            )
-            .is_some()
+            if live_subgraphs[parent_index]
+                .driver_connection
+                .borrow()
+                .find_member(&search)
+                .is_some()
             {
                 continue;
             }
 
             let mut parent_connection = live_subgraphs[parent_index].driver_connection.borrow_mut();
             let link_member = live_bus_member_handle_snapshot(&link.borrow().member);
-            if let Some(member) =
-                match_live_bus_member_mut(&mut parent_connection.members, &link_member)
-            {
+            if let Some(member) = parent_connection.find_member_mut(&link_member) {
                 let old_member = member.borrow().clone();
                 clone_reduced_connection_into_live_bus_member(
                     &mut member.borrow_mut(),
@@ -4911,9 +4943,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
             let old_name = {
                 let mut parent_connection =
                     live_subgraphs[parent_index].driver_connection.borrow_mut();
-                let Some(member) =
-                    match_live_bus_member_mut(&mut parent_connection.members, &link_member)
-                else {
+                let Some(member) = parent_connection.find_member_mut(&link_member) else {
                     continue;
                 };
 
@@ -5003,13 +5033,11 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
                     })
                 });
 
-            let Some(refreshed_member) = match_live_bus_member(
-                &live_subgraphs[parent_index]
-                    .driver_connection
-                    .borrow()
-                    .members,
-                &search.snapshot(),
-            ) else {
+            let Some(refreshed_member) = live_subgraphs[parent_index]
+                .driver_connection
+                .borrow()
+                .find_member(&search.snapshot())
+            else {
                 continue;
             };
 
@@ -5344,10 +5372,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
             let parent_member = {
                 let parent = parent_handle.borrow();
                 let parent_connection = parent.driver_connection.borrow();
-                match_live_bus_member_live(
-                    &parent_connection.members,
-                    &current_link_member.borrow(),
-                )
+                parent_connection.find_member_live(&current_link_member.borrow())
             };
             let Some(parent_member) = parent_member else {
                 continue;
@@ -5377,11 +5402,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 let parent_has_search = {
                     let parent = parent_handle.borrow();
                     let parent_connection = parent.driver_connection.borrow();
-                    match_live_bus_member_connection(
-                        &parent_connection.members,
-                        &promoted_connection,
-                    )
-                    .is_some()
+                    parent_connection
+                        .find_member_for_connection(&promoted_connection)
+                        .is_some()
                 };
                 if parent_has_search {
                     continue;
@@ -5497,11 +5520,12 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 continue;
             }
 
-            if match_live_bus_member_connection(
-                &parent_handle.borrow().driver_connection.borrow().members,
-                &child_connection.borrow(),
-            )
-            .is_some()
+            if parent_handle
+                .borrow()
+                .driver_connection
+                .borrow()
+                .find_member_for_connection(&child_connection.borrow())
+                .is_some()
             {
                 continue;
             }
@@ -5649,24 +5673,27 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
             let refreshed_member = existing_member
                 .as_ref()
                 .and_then(|search| {
-                    match_live_bus_member_live(
-                        &parent_handle.borrow().driver_connection.borrow().members,
-                        &search.borrow(),
-                    )
+                    parent_handle
+                        .borrow()
+                        .driver_connection
+                        .borrow()
+                        .find_member_live(&search.borrow())
                 })
                 .or_else(|| {
                     parent_neighbor_member.as_ref().and_then(|search| {
-                        match_live_bus_member_live(
-                            &parent_handle.borrow().driver_connection.borrow().members,
-                            &search.borrow(),
-                        )
+                        parent_handle
+                            .borrow()
+                            .driver_connection
+                            .borrow()
+                            .find_member_live(&search.borrow())
                     })
                 })
                 .or_else(|| {
-                    match_live_bus_member_connection(
-                        &parent_handle.borrow().driver_connection.borrow().members,
-                        &child_connection.borrow(),
-                    )
+                    parent_handle
+                        .borrow()
+                        .driver_connection
+                        .borrow()
+                        .find_member_for_connection(&child_connection.borrow())
                 });
 
             let Some(refreshed_member) = refreshed_member else {
