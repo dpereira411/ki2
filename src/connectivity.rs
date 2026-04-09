@@ -8758,7 +8758,7 @@ where
     FLabel: FnMut(&Label) -> String,
     FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
-    let mut drivers = Vec::new();
+    let mut drivers = Vec::<(ReducedProjectStrongDriver, i32)>::new();
 
     for item in &schematic.screen.items {
         match item {
@@ -8779,26 +8779,29 @@ where
                 };
                 let full_name = reduced_driver_full_name(&text, source, sheet_path_prefix);
 
-                drivers.push(ReducedProjectStrongDriver {
-                    kind: ReducedProjectDriverKind::Label,
-                    priority: reduced_label_driver_priority(label),
-                    connection: build_reduced_project_driver_connection(
-                        schematic,
-                        sheet_instance_path,
-                        text.clone(),
-                        full_name,
-                        if label.kind == LabelKind::Global {
-                            ""
-                        } else {
-                            sheet_path_prefix
-                        },
-                    ),
-                    identity: Some(ReducedProjectDriverIdentity::Label {
-                        schematic_path: schematic_path.to_path_buf(),
-                        at: point_key(label.at),
-                        kind: reduced_label_kind_sort_key(label.kind),
-                    }),
-                });
+                drivers.push((
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: reduced_label_driver_priority(label),
+                        connection: build_reduced_project_driver_connection(
+                            schematic,
+                            sheet_instance_path,
+                            text.clone(),
+                            full_name,
+                            if label.kind == LabelKind::Global {
+                                ""
+                            } else {
+                                sheet_path_prefix
+                            },
+                        ),
+                        identity: Some(ReducedProjectDriverIdentity::Label {
+                            schematic_path: schematic_path.to_path_buf(),
+                            at: point_key(label.at),
+                            kind: reduced_label_kind_sort_key(label.kind),
+                        }),
+                    },
+                    0,
+                ));
             }
             SchItem::Sheet(sheet) => {
                 for pin in sheet.pins.iter().filter(|pin| {
@@ -8814,21 +8817,24 @@ where
                         sheet_path_prefix,
                     );
 
-                    drivers.push(ReducedProjectStrongDriver {
-                        kind: ReducedProjectDriverKind::SheetPin,
-                        priority: reduced_sheet_pin_driver_priority(),
-                        connection: build_reduced_project_driver_connection(
-                            schematic,
-                            sheet_instance_path,
-                            shown.clone(),
-                            full_name,
-                            sheet_path_prefix,
-                        ),
-                        identity: Some(ReducedProjectDriverIdentity::SheetPin {
-                            schematic_path: schematic_path.to_path_buf(),
-                            at: point_key(pin.at),
-                        }),
-                    });
+                    drivers.push((
+                        ReducedProjectStrongDriver {
+                            kind: ReducedProjectDriverKind::SheetPin,
+                            priority: reduced_sheet_pin_driver_priority(),
+                            connection: build_reduced_project_driver_connection(
+                                schematic,
+                                sheet_instance_path,
+                                shown.clone(),
+                                full_name,
+                                sheet_path_prefix,
+                            ),
+                            identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                                schematic_path: schematic_path.to_path_buf(),
+                                at: point_key(pin.at),
+                            }),
+                        },
+                        reduced_sheet_pin_driver_rank(pin.shape),
+                    ));
                 }
             }
             SchItem::Symbol(symbol) => {
@@ -8855,45 +8861,51 @@ where
                             let full_name =
                                 reduced_driver_full_name(&text, source, sheet_path_prefix);
 
-                            drivers.push(ReducedProjectStrongDriver {
-                                kind: ReducedProjectDriverKind::PowerPin,
-                                priority,
-                                connection: build_reduced_project_driver_connection(
-                                    schematic,
-                                    sheet_instance_path,
-                                    text.clone(),
-                                    full_name,
-                                    if local_power { sheet_path_prefix } else { "" },
-                                ),
-                                identity: Some(ReducedProjectDriverIdentity::SymbolPin {
-                                    schematic_path: schematic_path.to_path_buf(),
-                                    symbol_uuid: symbol.uuid.clone(),
-                                    at: point_key(pin.at),
-                                    pin_number: pin.number.clone(),
-                                }),
-                            });
+                            drivers.push((
+                                ReducedProjectStrongDriver {
+                                    kind: ReducedProjectDriverKind::PowerPin,
+                                    priority,
+                                    connection: build_reduced_project_driver_connection(
+                                        schematic,
+                                        sheet_instance_path,
+                                        text.clone(),
+                                        full_name,
+                                        if local_power { sheet_path_prefix } else { "" },
+                                    ),
+                                    identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                                        schematic_path: schematic_path.to_path_buf(),
+                                        symbol_uuid: symbol.uuid.clone(),
+                                        at: point_key(pin.at),
+                                        pin_number: pin.number.clone(),
+                                    }),
+                                },
+                                0,
+                            ));
                         }
                     } else if symbol.in_netlist && symbol.on_board {
                         if let Some(text) =
                             reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
                         {
-                            drivers.push(ReducedProjectStrongDriver {
-                                kind: ReducedProjectDriverKind::Pin,
-                                priority: reduced_pin_driver_priority(),
-                                connection: build_reduced_project_driver_connection(
-                                    schematic,
-                                    sheet_instance_path,
-                                    text.clone(),
-                                    text,
-                                    "",
-                                ),
-                                identity: Some(ReducedProjectDriverIdentity::SymbolPin {
-                                    schematic_path: schematic_path.to_path_buf(),
-                                    symbol_uuid: symbol.uuid.clone(),
-                                    at: point_key(pin.at),
-                                    pin_number: pin.number.clone(),
-                                }),
-                            });
+                            drivers.push((
+                                ReducedProjectStrongDriver {
+                                    kind: ReducedProjectDriverKind::Pin,
+                                    priority: reduced_pin_driver_priority(),
+                                    connection: build_reduced_project_driver_connection(
+                                        schematic,
+                                        sheet_instance_path,
+                                        text.clone(),
+                                        text,
+                                        "",
+                                    ),
+                                    identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                                        schematic_path: schematic_path.to_path_buf(),
+                                        symbol_uuid: symbol.uuid.clone(),
+                                        at: point_key(pin.at),
+                                        pin_number: pin.number.clone(),
+                                    }),
+                                },
+                                0,
+                            ));
                         }
                     }
                 }
@@ -8902,25 +8914,37 @@ where
         }
     }
 
-    drivers.retain(|driver| {
+    drivers.retain(|(driver, _sheet_pin_rank)| {
         !reduced_project_strong_driver_name(driver).is_empty()
             && !reduced_project_strong_driver_name(driver).contains("${")
             && !reduced_project_strong_driver_name(driver).starts_with('<')
     });
 
-    if drivers
-        .iter()
-        .any(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
-    {
-        drivers.retain(|driver| driver.priority >= reduced_hierarchical_label_driver_priority());
+    if drivers.iter().any(|(driver, _sheet_pin_rank)| {
+        driver.priority >= reduced_hierarchical_label_driver_priority()
+    }) {
+        drivers.retain(|(driver, _sheet_pin_rank)| {
+            driver.priority >= reduced_hierarchical_label_driver_priority()
+        });
     }
 
-    drivers.sort_by(|lhs, rhs| {
-        rhs.priority.cmp(&lhs.priority).then_with(|| {
-            reduced_project_strong_driver_name(lhs).cmp(reduced_project_strong_driver_name(rhs))
-        })
+    drivers.sort_by(|(lhs, lhs_sheet_pin_rank), (rhs, rhs_sheet_pin_rank)| {
+        let lhs_name = reduced_project_strong_driver_name(lhs);
+        let rhs_name = reduced_project_strong_driver_name(rhs);
+        let lhs_low_quality_name = lhs_name.contains("-Pad");
+        let rhs_low_quality_name = rhs_name.contains("-Pad");
+
+        rhs.priority
+            .cmp(&lhs.priority)
+            .then_with(|| reduced_bus_subset_cmp(schematic, lhs_name, rhs_name))
+            .then_with(|| rhs_sheet_pin_rank.cmp(lhs_sheet_pin_rank))
+            .then_with(|| lhs_low_quality_name.cmp(&rhs_low_quality_name))
+            .then_with(|| lhs_name.cmp(rhs_name))
     });
     drivers
+        .into_iter()
+        .map(|(driver, _sheet_pin_rank)| driver)
+        .collect()
 }
 
 // Upstream parity: reduced local analogue for the connected-driver naming part of
@@ -11961,6 +11985,88 @@ mod tests {
             candidate.identity,
             Some(super::ReducedLocalDriverIdentity::SheetPin {
                 at: super::point_key([20.0, 5.0]),
+            })
+        );
+
+        let _ = fs::remove_file(&root_path);
+        let _ = fs::remove_file(&child_path);
+    }
+
+    #[test]
+    fn collect_reduced_strong_drivers_prefers_output_sheet_pin_driver() {
+        let root_path = env::temp_dir().join(format!(
+            "ki2_connectivity_sheet_pin_strong_driver_rank_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let child_path = env::temp_dir().join(format!(
+            "ki2_connectivity_sheet_pin_strong_driver_rank_child_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &root_path,
+            format!(
+                r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy 0 5) (xy 20 5)))
+  (sheet (at 0 0) (size 20 10)
+    (uuid "73050000-0000-0000-0000-000000000511")
+    (property "Sheetname" "Child" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+    (property "Sheetfile" "{}" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+    (pin "Z" output (at 0 5 180) (uuid "73050000-0000-0000-0000-000000000512"))
+    (pin "A" input (at 20 5 0) (uuid "73050000-0000-0000-0000-000000000513"))))"#,
+                child_path.display()
+            ),
+        )
+        .expect("write root schematic");
+        fs::write(
+            &child_path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4"))"#,
+        )
+        .expect("write child schematic");
+
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let schematic = loaded
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+            .expect("root schematic");
+        let component = super::connection_component_at(schematic, [20.0, 5.0]).expect("component");
+        let drivers = super::collect_reduced_strong_drivers(
+            schematic,
+            &sheet_path.schematic_path,
+            &sheet_path.instance_path,
+            &component,
+            "",
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        );
+
+        assert_eq!(drivers.len(), 2);
+        assert_eq!(drivers[0].kind, ReducedProjectDriverKind::SheetPin);
+        assert_eq!(drivers[0].connection.local_name, "Z");
+        assert_eq!(
+            drivers[0].identity,
+            Some(super::ReducedProjectDriverIdentity::SheetPin {
+                schematic_path: sheet_path.schematic_path.clone(),
+                at: super::point_key([0.0, 5.0]),
             })
         );
 
