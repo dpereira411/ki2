@@ -93,8 +93,10 @@ pub(crate) struct ReducedNetBasePinKey {
 pub(crate) struct ReducedProjectBasePin {
     pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) key: ReducedNetBasePinKey,
+    pub(crate) reference: Option<String>,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
+    pub(crate) is_power_symbol: bool,
     pub(crate) connection: ReducedProjectConnection,
     pub(crate) driver_connection: ReducedProjectConnection,
     pub(crate) preserve_local_name_on_refresh: bool,
@@ -1913,8 +1915,10 @@ type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 struct LiveReducedBasePinPayload {
     schematic_path: std::path::PathBuf,
     key: ReducedNetBasePinKey,
+    reference: Option<String>,
     number: Option<String>,
     electrical_type: Option<String>,
+    is_power_symbol: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -4072,8 +4076,10 @@ fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> Reduced
     ReducedProjectBasePin {
         schematic_path: base_pin.pin.schematic_path.clone(),
         key: base_pin.pin.key.clone(),
+        reference: base_pin.pin.reference.clone(),
         number: base_pin.pin.number.clone(),
         electrical_type: base_pin.pin.electrical_type.clone(),
+        is_power_symbol: base_pin.pin.is_power_symbol,
         connection: base_pin.connection.borrow().snapshot(),
         driver_connection: base_pin.driver_connection.borrow().snapshot(),
         preserve_local_name_on_refresh: base_pin.preserved_local_name.is_some(),
@@ -4296,8 +4302,10 @@ fn build_live_reduced_subgraph_handles(
                             pin: LiveReducedBasePinPayload {
                                 schematic_path: pin.schematic_path.clone(),
                                 key: pin.key.clone(),
+                                reference: pin.reference.clone(),
                                 number: pin.number.clone(),
                                 electrical_type: pin.electrical_type.clone(),
+                                is_power_symbol: pin.is_power_symbol,
                             },
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(
@@ -5731,8 +5739,13 @@ where
                         name: pin.name.clone(),
                         number: pin.number.clone(),
                     },
+                    reference: reference.clone(),
                     number: pin.number.clone(),
                     electrical_type: pin.electrical_type.clone(),
+                    is_power_symbol: symbol
+                        .lib_symbol
+                        .as_ref()
+                        .is_some_and(|lib_symbol| lib_symbol.power),
                     connection: reduced_seeded_symbol_pin_connection(
                         symbol,
                         pin,
@@ -10687,8 +10700,10 @@ mod tests {
                             name: Some("PWR".to_string()),
                             number: Some("1".to_string()),
                         },
+                        reference: None,
                         number: Some("1".to_string()),
                         electrical_type: None,
+                        is_power_symbol: true,
                         connection: super::ReducedProjectConnection {
                             net_code: 0,
                             connection_type: super::ReducedProjectConnectionType::Net,
@@ -10718,8 +10733,10 @@ mod tests {
                             name: Some("PWR".to_string()),
                             number: Some("2".to_string()),
                         },
+                        reference: None,
                         number: Some("2".to_string()),
                         electrical_type: None,
+                        is_power_symbol: true,
                         connection: super::ReducedProjectConnection {
                             net_code: 0,
                             connection_type: super::ReducedProjectConnectionType::Net,
@@ -12534,8 +12551,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -12700,8 +12719,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -12814,8 +12835,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -13024,8 +13047,10 @@ mod tests {
                         name: Some("PWR".to_string()),
                         number: Some("1".to_string()),
                     },
+                    reference: None,
                     number: Some("1".to_string()),
                     electrical_type: Some("power_in".to_string()),
+                    is_power_symbol: true,
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -13055,8 +13080,10 @@ mod tests {
                         name: Some("PWR".to_string()),
                         number: Some("2".to_string()),
                     },
+                    reference: None,
                     number: Some("2".to_string()),
                     electrical_type: Some("power_in".to_string()),
+                    is_power_symbol: true,
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -15452,8 +15479,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -15539,8 +15568,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -15641,8 +15672,10 @@ mod tests {
                     name: Some("IN".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("input".to_string()),
+                is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -15789,8 +15822,10 @@ mod tests {
                     name: Some("VCC".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -15927,8 +15962,10 @@ mod tests {
                     name: Some("VCC".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -16031,8 +16068,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -16134,8 +16173,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -16251,8 +16292,10 @@ mod tests {
                     name: Some("1".to_string()),
                     number: Some("1".to_string()),
                 },
+                reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -16337,8 +16380,10 @@ mod tests {
                     name: Some("IN".to_string()),
                     number: Some("7".to_string()),
                 },
+                reference: None,
                 number: Some("7".to_string()),
                 electrical_type: Some("bidirectional".to_string()),
+                is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,

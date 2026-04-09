@@ -13,8 +13,7 @@ use crate::loader::{
     LoadedErcSeverity, LoadedSheetPath, collect_wire_segments, point_on_wire_segment, points_equal,
     resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
     resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
-    resolved_sheet_text_state, resolved_symbol_text_property_value, resolved_symbol_text_state,
-    shown_sheet_pin_text,
+    resolved_sheet_text_state, resolved_symbol_text_state, shown_sheet_pin_text,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::BTreeMap;
@@ -229,56 +228,30 @@ fn reduced_str_num_cmp_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-fn resolve_base_pin_type(
-    project: &SchematicProject,
-    base_pin: &ReducedNetBasePinKey,
+// Upstream parity: reduced local helper for the pin-owned context KiCad keeps on `SCH_PIN` items
+// while `ERC_TESTER::TestPinToPin()` runs. This still projects from reduced graph-owned base-pin
+// payload instead of live `SCH_PIN` objects, but the exercised ERC pin context now comes from the
+// shared graph owner instead of re-walking loaded symbols at report time. Remaining divergence is
+// the still-missing live pin object and marker attachment.
+fn reduced_erc_pin_context_from_base_pin(
+    base_pin: &crate::connectivity::ReducedProjectBasePin,
 ) -> Option<ReducedErcPinContext> {
-    let sheet_path = project
-        .sheet_paths
-        .iter()
-        .find(|sheet_path| sheet_path.instance_path == base_pin.sheet_instance_path)?;
-    let schematic = project.schematic(&sheet_path.schematic_path)?;
-    let symbol = schematic.screen.items.iter().find_map(|item| match item {
-        SchItem::Symbol(symbol) if symbol.uuid == base_pin.symbol_uuid => Some(symbol),
-        _ => None,
-    })?;
+    let pin_number = base_pin.number.clone()?;
+    let electrical_type = base_pin.electrical_type.clone()?;
+    let pin_type = parse_reduced_pin_type(&electrical_type)?;
+    let reference = base_pin.reference.clone()?;
 
-    projected_symbol_pin_info(symbol)
-        .into_iter()
-        .find(|pin| {
-            pin.at[0].to_bits() == base_pin.at.0
-                && pin.at[1].to_bits() == base_pin.at.1
-                && match (&base_pin.name, &pin.name) {
-                    (Some(base_name), Some(pin_name)) => pin_name == base_name,
-                    (Some(base_name), None) => base_name == "~",
-                    _ => true,
-                }
-        })
-        .and_then(|pin| {
-            let pin_number = pin.number?;
-            let electrical_type = pin.electrical_type?;
-            let pin_type = parse_reduced_pin_type(&electrical_type)?;
-            let reference = resolved_symbol_text_property_value(
-                &project.schematics,
-                sheet_path,
-                project.project.as_ref(),
-                project.current_variant(),
-                symbol,
-                "Reference",
-            )?;
-
-            Some(ReducedErcPinContext {
-                at: pin.at,
-                is_power_symbol: symbol
-                    .lib_symbol
-                    .as_ref()
-                    .is_some_and(|lib_symbol| lib_symbol.power),
-                path: schematic.path.clone(),
-                reference,
-                pin_number,
-                pin_type,
-            })
-        })
+    Some(ReducedErcPinContext {
+        at: [
+            f64::from_bits(base_pin.key.at.0),
+            f64::from_bits(base_pin.key.at.1),
+        ],
+        is_power_symbol: base_pin.is_power_symbol,
+        path: base_pin.schematic_path.clone(),
+        reference,
+        pin_number,
+        pin_type,
+    })
 }
 
 fn pin_type_index(pin_type: ReducedPinType) -> usize {
@@ -2770,15 +2743,21 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 // KiCad pin-matrix runner because the Rust tree still lacks full `ERC_SETTINGS`, graph-owned pin
 // contexts, marker placement heuristics, and the full connection graph. It now runs over the
 // shared reduced project net map like upstream `m_nets` instead of per-sheet connection
-// components, and applies the typed companion-project `erc.pin_map` override slice on top of the
-// upstream default matrix instead of hard-coding only the defaults. It now also follows the
-// reduced `needsDriver` / non-power preference shape more closely when choosing one missing-driver
-// report target from a net, and now sorts reduced pin contexts with a local `StrNumCmp` analogue
-// before conflict selection so reference/pin ordering stays deterministic on mixed numeric names.
-// Remaining divergence is richer settings, visibility-based pin preference, multi-marker emission,
-// and full subgraph ownership.
+// components, applies the typed companion-project `erc.pin_map` override slice on top of the
+// upstream default matrix instead of hard-coding only the defaults, and now reads the exercised
+// per-pin ERC context from shared graph-owned base-pin payload instead of re-walking symbols at
+// report time. It now also follows the reduced `needsDriver` / non-power preference shape more
+// closely when choosing one missing-driver report target from a net, and sorts reduced pin
+// contexts with a local `StrNumCmp` analogue before conflict selection so reference/pin ordering
+// stays deterministic on mixed numeric names. Remaining divergence is richer settings,
+// visibility-based pin preference, multi-marker emission, and full subgraph ownership.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let base_pins_by_key = collect_reduced_project_subgraphs(project, false)
+        .into_iter()
+        .flat_map(|subgraph| subgraph.base_pins.into_iter())
+        .map(|base_pin| (base_pin.key.clone(), base_pin))
+        .collect::<BTreeMap<_, _>>();
 
     for net in collect_reduced_project_net_map(project, false) {
         struct PinMismatch {
@@ -2790,7 +2769,8 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
         let mut pins = net
             .base_pins
             .iter()
-            .filter_map(|base_pin| resolve_base_pin_type(project, base_pin))
+            .filter_map(|base_pin| base_pins_by_key.get(base_pin))
+            .filter_map(reduced_erc_pin_context_from_base_pin)
             .collect::<Vec<_>>();
 
         if pins.len() < 2 {
