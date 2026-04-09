@@ -747,12 +747,19 @@ Current status:
         handles plus narrow live-owner reads across hierarchy traversal, connected-component
         discovery, secondary-driver promotion, bus-neighbor propagation, bus-parent refresh,
         bus-link rematch, multi-parent rename, and post-propagation item refresh
+      - after that traversal port, the main active copy boundary is no longer whole-subgraph
+        reads; it is the member/driver payload itself:
+        - live bus links still carry copied member values instead of shared live member identity
+        - live driver lists still carry copied reduced strong-driver values instead of fuller live
+          driver-item owners
+        - stale-member replay still carries member values, not shared live member owners
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
       2. move live name recache and the remaining projection/boundary bus-member ownership onto
          that same connection/member owner instead of cloning reduced snapshots through recursive
-         revisits
+         revisits, starting with shared live member identity for link payloads and stale-member
+         replay
       3. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time
