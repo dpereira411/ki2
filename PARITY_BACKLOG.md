@@ -885,6 +885,10 @@ Current status:
       - live item-connection refresh now also preserves the exercised
         `CONNECTION_SUBGRAPH::UpdateItemConnections()` bus/net mismatch skip instead of cloning a
         bus driver onto net-typed item owners or vice versa
+      - live item-connection refresh now also preserves the exercised
+        `CONNECTION_SUBGRAPH::UpdateItemConnections()` `item != m_driver` guard by keeping the
+        chosen live strong-driver handle on the subgraph owner and skipping refresh on that same
+        chosen driver item instead of rediscovering the driver from names after owner attachment
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage
