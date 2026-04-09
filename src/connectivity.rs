@@ -6237,6 +6237,17 @@ fn push_connection_member(
     entry.members.push(member);
 }
 
+fn connection_member_matches_projected_symbol_pin(
+    member: &ConnectionMember,
+    symbol: &Symbol,
+    pin: &ProjectedSymbolPin,
+) -> bool {
+    member.kind == ConnectionMemberKind::SymbolPin
+        && member.symbol_uuid == symbol.uuid
+        && member.pin_number == pin.number
+        && points_equal(member.at, pin.at)
+}
+
 // Upstream parity: reduced local analogue for the connection-point map built inside
 // `ERC_TESTER::TestFourWayJunction()` / `TestNoConnectPins()`. This is not a 1:1
 // `CONNECTION_GRAPH` port because the Rust tree still lacks KiCad's full subgraph ownership, but
@@ -6537,9 +6548,7 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
                         .members
                         .iter()
                         .any(|member| {
-                            member.kind == ConnectionMemberKind::SymbolPin
-                                && member.symbol_uuid == symbol.uuid
-                                && points_equal(member.at, pin.at)
+                            connection_member_matches_projected_symbol_pin(member, symbol, pin)
                         })
                         .then_some(point_index)
                 })
@@ -6646,9 +6655,7 @@ where
                 };
 
                 if !component.members.iter().any(|member| {
-                    member.kind == ConnectionMemberKind::SymbolPin
-                        && member.symbol_uuid == symbol.uuid
-                        && points_equal(member.at, pin.at)
+                    connection_member_matches_projected_symbol_pin(member, symbol, &pin)
                 }) {
                     continue;
                 }
@@ -8858,9 +8865,7 @@ where
 
                 for pin in unit_pins.iter().filter(|pin| {
                     connected_component.members.iter().any(|member| {
-                        member.kind == ConnectionMemberKind::SymbolPin
-                            && member.symbol_uuid == symbol.uuid
-                            && points_equal(member.at, pin.at)
+                        connection_member_matches_projected_symbol_pin(member, symbol, pin)
                     })
                 }) {
                     if let Some(priority) =
@@ -9009,9 +9014,7 @@ where
 
                 for pin in unit_pins.iter().filter(|pin| {
                     connected_component.members.iter().any(|member| {
-                        member.kind == ConnectionMemberKind::SymbolPin
-                            && member.symbol_uuid == symbol.uuid
-                            && points_equal(member.at, pin.at)
+                        connection_member_matches_projected_symbol_pin(member, symbol, pin)
                     })
                 }) {
                     let candidate =

@@ -859,6 +859,9 @@ Current status:
       - connection-point collection now also keeps stacked symbol pins distinct by pin number
         instead of collapsing them by symbol UUID alone before the shared graph sees them, which is
         closer to KiCad's separate `SCH_PIN` item identity
+      - active symbol-pin connectivity, net-map, and driver-candidate matching now also consume
+        that `(symbol UUID, position, pin number)` identity instead of matching stacked pins by
+        position alone once they reach the shared connectivity owner
       - reduced/live subgraphs now also preserve richer base-pin payload:
         `ReducedProjectBasePin { key, number, electrical_type }`
         so the graph no longer has to collapse pin-owned state to bare `ReducedNetBasePinKey`
