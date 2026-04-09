@@ -4364,7 +4364,11 @@ fn update_live_subgraph_link_handle(
 }
 
 fn live_subgraph_strong_driver_count(subgraph: &LiveReducedSubgraph) -> usize {
-    subgraph.drivers.len()
+    subgraph
+        .drivers
+        .iter()
+        .filter(|driver| driver.borrow().priority() >= reduced_hierarchical_label_driver_priority())
+        .count()
 }
 
 fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
