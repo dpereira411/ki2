@@ -4574,6 +4574,7 @@ fn resolve_symbol_pin_text_var(
                 symbol,
                 pin_at,
                 lib_pin.name.as_deref(),
+                lib_pin.number.as_deref(),
             )
         });
 
@@ -4622,6 +4623,7 @@ fn resolve_symbol_pin_text_var(
                             symbol,
                             pin_at,
                             lib_pin.name.as_deref(),
+                            lib_pin.number.as_deref(),
                         )
                     })
                 })
@@ -4749,6 +4751,7 @@ fn resolve_symbol_pin_text_var(
                                 candidate_symbol,
                                 pin_at,
                                 lib_pin.name.as_deref(),
+                                lib_pin.number.as_deref(),
                             )
                         })
                         .map(|net| net.name)
@@ -4791,6 +4794,7 @@ fn resolve_symbol_pin_text_var(
                                 candidate_symbol,
                                 pin_at,
                                 lib_pin.name.as_deref(),
+                                lib_pin.number.as_deref(),
                             )
                         })
                         .or_else(|| {
@@ -4833,6 +4837,7 @@ fn resolve_symbol_pin_text_var(
                                 candidate_symbol,
                                 pin_at,
                                 lib_pin.name.as_deref(),
+                                lib_pin.number.as_deref(),
                             )
                         })
                         .map(|net| net.class)

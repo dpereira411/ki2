@@ -86,6 +86,7 @@ pub(crate) struct ReducedNetBasePinKey {
     pub(crate) symbol_uuid: Option<String>,
     pub(crate) at: PointKey,
     pub(crate) name: Option<String>,
+    pub(crate) number: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -6671,6 +6672,7 @@ where
                         symbol_uuid: symbol.uuid.clone(),
                         at: point_key(pin.at),
                         name: pin.name.clone(),
+                        number: pin.number.clone(),
                     },
                     number: pin.number.clone(),
                     electrical_type: pin.electrical_type.clone(),
@@ -8265,17 +8267,24 @@ fn collect_reduced_subgraph_hierarchy_membership(
     (hier_sheet_pins, hier_ports)
 }
 
+// Upstream parity: reduced local key for the symbol-pin branch of
+// `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad item key because the Rust
+// tree still has no live `SCH_PIN*`, but it now includes projected pin number so stacked same-name
+// pins can stay distinct at the reduced project-graph lookup boundary. Remaining divergence is the
+// still-missing full live pin item owner.
 fn reduced_project_base_pin_key(
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
     at: [f64; 2],
     pin_name: &str,
+    pin_number: Option<&str>,
 ) -> ReducedNetBasePinKey {
     ReducedNetBasePinKey {
         sheet_instance_path: sheet_path.instance_path.clone(),
         symbol_uuid: symbol.uuid.clone(),
         at: point_key(at),
         name: Some(pin_name.to_string()),
+        number: pin_number.map(str::to_string),
     }
 }
 
@@ -8291,15 +8300,17 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     symbol: &Symbol,
     at: [f64; 2],
     pin_name: Option<&str>,
+    pin_number: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name).map(
-        |subgraph| ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: subgraph.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: subgraph.has_no_connect,
-        },
+    resolve_reduced_project_subgraph_for_symbol_pin(
+        graph, sheet_path, symbol, at, pin_name, pin_number,
     )
+    .map(|subgraph| ReducedProjectNetIdentity {
+        code: subgraph.code,
+        name: subgraph.name.clone(),
+        class: subgraph.class.clone(),
+        has_no_connect: subgraph.has_no_connect,
+    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -8315,13 +8326,14 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     symbol: &Symbol,
     at: [f64; 2],
     pin_name: Option<&str>,
+    pin_number: Option<&str>,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
     pin_name
         .and_then(|pin_name| {
             graph
                 .pin_subgraph_identities
                 .get(&reduced_project_base_pin_key(
-                    sheet_path, symbol, at, pin_name,
+                    sheet_path, symbol, at, pin_name, pin_number,
                 ))
         })
         .and_then(|index| graph.subgraphs.get(*index))
@@ -8345,13 +8357,14 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     symbol: &Symbol,
     at: [f64; 2],
     pin_name: Option<&str>,
+    pin_number: Option<&str>,
 ) -> Option<String> {
     pin_name
         .and_then(|pin_name| {
             graph
                 .pin_driver_connections
                 .get(&reduced_project_base_pin_key(
-                    sheet_path, symbol, at, pin_name,
+                    sheet_path, symbol, at, pin_name, pin_number,
                 ))
         })
         .or_else(|| {
@@ -8361,13 +8374,15 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
         })
         .map(|connection| connection.local_name.clone())
         .or_else(|| {
-            resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name)
-                .and_then(|subgraph| {
-                    subgraph
-                        .driver_connection
-                        .as_ref()
-                        .map(|connection| connection.local_name.clone())
-                })
+            resolve_reduced_project_subgraph_for_symbol_pin(
+                graph, sheet_path, symbol, at, pin_name, pin_number,
+            )
+            .and_then(|subgraph| {
+                subgraph
+                    .driver_connection
+                    .as_ref()
+                    .map(|connection| connection.local_name.clone())
+            })
         })
 }
 
@@ -10766,6 +10781,7 @@ mod tests {
             child_symbol,
             [0.0, 0.0],
             Some("~"),
+            Some("1"),
         )
         .expect("pin subgraph");
         assert_eq!(by_pin.subgraph_code, by_sheet.subgraph_code);
@@ -11299,6 +11315,7 @@ mod tests {
             symbol,
             [0.0, 0.0],
             Some("GND"),
+            Some("1"),
         )
         .expect("gnd pin graph identity");
         let agnd_pin = crate::connectivity::resolve_reduced_project_net_for_symbol_pin(
@@ -11307,6 +11324,7 @@ mod tests {
             symbol,
             [10.0, 0.0],
             Some("AGND"),
+            Some("2"),
         )
         .expect("agnd pin graph identity");
 
@@ -11381,6 +11399,7 @@ mod tests {
             symbol,
             [0.0, 0.0],
             Some("VCC"),
+            Some("1"),
         )
         .expect("driver name");
         let net_name = crate::connectivity::resolve_reduced_project_net_for_symbol_pin(
@@ -11389,6 +11408,7 @@ mod tests {
             symbol,
             [0.0, 0.0],
             Some("VCC"),
+            Some("1"),
         )
         .expect("net identity");
 
@@ -12690,6 +12710,7 @@ mod tests {
                     symbol_uuid: Some("sym".to_string()),
                     at: PointKey(10, 20),
                     name: Some("1".to_string()),
+                    number: Some("1".to_string()),
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
@@ -15149,6 +15170,7 @@ mod tests {
                     symbol_uuid: Some("r1".to_string()),
                     at: PointKey(0, 0),
                     name: Some("1".to_string()),
+                    number: Some("1".to_string()),
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
@@ -15217,6 +15239,7 @@ mod tests {
                     symbol_uuid: Some("r1".to_string()),
                     at: PointKey(0, 0),
                     name: Some("1".to_string()),
+                    number: Some("1".to_string()),
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
@@ -15285,6 +15308,7 @@ mod tests {
                     symbol_uuid: Some("r1".to_string()),
                     at: PointKey(0, 0),
                     name: Some("1".to_string()),
+                    number: Some("1".to_string()),
                 },
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),

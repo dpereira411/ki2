@@ -498,11 +498,14 @@ fn resolved_pin_net_name(
     symbol: &crate::model::Symbol,
     pin_at: [f64; 2],
     pin_name: Option<&str>,
+    pin_number: Option<&str>,
 ) -> String {
     let graph = project.reduced_project_net_graph(false);
-    resolve_reduced_project_net_for_symbol_pin(&graph, sheet_path, symbol, pin_at, pin_name)
-        .map(|net| net.name)
-        .unwrap_or_default()
+    resolve_reduced_project_net_for_symbol_pin(
+        &graph, sheet_path, symbol, pin_at, pin_name, pin_number,
+    )
+    .map(|net| net.name)
+    .unwrap_or_default()
 }
 
 // Upstream parity: reduced local helper for the generic connection-point net lookup that the
@@ -3044,7 +3047,7 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
             };
 
             for pin in projected_symbol_pin_info(symbol) {
-                let Some(pin_number) = pin.number else {
+                let Some(ref pin_number) = pin.number else {
                     continue;
                 };
 
@@ -3055,6 +3058,7 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                     symbol,
                     pin.at,
                     pin.name.as_deref(),
+                    pin.number.as_deref(),
                 );
                 let key = format!("{reference}:{pin_number}");
 
@@ -3123,7 +3127,7 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
             let mut pins_by_number = BTreeMap::<String, Vec<(Option<String>, String)>>::new();
 
             for pin in projected_symbol_pin_info(symbol) {
-                let Some(pin_number) = pin.number else {
+                let Some(ref pin_number) = pin.number else {
                     continue;
                 };
 
@@ -3134,10 +3138,11 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                     symbol,
                     pin.at,
                     pin.name.as_deref(),
+                    pin.number.as_deref(),
                 );
 
                 pins_by_number
-                    .entry(pin_number)
+                    .entry(pin_number.clone())
                     .or_default()
                     .push((pin.name, net_name));
             }
@@ -3621,6 +3626,7 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     symbol,
                     pin.at,
                     pin.name.as_deref(),
+                    pin.number.as_deref(),
                 );
                 let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
 

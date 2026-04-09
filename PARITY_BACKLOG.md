@@ -868,6 +868,12 @@ Current status:
         before live propagation and reduced-project projection
       - remaining gap is now the richer per-pin update/selection logic on those live pin owners
         for multi-pin power-pin/base-pin branches, not missing graph-owned per-pin storage
+      - the project-graph symbol-pin lookup boundary now also keys by projected pin number, so
+        stacked same-name pins can reach the shared graph without collapsing at the reduced API
+        edge
+      - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
+        owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
+        graph-owned per-pin storage
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
