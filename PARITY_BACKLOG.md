@@ -763,9 +763,10 @@ Current status:
       - the active live graph now also attaches the exercised label, sheet-pin, and symbol-pin
         strong drivers back onto shared live item owners, and exercised power-pin drivers now
         follow that same symbol-pin owner path
-      - immutable driver metadata now also sits on those shared live item owners, and active
-        global secondary-driver promotion reads priority/full-name through the owner first instead
-        of going back to copied strong-driver fields on the active path
+      - shared live item owners now also point back at the same live strong-driver owners used by
+        the subgraph driver list, so active global secondary-driver promotion reads
+        priority/full-name through shared live driver identity instead of copied metadata blobs on
+        the item side
       - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
         exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
