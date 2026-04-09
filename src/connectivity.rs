@@ -561,6 +561,7 @@ pub(crate) struct ReducedProjectSymbolPin {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectSymbolPinInventory {
+    pub(crate) unit: Option<i32>,
     pub(crate) unit_count: usize,
     pub(crate) duplicate_pin_numbers_are_jumpers: bool,
     pub(crate) pins: Vec<ReducedProjectSymbolPin>,
@@ -7002,6 +7003,17 @@ fn reduced_project_symbol_identity_key(
     }
 }
 
+// upstream: CONNECTION_GRAPH::buildConnectionGraph / ERC_TESTER symbol-pin enumeration helpers or
+// none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still builds reduced graph-owned symbol-pin inventories instead of exposing live
+// `SCH_SYMBOL` / `SCH_PIN` owners with direct `SCH_CONNECTION` state
+// local_only_reason: centralizes per-symbol pin inventory, placed-unit membership, and connected
+// subgraph ownership on one graph-owned pass so ERC/net-name callers stop re-walking symbols
+// ad hoc
+// replaced_by: fuller live `SCH_SYMBOL` / `SCH_PIN` owner graph
+// remove_when: production callers can iterate live symbol/pin owners directly
 fn build_reduced_project_symbol_pin_inventory(
     inputs: &ReducedProjectGraphInputs<'_>,
     pin_subgraph_identities_by_location: &BTreeMap<ReducedProjectPinIdentityKey, usize>,
@@ -7077,12 +7089,14 @@ fn build_reduced_project_symbol_pin_inventory(
             symbol_pins_by_symbol
                 .entry(reduced_project_symbol_identity_key(sheet_path, symbol))
                 .and_modify(|inventory| {
+                    inventory.unit = inventory.unit.or(symbol.unit);
                     inventory.unit_count = inventory.unit_count.max(unit_count);
                     inventory.duplicate_pin_numbers_are_jumpers |=
                         duplicate_pin_numbers_are_jumpers;
                     inventory.pins.extend(projected_pins.clone());
                 })
                 .or_insert(ReducedProjectSymbolPinInventory {
+                    unit: symbol.unit,
                     unit_count,
                     duplicate_pin_numbers_are_jumpers,
                     pins: projected_pins,

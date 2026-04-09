@@ -4,8 +4,7 @@ use crate::connectivity::{
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
-    reduced_project_symbol_pin_inventory, resolve_reduced_project_subgraph_at,
-    resolve_reduced_project_subgraph_for_no_connect,
+    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_no_connect,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -3043,41 +3042,18 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
     let graph = project.reduced_project_net_graph(false);
 
     for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for item in &schematic.screen.items {
-            let SchItem::Symbol(symbol) = item else {
-                continue;
-            };
-
-            let Some(pin_inventory) =
-                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
-            else {
-                continue;
-            };
-
-            let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
-                continue;
-            };
-
-            let unit_count = lib_symbol
-                .units
-                .iter()
-                .map(|unit| unit.unit_number)
-                .collect::<std::collections::BTreeSet<_>>()
-                .len();
-
-            if unit_count < 2 {
+        for pin_inventory in
+            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
+        {
+            if pin_inventory.unit_count < 2 || pin_inventory.unit.is_none() {
                 continue;
             }
 
-            let state = resolved_symbol_text_state(
-                symbol,
-                &sheet_path.instance_path,
-                project.current_variant(),
-            );
-            let Some(reference) = resolved_property_value(&state.properties, "Reference") else {
+            let Some(reference) = pin_inventory
+                .pins
+                .iter()
+                .find_map(|pin| pin.reference.clone())
+            else {
                 continue;
             };
 
