@@ -1044,6 +1044,9 @@ Current status:
         connections
       - active label, sheet-pin, and hier-port item connections now also live on direct shared
         live connection handles instead of `LiveReducedConnection` wrappers on those item owners
+      - label, sheet-pin, and hier-port owners now also keep dedicated live driver-connection
+        handles for their attached strong-driver state instead of leaving exercised text-driver
+        reads on the item connection alone
       - floating strong-driver owners now also keep direct shared live connection handles instead
         of `LiveReducedConnection` wrapper state on the fallback driver branch
       - the active live strong-driver handle is now the owner itself instead of a one-field wrapper
@@ -1075,6 +1078,11 @@ Current status:
       - after the latest owner-side projection/recache/refresh ports, the remaining same-sized
         owner slices on the active handle path are exhausted; the next honest move is the larger
         live pin / connection object expansion rather than another boundary helper cleanup
+      - the remaining reduced strong-driver snapshot dependency on the active path is now narrowed
+        to non-identity text-item chosen-driver fallback; exercised text-item driver reads already
+        go through live owner-side driver connections, but chosen-driver fallback still needs the
+        reduced snapshot there until the fuller live text-item / `SCH_CONNECTION` object graph
+        exists
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
