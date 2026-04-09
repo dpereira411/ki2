@@ -2877,6 +2877,67 @@ impl LiveReducedSubgraph {
         }
     }
 
+    // Upstream parity: local live-subgraph analogue for the exercised topology seeding KiCad
+    // performs while building one `CONNECTION_SUBGRAPH`. This still seeds from reduced graph
+    // indexes instead of fuller pointer-owned items, but the shared subgraph owner now owns its
+    // initial parent/neighbor/hierarchy handle attachment instead of leaving that setup in free
+    // builder loops around the graph.
+    fn attach_topology_from_reduced(
+        &mut self,
+        reduced_subgraph: &ReducedProjectSubgraphEntry,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+    ) {
+        for (link, reduced_link) in self
+            .bus_neighbor_links
+            .iter_mut()
+            .zip(reduced_subgraph.bus_neighbor_links.iter())
+        {
+            link.borrow_mut().subgraph_handle = live_subgraphs
+                .get(reduced_link.subgraph_index)
+                .map(Rc::downgrade);
+        }
+
+        for (link, reduced_link) in self
+            .bus_parent_links
+            .iter_mut()
+            .zip(reduced_subgraph.bus_parent_links.iter())
+        {
+            link.borrow_mut().subgraph_handle = live_subgraphs
+                .get(reduced_link.subgraph_index)
+                .map(Rc::downgrade);
+        }
+
+        self.bus_parent_handles = reduced_subgraph
+            .bus_parent_indexes
+            .iter()
+            .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
+            .collect();
+
+        self.hier_parent_handle = reduced_subgraph
+            .hier_parent_index
+            .and_then(|index| live_subgraphs.get(index).map(Rc::downgrade));
+        self.hier_child_handles = reduced_subgraph
+            .hier_child_indexes
+            .iter()
+            .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
+            .collect();
+    }
+
+    // Upstream parity: local live-subgraph analogue for attaching exercised wire/bus item owners
+    // back onto their parent subgraph during graph build. The item payload is still reduced, but
+    // the shared subgraph owner now owns the parent-handle and bus-item connection attachment
+    // instead of leaving that setup in a separate builder loop.
+    fn attach_item_parent_handles(&mut self, handle: &LiveReducedSubgraphHandle) {
+        for item in &self.bus_items {
+            let mut item_ref = item.borrow_mut();
+            item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
+            item_ref.connection = Some(self.driver_connection.clone());
+        }
+        for item in &self.wire_items {
+            item.borrow_mut().parent_subgraph_handle = Some(Rc::downgrade(handle));
+        }
+    }
+
     // Upstream parity: local live-subgraph analogue for the exercised pin portion of
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still mutates reduced live pin owners
     // instead of real `SCH_PIN`s, but the shared live subgraph owner now drives the current pin
@@ -3482,13 +3543,13 @@ fn build_live_reduced_subgraph_handles(
         })
         .collect::<Vec<_>>();
     attach_live_subgraph_links_to_handles(&handles, reduced_subgraphs);
-    attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
-    attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
     attach_live_strong_driver_owners_to_handles(&handles, reduced_subgraphs);
     for handle in &handles {
         sync_live_reduced_base_pin_connections_from_driver_handle(handle, false);
     }
-    attach_live_wire_item_parent_handles_to_handles(&handles);
+    for handle in &handles {
+        handle.borrow_mut().attach_item_parent_handles(handle);
+    }
     attach_live_connected_bus_items_to_handles(&handles);
     handles
 }
@@ -3504,83 +3565,9 @@ fn attach_live_subgraph_links_to_handles(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) {
     for (index, handle) in live_subgraphs.iter().enumerate() {
-        let mut subgraph = handle.borrow_mut();
-
-        for (link, reduced_link) in subgraph
-            .bus_neighbor_links
-            .iter_mut()
-            .zip(reduced_subgraphs[index].bus_neighbor_links.iter())
-        {
-            link.borrow_mut().subgraph_handle = live_subgraphs
-                .get(reduced_link.subgraph_index)
-                .map(Rc::downgrade);
-        }
-
-        for (link, reduced_link) in subgraph
-            .bus_parent_links
-            .iter_mut()
-            .zip(reduced_subgraphs[index].bus_parent_links.iter())
-        {
-            link.borrow_mut().subgraph_handle = live_subgraphs
-                .get(reduced_link.subgraph_index)
-                .map(Rc::downgrade);
-        }
-    }
-}
-
-// Upstream parity: local bridge toward item-pointer topology on the shared live graph. Wire and
-// bus items now keep a live reference back to their owning subgraph handle instead of only
-// existing as detached value payload on that subgraph, and bus items also keep a shared live
-// connection owner from that parent subgraph so attached bus-entry items can follow an item-owned
-// bus connection path before projection collapses back to reduced subgraph indexes.
-fn attach_live_wire_item_parent_handles_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
-    for handle in live_subgraphs {
-        let subgraph = handle.borrow_mut();
-        for item in &subgraph.bus_items {
-            let mut item_ref = item.borrow_mut();
-            item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
-            item_ref.connection = Some(subgraph.driver_connection.clone());
-        }
-        for item in &subgraph.wire_items {
-            item.borrow_mut().parent_subgraph_handle = Some(Rc::downgrade(handle));
-        }
-    }
-}
-
-// Upstream parity: local bridge toward pointer-style plain bus-parent topology on the shared live
-// subgraph graph. This still seeds from reduced parent indexes during construction, but the active
-// traversal can now follow attached parent-bus handles even when no current member link exists.
-fn attach_live_bus_parent_handles_to_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
-) {
-    for (index, handle) in live_subgraphs.iter().enumerate() {
-        let mut subgraph = handle.borrow_mut();
-        subgraph.bus_parent_handles = reduced_subgraphs[index]
-            .bus_parent_indexes
-            .iter()
-            .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
-            .collect();
-    }
-}
-
-// Upstream parity: local bridge toward pointer-style hierarchy topology on the shared live
-// subgraph graph. This still seeds from reduced hierarchy indexes during construction, but the
-// active live traversal can now follow attached parent/child handles instead of copied indexes.
-fn attach_live_hierarchy_links_to_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
-) {
-    for (index, handle) in live_subgraphs.iter().enumerate() {
-        let mut subgraph = handle.borrow_mut();
-        subgraph.hier_parent_handle = reduced_subgraphs[index]
-            .hier_parent_index
-            .and_then(|index| live_subgraphs.get(index).map(Rc::downgrade));
-        subgraph.hier_child_handles = reduced_subgraphs[index]
-            .hier_child_indexes
-            .iter()
-            .filter_map(|index| live_subgraphs.get(*index).map(Rc::downgrade))
-            .collect();
+        handle
+            .borrow_mut()
+            .attach_topology_from_reduced(&reduced_subgraphs[index], live_subgraphs);
     }
 }
 
