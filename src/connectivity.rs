@@ -3798,7 +3798,6 @@ impl LiveReducedSubgraph {
                     &parent_member.borrow(),
                     &neighbor_sheet_instance_path,
                 );
-                sync_live_reduced_item_connections_from_driver_handle(&neighbor_handle);
                 neighbor_handle.borrow_mut().dirty = true;
             }
         }
@@ -15089,7 +15088,40 @@ mod tests {
                 anchor: PointKey(1, 1),
                 points: Vec::new(),
                 nodes: Vec::new(),
-                base_pins: Vec::new(),
+                base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: crate::connectivity::ReducedNetBasePinKey {
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("u1".to_string()),
+                        at: PointKey(1, 1),
+                        name: Some("IN".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    reference: None,
+                    number: Some("1".to_string()),
+                    electrical_type: Some("input".to_string()),
+                    visible: true,
+                    is_power_symbol: false,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/OLD".to_string(),
+                        local_name: "OLD".to_string(),
+                        full_local_name: "/OLD".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    driver_connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/OLD".to_string(),
+                        local_name: "OLD".to_string(),
+                        full_local_name: "/OLD".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    preserve_local_name_on_refresh: false,
+                }],
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
@@ -15129,11 +15161,15 @@ mod tests {
             &component,
             &mut stale_members,
         );
+        for handle in &live_subgraphs {
+            LiveReducedSubgraph::refresh_post_propagation_item_connections(handle);
+        }
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(graph[1].name, "/SIG1");
         assert_eq!(graph[1].resolved_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
+        assert_eq!(graph[1].base_pins[0].connection.full_local_name, "/SIG1");
     }
 
     #[test]
