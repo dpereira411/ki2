@@ -2140,6 +2140,8 @@ type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 #[derive(Clone, Debug)]
 struct LiveReducedBasePinPayload {
     key: ReducedNetBasePinKey,
+    number: Option<String>,
+    electrical_type: Option<String>,
     identity: Option<ReducedProjectDriverIdentity>,
 }
 
@@ -2250,10 +2252,14 @@ impl PartialEq for LiveReducedBasePin {
     fn eq(&self, other: &Self) -> bool {
         (
             self.pin.key.clone(),
+            self.pin.number.clone(),
+            self.pin.electrical_type.clone(),
             self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             other.pin.key.clone(),
+            other.pin.number.clone(),
+            other.pin.electrical_type.clone(),
             other.connection.snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
@@ -2272,11 +2278,15 @@ impl Ord for LiveReducedBasePin {
     fn cmp(&self, other: &Self) -> Ordering {
         (
             self.pin.key.clone(),
+            self.pin.number.clone(),
+            self.pin.electrical_type.clone(),
             self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 other.pin.key.clone(),
+                other.pin.number.clone(),
+                other.pin.electrical_type.clone(),
                 other.connection.snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
@@ -2431,12 +2441,26 @@ fn live_reduced_subgraph_extra_projection_eq(
     true
 }
 
+// Upstream parity: reduced live-pin snapshot helper for the shared graph owner. This still
+// projects back to reduced pin payload instead of a live `SCH_PIN`, but it now keeps the fuller
+// reduced base-pin payload on the live owner instead of collapsing the active pin carrier down to
+// only its key before comparison or projection helpers use it.
+fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> ReducedProjectBasePin {
+    let base_pin = base_pin.borrow();
+    ReducedProjectBasePin {
+        key: base_pin.pin.key.clone(),
+        number: base_pin.pin.number.clone(),
+        electrical_type: base_pin.pin.electrical_type.clone(),
+        connection: base_pin.connection.snapshot(),
+    }
+}
+
 fn live_base_pin_handles_to_snapshots(
     base_pins: &[LiveReducedBasePinHandle],
-) -> Vec<ReducedNetBasePinKey> {
+) -> Vec<ReducedProjectBasePin> {
     base_pins
         .iter()
-        .map(|base_pin| base_pin.borrow().pin.key.clone())
+        .map(live_base_pin_handle_snapshot)
         .collect()
 }
 
@@ -3004,6 +3028,8 @@ fn build_live_reduced_subgraphs(
                     Rc::new(RefCell::new(LiveReducedBasePin {
                         pin: LiveReducedBasePinPayload {
                             key: pin.key.clone(),
+                            number: pin.number.clone(),
+                            electrical_type: pin.electrical_type.clone(),
                             identity: None,
                         },
                         connection: LiveReducedConnection::new(pin.connection.clone()),
@@ -16789,6 +16815,82 @@ mod tests {
         apply_live_reduced_driver_connections_from_handles(&mut reduced, &handles);
 
         assert_eq!(reduced[0].chosen_driver_identity, Some(chosen_identity));
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_keep_full_base_pin_payload() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "SIG".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            chosen_driver_identity: None,
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![crate::connectivity::ReducedProjectBasePin {
+                key: crate::connectivity::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("u1".to_string()),
+                    at: PointKey(1, 2),
+                    name: Some("IN".to_string()),
+                    number: Some("7".to_string()),
+                },
+                number: Some("7".to_string()),
+                electrical_type: Some("bidirectional".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let snapshot = super::live_base_pin_handle_snapshot(&handles[0].borrow().base_pins[0]);
+
+        assert_eq!(snapshot.key.symbol_uuid.as_deref(), Some("u1"));
+        assert_eq!(snapshot.key.number.as_deref(), Some("7"));
+        assert_eq!(snapshot.number.as_deref(), Some("7"));
+        assert_eq!(snapshot.electrical_type.as_deref(), Some("bidirectional"));
+        assert_eq!(snapshot.connection.local_name, "SIG");
     }
 
     #[test]

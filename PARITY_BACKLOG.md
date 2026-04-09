@@ -915,9 +915,9 @@ Current status:
         strong-driver snapshots, and already-seeded chosen-driver identity from the active live
         owner graph instead of leaving those reduced fields on pre-live placeholders after live
         propagation
-      - live base-pin owners now also keep immutable pin identity separately from the shared live
-        connection owner instead of shadowing a second copied reduced pin connection inside the
-        same live carrier
+      - live base-pin owners now also keep the fuller reduced pin payload on the live owner
+        instead of collapsing back to bare pin keys, so active live pin carriers retain number and
+        electrical type alongside the shared live connection owner
       - attached live strong-driver identity now derives from the shared live item owners
         themselves instead of staying copied on the live driver wrapper after owner attachment
       - active chosen-driver attachment now also compares against that attached live owner identity
