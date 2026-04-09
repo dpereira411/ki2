@@ -3024,9 +3024,7 @@ fn erc_reports_same_local_and_global_labels() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-same-local-global-label"
-            && diagnostic
-                .message
-                .contains("Local and global labels share the same shown text")
+            && diagnostic.message == "Local and global labels have same name"
     }));
 
     let _ = fs::remove_file(path);

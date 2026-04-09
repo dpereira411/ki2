@@ -3659,10 +3659,7 @@ pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnost
                 severity: Severity::Error,
                 code: "erc-same-local-global-label",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Local and global labels share the same shown text: '{}'",
-                    shown_text
-                ),
+                message: "Local and global labels have same name".to_string(),
                 path: Some(path),
                 span: None,
                 line: None,
