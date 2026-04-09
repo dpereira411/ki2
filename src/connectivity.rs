@@ -125,7 +125,7 @@ pub(crate) struct ReducedProjectNetEntry {
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
     pub(crate) nodes: Vec<ReducedNetNode>,
-    pub(crate) base_pins: Vec<ReducedNetBasePinKey>,
+    pub(crate) base_pins: Vec<ReducedProjectBasePin>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -6655,6 +6655,8 @@ pub(crate) fn collect_reduced_project_net_graph(
 // the shared graph's reduced net codes for non-export callers instead of renumbering them a second
 // time at the flattened whole-net layer, and whole-net grouping now reads net names from the
 // required reduced `driver_connection` owner instead of a parallel reduced subgraph `name` field.
+// Whole-net base pins now also stay on shared reduced base-pin owners instead of collapsing to
+// keys, so ERC/export callers can keep graph-owned per-pin context at the whole-net boundary.
 // Write-time exporters still do their own emitted-code assignment like KiCad `makeListOfNets()`.
 pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
@@ -6666,7 +6668,7 @@ pub(crate) fn collect_reduced_project_net_map(
             String,
             bool,
             BTreeMap<(String, String), ReducedNetNode>,
-            Vec<ReducedNetBasePinKey>,
+            Vec<ReducedProjectBasePin>,
         ),
     >::new();
     let mut candidates = BTreeMap::<
@@ -6677,7 +6679,7 @@ pub(crate) fn collect_reduced_project_net_map(
             String,
             bool,
             ReducedNetNode,
-            Option<ReducedNetBasePinKey>,
+            Option<ReducedProjectBasePin>,
         ),
     >::new();
 
@@ -6690,7 +6692,7 @@ pub(crate) fn collect_reduced_project_net_map(
                     subgraph.class.clone(),
                     false,
                     BTreeMap::new(),
-                    Vec::<ReducedNetBasePinKey>::new(),
+                    Vec::<ReducedProjectBasePin>::new(),
                 )
             });
 
@@ -6718,13 +6720,8 @@ pub(crate) fn collect_reduced_project_net_map(
                             })
                             .unwrap_or(base_pin.key.name.is_none())
                 })
-                .map(|base_pin| base_pin.key.clone())
-                .or_else(|| {
-                    subgraph
-                        .base_pins
-                        .first()
-                        .map(|base_pin| base_pin.key.clone())
-                });
+                .cloned()
+                .or_else(|| subgraph.base_pins.first().cloned());
             let key = (node.reference.clone(), node.pin.clone());
             let candidate = (
                 subgraph.code,
@@ -6750,9 +6747,12 @@ pub(crate) fn collect_reduced_project_net_map(
         }
 
         for base_pin in subgraph.base_pins {
-            let base_pin_key = base_pin.key;
-            if !entry.3.contains(&base_pin_key) {
-                entry.3.push(base_pin_key);
+            if !entry
+                .3
+                .iter()
+                .any(|candidate| candidate.key == base_pin.key)
+            {
+                entry.3.push(base_pin);
             }
         }
     }
@@ -6771,9 +6771,13 @@ pub(crate) fn collect_reduced_project_net_map(
         entry
             .2
             .insert((node.reference.clone(), node.pin.clone()), node);
-        if let Some(base_pin_key) = base_pin_key {
-            if !entry.3.contains(&base_pin_key) {
-                entry.3.push(base_pin_key);
+        if let Some(base_pin) = base_pin_key {
+            if !entry
+                .3
+                .iter()
+                .any(|candidate| candidate.key == base_pin.key)
+            {
+                entry.3.push(base_pin);
             }
         }
     }

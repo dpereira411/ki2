@@ -757,7 +757,7 @@ pub fn collect_xml_nets(project: &SchematicProject, for_board: bool) -> Vec<Netl
                 && net
                     .base_pins
                     .iter()
-                    .all(|base_pin| *base_pin == net.base_pins[0]);
+                    .all(|base_pin| base_pin.key == net.base_pins[0].key);
 
             if net.has_no_connect && (nodes.len() == 1 || all_net_pins_stacked) {
                 for node in &mut nodes {

@@ -2753,11 +2753,6 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 // visibility-based pin preference, multi-marker emission, and full subgraph ownership.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    let base_pins_by_key = collect_reduced_project_subgraphs(project, false)
-        .into_iter()
-        .flat_map(|subgraph| subgraph.base_pins.into_iter())
-        .map(|base_pin| (base_pin.key.clone(), base_pin))
-        .collect::<BTreeMap<_, _>>();
 
     for net in collect_reduced_project_net_map(project, false) {
         struct PinMismatch {
@@ -2769,7 +2764,6 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
         let mut pins = net
             .base_pins
             .iter()
-            .filter_map(|base_pin| base_pins_by_key.get(base_pin))
             .filter_map(reduced_erc_pin_context_from_base_pin)
             .collect::<Vec<_>>();
 
