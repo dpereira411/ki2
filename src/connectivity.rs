@@ -2896,6 +2896,77 @@ impl LiveReducedSubgraph {
         }
     }
 
+    // Upstream parity: local live-subgraph analogue for the exercised post-propagation
+    // `UpdateItemConnections()` follow-up branches KiCad runs after names settle. This still
+    // operates on reduced live owners instead of fuller item pointers, but the shared subgraph
+    // owner now owns the self-driven symbol-pin no-connect rename refresh and the self-driven
+    // sheet-pin child-bus promotion branch instead of leaving those branches open-coded in the
+    // outer handle loop.
+    fn refresh_post_propagation_item_connections(handle: &LiveReducedSubgraphHandle) {
+        sync_live_reduced_item_connections_from_driver_handle(handle);
+
+        if {
+            let subgraph = handle.borrow();
+            live_subgraph_is_self_driven_symbol_pin(&subgraph)
+                && subgraph.driver_connection.borrow().name.contains("Net-(")
+        } {
+            let chosen_driver = {
+                let subgraph = handle.borrow();
+                subgraph
+                    .driver_connection
+                    .borrow_mut()
+                    .force_no_connect_name();
+                subgraph.chosen_driver.clone()
+            };
+            if let Some(driver) = chosen_driver {
+                if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } =
+                    &driver.borrow().owner
+                {
+                    if let Some(base_pin) = owner.upgrade() {
+                        base_pin.borrow_mut().refresh_from_owned_driver_connection();
+                    }
+                }
+            }
+            sync_live_reduced_item_connections_from_driver_handle(handle);
+        }
+
+        if {
+            let subgraph = handle.borrow();
+            live_subgraph_is_self_driven_sheet_pin(&subgraph)
+                && matches!(
+                    subgraph.driver_connection.borrow().connection_type,
+                    ReducedProjectConnectionType::Net
+                )
+        } {
+            if let Some((connection_type, members)) =
+                live_subgraph_child_handles_from_handle(handle)
+                    .into_iter()
+                    .find_map(|child_handle| {
+                        let child = child_handle.borrow();
+                        let child_connection = child.driver_connection.borrow();
+
+                        matches!(
+                            child_connection.connection_type,
+                            ReducedProjectConnectionType::Bus
+                                | ReducedProjectConnectionType::BusGroup
+                        )
+                        .then_some((
+                            child_connection.connection_type,
+                            child_connection.members.clone(),
+                        ))
+                    })
+            {
+                let subgraph = handle.borrow();
+                let mut connection = subgraph.driver_connection.borrow_mut();
+                connection.connection_type = connection_type;
+                connection.members = members;
+                drop(connection);
+                drop(subgraph);
+                sync_live_reduced_item_connections_from_driver_handle(handle);
+            }
+        }
+    }
+
     // Upstream parity: local live-subgraph analogue for the same-name cache keys KiCad rebuilds
     // around propagated `CONNECTION_SUBGRAPH`s. The graph still keeps reduced cache maps instead
     // of full live subgraph objects, but the shared live subgraph owner now decides which name and
@@ -5142,68 +5213,7 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) {
     for handle in live_subgraphs {
-        sync_live_reduced_item_connections_from_driver_handle(handle);
-
-        if {
-            let subgraph = handle.borrow();
-            live_subgraph_is_self_driven_symbol_pin(&subgraph)
-                && subgraph.driver_connection.borrow().name.contains("Net-(")
-        } {
-            let chosen_driver = {
-                let subgraph = handle.borrow();
-                subgraph
-                    .driver_connection
-                    .borrow_mut()
-                    .force_no_connect_name();
-                subgraph.chosen_driver.clone()
-            };
-            if let Some(driver) = chosen_driver {
-                if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } =
-                    &driver.borrow().owner
-                {
-                    if let Some(base_pin) = owner.upgrade() {
-                        base_pin.borrow_mut().refresh_from_owned_driver_connection();
-                    }
-                }
-            }
-            sync_live_reduced_item_connections_from_driver_handle(handle);
-        }
-
-        if {
-            let subgraph = handle.borrow();
-            live_subgraph_is_self_driven_sheet_pin(&subgraph)
-                && matches!(
-                    subgraph.driver_connection.borrow().connection_type,
-                    ReducedProjectConnectionType::Net
-                )
-        } {
-            if let Some((connection_type, members)) =
-                live_subgraph_child_handles_from_handle(handle)
-                    .into_iter()
-                    .find_map(|child_handle| {
-                        let child = child_handle.borrow();
-                        let child_connection = child.driver_connection.borrow();
-
-                        matches!(
-                            child_connection.connection_type,
-                            ReducedProjectConnectionType::Bus
-                                | ReducedProjectConnectionType::BusGroup
-                        )
-                        .then_some((
-                            child_connection.connection_type,
-                            child_connection.members.clone(),
-                        ))
-                    })
-            {
-                let subgraph = handle.borrow();
-                let mut connection = subgraph.driver_connection.borrow_mut();
-                connection.connection_type = connection_type;
-                connection.members = members;
-                drop(connection);
-                drop(subgraph);
-                sync_live_reduced_item_connections_from_driver_handle(handle);
-            }
-        }
+        LiveReducedSubgraph::refresh_post_propagation_item_connections(handle);
     }
 }
 

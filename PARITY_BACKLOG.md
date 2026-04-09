@@ -980,6 +980,9 @@ Current status:
         instead of a free helper rebuilding member + target-subgraph projection around it
       - reduced strong-driver projection now also goes through the live driver owner instead of
         free helper snapshot assembly around the owner graph
+      - post-propagation self-driven symbol-pin no-connect refresh and self-driven sheet-pin
+        child-bus promotion now also live on the shared live subgraph owner instead of an outer
+        handle loop around it
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
