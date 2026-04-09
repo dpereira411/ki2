@@ -4123,7 +4123,6 @@ impl LiveReducedSubgraph {
                     );
                     old_name
                 };
-                parent_handle.borrow_mut().dirty = true;
 
                 let candidate_handles = subgraphs_by_name
                     .get(&old_name)
@@ -4148,7 +4147,6 @@ impl LiveReducedSubgraph {
                             sync_live_reduced_item_connections_from_driver_handle(
                                 &candidate_handle,
                             );
-                            candidate_handle.borrow_mut().dirty = true;
                             recache_live_reduced_subgraph_name_handle_cache_from_handles(
                                 &mut subgraphs_by_name,
                                 &mut subgraphs_by_sheet_and_name,
