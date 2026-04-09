@@ -828,6 +828,14 @@ Current status:
       - live bus items now also carry a shared live connection owner from their parent subgraph,
         so attached bus-entry items can follow an item-owned bus connection path instead of
         hopping back through the parent subgraph just to read the bus connection
+      - attempted widening of base-pin connection ownership to the whole live subgraph driver was
+        rejected: exercised multi-pin power symbols need a narrower pin-owned live connection path,
+        not a blanket subgraph-driver owner on every base pin
+      - the exercised self-driven single-pin symbol branch now keeps a live base-pin connection
+        owner and refreshes it during post-propagation `Net-(` -> `unconnected-(` renames
+      - remaining gap is the fuller pin-owned live connection object for exercised driven
+        symbol-pin / multi-pin power-pin branches; the current optional base-pin connection carrier
+        is still too ad hoc for those paths
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

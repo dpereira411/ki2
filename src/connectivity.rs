@@ -2446,6 +2446,9 @@ fn build_live_reduced_subgraph_handles(
     attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
     attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
     attach_live_strong_driver_owners_to_handles(&handles, reduced_subgraphs);
+    for handle in &handles {
+        sync_live_reduced_base_pin_connections_from_driver_handle(handle);
+    }
     attach_live_wire_item_parent_handles_to_handles(&handles);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
@@ -2668,10 +2671,34 @@ fn attach_live_strong_driver_owners_to_handles(
     }
 }
 
+// Upstream parity: local bridge for the self-driven symbol-pin item branch on the shared live
+// subgraph owner. KiCad keeps pin-owned connection state under the same live graph; this reduced
+// bridge only does that for the exercised single-pin self-driven symbol branch so weak
+// `Net-(` -> `unconnected-(` renames and later driver updates stop bypassing the base-pin owner.
+// Remaining divergence is fuller per-pin live connection ownership for multi-pin symbol/power-pin
+// branches.
+fn sync_live_reduced_base_pin_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
+    let driver_connection = handle.borrow().driver_connection.clone();
+    let subgraph = handle.borrow_mut();
+
+    if !live_subgraph_is_self_driven_symbol_pin(&subgraph) {
+        return;
+    }
+
+    for base_pin in &subgraph.base_pins {
+        let mut base_pin = base_pin.borrow_mut();
+        match &base_pin.connection {
+            Some(connection) => connection.clone_from(&driver_connection),
+            None => base_pin.connection = Some(driver_connection.clone()),
+        }
+    }
+}
+
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
 // subgraph owner. This still mutates reduced live item carriers instead of real `SCH_ITEM`
-// pointers, but labels, sheet pins, hierarchy ports, and wire items now all sit on shared live
-// item owners under that subgraph graph instead of copied per-pass wrapper values.
+// pointers, but labels, sheet pins, hierarchy ports, and the exercised self-driven single-pin
+// base-pin branch now all sit on shared live item owners under that subgraph graph instead of
+// copied per-pass wrapper values.
 fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
     let driver_connection = handle.borrow().driver_connection.clone();
     let subgraph = handle.borrow_mut();
@@ -2685,6 +2712,9 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
     for port in &subgraph.hier_ports {
         port.borrow_mut().connection.clone_from(&driver_connection);
     }
+
+    drop(subgraph);
+    sync_live_reduced_base_pin_connections_from_driver_handle(handle);
 }
 
 // Upstream parity: reduced local builder for live graph-owned text and hierarchy link connection
@@ -14586,6 +14616,69 @@ mod tests {
                 .name,
             "unconnected-(R1-Pad1)"
         );
+    }
+
+    #[test]
+    fn live_post_propagation_updates_self_driven_symbol_pin_base_pin_connections() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "Net-(R1-Pad1)".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "Net-(R1-Pad1)".to_string(),
+                local_name: "Net-(R1-Pad1)".to_string(),
+                full_local_name: "Net-(R1-Pad1)".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "Net-(R1-Pad1)".to_string(),
+                local_name: "Net-(R1-Pad1)".to_string(),
+                full_local_name: "Net-(R1-Pad1)".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![crate::connectivity::ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("r1".to_string()),
+                at: PointKey(0, 0),
+                name: Some("1".to_string()),
+            }],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        super::refresh_reduced_live_post_propagation_item_connections_on_handles(&handles);
+
+        let connection = handles[0].borrow().base_pins[0]
+            .borrow()
+            .connection
+            .clone()
+            .expect("self-driven symbol pin connection");
+
+        assert_eq!(connection.name(), "unconnected-(R1-Pad1)");
     }
 
     #[test]
