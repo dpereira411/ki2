@@ -971,6 +971,9 @@ Current status:
         goes through one shared handle-based owner path in both active and compatibility coverage
       - live handle construction now also builds shared live subgraph handles directly instead of
         first building a temporary value-owned `Vec<LiveReducedSubgraph>` and wrapping it later
+      - reduced connection/member projection at the graph boundary now belongs to the shared live
+        connection and bus-member owners themselves instead of free clone helpers outside the owner
+        graph
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
