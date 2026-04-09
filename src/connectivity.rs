@@ -619,6 +619,26 @@ fn reduced_short_net_name(net_name: &str) -> String {
         .to_string()
 }
 
+fn reduced_connection_is_bus(connection_type: ReducedProjectConnectionType) -> bool {
+    matches!(
+        connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    )
+}
+
+fn reduced_connection_is_net(connection_type: ReducedProjectConnectionType) -> bool {
+    matches!(connection_type, ReducedProjectConnectionType::Net)
+}
+
+fn reduced_connection_kind_mismatch(
+    driver_connection: ReducedProjectConnectionType,
+    item_connection: ReducedProjectConnectionType,
+) -> bool {
+    (reduced_connection_is_bus(driver_connection) && reduced_connection_is_net(item_connection))
+        || (reduced_connection_is_net(driver_connection)
+            && reduced_connection_is_bus(item_connection))
+}
+
 // Upstream parity: reduced local analogue for `SCH_PIN::GetEffectivePadNumber()`. This still
 // uses reduced stacked-pin text instead of live `SCH_PIN` state, but it now applies the same
 // exercised "smallest logical number" branch to default-net naming instead of always using the
@@ -2803,18 +2823,41 @@ fn sync_live_reduced_base_pin_connections_from_driver_handle(handle: &LiveReduce
 // pointers, but labels, sheet pins, hierarchy ports, and the exercised self-driven single-pin
 // base-pin branch now all sit on shared live item owners under that subgraph graph instead of
 // copied per-pass wrapper values. Base pins now always carry a live connection owner even before
-// the fuller multi-pin pin-owned branch is ported.
+// the fuller multi-pin pin-owned branch is ported, and item refresh now also preserves KiCad's
+// exercised bus/net mismatch skip instead of forcing every item owner onto the chosen driver type.
 fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
     let driver_connection = handle.borrow().driver_connection.clone();
+    let driver_connection_type = driver_connection.borrow().connection_type;
     let subgraph = handle.borrow_mut();
 
     for link in &subgraph.label_links {
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            link.borrow().connection.borrow().connection_type,
+        ) {
+            continue;
+        }
+
         link.borrow_mut().connection.clone_from(&driver_connection);
     }
     for pin in &subgraph.hier_sheet_pins {
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            pin.borrow().connection.borrow().connection_type,
+        ) {
+            continue;
+        }
+
         pin.borrow_mut().connection.clone_from(&driver_connection);
     }
     for port in &subgraph.hier_ports {
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            port.borrow().connection.borrow().connection_type,
+        ) {
+            continue;
+        }
+
         port.borrow_mut().connection.clone_from(&driver_connection);
     }
 
@@ -3369,18 +3412,42 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
 // Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
 // KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
 // wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
-// owners synchronized with the current live subgraph driver before the final reduced projection.
+// owners synchronized with the current live subgraph driver before the final reduced projection
+// and now also preserves KiCad's exercised bus/net mismatch skip instead of cloning a bus driver
+// onto an item that still has a net connection or vice versa.
 #[cfg(test)]
 fn sync_live_reduced_item_connections_from_driver(subgraph: &mut LiveReducedSubgraph) {
     let driver_connection = subgraph.driver_connection.clone();
+    let driver_connection_type = driver_connection.borrow().connection_type;
 
     for link in &subgraph.label_links {
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            link.borrow().connection.borrow().connection_type,
+        ) {
+            continue;
+        }
+
         link.borrow_mut().connection.clone_from(&driver_connection);
     }
     for pin in &subgraph.hier_sheet_pins {
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            pin.borrow().connection.borrow().connection_type,
+        ) {
+            continue;
+        }
+
         pin.borrow_mut().connection.clone_from(&driver_connection);
     }
     for port in &subgraph.hier_ports {
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            port.borrow().connection.borrow().connection_type,
+        ) {
+            continue;
+        }
+
         port.borrow_mut().connection.clone_from(&driver_connection);
     }
 }
@@ -15738,6 +15805,95 @@ mod tests {
         let connection = handles[0].borrow().base_pins[0].borrow().connection.clone();
 
         assert_eq!(connection.name(), "unconnected-(R1-Pad1)");
+    }
+
+    #[test]
+    fn live_item_connection_refresh_skips_bus_net_type_mismatches() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "BUS".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "BUS".to_string(),
+                local_name: "BUS".to_string(),
+                full_local_name: "BUS".to_string(),
+                sheet_instance_path: String::new(),
+                members: vec![ReducedBusMember {
+                    net_code: 2,
+                    name: "BUS0".to_string(),
+                    local_name: "BUS0".to_string(),
+                    full_local_name: "BUS0".to_string(),
+                    vector_index: Some(0),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Bus,
+                name: "BUS".to_string(),
+                local_name: "BUS".to_string(),
+                full_local_name: "BUS".to_string(),
+                sheet_instance_path: String::new(),
+                members: vec![ReducedBusMember {
+                    net_code: 2,
+                    name: "BUS0".to_string(),
+                    local_name: "BUS0".to_string(),
+                    full_local_name: "BUS0".to_string(),
+                    vector_index: Some(0),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }],
+            }),
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                at: PointKey(0, 0),
+                kind: LabelKind::Local,
+                connection: ReducedProjectConnection {
+                    net_code: 3,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
+
+        let connection = handles[0].borrow().label_links[0]
+            .borrow()
+            .connection
+            .clone();
+
+        assert_eq!(
+            connection.borrow().connection_type,
+            ReducedProjectConnectionType::Net
+        );
+        assert_eq!(connection.name(), "SIG");
     }
 
     #[test]

@@ -882,6 +882,9 @@ Current status:
       - reduced stacked-pin expansion now also mirrors the exercised upstream bracket/range branch
         like `[1-3]` and `[A1-A3]` instead of only splitting comma lists, so shared stacked-pin
         consumers no longer diverge on those range forms before the graph/export paths see them
+      - live item-connection refresh now also preserves the exercised
+        `CONNECTION_SUBGRAPH::UpdateItemConnections()` bus/net mismatch skip instead of cloning a
+        bus driver onto net-typed item owners or vice versa
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage
