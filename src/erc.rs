@@ -3607,12 +3607,13 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestOffGridEndpoints()`. This is not a
 // 1:1 KiCad marker pass because the Rust tree still checks reduced wire/bus-entry endpoints and
-// projected lib pins in millimeter coordinates instead of live schematic items in KiCad IU, but it
-// preserves the exercised rule: connectable wire endpoints, bus-entry endpoints, and non-NC symbol
-// pins must land on the typed schematic connection grid from companion project settings. Remaining
-// divergence is fuller item coverage and KiCad marker attachment.
+// graph-owned symbol-pin inventory in millimeter coordinates instead of live schematic items in
+// KiCad IU, but it preserves the exercised rule: connectable wire endpoints, bus-entry endpoints,
+// and non-NC symbol pins must land on the typed schematic connection grid from companion project
+// settings. Remaining divergence is fuller item coverage and KiCad marker attachment.
 pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
     let grid_size_mm = project
         .project
         .as_ref()
@@ -3679,13 +3680,16 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                     }
                 }
                 SchItem::Symbol(symbol) => {
-                    if let Some(point) = projected_symbol_pin_info(symbol)
+                    if let Some(point) = collect_reduced_project_symbol_pins(&graph, sheet_path, symbol)
                         .into_iter()
                         .find(|pin| {
                             pin.electrical_type.as_deref() != Some("no_connect")
-                                && !point_is_on_grid(pin.at, grid_size_mm)
+                                && !point_is_on_grid(
+                                    [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
+                                    grid_size_mm,
+                                )
                         })
-                        .map(|pin| pin.at)
+                        .map(|pin| [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)])
                     {
                         diagnostics.push(Diagnostic {
                             severity: Severity::Warning,
