@@ -813,6 +813,9 @@ Current status:
       - active strong-driver connection/name reads now prefer shared live item owners, including
         symbol-pin drivers through widened base-pin connection ownership, instead of leaning on a
         parallel driver-side connection carrier on the active path
+      - once a live strong driver attaches to a live item owner, its fallback driver-side
+        connection carrier is dropped on the active path; the fallback now remains only for
+        unattached/test edges
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

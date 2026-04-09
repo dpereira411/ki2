@@ -251,7 +251,7 @@ struct LiveProjectStrongDriver {
     kind: ReducedProjectDriverKind,
     #[cfg(test)]
     priority: i32,
-    connection: LiveReducedConnection,
+    fallback_connection: Option<LiveReducedConnection>,
     #[cfg(test)]
     identity: Option<ReducedProjectDriverIdentity>,
     owner: LiveProjectStrongDriverOwner,
@@ -292,7 +292,7 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
             kind: driver.kind,
             #[cfg(test)]
             priority: driver.priority,
-            connection: LiveReducedConnection::new(driver.connection),
+            fallback_connection: Some(LiveReducedConnection::new(driver.connection)),
             #[cfg(test)]
             identity: driver.identity,
             owner: LiveProjectStrongDriverOwner::None,
@@ -428,7 +428,8 @@ fn live_project_strong_driver_connection(
             .and_then(|owner| owner.borrow().connection.clone()),
         LiveProjectStrongDriverOwner::None => None,
     }
-    .unwrap_or_else(|| driver.connection.clone())
+    .or_else(|| driver.fallback_connection.clone())
+    .expect("live strong driver requires either an attached owner or a fallback connection")
 }
 
 fn live_project_strong_driver_full_name(driver: &LiveProjectStrongDriver) -> String {
@@ -2393,10 +2394,10 @@ fn attach_live_hierarchy_links_to_handles(
 // drivers to shared live item owners on the active graph instead of leaving every strong driver as
 // a detached copied struct, and now also attaches those item owners back onto the same shared live
 // strong-driver owners used by the subgraph driver list. Active strong-driver connection reads now
-// also prefer those shared item owners, including symbol-pin drivers through the widened base-pin
-// owner payload, so the live path depends less on a parallel driver-side connection carrier.
-// Remaining divergence is the fuller live driver-item object graph and the still-missing live
-// `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph behind these handles.
+// prefer those shared item owners, including symbol-pin drivers through the widened base-pin
+// owner payload, and attached drivers drop their fallback driver-side connection carrier on the
+// active path. Remaining divergence is the fuller live driver-item object graph and the
+// still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph behind these handles.
 fn attach_live_strong_driver_owners_to_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
@@ -2412,6 +2413,7 @@ fn attach_live_strong_driver_owners_to_handles(
             let identity = reduced_driver.identity.clone();
             let driver_kind = reduced_driver.kind;
             let priority = reduced_driver.priority;
+            let fallback_connection = driver.borrow().fallback_connection.clone();
             let owner = match identity {
                 Some(ReducedProjectDriverIdentity::Label { at, kind, .. }) => {
                     if kind == reduced_label_kind_sort_key(LabelKind::Hierarchical) {
@@ -2470,7 +2472,9 @@ fn attach_live_strong_driver_owners_to_handles(
                         key.symbol_uuid == symbol_uuid && key.at == at
                     })
                     .map(|base_pin| {
-                        base_pin.borrow_mut().connection = Some(driver.borrow().connection.clone());
+                        if let Some(connection) = fallback_connection.clone() {
+                            base_pin.borrow_mut().connection = Some(connection);
+                        }
                         base_pin.borrow_mut().driver = Some(driver.clone());
                         LiveProjectStrongDriverOwner::SymbolPin {
                             owner: Rc::downgrade(base_pin),
@@ -2481,7 +2485,12 @@ fn attach_live_strong_driver_owners_to_handles(
                     .unwrap_or(LiveProjectStrongDriverOwner::None),
                 None => LiveProjectStrongDriverOwner::None,
             };
-            driver.borrow_mut().owner = owner;
+            let has_owner = !matches!(owner, LiveProjectStrongDriverOwner::None);
+            let mut driver_ref = driver.borrow_mut();
+            driver_ref.owner = owner;
+            if has_owner {
+                driver_ref.fallback_connection = None;
+            }
         }
     }
 }
@@ -11730,6 +11739,7 @@ mod tests {
                     .driver
                     .clone()
                     .expect("sheet pin driver owner");
+                assert!(driver.borrow().fallback_connection.is_none());
                 let driver = driver.borrow().snapshot();
                 assert_eq!(driver.connection.local_name, "SIG");
                 assert_eq!(driver.connection.name, "/SIG");
@@ -11821,6 +11831,7 @@ mod tests {
                     .driver
                     .clone()
                     .expect("symbol pin driver owner");
+                assert!(driver.borrow().fallback_connection.is_none());
                 let driver = driver.borrow().snapshot();
                 assert_eq!(driver.connection.local_name, "PWR");
                 assert_eq!(driver.connection.name, "PWR");
