@@ -245,6 +245,7 @@ pub(crate) struct ReducedProjectStrongDriver {
     pub(crate) priority: i32,
     pub(crate) name: String,
     pub(crate) full_name: String,
+    pub(crate) identity: Option<ReducedProjectDriverIdentity>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -253,6 +254,7 @@ struct LiveProjectStrongDriver {
     priority: i32,
     name: String,
     full_name: String,
+    identity: Option<ReducedProjectDriverIdentity>,
 }
 
 type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
@@ -264,6 +266,7 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
             priority: driver.priority,
             name: driver.name,
             full_name: driver.full_name,
+            identity: driver.identity,
         }
     }
 }
@@ -275,6 +278,7 @@ impl LiveProjectStrongDriver {
             priority: self.priority,
             name: self.name.clone(),
             full_name: self.full_name.clone(),
+            identity: self.identity.clone(),
         }
     }
 }
@@ -6010,6 +6014,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 });
                 let strong_drivers = collect_reduced_strong_drivers(
                     schematic,
+                    &sheet_path.schematic_path,
                     &connected_component,
                     &sheet_path_prefix,
                     |label| {
@@ -7873,10 +7878,13 @@ struct ReducedDriverNameCandidate {
 // the shared graph's strong-driver names on the same shown-text owner KiCad uses for labels and
 // sheet pins instead of leaving sheet-pin drivers on raw parser text, and now also preserves the
 // reduced driver kind the shared graph needs for `ercCheckMultipleDrivers()`-style filtering
-// instead of collapsing every strong driver to bare names. Remaining divergence is the still-
-// missing live connection object plus fuller power/bus-parent driver ownership.
+// instead of collapsing every strong driver to bare names, and now also carries stable reduced
+// driver identity so the later live graph can widen this copied payload into fuller driver-item
+// ownership. Remaining divergence is the still-missing live connection object plus fuller
+// power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
+    schematic_path: &std::path::Path,
     connected_component: &ConnectionComponent,
     sheet_path_prefix: &str,
     mut shown_label_text: FLabel,
@@ -7912,6 +7920,11 @@ where
                     priority: reduced_label_driver_priority(label),
                     name: text,
                     full_name,
+                    identity: Some(ReducedProjectDriverIdentity::Label {
+                        schematic_path: schematic_path.to_path_buf(),
+                        at: point_key(label.at),
+                        kind: reduced_label_kind_sort_key(label.kind),
+                    }),
                 })
             }
             SchItem::Sheet(sheet) => sheet
@@ -7931,6 +7944,10 @@ where
                         priority: reduced_sheet_pin_driver_rank(pin.shape),
                         name: shown.clone(),
                         full_name: format!("{sheet_path_prefix}{shown}"),
+                        identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                            schematic_path: schematic_path.to_path_buf(),
+                            at: point_key(pin.at),
+                        }),
                     }
                 })
                 .max_by(|lhs, rhs| {
@@ -7966,6 +7983,11 @@ where
                                         text.clone()
                                     },
                                     name: text,
+                                    identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                                        schematic_path: schematic_path.to_path_buf(),
+                                        symbol_uuid: symbol.uuid.clone(),
+                                        at: point_key(pin.at),
+                                    }),
                                 })
                             })
                     })
@@ -9967,7 +9989,13 @@ mod tests {
         let by_point =
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.resolved_connection.local_name, "SIG");
-        assert!(by_point.drivers.iter().any(|driver| driver.name == "SIG"));
+        assert!(by_point.drivers.iter().any(|driver| {
+            driver.name == "SIG"
+                && matches!(
+                    driver.identity,
+                    Some(super::ReducedProjectDriverIdentity::SheetPin { .. })
+                )
+        }));
 
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
@@ -10812,6 +10840,7 @@ mod tests {
                     priority: 6,
                     name: "PWR".to_string(),
                     full_name: "/PWR".to_string(),
+                    identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
                 class: String::new(),
@@ -12555,6 +12584,7 @@ mod tests {
                     priority: 6,
                     name: "PWR".to_string(),
                     full_name: "/PWR".to_string(),
+                    identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
                 class: String::new(),
@@ -13181,6 +13211,7 @@ mod tests {
                     priority: 4,
                     name: "ROOT_SIG".to_string(),
                     full_name: "/ROOT_SIG".to_string(),
+                    identity: None,
                 }],
                 non_bus_driver_priority: Some(4),
                 class: String::new(),
@@ -13243,6 +13274,7 @@ mod tests {
                     priority: 6,
                     name: "GLOBAL_SIG".to_string(),
                     full_name: "/Child/GLOBAL_SIG".to_string(),
+                    identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
                 class: String::new(),
@@ -13318,12 +13350,14 @@ mod tests {
                         priority: 6,
                         name: "VCC".to_string(),
                         full_name: "VCC".to_string(),
+                        identity: None,
                     },
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
                         priority: 6,
                         name: "PWR_ALT".to_string(),
                         full_name: "PWR_ALT".to_string(),
+                        identity: None,
                     },
                 ],
                 non_bus_driver_priority: Some(6),
@@ -13375,6 +13409,7 @@ mod tests {
                     priority: 6,
                     name: "PWR_ALT".to_string(),
                     full_name: "PWR_ALT".to_string(),
+                    identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
                 class: String::new(),
@@ -13444,12 +13479,14 @@ mod tests {
                         priority: 6,
                         name: "VCC".to_string(),
                         full_name: "VCC".to_string(),
+                        identity: None,
                     },
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
                         priority: 6,
                         name: "PWR_ALT".to_string(),
                         full_name: "PWR_ALT".to_string(),
+                        identity: None,
                     },
                 ],
                 non_bus_driver_priority: Some(6),
@@ -13501,6 +13538,7 @@ mod tests {
                     priority: 6,
                     name: "PWR_ALT".to_string(),
                     full_name: "PWR_ALT".to_string(),
+                    identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
                 class: String::new(),
