@@ -542,7 +542,12 @@ fn connection_component_for_symbol_pin(
     schematic: &Schematic,
     symbol: &Symbol,
     at: [f64; 2],
+    pin_number: Option<&str>,
 ) -> Option<ConnectionComponent> {
+    // Upstream parity: reduced local analogue for the symbol-pin item lookup KiCad performs
+    // through live `SCH_PIN*` identity. The Rust tree still resolves against reduced connection
+    // members instead of real pin items, but the fallback owner path now includes projected pin
+    // number so stacked pins do not alias one another just because they share `(symbol UUID, at)`.
     collect_connection_components(schematic)
         .into_iter()
         .find(|component| {
@@ -550,6 +555,7 @@ fn connection_component_for_symbol_pin(
                 member.kind == ConnectionMemberKind::SymbolPin
                     && member.symbol_uuid == symbol.uuid
                     && points_equal(member.at, at)
+                    && (pin_number.is_none() || member.pin_number.as_deref() == pin_number)
             })
         })
 }
@@ -9891,13 +9897,15 @@ where
 
 // Upstream parity: reduced local analogue for the symbol-pin item lookup half of
 // `CONNECTION_GRAPH::GetSubgraphForItem()` on the net-name path. This is not a 1:1 KiCad item map
-// because the Rust tree still identifies a placed pin by `(symbol uuid, projected pin at)` instead
-// of a live `SCH_PIN*`, but it lets pin-owned ERC/shown-text paths resolve against a symbol-pin
-// component owner instead of a raw point query.
+// because the Rust tree still identifies a placed pin by reduced projected identity instead of a
+// live `SCH_PIN*`, but it now includes projected pin number so stacked pins on one symbol point do
+// not alias one another on the fallback owner path, and it lets pin-owned ERC/shown-text paths
+// resolve against a symbol-pin component owner instead of a raw point query.
 pub(crate) fn resolve_reduced_net_name_for_symbol_pin<FLabel, FSheet>(
     schematic: &Schematic,
     symbol: &Symbol,
     at: [f64; 2],
+    pin_number: Option<&str>,
     sheet_path_prefix: Option<&str>,
     shown_label_text: FLabel,
     shown_sheet_pin_text: FSheet,
@@ -9906,7 +9914,8 @@ where
     FLabel: FnMut(&Label) -> String,
     FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
 {
-    let connected_component = connection_component_for_symbol_pin(schematic, symbol, at)?;
+    let connected_component =
+        connection_component_for_symbol_pin(schematic, symbol, at, pin_number)?;
     resolve_reduced_net_name_on_component(
         schematic,
         &connected_component,
@@ -12489,8 +12498,9 @@ mod tests {
                 _ => None,
             })
             .expect("symbol");
-        let component = super::connection_component_for_symbol_pin(schematic, symbol, [0.0, 0.0])
-            .expect("component");
+        let component =
+            super::connection_component_for_symbol_pin(schematic, symbol, [10.0, 0.0], Some("2"))
+                .expect("component");
 
         let candidate = super::resolve_reduced_driver_name_candidate_on_component(
             schematic,
@@ -12511,6 +12521,68 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn connection_component_for_symbol_pin_uses_stacked_pin_number_identity() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_stacked_pin_component_identity_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:Stacked"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "Stacked" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "Stacked_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:Stacked")
+    (uuid "73050000-0000-0000-0000-000000000604")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "Stacked" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("symbol");
+
+        assert!(
+            super::connection_component_for_symbol_pin(&schematic, symbol, [0.0, 0.0], Some("2"))
+                .is_some()
+        );
+        assert!(
+            super::connection_component_for_symbol_pin(&schematic, symbol, [0.0, 0.0], Some("3"))
+                .is_none()
+        );
+
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

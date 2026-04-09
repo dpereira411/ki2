@@ -4587,6 +4587,7 @@ fn resolve_symbol_pin_text_var(
                         schematic,
                         symbol,
                         pin_at,
+                        lib_pin.number.as_deref(),
                         Some(&sheet_path_prefix),
                         |other| {
                             shown_label_text_without_connectivity(
@@ -4632,6 +4633,7 @@ fn resolve_symbol_pin_text_var(
                         schematic,
                         symbol,
                         pin_at,
+                        lib_pin.number.as_deref(),
                         Some(&sheet_path_prefix),
                         |other| {
                             shown_label_text_without_connectivity(
@@ -4760,6 +4762,7 @@ fn resolve_symbol_pin_text_var(
                                 schematic,
                                 candidate_symbol,
                                 pin_at,
+                                lib_pin.number.as_deref(),
                                 Some(&sheet_path_prefix),
                                 |other| {
                                     shown_label_text_without_connectivity(
@@ -4802,6 +4805,7 @@ fn resolve_symbol_pin_text_var(
                                 schematic,
                                 candidate_symbol,
                                 pin_at,
+                                lib_pin.number.as_deref(),
                                 Some(&sheet_path_prefix),
                                 |other| {
                                     shown_label_text_without_connectivity(
