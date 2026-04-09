@@ -2827,6 +2827,54 @@ struct LiveReducedSubgraph {
 }
 
 impl LiveReducedSubgraph {
+    // Upstream parity: local live-subgraph analogue for the exercised build-time attachment KiCad
+    // performs while constructing one live `CONNECTION_SUBGRAPH`. The active handle path now lets
+    // the shared subgraph owner attach its own topology, strong drivers, initial pin refresh, and
+    // parent item handles instead of sequencing those steps through free functions after handle
+    // allocation.
+    fn attach_from_reduced(
+        &mut self,
+        handle: &LiveReducedSubgraphHandle,
+        reduced_subgraph: &ReducedProjectSubgraphEntry,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+    ) {
+        self.attach_topology_from_reduced(reduced_subgraph, live_subgraphs);
+
+        let chosen_identity = reduced_project_subgraph_driver_identity(reduced_subgraph).cloned();
+        let chosen_connection = reduced_subgraph_driver_connection(reduced_subgraph);
+        let live_drivers = self.drivers.clone();
+
+        for (driver, reduced_driver) in live_drivers.iter().zip(reduced_subgraph.drivers.iter()) {
+            let identity = reduced_driver.identity.clone();
+            let driver_kind = reduced_driver.kind;
+            let priority = reduced_driver.priority;
+            let floating_connection = match &driver.borrow().owner {
+                LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
+                _ => driver.borrow().connection_handle(),
+            };
+            let owner = self.attach_driver_owner_for_identity(
+                identity,
+                driver,
+                &floating_connection,
+                driver_kind,
+                priority,
+            );
+            let mut driver_ref = driver.borrow_mut();
+            driver_ref.owner = owner;
+            drop(driver_ref);
+
+            self.attach_strong_driver(
+                driver,
+                reduced_driver,
+                chosen_identity.as_ref(),
+                &chosen_connection,
+            );
+        }
+
+        self.refresh_base_pin_connections_from_driver(false);
+        self.attach_item_parent_handles(handle);
+    }
+
     // Upstream parity: local live-subgraph analogue for binding one exercised strong driver onto
     // the shared subgraph owner during driver resolution. This still seeds from reduced projected
     // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
@@ -4435,111 +4483,13 @@ fn build_live_reduced_subgraph_handles(
             }))
         })
         .collect::<Vec<_>>();
-    attach_live_subgraph_links_to_handles(&handles, reduced_subgraphs);
-    attach_live_strong_driver_owners_to_handles(&handles, reduced_subgraphs);
-    for handle in &handles {
-        sync_live_reduced_base_pin_connections_from_driver_handle(handle, false);
-    }
-    for handle in &handles {
-        handle.borrow_mut().attach_item_parent_handles(handle);
+    for (index, handle) in handles.iter().enumerate() {
+        handle
+            .borrow_mut()
+            .attach_from_reduced(handle, &reduced_subgraphs[index], &handles);
     }
     attach_live_connected_bus_items_to_handles(&handles);
     handles
-}
-
-// Upstream parity: local bridge toward pointer-style bus parent/neighbor topology on the shared
-// live subgraph graph. The non-test live payload no longer keeps copied reduced target indexes for
-// active traversal; handle attachment is seeded directly from the reduced graph during
-// construction and reduced indexes are rebuilt only when projecting back out. Bus links are now
-// shared live owners too, so active propagation mutates attached link state instead of copied
-// value links on each subgraph pass.
-fn attach_live_subgraph_links_to_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
-) {
-    for (index, handle) in live_subgraphs.iter().enumerate() {
-        handle
-            .borrow_mut()
-            .attach_topology_from_reduced(&reduced_subgraphs[index], live_subgraphs);
-    }
-}
-
-// Upstream parity: local bridge toward live driver-item ownership on the shared live graph.
-// KiCad's strong-driver selection ultimately points back to live items; this reduced bridge still
-// keeps copied driver records, but it now attaches the exercised label, sheet-pin, and symbol-pin
-// drivers to shared live item owners on the active graph instead of leaving every strong driver as
-// a detached copied struct, and now also attaches those item owners back onto the same shared live
-// strong-driver owners used by the subgraph driver list. Active strong-driver connection reads now
-// prefer those shared item owners, symbol-pin strong drivers now read their connection through the
-// attached base-pin owner instead of carrying a second driver-side connection cache, and the
-// chosen-driver check now compares against the attached live owner identity instead of the reduced
-// driver identity after owner binding. The attached base pin still seeds its own live connection
-// owner from the floating strong-driver connection so later per-pin item branches have a real
-// owner to update without borrowing the whole subgraph driver. Once the chosen driver is attached,
-// the active live subgraph now also points its `driver_connection` at that same chosen item-owned
-// live connection owner, matching KiCad's `m_driver_connection = m_driver->Connection(...)`
-// branch more closely instead of keeping a parallel subgraph-owned connection copy on the active
-// path. Remaining divergence is the fuller live driver-item object graph and the still-missing
-// live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph behind these handles.
-fn attach_live_strong_driver_owners_to_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
-) {
-    for (index, handle) in live_subgraphs.iter().enumerate() {
-        let mut subgraph = handle.borrow_mut();
-        let chosen_identity =
-            reduced_project_subgraph_driver_identity(&reduced_subgraphs[index]).cloned();
-        let chosen_connection = reduced_subgraph_driver_connection(&reduced_subgraphs[index]);
-        let live_drivers = subgraph.drivers.clone();
-
-        for (driver, reduced_driver) in live_drivers
-            .iter()
-            .zip(reduced_subgraphs[index].drivers.iter())
-        {
-            let identity = reduced_driver.identity.clone();
-            let driver_kind = reduced_driver.kind;
-            let priority = reduced_driver.priority;
-            let floating_connection = match &driver.borrow().owner {
-                LiveProjectStrongDriverOwner::Floating { connection, .. } => connection.clone(),
-                _ => driver.borrow().connection_handle(),
-            };
-            let owner = subgraph.attach_driver_owner_for_identity(
-                identity,
-                driver,
-                &floating_connection,
-                driver_kind,
-                priority,
-            );
-            let mut driver_ref = driver.borrow_mut();
-            driver_ref.owner = owner;
-            drop(driver_ref);
-
-            subgraph.attach_strong_driver(
-                driver,
-                reduced_driver,
-                chosen_identity.as_ref(),
-                &chosen_connection,
-            );
-        }
-    }
-}
-
-// Upstream parity: local bridge for the base-pin portion of
-// `CONNECTION_SUBGRAPH::UpdateItemConnections()` on the shared live subgraph owner. KiCad mutates
-// live `SCH_PIN` item connections directly; this reduced bridge now updates base-pin owners from
-// the chosen live connection on the shared subgraph owner instead of only covering the self-driven
-// single-pin branch. Build-time setup still leaves attached strong-driver pins on their seeded
-// pin-owned connection so per-pin setup identity survives into live owner attachment; the later
-// post-propagation item refresh widens that to adopt chosen net identity while the clone helper
-// keeps explicit pin-owned local driver text. Remaining divergence is the fuller live pin object
-// for richer per-pin mutation after setup.
-fn sync_live_reduced_base_pin_connections_from_driver_handle(
-    handle: &LiveReducedSubgraphHandle,
-    refresh_attached_strong_driver_pins: bool,
-) {
-    handle
-        .borrow_mut()
-        .refresh_base_pin_connections_from_driver(refresh_attached_strong_driver_pins);
 }
 
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
