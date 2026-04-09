@@ -3282,6 +3282,7 @@ impl LiveReducedSubgraph {
     // sheet-pin child-bus promotion branch instead of leaving those branches open-coded in the
     // outer handle loop.
     fn refresh_post_propagation_item_connections(handle: &LiveReducedSubgraphHandle) {
+        handle.borrow_mut().dirty = false;
         sync_live_reduced_item_connections_from_driver_handle(handle);
 
         if {
@@ -16715,6 +16716,7 @@ mod tests {
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
         for handle in &live_subgraphs {
             LiveReducedSubgraph::refresh_post_propagation_item_connections(handle);
+            assert!(!handle.borrow().dirty);
         }
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
@@ -17932,6 +17934,7 @@ mod tests {
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
         for handle in &live_subgraphs {
             LiveReducedSubgraph::refresh_post_propagation_item_connections(handle);
+            assert!(!handle.borrow().dirty);
         }
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
