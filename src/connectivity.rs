@@ -2721,6 +2721,73 @@ impl LiveReducedSubgraph {
 
         self.refresh_base_pin_connections_from_driver(true);
     }
+
+    // Upstream parity: local live-subgraph analogue for the exercised reduced projection boundary
+    // after graph mutation. Consumers still read reduced graph state, but the shared live subgraph
+    // owner now pushes its resolved connection, chosen-driver state, strong drivers, and item/pin
+    // connection owners onto that boundary instead of leaving those projection loops duplicated
+    // across active and compatibility paths.
+    fn project_driver_and_item_state_onto_reduced(
+        &self,
+        reduced: &mut ReducedProjectSubgraphEntry,
+    ) {
+        let live_driver = self.driver_connection.borrow();
+        reduced.name = live_driver.name.clone();
+        clone_live_connection_owner_into_reduced_connection(
+            &mut reduced.resolved_connection,
+            &live_driver,
+        );
+
+        if let Some(driver_connection) = &mut reduced.driver_connection {
+            clone_live_connection_owner_into_reduced_connection(driver_connection, &live_driver);
+        }
+        reduced.drivers = live_strong_driver_handles_to_snapshots(&self.drivers);
+        reduced.chosen_driver_identity = self
+            .chosen_driver
+            .as_ref()
+            .and_then(|driver| live_project_strong_driver_identity(&driver.borrow()))
+            .or_else(|| reduced.chosen_driver_identity.clone());
+
+        for (target, source) in reduced.label_links.iter_mut().zip(self.label_links.iter()) {
+            let source = source.borrow();
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
+                &mut target.connection,
+                &source_connection,
+            );
+        }
+
+        for (target, source) in reduced
+            .hier_sheet_pins
+            .iter_mut()
+            .zip(self.hier_sheet_pins.iter())
+        {
+            let source = source.borrow();
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
+                &mut target.connection,
+                &source_connection,
+            );
+        }
+
+        for (target, source) in reduced.hier_ports.iter_mut().zip(self.hier_ports.iter()) {
+            let source = source.borrow();
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
+                &mut target.connection,
+                &source_connection,
+            );
+        }
+
+        for (target, source) in reduced.base_pins.iter_mut().zip(self.base_pins.iter()) {
+            let source = source.borrow();
+            let source_connection = source.connection.borrow();
+            clone_live_connection_owner_into_reduced_connection(
+                &mut target.connection,
+                &source_connection,
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3809,44 +3876,7 @@ fn apply_live_reduced_driver_connections(
 ) {
     for (index, live) in live_subgraphs.iter().enumerate() {
         let reduced = &mut reduced_subgraphs[index];
-        let live_driver = live.driver_connection.snapshot();
-        reduced.name = live_driver.name.clone();
-        clone_reduced_connection_into_live_connection(
-            &mut reduced.resolved_connection,
-            &live_driver,
-        );
-
-        if let Some(driver_connection) = &mut reduced.driver_connection {
-            clone_reduced_connection_into_live_connection(driver_connection, &live_driver);
-        }
-
-        for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
-            let source = source.borrow();
-            clone_reduced_connection_into_live_connection(
-                &mut target.connection,
-                &source.connection.snapshot(),
-            );
-        }
-
-        for (target, source) in reduced
-            .hier_sheet_pins
-            .iter_mut()
-            .zip(live.hier_sheet_pins.iter())
-        {
-            let source = source.borrow();
-            clone_reduced_connection_into_live_connection(
-                &mut target.connection,
-                &source.connection.snapshot(),
-            );
-        }
-
-        for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
-            let source = source.borrow();
-            clone_reduced_connection_into_live_connection(
-                &mut target.connection,
-                &source.connection.snapshot(),
-            );
-        }
+        live.project_driver_and_item_state_onto_reduced(reduced);
 
         reduced.bus_neighbor_links = live
             .bus_neighbor_links
@@ -3893,62 +3923,7 @@ fn apply_live_reduced_driver_connections_from_handles(
     for (index, handle) in live_subgraphs.iter().enumerate() {
         let live = handle.borrow();
         let reduced = &mut reduced_subgraphs[index];
-        let live_driver = live.driver_connection.borrow();
-        reduced.name = live_driver.name.clone();
-        clone_live_connection_owner_into_reduced_connection(
-            &mut reduced.resolved_connection,
-            &live_driver,
-        );
-
-        if let Some(driver_connection) = &mut reduced.driver_connection {
-            clone_live_connection_owner_into_reduced_connection(driver_connection, &live_driver);
-        }
-        reduced.drivers = live_strong_driver_handles_to_snapshots(&live.drivers);
-        reduced.chosen_driver_identity = live
-            .chosen_driver
-            .as_ref()
-            .and_then(|driver| live_project_strong_driver_identity(&driver.borrow()))
-            .or_else(|| reduced.chosen_driver_identity.clone());
-
-        for (target, source) in reduced.label_links.iter_mut().zip(live.label_links.iter()) {
-            let source = source.borrow();
-            let source_connection = source.connection.borrow();
-            clone_live_connection_owner_into_reduced_connection(
-                &mut target.connection,
-                &source_connection,
-            );
-        }
-
-        for (target, source) in reduced
-            .hier_sheet_pins
-            .iter_mut()
-            .zip(live.hier_sheet_pins.iter())
-        {
-            let source = source.borrow();
-            let source_connection = source.connection.borrow();
-            clone_live_connection_owner_into_reduced_connection(
-                &mut target.connection,
-                &source_connection,
-            );
-        }
-
-        for (target, source) in reduced.hier_ports.iter_mut().zip(live.hier_ports.iter()) {
-            let source = source.borrow();
-            let source_connection = source.connection.borrow();
-            clone_live_connection_owner_into_reduced_connection(
-                &mut target.connection,
-                &source_connection,
-            );
-        }
-
-        for (target, source) in reduced.base_pins.iter_mut().zip(live.base_pins.iter()) {
-            let source = source.borrow();
-            let source_connection = source.connection.borrow();
-            clone_live_connection_owner_into_reduced_connection(
-                &mut target.connection,
-                &source_connection,
-            );
-        }
+        live.project_driver_and_item_state_onto_reduced(reduced);
 
         reduced.bus_neighbor_links = live
             .bus_neighbor_links
