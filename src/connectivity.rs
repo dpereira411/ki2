@@ -2938,17 +2938,17 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for the exercised reduced projection boundary
     // after graph mutation. Consumers still read reduced graph state, but the shared live subgraph
-    // owner now pushes its resolved connection, chosen-driver state, strong drivers, and item/pin
-    // connection owners onto that boundary instead of leaving those projection loops duplicated
-    // across active and compatibility paths.
+    // owner now pushes its chosen-driver state, strong drivers, and item/pin connection owners
+    // onto that boundary while the reduced subgraph owner re-derives outward name/resolved
+    // connection state from the projected driver owner instead of assigning those boundary fields
+    // independently in this loop.
     fn project_driver_and_item_state_onto_reduced(
         &self,
         reduced: &mut ReducedProjectSubgraphEntry,
     ) {
         let live_driver = self.driver_connection.borrow();
-        reduced.name = live_driver.name.clone();
-        live_driver.project_onto_reduced(&mut reduced.resolved_connection);
         live_driver.project_onto_reduced(&mut reduced.driver_connection);
+        reduced.sync_boundary_state_from_driver_owner();
         reduced.drivers = live_strong_driver_handles_to_snapshots(&self.drivers);
         reduced.chosen_driver_identity = self
             .chosen_driver
