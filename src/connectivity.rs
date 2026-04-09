@@ -35,6 +35,7 @@ pub(crate) struct ConnectionMember {
     pub(crate) kind: ConnectionMemberKind,
     pub(crate) at: [f64; 2],
     pub(crate) symbol_uuid: Option<String>,
+    pub(crate) pin_number: Option<String>,
     pub(crate) visible: bool,
     pub(crate) electrical_type: Option<String>,
 }
@@ -6187,7 +6188,9 @@ pub(crate) fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolP
 // Upstream parity: reduced local helper for `SCH_SYMBOL::GetPins( &sheet )` point projection. This
 // is not a 1:1 KiCad pin object path because the Rust tree still lacks live `SCH_PIN` instances on
 // placed symbols. It exists so the shared reduced connectivity owner can include placed symbol pins
-// from linked lib-pin draw items instead of falling back to wire-only geometry.
+// from linked lib-pin draw items instead of falling back to wire-only geometry, and now also keeps
+// pin-number identity so stacked pins on the same symbol/point are not collapsed before the shared
+// graph sees them.
 fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
     projected_symbol_pin_info(symbol)
         .into_iter()
@@ -6195,12 +6198,16 @@ fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
             kind: ConnectionMemberKind::SymbolPin,
             at: pin.at,
             symbol_uuid: symbol.uuid.clone(),
+            pin_number: pin.number,
             visible: true,
             electrical_type: pin.electrical_type,
         })
         .collect()
 }
 
+// Upstream parity: reduced local connection-point owner used before subgraph grouping. This still
+// stores reduced members instead of live `SCH_ITEM*`, but symbol-pin dedup now keys by both symbol
+// UUID and pin number so stacked pins stay distinct the way separate `SCH_PIN` items do upstream.
 fn push_connection_member(
     snapshot: &mut BTreeMap<PointKey, ConnectionPointSnapshot>,
     member: ConnectionMember,
@@ -6217,6 +6224,7 @@ fn push_connection_member(
         if let Some(existing) = entry.members.iter_mut().find(|existing| {
             existing.kind == ConnectionMemberKind::SymbolPin
                 && existing.symbol_uuid == member.symbol_uuid
+                && existing.pin_number == member.pin_number
         }) {
             if member.visible && !existing.visible {
                 *existing = member;
@@ -6256,6 +6264,7 @@ pub(crate) fn collect_connection_points(
                             kind: ConnectionMemberKind::SheetPin,
                             at: pin.at,
                             symbol_uuid: None,
+                            pin_number: None,
                             visible: pin.visible,
                             electrical_type: None,
                         },
@@ -6270,6 +6279,7 @@ pub(crate) fn collect_connection_points(
                             kind: ConnectionMemberKind::Wire,
                             at: *point,
                             symbol_uuid: None,
+                            pin_number: None,
                             visible: true,
                             electrical_type: None,
                         },
@@ -6284,6 +6294,7 @@ pub(crate) fn collect_connection_points(
                             kind: ConnectionMemberKind::Bus,
                             at: *point,
                             symbol_uuid: None,
+                            pin_number: None,
                             visible: true,
                             electrical_type: None,
                         },
@@ -6301,6 +6312,7 @@ pub(crate) fn collect_connection_points(
                             kind: ConnectionMemberKind::BusEntry,
                             at: point,
                             symbol_uuid: entry.uuid.clone(),
+                            pin_number: None,
                             visible: true,
                             electrical_type: None,
                         },
@@ -6314,6 +6326,7 @@ pub(crate) fn collect_connection_points(
                         kind: ConnectionMemberKind::Label,
                         at: label.at,
                         symbol_uuid: None,
+                        pin_number: None,
                         visible: true,
                         electrical_type: None,
                     },
@@ -6326,6 +6339,7 @@ pub(crate) fn collect_connection_points(
                         kind: ConnectionMemberKind::Junction,
                         at: junction.at,
                         symbol_uuid: None,
+                        pin_number: None,
                         visible: true,
                         electrical_type: None,
                     },
@@ -6338,6 +6352,7 @@ pub(crate) fn collect_connection_points(
                         kind: ConnectionMemberKind::NoConnectMarker,
                         at: no_connect.at,
                         symbol_uuid: None,
+                        pin_number: None,
                         visible: true,
                         electrical_type: None,
                     },
@@ -11679,6 +11694,71 @@ mod tests {
                 .any(|member| member.kind == super::ConnectionMemberKind::Label
                     && crate::loader::points_equal(member.at, [20.0, 0.0]))
         );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn collect_connection_points_keeps_stacked_symbol_pins_distinct() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_stacked_symbol_pins_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:Stacked"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "Stacked" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "Stacked_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:Stacked")
+    (uuid "73050000-0000-0000-0000-000000000603")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "Stacked" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let points = super::collect_connection_points(&schematic);
+        let point = points
+            .get(&super::point_key([0.0, 0.0]))
+            .expect("stacked pin point");
+
+        assert_eq!(
+            point
+                .members
+                .iter()
+                .filter(|member| member.kind == super::ConnectionMemberKind::SymbolPin)
+                .count(),
+            2
+        );
+        assert!(point.members.iter().any(|member| {
+            member.kind == super::ConnectionMemberKind::SymbolPin
+                && member.pin_number.as_deref() == Some("1")
+        }));
+        assert!(point.members.iter().any(|member| {
+            member.kind == super::ConnectionMemberKind::SymbolPin
+                && member.pin_number.as_deref() == Some("2")
+        }));
 
         let _ = fs::remove_file(&path);
     }

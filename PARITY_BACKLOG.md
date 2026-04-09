@@ -856,6 +856,9 @@ Current status:
         `jumper_pin_groups` before component extraction, which is closer to KiCad's
         `updateSymbolConnectivity()` setup path instead of leaving jumper semantics to later
         ERC-only special cases
+      - connection-point collection now also keeps stacked symbol pins distinct by pin number
+        instead of collapsing them by symbol UUID alone before the shared graph sees them, which is
+        closer to KiCad's separate `SCH_PIN` item identity
       - reduced/live subgraphs now also preserve richer base-pin payload:
         `ReducedProjectBasePin { key, number, electrical_type }`
         so the graph no longer has to collapse pin-owned state to bare `ReducedNetBasePinKey`
