@@ -2864,9 +2864,11 @@ impl LiveReducedSubgraph {
     // the shared subgraph owner during driver resolution. This still seeds from reduced projected
     // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
     // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
-    // that branch open-coded in the surrounding builder. Symbol-pin branches now compare through
-    // attached live pin-driver owners, but non-identity text-item fallback still depends on the
-    // reduced strong-driver snapshot until the fuller live text-item object graph exists.
+    // that branch open-coded in the surrounding builder. Symbol-pin branches compare through
+    // attached live pin-driver owners. Non-identity text-item fallback still depends on the
+    // reduced strong-driver snapshot to recognize the chosen driver, but once that branch picks a
+    // text-item driver the chosen text-driver connection owner is widened onto the chosen
+    // connection before the subgraph adopts it.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
@@ -2875,21 +2877,32 @@ impl LiveReducedSubgraph {
         chosen_connection: &ReducedProjectConnection,
     ) {
         let chosen_live_connection = LiveProjectConnection::from(chosen_connection.clone());
+        let is_symbol_pin_driver = matches!(
+            *driver.borrow(),
+            LiveProjectStrongDriverOwner::SymbolPin { .. }
+        );
+        let mut chosen_from_reduced_snapshot = false;
         let is_chosen_driver = chosen_identity
             .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
             .unwrap_or_else(|| {
-                if matches!(
-                    *driver.borrow(),
-                    LiveProjectStrongDriverOwner::SymbolPin { .. }
-                ) {
+                if is_symbol_pin_driver {
                     let driver_connection = driver.borrow().connection_handle();
                     *driver_connection.borrow() == chosen_live_connection
                 } else {
-                    reduced_driver.connection == *chosen_connection
+                    chosen_from_reduced_snapshot = reduced_driver.connection == *chosen_connection;
+                    chosen_from_reduced_snapshot
                 }
             });
 
         if is_chosen_driver {
+            if chosen_from_reduced_snapshot {
+                let driver_connection = driver.borrow().connection_handle();
+                let chosen_live_connection = LiveProjectConnection::from(chosen_connection.clone());
+                clone_live_connection_owner_into_live_connection_owner(
+                    &mut driver_connection.borrow_mut(),
+                    &chosen_live_connection,
+                );
+            }
             self.chosen_driver = Some(driver.clone());
             self.driver_connection = driver.borrow().connection_handle();
         }
@@ -13756,6 +13769,84 @@ mod tests {
 
         assert!(subgraph.chosen_driver.is_some());
         assert_eq!(subgraph.driver_connection.borrow().name, "SEEDED");
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_promote_chosen_text_driver_owner() {
+        let chosen = ReducedProjectConnection {
+            net_code: 1,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "/SIG".to_string(),
+            local_name: "SIG".to_string(),
+            full_local_name: "/SIG".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: chosen.clone(),
+            driver_connection: Some(chosen.clone()),
+            chosen_driver_identity: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: 6,
+                connection: chosen.clone(),
+                identity: Some(super::ReducedProjectDriverIdentity::Label {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(5, 6),
+                    kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(5, 6),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(5, 6),
+                kind: LabelKind::Global,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "ITEM".to_string(),
+                    local_name: "ITEM".to_string(),
+                    full_local_name: "ITEM".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+        let owner = match &*subgraph.drivers[0].borrow() {
+            super::LiveProjectStrongDriverOwner::Label { owner, .. } => {
+                owner.upgrade().expect("label owner")
+            }
+            _ => panic!("expected label strong-driver owner"),
+        };
+
+        assert_eq!(owner.borrow().connection.borrow().name, "ITEM");
+        assert_eq!(owner.borrow().driver_connection.borrow().name, "/SIG");
+        assert!(subgraph.chosen_driver.is_some());
+        assert_eq!(subgraph.driver_connection.borrow().name, "/SIG");
     }
 
     #[test]

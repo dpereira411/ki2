@@ -1079,10 +1079,10 @@ Current status:
         owner slices on the active handle path are exhausted; the next honest move is the larger
         live pin / connection object expansion rather than another boundary helper cleanup
       - the remaining reduced strong-driver snapshot dependency on the active path is now narrowed
-        to non-identity text-item chosen-driver fallback; exercised text-item driver reads already
-        go through live owner-side driver connections, but chosen-driver fallback still needs the
-        reduced snapshot there until the fuller live text-item / `SCH_CONNECTION` object graph
-        exists
+        to recognizing non-identity text-item chosen drivers; exercised text-item driver reads
+        already go through live owner-side driver connections, and once that reduced fallback picks
+        a text-item driver the chosen live text-driver owner is now promoted onto the chosen
+        connection before the subgraph adopts it
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
