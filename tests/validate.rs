@@ -3116,6 +3116,15 @@ fn erc_dynamic_power_reused_screen_keeps_upstream_driver_occurrence() {
         }),
         "{conflicts:#?}"
     );
+
+    let off_grid_count = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "erc-endpoint-off-grid")
+        .count();
+    assert!(
+        off_grid_count <= 23,
+        "reused screens must not be counted per occurrence: {off_grid_count}"
+    );
 }
 
 #[test]

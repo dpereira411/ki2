@@ -15,7 +15,7 @@ use crate::loader::{
     resolved_sheet_text_state, resolved_symbol_text_state, shown_sheet_pin_text,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 // Upstream parity: local entrypoint for the implemented `ERC_TESTER` slice. This is not a 1:1
 // KiCad ERC runner because the current tree still lacks markers, the full pin-conflict matrix,
@@ -3850,10 +3850,13 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // graph-owned symbol-pin inventory in millimeter coordinates instead of live schematic items in
 // KiCad IU, but it preserves the exercised rule: connectable wire endpoints, bus-entry endpoints,
 // and non-NC symbol pins must land on the typed schematic connection grid from companion project
-// settings. Remaining divergence is fuller item coverage and KiCad marker attachment.
+// settings. It now de-duplicates reused sheet screens like upstream's `m_screens` traversal
+// instead of checking each loaded sheet occurrence. Remaining divergence is fuller item coverage
+// and KiCad marker attachment.
 pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
+    let mut checked_schematic_paths = BTreeSet::new();
     let grid_size_mm = project
         .project
         .as_ref()
@@ -3861,6 +3864,10 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
         .unwrap_or(1.27);
 
     for sheet_path in &project.sheet_paths {
+        if !checked_schematic_paths.insert(sheet_path.schematic_path.clone()) {
+            continue;
+        }
+
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
