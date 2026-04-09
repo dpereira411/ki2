@@ -927,6 +927,14 @@ Current status:
       - symbol-pin strong-driver identity now also derives from the live base-pin owner payload
         itself instead of copied per-pin live side state, so live symbol-pin owners no longer need
         a second identity cache after attachment
+      - live item refresh now also updates non-driver base-pin owners from the chosen live
+        connection instead of only covering the self-driven single-pin symbol branch, while
+        attached strong-driver pins still keep their own pin-owned connection until the fuller
+        live pin object exists
+      - non-driver base-pin owners now also adopt the chosen driver's local name when their current
+        pin-owned local name is empty or auto-generated, so ordinary pins stop staying frozen on
+        `GetDefaultNetName()` seeds while attached power-pin owners keep their explicit pin-owned
+        names
       - active chosen-driver attachment now also compares against that attached live owner identity
         instead of reading the reduced driver identity again after owner binding
       - the remaining pin gap is now the richer per-pin live update/selection logic after setup on
