@@ -3215,6 +3215,310 @@ impl LiveReducedSubgraph {
         }
     }
 
+    // Upstream parity: local live-subgraph analogue for the hierarchy-chain slice inside
+    // `propagateToNeighbors()`. This still mutates reduced live carriers instead of full local
+    // `CONNECTION_SUBGRAPH` objects, but the shared subgraph owner now owns the traversal and
+    // chosen-driver rewrite for one hierarchy-connected component instead of leaving that flow in
+    // a free helper around the handle graph.
+    fn propagate_hierarchy_chain(start: &LiveReducedSubgraphHandle, force: bool) {
+        let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
+        let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
+        if !force && start_has_hier_ports && start_has_hier_pins {
+            return;
+        } else if !start_has_hier_ports && !start_has_hier_pins {
+            start.borrow_mut().dirty = false;
+            return;
+        }
+
+        let mut stack = vec![start.clone()];
+        let mut visited = Vec::<LiveReducedSubgraphHandle>::new();
+        let mut visited_set = BTreeSet::<usize>::new();
+
+        visited_set.insert(live_subgraph_handle_id(start));
+
+        while let Some(handle) = stack.pop() {
+            visited.push(handle.clone());
+            if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
+                if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
+                    stack.push(parent_handle);
+                }
+            }
+
+            for child_handle in live_subgraph_child_handles_from_handle(&handle) {
+                if visited_set.insert(live_subgraph_handle_id(&child_handle)) {
+                    stack.push(child_handle);
+                }
+            }
+        }
+
+        let mut best_handle = start.clone();
+        let mut highest = live_reduced_subgraph_driver_priority(&start.borrow());
+        let mut best_is_strong = highest >= 3;
+        let mut best_name = start.borrow().driver_connection.name().to_string();
+
+        if highest < 6 {
+            for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
+                let priority = live_reduced_subgraph_driver_priority(&handle.borrow());
+                let candidate_strong = priority >= 3;
+                let candidate_name = handle.borrow().driver_connection.name();
+                let candidate_depth =
+                    reduced_sheet_path_depth(&handle.borrow().sheet_instance_path);
+                let best_depth =
+                    reduced_sheet_path_depth(&best_handle.borrow().sheet_instance_path);
+                let shorter_path = candidate_depth < best_depth;
+                let as_good_path = candidate_depth <= best_depth;
+
+                if (priority >= 6)
+                    || (!best_is_strong && candidate_strong)
+                    || (priority > highest && candidate_strong)
+                    || (priority == highest && candidate_strong && shorter_path)
+                    || ((best_is_strong == candidate_strong)
+                        && as_good_path
+                        && (priority == highest)
+                        && (candidate_name < best_name))
+                {
+                    best_handle = handle.clone();
+                    highest = priority;
+                    best_is_strong = candidate_strong;
+                    best_name = candidate_name;
+                }
+            }
+        }
+
+        let chosen_connection = best_handle.borrow().driver_connection.clone();
+
+        for handle in visited {
+            let mut subgraph = handle.borrow_mut();
+            let changed =
+                !live_connection_handle_clone_eq(&subgraph.driver_connection, &chosen_connection);
+            subgraph.driver_connection.clone_from(&chosen_connection);
+            subgraph.dirty = changed;
+        }
+    }
+
+    // Upstream parity: local live-subgraph analogue for collecting the connected propagation
+    // component around one dirty subgraph. Active component discovery now belongs to the shared
+    // subgraph owner and follows attached hierarchy and bus handles directly instead of leaving
+    // traversal identity in an outer free helper keyed by reduced indexes.
+    fn collect_propagation_component_handles(
+        start: &LiveReducedSubgraphHandle,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+    ) -> Vec<LiveReducedSubgraphHandle> {
+        let mut queue = VecDeque::from([start.clone()]);
+        let mut visited = BTreeSet::from([live_subgraph_handle_id(start)]);
+        let mut component = Vec::new();
+
+        while let Some(handle) = queue.pop_front() {
+            component.push(handle.clone());
+            if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
+                if visited.insert(live_subgraph_handle_id(&parent_handle)) {
+                    queue.push_back(parent_handle);
+                }
+            }
+
+            for child_handle in live_subgraph_child_handles_from_handle(&handle) {
+                if visited.insert(live_subgraph_handle_id(&child_handle)) {
+                    queue.push_back(child_handle);
+                }
+            }
+
+            for parent_handle in live_subgraph_bus_parent_handles_from_handle(&handle) {
+                if visited.insert(live_subgraph_handle_id(&parent_handle)) {
+                    queue.push_back(parent_handle);
+                }
+            }
+
+            for link in live_subgraph_bus_neighbor_links_from_handle(&handle) {
+                let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, &link)
+                else {
+                    continue;
+                };
+                if visited.insert(live_subgraph_handle_id(&neighbor_handle)) {
+                    queue.push_back(neighbor_handle);
+                }
+            }
+        }
+
+        component.sort_by_key(live_subgraph_handle_id);
+        component
+    }
+
+    // Upstream parity: local live-subgraph analogue for the global-secondary-driver promotion
+    // branch KiCad runs before neighbor propagation. The active path now keeps the promotion walk
+    // on the shared subgraph owner instead of an outer free helper around the handle graph.
+    fn refresh_global_secondary_driver_promotions(
+        start: &LiveReducedSubgraphHandle,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+    ) -> Vec<LiveReducedSubgraphHandle> {
+        if live_subgraph_has_local_driver(&start.borrow())
+            || live_subgraph_strong_driver_count(&start.borrow()) < 2
+        {
+            return Vec::new();
+        }
+
+        let chosen_connection = start.borrow().driver_connection.clone();
+        let start_sheet = start.borrow().sheet_instance_path.clone();
+        let secondary_drivers = start.borrow().drivers.clone();
+        let mut promoted = Vec::new();
+
+        for secondary_driver in secondary_drivers {
+            if secondary_driver.borrow().full_name() == chosen_connection.name() {
+                continue;
+            }
+
+            let secondary_is_global = secondary_driver.borrow().priority() >= 6;
+
+            for handle in live_subgraphs.iter() {
+                if Rc::ptr_eq(handle, start) {
+                    continue;
+                }
+
+                if !secondary_is_global && handle.borrow().sheet_instance_path != start_sheet {
+                    continue;
+                }
+
+                if !handle.borrow().drivers.iter().any(|candidate_driver| {
+                    candidate_driver.borrow().full_name() == secondary_driver.borrow().full_name()
+                }) {
+                    continue;
+                }
+
+                let same_connection = {
+                    let handle_ref = handle.borrow();
+                    live_connection_handle_clone_eq(
+                        &handle_ref.driver_connection,
+                        &chosen_connection,
+                    )
+                };
+                if same_connection {
+                    continue;
+                }
+
+                handle
+                    .borrow()
+                    .driver_connection
+                    .clone_from(&chosen_connection);
+                sync_live_reduced_item_connections_from_driver_handle(handle);
+                handle.borrow_mut().dirty = true;
+                promoted.push(handle.clone());
+            }
+        }
+
+        promoted.sort_by_key(live_subgraph_handle_id);
+        promoted.dedup_by(|left, right| Rc::ptr_eq(left, right));
+        promoted
+    }
+
+    // Upstream parity: local live-subgraph analogue for the active recursive
+    // `propagateToNeighbors()` walk. This still runs on reduced live carriers instead of the final
+    // local `CONNECTION_SUBGRAPH` analogue, but the shared subgraph owner now owns recursive dirty
+    // traversal, component discovery, hierarchy propagation, secondary-driver promotion, and
+    // revisit scheduling instead of coordinating those steps from free helpers around the graph.
+    fn propagate_neighbors(
+        start: &LiveReducedSubgraphHandle,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+        force: bool,
+        visiting: &mut BTreeSet<usize>,
+        stale_members: &mut Vec<LiveProjectBusMemberHandle>,
+    ) {
+        let start_id = live_subgraph_handle_id(start);
+        if !start.borrow().dirty || !visiting.insert(start_id) {
+            return;
+        }
+
+        if !force {
+            let promoted = Self::refresh_global_secondary_driver_promotions(start, live_subgraphs);
+
+            for promoted_handle in promoted {
+                Self::propagate_neighbors(
+                    &promoted_handle,
+                    live_subgraphs,
+                    false,
+                    visiting,
+                    stale_members,
+                );
+            }
+        }
+
+        let active = Self::collect_propagation_component_handles(start, live_subgraphs);
+        let dirty_active = active
+            .iter()
+            .filter(|handle| handle.borrow().dirty)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for handle in &dirty_active {
+            handle.borrow_mut().dirty = false;
+        }
+
+        for handle in &dirty_active {
+            let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
+
+            if !has_hierarchy_links {
+                continue;
+            }
+
+            Self::propagate_hierarchy_chain(handle, force);
+        }
+        refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
+            live_subgraphs,
+            &dirty_active,
+            stale_members,
+        );
+        refresh_reduced_live_bus_parent_members_on_handles_for_component(
+            live_subgraphs,
+            &dirty_active,
+        );
+        replay_reduced_live_stale_bus_members_on_handles_for_component(&active, stale_members);
+        refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &active);
+
+        let recurse_targets = live_subgraphs
+            .iter()
+            .filter(|handle| !Rc::ptr_eq(handle, start) && handle.borrow().dirty)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        visiting.remove(&start_id);
+        for handle in recurse_targets {
+            Self::propagate_neighbors(&handle, live_subgraphs, force, visiting, stale_members);
+        }
+
+        if start.borrow().dirty {
+            Self::propagate_neighbors(start, live_subgraphs, force, visiting, stale_members);
+        }
+    }
+
+    // Upstream parity: local live-subgraph analogue for the repeated dirty-root walk KiCad drives
+    // from live subgraphs during graph build. The active handle path now keeps that root loop on
+    // the shared subgraph owner instead of a free outer coordinator around the graph.
+    fn run_dirty_roots(live_subgraphs: &[LiveReducedSubgraphHandle], force: bool) {
+        let max_roots = live_subgraphs
+            .len()
+            .saturating_mul(live_subgraphs.len().max(1));
+        let mut roots = 0;
+
+        for start in live_subgraphs {
+            if !start.borrow().dirty {
+                continue;
+            }
+
+            roots += 1;
+            if roots > max_roots {
+                break;
+            }
+
+            let mut stale_members = Vec::new();
+            let mut visiting = BTreeSet::new();
+            Self::propagate_neighbors(
+                start,
+                live_subgraphs,
+                force,
+                &mut visiting,
+                &mut stale_members,
+            );
+        }
+    }
+
     // Upstream parity: local live-subgraph analogue for the same-name cache keys KiCad rebuilds
     // around propagated `CONNECTION_SUBGRAPH`s. The graph still keeps reduced cache maps instead
     // of full live subgraph objects, but the shared live subgraph owner now decides which name and
@@ -4358,12 +4662,12 @@ fn refresh_reduced_hierarchy_driver_chains(reduced_subgraphs: &mut [ReducedProje
             continue;
         }
 
-        propagate_reduced_live_hierarchy_chain_on_handles(handle, &live_subgraphs, false);
+        LiveReducedSubgraph::propagate_hierarchy_chain(handle, false);
     }
 
     for handle in &live_subgraphs {
         if handle.borrow().dirty {
-            propagate_reduced_live_hierarchy_chain_on_handles(handle, &live_subgraphs, true);
+            LiveReducedSubgraph::propagate_hierarchy_chain(handle, true);
         }
     }
 
@@ -4446,135 +4750,12 @@ fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProject
 // `CONNECTION_SUBGRAPH` objects, but the active recursive graph build now walks shared subgraph
 // handles and uses handle identity plus narrow live handle reads instead of cloning whole live
 // subgraph wrappers for traversal.
-fn propagate_reduced_live_hierarchy_chain_on_handles(
-    start: &LiveReducedSubgraphHandle,
-    _live_subgraphs: &[LiveReducedSubgraphHandle],
-    force: bool,
-) {
-    let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
-    let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
-    if !force && start_has_hier_ports && start_has_hier_pins {
-        return;
-    } else if !start_has_hier_ports && !start_has_hier_pins {
-        start.borrow_mut().dirty = false;
-        return;
-    }
-
-    let mut stack = vec![start.clone()];
-    let mut visited = Vec::<LiveReducedSubgraphHandle>::new();
-    let mut visited_set = BTreeSet::<usize>::new();
-
-    visited_set.insert(live_subgraph_handle_id(start));
-
-    while let Some(handle) = stack.pop() {
-        visited.push(handle.clone());
-        if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
-            if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
-                stack.push(parent_handle);
-            }
-        }
-
-        for child_handle in live_subgraph_child_handles_from_handle(&handle) {
-            if visited_set.insert(live_subgraph_handle_id(&child_handle)) {
-                stack.push(child_handle);
-            }
-        }
-    }
-
-    let mut best_handle = start.clone();
-    let mut highest = live_reduced_subgraph_driver_priority(&start.borrow());
-    let mut best_is_strong = highest >= 3;
-    let mut best_name = start.borrow().driver_connection.name().to_string();
-
-    if highest < 6 {
-        for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
-            let priority = live_reduced_subgraph_driver_priority(&handle.borrow());
-            let candidate_strong = priority >= 3;
-            let candidate_name = handle.borrow().driver_connection.name();
-            let candidate_depth = reduced_sheet_path_depth(&handle.borrow().sheet_instance_path);
-            let best_depth = reduced_sheet_path_depth(&best_handle.borrow().sheet_instance_path);
-            let shorter_path = candidate_depth < best_depth;
-            let as_good_path = candidate_depth <= best_depth;
-
-            if (priority >= 6)
-                || (!best_is_strong && candidate_strong)
-                || (priority > highest && candidate_strong)
-                || (priority == highest && candidate_strong && shorter_path)
-                || ((best_is_strong == candidate_strong)
-                    && as_good_path
-                    && (priority == highest)
-                    && (candidate_name < best_name))
-            {
-                best_handle = handle.clone();
-                highest = priority;
-                best_is_strong = candidate_strong;
-                best_name = candidate_name;
-            }
-        }
-    }
-
-    let chosen_connection = best_handle.borrow().driver_connection.clone();
-
-    for handle in visited {
-        let mut subgraph = handle.borrow_mut();
-        let changed =
-            !live_connection_handle_clone_eq(&subgraph.driver_connection, &chosen_connection);
-        subgraph.driver_connection.clone_from(&chosen_connection);
-        subgraph.dirty = changed;
-    }
-}
-
-// Upstream parity: local bridge for the connected live propagation slice on the shared subgraph
-// owner. Active component discovery now follows live handle identity across hierarchy and bus
-// links instead of using reduced subgraph indexes as traversal identity.
-fn collect_live_reduced_propagation_component_handles_from_handles(
-    start: &LiveReducedSubgraphHandle,
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> Vec<LiveReducedSubgraphHandle> {
-    let mut queue = VecDeque::from([start.clone()]);
-    let mut visited = BTreeSet::from([live_subgraph_handle_id(start)]);
-    let mut component = Vec::new();
-
-    while let Some(handle) = queue.pop_front() {
-        component.push(handle.clone());
-        if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
-            if visited.insert(live_subgraph_handle_id(&parent_handle)) {
-                queue.push_back(parent_handle);
-            }
-        }
-
-        for child_handle in live_subgraph_child_handles_from_handle(&handle) {
-            if visited.insert(live_subgraph_handle_id(&child_handle)) {
-                queue.push_back(child_handle);
-            }
-        }
-
-        for parent_handle in live_subgraph_bus_parent_handles_from_handle(&handle) {
-            if visited.insert(live_subgraph_handle_id(&parent_handle)) {
-                queue.push_back(parent_handle);
-            }
-        }
-
-        for link in live_subgraph_bus_neighbor_links_from_handle(&handle) {
-            let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, &link) else {
-                continue;
-            };
-            if visited.insert(live_subgraph_handle_id(&neighbor_handle)) {
-                queue.push_back(neighbor_handle);
-            }
-        }
-    }
-
-    component.sort_by_key(live_subgraph_handle_id);
-    component
-}
-
 #[cfg(test)]
 fn collect_live_reduced_propagation_component_from_handles(
     start: usize,
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) -> Vec<usize> {
-    collect_live_reduced_propagation_component_handles_from_handles(
+    LiveReducedSubgraph::collect_propagation_component_handles(
         &live_subgraphs[start],
         live_subgraphs,
     )
@@ -4589,88 +4770,6 @@ fn collect_live_reduced_propagation_component_from_handles(
 // shared subgraph handles by handle identity and narrow live-owner reads instead of cloning whole
 // live subgraph wrappers. Active equality checks now also compare clone-equivalent live connection
 // owners directly instead of snapshotting reduced connections.
-fn refresh_reduced_live_global_secondary_driver_promotions_for_handle(
-    start: &LiveReducedSubgraphHandle,
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> Vec<LiveReducedSubgraphHandle> {
-    if live_subgraph_has_local_driver(&start.borrow())
-        || live_subgraph_strong_driver_count(&start.borrow()) < 2
-    {
-        return Vec::new();
-    }
-
-    let chosen_connection = start.borrow().driver_connection.clone();
-    let start_sheet = start.borrow().sheet_instance_path.clone();
-    let secondary_drivers = start.borrow().drivers.clone();
-    let mut promoted = Vec::new();
-
-    for secondary_driver in secondary_drivers {
-        if secondary_driver.borrow().full_name() == chosen_connection.name() {
-            continue;
-        }
-
-        let secondary_is_global = secondary_driver.borrow().priority() >= 6;
-
-        for handle in live_subgraphs.iter() {
-            if Rc::ptr_eq(handle, start) {
-                continue;
-            }
-
-            if !secondary_is_global && handle.borrow().sheet_instance_path != start_sheet {
-                continue;
-            }
-
-            if !handle.borrow().drivers.iter().any(|candidate_driver| {
-                candidate_driver.borrow().full_name() == secondary_driver.borrow().full_name()
-            }) {
-                continue;
-            }
-
-            let same_connection = {
-                let handle_ref = handle.borrow();
-                live_connection_handle_clone_eq(&handle_ref.driver_connection, &chosen_connection)
-            };
-            if same_connection {
-                continue;
-            }
-
-            handle
-                .borrow()
-                .driver_connection
-                .clone_from(&chosen_connection);
-            sync_live_reduced_item_connections_from_driver_handle(handle);
-            handle.borrow_mut().dirty = true;
-            promoted.push(handle.clone());
-        }
-    }
-
-    promoted.sort_by_key(live_subgraph_handle_id);
-    promoted.dedup_by(|left, right| Rc::ptr_eq(left, right));
-    promoted
-}
-
-fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_component(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    component: &[LiveReducedSubgraphHandle],
-    force: bool,
-) {
-    // Upstream parity: local live-handle analogue for the hierarchy-chain propagation branch
-    // inside `propagateToNeighbors()`. This now consumes the recursive walk's explicit dirty
-    // subset instead of re-reading dirty state inside the helper, and active dirty checks now
-    // compare clone-equivalent live connection owners directly instead of snapshotting before and
-    // after mutation. Remaining divergence is upstream's fuller `CONNECTION_SUBGRAPH` object graph
-    // and item-pointer topology.
-    for handle in component {
-        let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
-
-        if !has_hierarchy_links {
-            continue;
-        }
-
-        propagate_reduced_live_hierarchy_chain_on_handles(handle, live_subgraphs, force);
-    }
-}
-
 fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     component: &[LiveReducedSubgraphHandle],
@@ -5200,37 +5299,6 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
     }
 }
 
-fn run_reduced_live_graph_roots_on_handles(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    force: bool,
-) {
-    let max_roots = live_subgraphs
-        .len()
-        .saturating_mul(live_subgraphs.len().max(1));
-    let mut roots = 0;
-
-    for start in live_subgraphs {
-        if !start.borrow().dirty {
-            continue;
-        }
-
-        roots += 1;
-        if roots > max_roots {
-            break;
-        }
-
-        let mut stale_members = Vec::new();
-        let mut visiting = BTreeSet::new();
-        propagate_reduced_live_graph_neighbors_on_handles(
-            start,
-            live_subgraphs,
-            force,
-            &mut visiting,
-            &mut stale_members,
-        );
-    }
-}
-
 fn refresh_reduced_live_post_propagation_item_connections_on_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) {
@@ -5247,89 +5315,6 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
 // each pass and any in-pass mutation can immediately requeue the same live subgraph for another
 // recursive visit without a whole-subgraph compatibility compare. Remaining divergence is the
 // still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology.
-fn propagate_reduced_live_graph_neighbors_on_handles(
-    start: &LiveReducedSubgraphHandle,
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    force: bool,
-    visiting: &mut BTreeSet<usize>,
-    stale_members: &mut Vec<LiveProjectBusMemberHandle>,
-) {
-    let start_id = live_subgraph_handle_id(start);
-    if !start.borrow().dirty || !visiting.insert(start_id) {
-        return;
-    }
-
-    if !force {
-        let promoted = refresh_reduced_live_global_secondary_driver_promotions_for_handle(
-            start,
-            live_subgraphs,
-        );
-
-        for promoted_handle in promoted {
-            propagate_reduced_live_graph_neighbors_on_handles(
-                &promoted_handle,
-                live_subgraphs,
-                false,
-                visiting,
-                stale_members,
-            );
-        }
-    }
-
-    let active =
-        collect_live_reduced_propagation_component_handles_from_handles(start, live_subgraphs);
-    let dirty_active = active
-        .iter()
-        .filter(|handle| handle.borrow().dirty)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    for handle in &dirty_active {
-        handle.borrow_mut().dirty = false;
-    }
-
-    propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_component(
-        live_subgraphs,
-        &dirty_active,
-        force,
-    );
-    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
-        live_subgraphs,
-        &dirty_active,
-        stale_members,
-    );
-    refresh_reduced_live_bus_parent_members_on_handles_for_component(live_subgraphs, &dirty_active);
-    replay_reduced_live_stale_bus_members_on_handles_for_component(&active, stale_members);
-    refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &active);
-
-    let recurse_targets = live_subgraphs
-        .iter()
-        .filter(|handle| !Rc::ptr_eq(handle, start) && handle.borrow().dirty)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    visiting.remove(&start_id);
-    for handle in recurse_targets {
-        propagate_reduced_live_graph_neighbors_on_handles(
-            &handle,
-            live_subgraphs,
-            force,
-            visiting,
-            stale_members,
-        );
-    }
-
-    if start.borrow().dirty {
-        propagate_reduced_live_graph_neighbors_on_handles(
-            start,
-            live_subgraphs,
-            force,
-            visiting,
-            stale_members,
-        );
-    }
-}
-
 // Upstream parity: reduced local bridge toward one live `propagateToNeighbors()` owner during
 // graph build. This now follows KiCad's two-pass caller shape more closely by recursively
 // traversing dirty live subgraphs with a shared stale-member bag per root before running the
@@ -5347,13 +5332,13 @@ fn refresh_reduced_live_graph_propagation_with_handles(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraphHandle> {
     let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
-    run_reduced_live_graph_roots_on_handles(&live_subgraphs, false);
-    run_reduced_live_graph_roots_on_handles(&live_subgraphs, true);
+    LiveReducedSubgraph::run_dirty_roots(&live_subgraphs, false);
+    LiveReducedSubgraph::run_dirty_roots(&live_subgraphs, true);
 
     let all_indexes = (0..live_subgraphs.len()).collect::<Vec<_>>();
     refresh_reduced_live_multiple_bus_parent_names_on_handles(&live_subgraphs);
-    run_reduced_live_graph_roots_on_handles(&live_subgraphs, false);
-    run_reduced_live_graph_roots_on_handles(&live_subgraphs, true);
+    LiveReducedSubgraph::run_dirty_roots(&live_subgraphs, false);
+    LiveReducedSubgraph::run_dirty_roots(&live_subgraphs, true);
     refresh_reduced_live_bus_link_members_on_handles_for_indexes(&live_subgraphs, &all_indexes);
     refresh_reduced_live_post_propagation_item_connections_on_handles(&live_subgraphs);
     apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);

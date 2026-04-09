@@ -990,6 +990,11 @@ Current status:
       - exercised bus-entry connected-bus attachment during live graph build now also lives on the
         shared live wire-item owner instead of a free geometry-matching builder loop around the
         item graph
+      - active recursive propagation control flow now also lives on the shared live subgraph owner:
+        - connected-component discovery
+        - hierarchy-chain propagation
+        - global secondary-driver promotion
+        - dirty-root recursion / revisit scheduling
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
