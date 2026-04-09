@@ -70,6 +70,7 @@ pub(crate) struct ProjectedSymbolPin {
     pub(crate) name: Option<String>,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
+    pub(crate) visible: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,6 +97,7 @@ pub(crate) struct ReducedProjectBasePin {
     pub(crate) reference: Option<String>,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
+    pub(crate) visible: bool,
     pub(crate) is_power_symbol: bool,
     pub(crate) connection: ReducedProjectConnection,
     pub(crate) driver_connection: ReducedProjectConnection,
@@ -551,6 +553,7 @@ pub(crate) struct ReducedProjectSymbolPin {
     pub(crate) name: Option<String>,
     pub(crate) number: Option<String>,
     pub(crate) electrical_type: Option<String>,
+    pub(crate) visible: bool,
     pub(crate) reference: Option<String>,
     pub(crate) is_power_symbol: bool,
     pub(crate) subgraph_index: Option<usize>,
@@ -1937,6 +1940,7 @@ struct LiveReducedBasePinPayload {
     reference: Option<String>,
     number: Option<String>,
     electrical_type: Option<String>,
+    visible: bool,
     is_power_symbol: bool,
 }
 
@@ -4098,6 +4102,7 @@ fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> Reduced
         reference: base_pin.pin.reference.clone(),
         number: base_pin.pin.number.clone(),
         electrical_type: base_pin.pin.electrical_type.clone(),
+        visible: base_pin.pin.visible,
         is_power_symbol: base_pin.pin.is_power_symbol,
         connection: base_pin.connection.borrow().snapshot(),
         driver_connection: base_pin.driver_connection.borrow().snapshot(),
@@ -4324,6 +4329,7 @@ fn build_live_reduced_subgraph_handles(
                                 reference: pin.reference.clone(),
                                 number: pin.number.clone(),
                                 electrical_type: pin.electrical_type.clone(),
+                                visible: pin.visible,
                                 is_power_symbol: pin.is_power_symbol,
                             },
                             connection: Rc::new(RefCell::new(pin.connection.clone().into())),
@@ -5255,12 +5261,13 @@ pub(crate) fn projected_symbol_pin_info(symbol: &Symbol) -> Vec<ProjectedSymbolP
             let rotated = rotate_point(local_at, symbol.angle);
             let at = [symbol.at[0] + rotated[0], symbol.at[1] + rotated[1]];
 
-            ProjectedSymbolPin {
-                at,
-                name: pin.name.clone(),
-                number: pin.number.clone(),
-                electrical_type: pin.electrical_type.clone(),
-            }
+                            ProjectedSymbolPin {
+                                at,
+                                name: pin.name.clone(),
+                                number: pin.number.clone(),
+                                electrical_type: pin.electrical_type.clone(),
+                                visible: pin.visible,
+                            }
         })
         .collect()
 }
@@ -5761,6 +5768,7 @@ where
                     reference: reference.clone(),
                     number: pin.number.clone(),
                     electrical_type: pin.electrical_type.clone(),
+                    visible: pin.visible,
                     is_power_symbol: symbol
                         .lib_symbol
                         .as_ref()
@@ -5855,27 +5863,29 @@ where
         .collect()
 }
 
-// Upstream parity: reduced local analogue for the project-wide `ConnectionGraph` owner behind
-// `GetNetMap()` and `GetSubgraphForItem()`. This is not a 1:1 graph owner because the Rust tree
-// still lacks real `CONNECTION_SUBGRAPH` objects, driver objects, and live item pointers, but it
-// now owns one shared reduced project net map plus item lookup indexes instead of making ERC and
-// export rebuild those facts independently. Remaining divergence is the missing full subgraph
-// object model and graph-owned resolved-name caches beyond this reduced project graph; candidate
-// ownership is now widened to `(sheet instance path, reference, pin)` so reused-sheet symbol-pin
-// identity is not collapsed before pin net/class ownership is assigned, item-to-net facts now
-// derive through the shared subgraph owner instead of duplicate item-to-whole-net side maps,
-// outward reduced `resolved_connection` state is now also derived from the required reduced
-// `driver_connection` owner through the reduced subgraph owner instead of being rebuilt from
-// parallel raw fields during final graph assembly, whole-net views are derived from the shared
-// subgraph owner instead of a second stored flattened carrier, reduced label/sheet-pin/no-connect
-// membership now rides on the shared subgraph owner for graph-side ERC rules instead of per-sheet
-// component rescans, reduced driver identity now rides on that same owner so `RunERC()`-style
-// reused-screen de-duplication can happen above the shared graph boundary, and final reduced
-// subgraph names now also derive from the required reduced `driver_connection` owner instead of
-// treating `name` as an independent production owner. Pending reduced subgraph assembly now also
-// keys its pending net/base-pin/node side maps through that pending driver owner instead of
-// carrying a second pending `name` field beside it. The outward reduced node carrier is still
-// narrower than a real `CONNECTION_SUBGRAPH` item owner.
+// Upstream parity: reduced local analogue for the project-wide `CONNECTION_GRAPH` owner behind
+// `Recalculate()`, `GetNetMap()`, and `GetSubgraphForItem()`. This is not a 1:1 graph owner
+// because the Rust tree still lacks real `CONNECTION_SUBGRAPH` objects, live item pointers,
+// full `updateItemConnectivity()` / `ResolveDrivers()` mutation flow, and the broader dirty/recache
+// lifecycle KiCad runs through `Recalculate()`. It does now own one shared reduced project net map
+// plus item lookup indexes instead of making ERC and export rebuild those facts independently.
+// Remaining divergence is the missing full subgraph object model and graph-owned resolved-name
+// caches beyond this reduced project graph; candidate ownership is now widened to
+// `(sheet instance path, reference, pin)` so reused-sheet symbol-pin identity is not collapsed
+// before pin net/class ownership is assigned, item-to-net facts now derive through the shared
+// subgraph owner instead of duplicate item-to-whole-net side maps, outward reduced
+// `resolved_connection` state is now also derived from the required reduced `driver_connection`
+// owner through the reduced subgraph owner instead of being rebuilt from parallel raw fields
+// during final graph assembly, whole-net views are derived from the shared subgraph owner instead
+// of a second stored flattened carrier, reduced label/sheet-pin/no-connect membership now rides on
+// the shared subgraph owner for graph-side ERC rules instead of per-sheet component rescans,
+// reduced driver identity now rides on that same owner so `RunERC()`-style reused-screen
+// de-duplication can happen above the shared graph boundary, and final reduced subgraph names now
+// also derive from the required reduced `driver_connection` owner instead of treating `name` as an
+// independent production owner. Pending reduced subgraph assembly now also keys its pending
+// net/base-pin/node side maps through that pending driver owner instead of carrying a second
+// pending `name` field beside it. The outward reduced node carrier is still narrower than a real
+// `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
@@ -6643,12 +6653,13 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     }
 }
 
-// Upstream parity: reduced local analogue for the project-wide `ConnectionGraph()->GetNetMap()`
-// owner boundary. This wrapper exists because `SchematicProject` is currently the main cached
-// graph owner, but the underlying reduced graph construction now accepts raw loaded inputs so
-// loader-side hierarchy passes can reuse the same owner path instead of rebuilding connectivity via
-// per-label current-sheet scans. Remaining divergence is the still-missing full subgraph object
-// model behind both callers.
+// Upstream parity: reduced local analogue for the project-facing `CONNECTION_GRAPH` cache boundary
+// that later callers reach through `GetNetMap()` and related queries. This wrapper exists because
+// `SchematicProject` is currently the main cached graph owner, but the underlying reduced graph
+// construction now accepts raw loaded inputs so loader-side hierarchy passes can reuse the same
+// owner path instead of rebuilding connectivity via per-label current-sheet scans. Remaining
+// divergence is the still-missing full subgraph object model and broader `Recalculate()` lifecycle
+// behind both callers.
 pub(crate) fn collect_reduced_project_net_graph(
     schematics: &[Schematic],
     sheet_paths: &[LoadedSheetPath],
@@ -6668,18 +6679,19 @@ pub(crate) fn collect_reduced_project_net_graph(
 }
 
 #[allow(dead_code)]
-// Upstream parity: reduced local analogue for the project-wide `ConnectionGraph()->GetNetMap()`
+// Upstream parity: reduced local analogue for the project-wide `CONNECTION_GRAPH::GetNetMap()`
 // consumer path used by KiCad's net exporters. This is not a 1:1 graph owner because the Rust
-// tree still lacks real `CONNECTION_SUBGRAPH` objects and graph-owned item identity, but it now
-// derives whole-net entries from the shared reduced subgraph owner instead of storing a second
-// flattened net vector beside it. Remaining divergence is the missing full subgraph object model
-// and graph-owned resolved-name caches beyond this reduced project net map. It now also preserves
-// the shared graph's reduced net codes for non-export callers instead of renumbering them a second
-// time at the flattened whole-net layer, and whole-net grouping now reads net names from the
-// required reduced `driver_connection` owner instead of a parallel reduced subgraph `name` field.
-// Whole-net base pins now also stay on shared reduced base-pin owners instead of collapsing to
-// keys, so ERC/export callers can keep graph-owned per-pin context at the whole-net boundary.
-// Write-time exporters still do their own emitted-code assignment like KiCad `makeListOfNets()`.
+// tree still lacks real `CONNECTION_SUBGRAPH` objects, graph-owned item identity, and the exact
+// exporter-facing container shape, but it now derives whole-net entries from the shared reduced
+// subgraph owner instead of storing a second flattened net vector beside it. Remaining divergence
+// is the missing full subgraph object model and graph-owned resolved-name caches beyond this
+// reduced project net map. It now also preserves the shared graph's reduced net codes for
+// non-export callers instead of renumbering them a second time at the flattened whole-net layer,
+// and whole-net grouping now reads net names from the required reduced `driver_connection` owner
+// instead of a parallel reduced subgraph `name` field. Whole-net base pins now also stay on shared
+// reduced base-pin owners instead of collapsing to keys, so ERC/export callers can keep graph-owned
+// per-pin context at the whole-net boundary. Write-time exporters still do their own emitted-code
+// assignment like KiCad `makeListOfNets()`.
 pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
@@ -7059,6 +7071,7 @@ fn build_reduced_project_symbol_pin_inventory(
                     name: pin.name.clone(),
                     number: pin.number.clone(),
                     electrical_type: pin.electrical_type.clone(),
+                    visible: pin.visible,
                     reference: reference.clone(),
                     is_power_symbol,
                     subgraph_index: pin_subgraph_identities_by_location
@@ -10823,6 +10836,7 @@ mod tests {
                         reference: None,
                         number: Some("1".to_string()),
                         electrical_type: None,
+                        visible: true,
                         is_power_symbol: true,
                         connection: super::ReducedProjectConnection {
                             net_code: 0,
@@ -10856,6 +10870,7 @@ mod tests {
                         reference: None,
                         number: Some("2".to_string()),
                         electrical_type: None,
+                        visible: true,
                         is_power_symbol: true,
                         connection: super::ReducedProjectConnection {
                             net_code: 0,
@@ -11134,6 +11149,7 @@ mod tests {
             name: Some("A".to_string()),
             number: Some("[2-3]".to_string()),
             electrical_type: Some("input".to_string()),
+            visible: true,
         };
         let unit_pins = vec![
             pin.clone(),
@@ -11142,6 +11158,7 @@ mod tests {
                 name: Some("A".to_string()),
                 number: Some("[4-5]".to_string()),
                 electrical_type: Some("input".to_string()),
+                visible: true,
             },
         ];
 
@@ -11165,6 +11182,7 @@ mod tests {
             name: Some("A".to_string()),
             number: Some("1".to_string()),
             electrical_type: Some("input".to_string()),
+            visible: true,
         };
         let unit_pins = vec![pin.clone()];
 
@@ -12756,6 +12774,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -12924,6 +12943,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -13040,6 +13060,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -13252,6 +13273,7 @@ mod tests {
                     reference: None,
                     number: Some("1".to_string()),
                     electrical_type: Some("power_in".to_string()),
+                    visible: true,
                     is_power_symbol: true,
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -13285,6 +13307,7 @@ mod tests {
                     reference: None,
                     number: Some("2".to_string()),
                     electrical_type: Some("power_in".to_string()),
+                    visible: true,
                     is_power_symbol: true,
                     connection: ReducedProjectConnection {
                         net_code: 0,
@@ -15684,6 +15707,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                visible: true,
                 is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -15773,6 +15797,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                visible: true,
                 is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -15877,6 +15902,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("input".to_string()),
+                visible: true,
                 is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -16027,6 +16053,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -16167,6 +16194,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -16273,6 +16301,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("passive".to_string()),
+                visible: true,
                 is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -16378,6 +16407,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -16497,6 +16527,7 @@ mod tests {
                 reference: None,
                 number: Some("1".to_string()),
                 electrical_type: Some("power_in".to_string()),
+                visible: true,
                 is_power_symbol: true,
                 connection: ReducedProjectConnection {
                     net_code: 0,
@@ -16585,6 +16616,7 @@ mod tests {
                 reference: None,
                 number: Some("7".to_string()),
                 electrical_type: Some("bidirectional".to_string()),
+                visible: true,
                 is_power_symbol: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,

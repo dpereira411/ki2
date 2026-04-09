@@ -105,6 +105,7 @@ enum PinConflict {
 
 struct ReducedErcPinContext {
     at: [f64; 2],
+    visible: bool,
     is_power_symbol: bool,
     path: std::path::PathBuf,
     reference: String,
@@ -246,6 +247,7 @@ fn reduced_erc_pin_context_from_base_pin(
             f64::from_bits(base_pin.key.at.0),
             f64::from_bits(base_pin.key.at.1),
         ],
+        visible: base_pin.visible,
         is_power_symbol: base_pin.is_power_symbol,
         path: base_pin.schematic_path.clone(),
         reference,
@@ -485,6 +487,40 @@ fn is_normal_driver_pin_type(pin_type: ReducedPinType) -> bool {
 
 fn is_power_driver_pin_type(pin_type: ReducedPinType) -> bool {
     pin_type == ReducedPinType::PowerOut
+}
+
+fn reduced_preferred_missing_driver_pin<'a>(
+    pins: &'a [ReducedErcPinContext],
+    is_power_net: bool,
+) -> Option<&'a ReducedErcPinContext> {
+    let needs_driver = pins
+        .iter()
+        .filter(|pin| is_driven_pin_type(pin.pin_type))
+        .find(|pin| {
+            pin.visible
+                && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn)
+        })
+        .or_else(|| {
+            pins.iter().find(|pin| {
+                is_driven_pin_type(pin.pin_type)
+                    && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn)
+            })
+        })
+        .or_else(|| {
+            pins.iter()
+                .filter(|pin| is_driven_pin_type(pin.pin_type))
+                .find(|pin| pin.visible)
+        })
+        .or_else(|| pins.iter().find(|pin| is_driven_pin_type(pin.pin_type)));
+
+    pins.iter()
+        .filter(|pin| is_driven_pin_type(pin.pin_type) && !pin.is_power_symbol)
+        .find(|pin| pin.visible)
+        .or_else(|| {
+            pins.iter()
+                .find(|pin| is_driven_pin_type(pin.pin_type) && !pin.is_power_symbol)
+        })
+        .or(needs_driver)
 }
 
 // Upstream parity: local helper for deterministic reduced label lookup keys. KiCad keeps live
@@ -2781,18 +2817,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                 is_normal_driver_pin_type(pin.pin_type)
             }
         });
-        let needs_driver = pins
-            .iter()
-            .find(|pin| {
-                is_driven_pin_type(pin.pin_type)
-                    && (!is_power_net || pin.pin_type == ReducedPinType::PowerIn)
-            })
-            .or_else(|| pins.iter().find(|pin| is_driven_pin_type(pin.pin_type)));
-        let preferred_missing_driver = pins
-            .iter()
-            .filter(|pin| is_driven_pin_type(pin.pin_type))
-            .find(|pin| !pin.is_power_symbol)
-            .or(needs_driver);
+        let preferred_missing_driver = reduced_preferred_missing_driver_pin(&pins, is_power_net);
         let mut mismatches = Vec::<PinMismatch>::new();
         let mut mismatch_weights = BTreeMap::<usize, usize>::new();
 
@@ -3772,4 +3797,46 @@ pub fn check_field_name_whitespace(project: &SchematicProject) -> Vec<Diagnostic
     }
 
     diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ReducedErcPinContext, ReducedPinType, reduced_preferred_missing_driver_pin,
+    };
+
+    fn test_pin(
+        reference: &str,
+        pin_number: &str,
+        pin_type: ReducedPinType,
+        visible: bool,
+        is_power_symbol: bool,
+    ) -> ReducedErcPinContext {
+        ReducedErcPinContext {
+            at: [0.0, 0.0],
+            visible,
+            is_power_symbol,
+            path: std::path::PathBuf::from("root.kicad_sch"),
+            reference: reference.to_string(),
+            pin_number: pin_number.to_string(),
+            pin_type,
+        }
+    }
+
+    #[test]
+    fn missing_driver_prefers_visible_non_power_pin() {
+        let pins = vec![
+            test_pin("U1", "1", ReducedPinType::Input, false, false),
+            test_pin("U2", "1", ReducedPinType::Input, true, false),
+            test_pin("#PWR1", "1", ReducedPinType::PowerIn, true, true),
+        ];
+
+        let chosen =
+            reduced_preferred_missing_driver_pin(&pins, false).expect("preferred missing driver");
+
+        assert_eq!(chosen.reference, "U2");
+        assert_eq!(chosen.pin_number, "1");
+        assert!(chosen.visible);
+        assert!(!chosen.is_power_symbol);
+    }
 }
