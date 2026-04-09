@@ -836,9 +836,9 @@ Current status:
       - exercised driven symbol-pin strong drivers now also keep a live connection owner directly
         on the symbol-pin driver owner instead of routing that state through the optional base-pin
         carrier
-      - remaining gap is the fuller pin-owned live item/connection object for multi-pin
-        power-pin/base-pin branches; the current optional base-pin connection carrier is still too
-        ad hoc there
+      - live base pins now always carry a live connection owner instead of an optional carrier
+      - remaining gap is the richer per-pin update/selection logic on that owner for multi-pin
+        power-pin/base-pin branches
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

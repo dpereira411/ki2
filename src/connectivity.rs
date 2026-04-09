@@ -1953,6 +1953,18 @@ impl LiveReducedConnection {
     }
 }
 
+fn empty_live_reduced_connection() -> LiveReducedConnection {
+    LiveReducedConnection::new(ReducedProjectConnection {
+        net_code: 0,
+        connection_type: ReducedProjectConnectionType::None,
+        name: String::new(),
+        local_name: String::new(),
+        full_local_name: String::new(),
+        sheet_instance_path: String::new(),
+        members: Vec::new(),
+    })
+}
+
 impl std::fmt::Debug for LiveReducedConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.borrow().fmt(f)
@@ -2008,7 +2020,7 @@ type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 #[derive(Clone, Debug)]
 struct LiveReducedBasePin {
     key: ReducedNetBasePinKey,
-    connection: Option<LiveReducedConnection>,
+    connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
 
@@ -2108,16 +2120,11 @@ impl PartialEq for LiveReducedBasePin {
     fn eq(&self, other: &Self) -> bool {
         (
             self.key.clone(),
-            self.connection
-                .as_ref()
-                .map(LiveReducedConnection::snapshot),
+            self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         ) == (
             other.key.clone(),
-            other
-                .connection
-                .as_ref()
-                .map(LiveReducedConnection::snapshot),
+            other.connection.snapshot(),
             live_optional_driver_snapshot(&other.driver),
         )
     }
@@ -2135,17 +2142,12 @@ impl Ord for LiveReducedBasePin {
     fn cmp(&self, other: &Self) -> Ordering {
         (
             self.key.clone(),
-            self.connection
-                .as_ref()
-                .map(LiveReducedConnection::snapshot),
+            self.connection.snapshot(),
             live_optional_driver_snapshot(&self.driver),
         )
             .cmp(&(
                 other.key.clone(),
-                other
-                    .connection
-                    .as_ref()
-                    .map(LiveReducedConnection::snapshot),
+                other.connection.snapshot(),
                 live_optional_driver_snapshot(&other.driver),
             ))
     }
@@ -2675,7 +2677,8 @@ fn attach_live_strong_driver_owners_to_handles(
 // subgraph owner. KiCad keeps pin-owned connection state under the same live graph; this reduced
 // bridge only does that for the exercised single-pin self-driven symbol branch so weak
 // `Net-(` -> `unconnected-(` renames and later driver updates stop bypassing the base-pin owner.
-// Remaining divergence is fuller per-pin live connection ownership for multi-pin symbol/power-pin
+// Base pins now always carry a live connection owner instead of an optional carrier, but
+// remaining divergence is fuller per-pin live connection ownership for multi-pin symbol/power-pin
 // branches.
 fn sync_live_reduced_base_pin_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
     let driver_connection = handle.borrow().driver_connection.clone();
@@ -2686,11 +2689,7 @@ fn sync_live_reduced_base_pin_connections_from_driver_handle(handle: &LiveReduce
     }
 
     for base_pin in &subgraph.base_pins {
-        let mut base_pin = base_pin.borrow_mut();
-        match &base_pin.connection {
-            Some(connection) => connection.clone_from(&driver_connection),
-            None => base_pin.connection = Some(driver_connection.clone()),
-        }
+        base_pin.borrow().connection.clone_from(&driver_connection);
     }
 }
 
@@ -2698,7 +2697,8 @@ fn sync_live_reduced_base_pin_connections_from_driver_handle(handle: &LiveReduce
 // subgraph owner. This still mutates reduced live item carriers instead of real `SCH_ITEM`
 // pointers, but labels, sheet pins, hierarchy ports, and the exercised self-driven single-pin
 // base-pin branch now all sit on shared live item owners under that subgraph graph instead of
-// copied per-pass wrapper values.
+// copied per-pass wrapper values. Base pins now always carry a live connection owner even before
+// the fuller multi-pin pin-owned branch is ported.
 fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSubgraphHandle) {
     let driver_connection = handle.borrow().driver_connection.clone();
     let subgraph = handle.borrow_mut();
@@ -2778,7 +2778,7 @@ fn build_live_reduced_subgraphs(
                 .map(|key| {
                     Rc::new(RefCell::new(LiveReducedBasePin {
                         key,
-                        connection: None,
+                        connection: empty_live_reduced_connection(),
                         driver: None,
                     }))
                 })
@@ -12100,7 +12100,10 @@ mod tests {
                 let owner = owner.upgrade().expect("symbol pin owner");
                 assert_eq!(owner.borrow().key.symbol_uuid.as_deref(), Some("sym"));
                 assert_eq!(owner.borrow().key.at, PointKey(10, 20));
-                assert!(owner.borrow().connection.is_none());
+                assert_eq!(
+                    owner.borrow().connection.borrow().connection_type,
+                    super::ReducedProjectConnectionType::None
+                );
                 let driver = owner
                     .borrow()
                     .driver
@@ -14673,11 +14676,7 @@ mod tests {
         let handles = build_live_reduced_subgraph_handles(&reduced);
         super::refresh_reduced_live_post_propagation_item_connections_on_handles(&handles);
 
-        let connection = handles[0].borrow().base_pins[0]
-            .borrow()
-            .connection
-            .clone()
-            .expect("self-driven symbol pin connection");
+        let connection = handles[0].borrow().base_pins[0].borrow().connection.clone();
 
         assert_eq!(connection.name(), "unconnected-(R1-Pad1)");
     }
