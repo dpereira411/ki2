@@ -627,22 +627,23 @@ fn match_reduced_bus_member_mut<'a>(
 // member identity across every attached item and subgraph relationship.
 #[cfg_attr(not(test), allow(dead_code))]
 fn match_live_bus_member<'a>(
-    bus_members: &'a [LiveProjectBusMember],
+    bus_members: &'a [LiveProjectBusMemberHandle],
     search: &ReducedBusMember,
-) -> Option<&'a LiveProjectBusMember> {
+) -> Option<LiveProjectBusMemberHandle> {
     for member in bus_members {
+        let member_ref = member.borrow();
         if let Some(search_index) = search.vector_index {
-            if member.vector_index == Some(search_index) {
-                return Some(member);
+            if member_ref.vector_index == Some(search_index) {
+                return Some(member.clone());
             }
         }
 
-        if member.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member(&member.members, search) {
+        if member_ref.kind == ReducedBusMemberKind::Bus {
+            if let Some(found) = match_live_bus_member(&member_ref.members, search) {
                 return Some(found);
             }
-        } else if member.local_name == search.local_name {
-            return Some(member);
+        } else if member_ref.local_name == search.local_name {
+            return Some(member.clone());
         }
     }
 
@@ -650,22 +651,23 @@ fn match_live_bus_member<'a>(
 }
 
 fn match_live_bus_member_live<'a>(
-    bus_members: &'a [LiveProjectBusMember],
+    bus_members: &'a [LiveProjectBusMemberHandle],
     search: &LiveProjectBusMember,
-) -> Option<&'a LiveProjectBusMember> {
+) -> Option<LiveProjectBusMemberHandle> {
     for member in bus_members {
+        let member_ref = member.borrow();
         if let Some(search_index) = search.vector_index {
-            if member.vector_index == Some(search_index) {
-                return Some(member);
+            if member_ref.vector_index == Some(search_index) {
+                return Some(member.clone());
             }
         }
 
-        if member.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member_live(&member.members, search) {
+        if member_ref.kind == ReducedBusMemberKind::Bus {
+            if let Some(found) = match_live_bus_member_live(&member_ref.members, search) {
                 return Some(found);
             }
-        } else if member.local_name == search.local_name {
-            return Some(member);
+        } else if member_ref.local_name == search.local_name {
+            return Some(member.clone());
         }
     }
 
@@ -678,22 +680,24 @@ fn match_live_bus_member_live<'a>(
 // subgraph relationship.
 #[cfg_attr(not(test), allow(dead_code))]
 fn match_live_bus_member_mut<'a>(
-    bus_members: &'a mut [LiveProjectBusMember],
+    bus_members: &'a mut [LiveProjectBusMemberHandle],
     search: &ReducedBusMember,
-) -> Option<&'a mut LiveProjectBusMember> {
+) -> Option<LiveProjectBusMemberHandle> {
     for member in bus_members {
+        let member_ref = member.borrow();
         if let Some(search_index) = search.vector_index {
-            if member.vector_index == Some(search_index) {
-                return Some(member);
+            if member_ref.vector_index == Some(search_index) {
+                return Some(member.clone());
             }
         }
 
-        if member.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member_mut(&mut member.members, search) {
+        if member_ref.kind == ReducedBusMemberKind::Bus {
+            drop(member_ref);
+            if let Some(found) = match_live_bus_member_mut(&mut member.borrow_mut().members, search) {
                 return Some(found);
             }
-        } else if member.local_name == search.local_name {
-            return Some(member);
+        } else if member_ref.local_name == search.local_name {
+            return Some(member.clone());
         }
     }
 
@@ -701,22 +705,26 @@ fn match_live_bus_member_mut<'a>(
 }
 
 fn match_live_bus_member_mut_live<'a>(
-    bus_members: &'a mut [LiveProjectBusMember],
+    bus_members: &'a mut [LiveProjectBusMemberHandle],
     search: &LiveProjectBusMember,
-) -> Option<&'a mut LiveProjectBusMember> {
+) -> Option<LiveProjectBusMemberHandle> {
     for member in bus_members {
+        let member_ref = member.borrow();
         if let Some(search_index) = search.vector_index {
-            if member.vector_index == Some(search_index) {
-                return Some(member);
+            if member_ref.vector_index == Some(search_index) {
+                return Some(member.clone());
             }
         }
 
-        if member.kind == ReducedBusMemberKind::Bus {
-            if let Some(found) = match_live_bus_member_mut_live(&mut member.members, search) {
+        if member_ref.kind == ReducedBusMemberKind::Bus {
+            drop(member_ref);
+            if let Some(found) =
+                match_live_bus_member_mut_live(&mut member.borrow_mut().members, search)
+            {
                 return Some(found);
             }
-        } else if member.local_name == search.local_name {
-            return Some(member);
+        } else if member_ref.local_name == search.local_name {
+            return Some(member.clone());
         }
     }
 
@@ -805,7 +813,7 @@ fn clone_reduced_connection_into_live_bus_member(
     }
 
     if member.kind == ReducedBusMemberKind::Bus {
-        member.members = connection.members.iter().cloned().map(Into::into).collect();
+        member.members = reduced_bus_members_into_live_handles(connection.members.clone());
     } else {
         member.members.clear();
     }
@@ -843,8 +851,8 @@ fn clone_live_bus_member_into_live_bus_member(
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
                 clone_live_bus_member_into_live_bus_member(
-                    &mut target.members[index],
-                    &source.members[index],
+                    &mut target.members[index].borrow_mut(),
+                    &source.members[index].borrow(),
                 );
             }
 
@@ -894,8 +902,8 @@ fn clone_live_bus_member_into_live_connection_owner(
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
                 clone_live_bus_member_into_live_bus_member(
-                    &mut target.members[index],
-                    &source.members[index],
+                    &mut target.members[index].borrow_mut(),
+                    &source.members[index].borrow(),
                 );
             }
 
@@ -1091,7 +1099,42 @@ struct LiveProjectBusMember {
     full_local_name: String,
     vector_index: Option<usize>,
     kind: ReducedBusMemberKind,
-    members: Vec<LiveProjectBusMember>,
+    members: Vec<LiveProjectBusMemberHandle>,
+}
+
+type LiveProjectBusMemberHandle = Rc<RefCell<LiveProjectBusMember>>;
+
+fn live_bus_member_handle_snapshot(handle: &LiveProjectBusMemberHandle) -> ReducedBusMember {
+    handle.borrow().snapshot()
+}
+
+fn live_bus_member_handles_eq(
+    left: &LiveProjectBusMemberHandle,
+    right: &LiveProjectBusMemberHandle,
+) -> bool {
+    live_bus_member_handle_snapshot(left) == live_bus_member_handle_snapshot(right)
+}
+
+fn live_bus_member_handles_cmp(
+    left: &LiveProjectBusMemberHandle,
+    right: &LiveProjectBusMemberHandle,
+) -> Ordering {
+    live_bus_member_handle_snapshot(left).cmp(&live_bus_member_handle_snapshot(right))
+}
+
+fn reduced_bus_members_into_live_handles(
+    members: Vec<ReducedBusMember>,
+) -> Vec<LiveProjectBusMemberHandle> {
+    members
+        .into_iter()
+        .map(|member| Rc::new(RefCell::new(member.into())))
+        .collect()
+}
+
+fn live_bus_member_handles_to_snapshots(
+    members: &[LiveProjectBusMemberHandle],
+) -> Vec<ReducedBusMember> {
+    members.iter().map(live_bus_member_handle_snapshot).collect()
 }
 
 impl From<ReducedBusMember> for LiveProjectBusMember {
@@ -1103,7 +1146,7 @@ impl From<ReducedBusMember> for LiveProjectBusMember {
             full_local_name: member.full_local_name,
             vector_index: member.vector_index,
             kind: member.kind,
-            members: member.members.into_iter().map(Into::into).collect(),
+            members: reduced_bus_members_into_live_handles(member.members),
         }
     }
 }
@@ -1117,7 +1160,7 @@ impl LiveProjectBusMember {
             full_local_name: self.full_local_name.clone(),
             vector_index: self.vector_index,
             kind: self.kind.clone(),
-            members: self.members.iter().map(Self::snapshot).collect(),
+            members: live_bus_member_handles_to_snapshots(&self.members),
         }
     }
 }
@@ -1149,7 +1192,7 @@ struct LiveProjectConnection {
     local_name: String,
     full_local_name: String,
     sheet_instance_path: String,
-    members: Vec<LiveProjectBusMember>,
+    members: Vec<LiveProjectBusMemberHandle>,
 }
 
 impl From<ReducedProjectConnection> for LiveProjectConnection {
@@ -1161,7 +1204,7 @@ impl From<ReducedProjectConnection> for LiveProjectConnection {
             local_name: connection.local_name,
             full_local_name: connection.full_local_name,
             sheet_instance_path: connection.sheet_instance_path,
-            members: connection.members.into_iter().map(Into::into).collect(),
+            members: reduced_bus_members_into_live_handles(connection.members),
         }
     }
 }
@@ -1175,11 +1218,7 @@ impl LiveProjectConnection {
             local_name: self.local_name.clone(),
             full_local_name: self.full_local_name.clone(),
             sheet_instance_path: self.sheet_instance_path.clone(),
-            members: self
-                .members
-                .iter()
-                .map(LiveProjectBusMember::snapshot)
-                .collect(),
+            members: live_bus_member_handles_to_snapshots(&self.members),
         }
     }
 }
@@ -1209,14 +1248,14 @@ fn clone_reduced_bus_member_into_live_bus_member(
         && matches!(source.kind, ReducedBusMemberKind::Bus)
     {
         if existing_members.is_empty() {
-            target.members = source.members.iter().cloned().map(Into::into).collect();
+            target.members = reduced_bus_members_into_live_handles(source.members.clone());
         } else {
             target.members = existing_members;
 
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
                 clone_reduced_bus_member_into_live_bus_member(
-                    &mut target.members[index],
+                    &mut target.members[index].borrow_mut(),
                     &source.members[index],
                 );
             }
@@ -1228,12 +1267,12 @@ fn clone_reduced_bus_member_into_live_bus_member(
                     source.members[target.members.len()..]
                         .iter()
                         .cloned()
-                        .map(Into::into),
+                        .map(|member| Rc::new(RefCell::new(member.into()))),
                 );
             }
         }
     } else {
-        target.members = source.members.iter().cloned().map(Into::into).collect();
+        target.members = reduced_bus_members_into_live_handles(source.members.clone());
     }
 }
 
@@ -1262,11 +1301,7 @@ fn clone_live_bus_member_into_reduced_bus_member(
         && matches!(source.kind, ReducedBusMemberKind::Bus)
     {
         if existing_members.is_empty() {
-            target.members = source
-                .members
-                .iter()
-                .map(LiveProjectBusMember::snapshot)
-                .collect();
+            target.members = live_bus_member_handles_to_snapshots(&source.members);
         } else {
             target.members = existing_members;
 
@@ -1274,7 +1309,7 @@ fn clone_live_bus_member_into_reduced_bus_member(
             for index in 0..clone_limit {
                 clone_live_bus_member_into_reduced_bus_member(
                     &mut target.members[index],
-                    &source.members[index],
+                    &source.members[index].borrow(),
                 );
             }
 
@@ -1284,16 +1319,12 @@ fn clone_live_bus_member_into_reduced_bus_member(
                 target.members.extend(
                     source.members[target.members.len()..]
                         .iter()
-                        .map(LiveProjectBusMember::snapshot),
+                        .map(live_bus_member_handle_snapshot),
                 );
             }
         }
     } else {
-        target.members = source
-            .members
-            .iter()
-            .map(LiveProjectBusMember::snapshot)
-            .collect();
+        target.members = live_bus_member_handles_to_snapshots(&source.members);
     }
 }
 
@@ -1335,8 +1366,8 @@ fn clone_live_connection_owner_into_live_bus_member(
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
                 clone_live_bus_member_into_live_bus_member(
-                    &mut target.members[index],
-                    &source.members[index],
+                    &mut target.members[index].borrow_mut(),
+                    &source.members[index].borrow(),
                 );
             }
 
@@ -1377,14 +1408,14 @@ fn clone_reduced_connection_into_live_connection_owner(
         ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
     ) {
         if existing_members.is_empty() {
-            target.members = source.members.iter().cloned().map(Into::into).collect();
+            target.members = reduced_bus_members_into_live_handles(source.members.clone());
         } else {
             target.members = existing_members;
 
             let clone_limit = target.members.len().min(source.members.len());
             for index in 0..clone_limit {
                 clone_reduced_bus_member_into_live_bus_member(
-                    &mut target.members[index],
+                    &mut target.members[index].borrow_mut(),
                     &source.members[index],
                 );
             }
@@ -1396,12 +1427,12 @@ fn clone_reduced_connection_into_live_connection_owner(
                     source.members[target.members.len()..]
                         .iter()
                         .cloned()
-                        .map(Into::into),
+                        .map(|member| Rc::new(RefCell::new(member.into()))),
                 );
             }
         }
     } else {
-        target.members = source.members.iter().cloned().map(Into::into).collect();
+        target.members = reduced_bus_members_into_live_handles(source.members.clone());
     }
 }
 
@@ -1429,11 +1460,7 @@ fn clone_live_connection_owner_into_reduced_connection(
         ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
     ) {
         if existing_members.is_empty() {
-            target.members = source
-                .members
-                .iter()
-                .map(LiveProjectBusMember::snapshot)
-                .collect();
+            target.members = live_bus_member_handles_to_snapshots(&source.members);
         } else {
             target.members = existing_members;
 
@@ -1441,7 +1468,7 @@ fn clone_live_connection_owner_into_reduced_connection(
             for index in 0..clone_limit {
                 clone_live_bus_member_into_reduced_bus_member(
                     &mut target.members[index],
-                    &source.members[index],
+                    &source.members[index].borrow(),
                 );
             }
 
@@ -1451,16 +1478,12 @@ fn clone_live_connection_owner_into_reduced_connection(
                 target.members.extend(
                     source.members[target.members.len()..]
                         .iter()
-                        .map(LiveProjectBusMember::snapshot),
+                        .map(live_bus_member_handle_snapshot),
                 );
             }
         }
     } else {
-        target.members = source
-            .members
-            .iter()
-            .map(LiveProjectBusMember::snapshot)
-            .collect();
+        target.members = live_bus_member_handles_to_snapshots(&source.members);
     }
 }
 
@@ -1593,7 +1616,7 @@ type LiveReducedSubgraphWireItemHandle = Rc<RefCell<LiveReducedSubgraphWireItem>
 
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraphLink {
-    member: LiveProjectBusMember,
+    member: LiveProjectBusMemberHandle,
     #[cfg(test)]
     subgraph_index: usize,
     subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
@@ -1617,7 +1640,8 @@ fn live_reduced_subgraph_link_extra_projection_eq(
 
 impl PartialEq for LiveReducedSubgraphLink {
     fn eq(&self, other: &Self) -> bool {
-        self.member == other.member && live_reduced_subgraph_link_extra_projection_eq(self, other)
+        live_bus_member_handles_eq(&self.member, &other.member)
+            && live_reduced_subgraph_link_extra_projection_eq(self, other)
     }
 }
 
@@ -1633,7 +1657,7 @@ impl PartialOrd for LiveReducedSubgraphLink {
 
 impl Ord for LiveReducedSubgraphLink {
     fn cmp(&self, other: &Self) -> Ordering {
-        let member_cmp = self.member.cmp(&other.member);
+        let member_cmp = live_bus_member_handles_cmp(&self.member, &other.member);
         if member_cmp != Ordering::Equal {
             return member_cmp;
         }
@@ -1959,7 +1983,7 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|link| {
                     Rc::new(RefCell::new(LiveReducedSubgraphLink {
-                        member: link.member.into(),
+                        member: Rc::new(RefCell::new(link.member.into())),
                         #[cfg(test)]
                         subgraph_index: link.subgraph_index,
                         subgraph_handle: None,
@@ -1972,7 +1996,7 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|link| {
                     Rc::new(RefCell::new(LiveReducedSubgraphLink {
-                        member: link.member.into(),
+                        member: Rc::new(RefCell::new(link.member.into())),
                         #[cfg(test)]
                         subgraph_index: link.subgraph_index,
                         subgraph_handle: None,
@@ -2215,7 +2239,7 @@ fn reduced_project_bus_link_from_live(
 ) -> ReducedProjectBusNeighborLink {
     let link = link.borrow();
     ReducedProjectBusNeighborLink {
-        member: link.member.snapshot(),
+        member: live_bus_member_handle_snapshot(&link.member),
         subgraph_index: link
             .subgraph_handle
             .as_ref()
@@ -2831,15 +2855,15 @@ fn replay_reduced_live_stale_bus_members_on_live_subgraphs(
 
             let mut connection = subgraph.driver_connection.borrow_mut();
             if let Some(member) = match_live_bus_member_mut(&mut connection.members, stale_member) {
-                let old_member = member.clone();
+                let old_member = member.borrow().clone();
                 clone_reduced_connection_into_live_bus_member(
-                    member,
+                    &mut member.borrow_mut(),
                     &reduced_connection_from_bus_member(
                         stale_member,
                         &subgraph.sheet_instance_path,
                     ),
                 );
-                if *member != old_member {
+                if *member.borrow() != old_member {
                     subgraph.dirty = true;
                 }
             }
@@ -2881,11 +2905,7 @@ fn reduced_connection_from_live_bus_member(
         local_name: member.local_name.clone(),
         full_local_name: member.full_local_name.clone(),
         sheet_instance_path: sheet_instance_path.to_string(),
-        members: member
-            .members
-            .iter()
-            .map(LiveProjectBusMember::snapshot)
-            .collect(),
+        members: live_bus_member_handles_to_snapshots(&member.members),
     }
 }
 
@@ -3273,7 +3293,10 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
             let neighbor_index = link.borrow().subgraph_index;
             let parent_member = {
                 let parent_connection = live_subgraphs[parent_index].driver_connection.borrow();
-                match_live_bus_member_live(&parent_connection.members, &link_member).cloned()
+                match_live_bus_member_live(
+                    &parent_connection.members,
+                    &link_member.borrow(),
+                )
             };
             let Some(parent_member) = parent_member else {
                 continue;
@@ -3282,7 +3305,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
             let neighbor_connection = live_subgraphs[neighbor_index].driver_connection.snapshot();
             let neighbor_name = neighbor_connection.name.clone();
 
-            if neighbor_name == parent_member.full_local_name {
+            if neighbor_name == parent_member.borrow().full_local_name {
                 continue;
             }
 
@@ -3326,30 +3349,37 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 let mut parent_connection_mut =
                     live_subgraphs[parent_index].driver_connection.borrow_mut();
                 if let Some(member) =
-                    match_live_bus_member_mut_live(&mut parent_connection_mut.members, &link_member)
+                    match_live_bus_member_mut_live(
+                        &mut parent_connection_mut.members,
+                        &link_member.borrow(),
+                    )
                 {
-                    clone_reduced_connection_into_live_bus_member(member, &promoted);
+                    clone_reduced_connection_into_live_bus_member(
+                        &mut member.borrow_mut(),
+                        &promoted,
+                    );
                     let refreshed_member = member.clone();
-                    let refreshed_member_snapshot = refreshed_member.snapshot();
+                    let refreshed_member_snapshot =
+                        live_bus_member_handle_snapshot(&refreshed_member);
 
                     for candidate_link in &mut sorted_links {
                         let mut candidate_link = candidate_link.borrow_mut();
-                        if candidate_link.member == old_member {
-                            candidate_link.member = refreshed_member_snapshot.clone().into();
+                        if live_bus_member_handles_eq(&candidate_link.member, &old_member) {
+                            candidate_link.member = refreshed_member.clone();
                         }
                     }
 
                     for candidate_link in &mut live_subgraphs[parent_index].bus_neighbor_links {
                         let mut candidate_link = candidate_link.borrow_mut();
-                        if candidate_link.member == old_member {
-                            candidate_link.member = refreshed_member_snapshot.clone().into();
+                        if live_bus_member_handles_eq(&candidate_link.member, &old_member) {
+                            candidate_link.member = refreshed_member.clone();
                         }
                     }
 
                     for candidate_link in &mut live_subgraphs[parent_index].bus_parent_links {
                         let mut candidate_link = candidate_link.borrow_mut();
-                        if candidate_link.member == old_member {
-                            candidate_link.member = refreshed_member_snapshot.clone().into();
+                        if live_bus_member_handles_eq(&candidate_link.member, &old_member) {
+                            candidate_link.member = refreshed_member.clone();
                         }
                     }
 
@@ -3366,7 +3396,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 &mut live_subgraphs[neighbor_index]
                     .driver_connection
                     .borrow_mut(),
-                &parent_member,
+                &parent_member.borrow(),
                 &live_subgraphs[neighbor_index].sheet_instance_path,
             );
             sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[neighbor_index]);
@@ -3445,13 +3475,16 @@ fn refresh_reduced_live_bus_parent_members_on_live_subgraphs(
             }
 
             let mut parent_connection = live_subgraphs[parent_index].driver_connection.borrow_mut();
-            let link_member = link.borrow().member.snapshot();
+            let link_member = live_bus_member_handle_snapshot(&link.borrow().member);
             if let Some(member) =
                 match_live_bus_member_mut(&mut parent_connection.members, &link_member)
             {
-                let old_member = member.clone();
-                clone_reduced_connection_into_live_bus_member(member, &child_connection);
-                if *member != old_member {
+                let old_member = member.borrow().clone();
+                clone_reduced_connection_into_live_bus_member(
+                    &mut member.borrow_mut(),
+                    &child_connection,
+                );
+                if *member.borrow() != old_member {
                     live_subgraphs[parent_index].dirty = true;
                 }
             }
@@ -3492,7 +3525,7 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
 
         for link in parent_links {
             let parent_index = link.borrow().subgraph_index;
-            let link_member = link.borrow().member.snapshot();
+            let link_member = live_bus_member_handle_snapshot(&link.borrow().member);
             let old_name = {
                 let mut parent_connection =
                     live_subgraphs[parent_index].driver_connection.borrow_mut();
@@ -3502,12 +3535,15 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_live_subgraphs(
                     continue;
                 };
 
-                if member.full_local_name == connection.full_local_name {
+                if member.borrow().full_local_name == connection.full_local_name {
                     continue;
                 }
 
-                let old_name = member.full_local_name.clone();
-                clone_reduced_connection_into_live_bus_member(member, &connection);
+                let old_name = member.borrow().full_local_name.clone();
+                clone_reduced_connection_into_live_bus_member(
+                    &mut member.borrow_mut(),
+                    &connection,
+                );
                 old_name
             };
 
@@ -3567,7 +3603,7 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
             let search = existing_parent_links
                 .iter()
                 .find(|link| link.borrow().subgraph_index == parent_index)
-                .map(|link| link.borrow().member.clone())
+                .map(|link| link.borrow().member.borrow().clone())
                 .unwrap_or_else(|| {
                     LiveProjectBusMember::from(ReducedBusMember {
                         net_code: child_connection.net_code,
@@ -3590,8 +3626,7 @@ fn refresh_reduced_live_bus_link_members_on_live_subgraphs(
                     .borrow()
                     .members,
                 &search.snapshot(),
-            )
-            .cloned() else {
+            ) else {
                 continue;
             };
 
@@ -3881,7 +3916,7 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
 fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     component: &[LiveReducedSubgraphHandle],
-    stale_members: &mut Vec<LiveProjectBusMember>,
+    stale_members: &mut Vec<LiveProjectBusMemberHandle>,
 ) {
     // Upstream parity: local live-handle analogue for the bus-neighbor driver/member propagation
     // KiCad runs through connected `CONNECTION_SUBGRAPH` neighbors. This still keeps reduced
@@ -3908,8 +3943,9 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
         sorted_links.sort_by(|left, right| {
             left.borrow()
                 .member
+                .borrow()
                 .name
-                .cmp(&right.borrow().member.name)
+                .cmp(&right.borrow().member.borrow().name)
                 .then(
                     live_subgraph_link_index(live_subgraphs, left)
                         .cmp(&live_subgraph_link_index(live_subgraphs, right)),
@@ -3935,8 +3971,10 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
             let parent_member = {
                 let parent = parent_handle.borrow();
                 let parent_connection = parent.driver_connection.borrow();
-                match_live_bus_member_live(&parent_connection.members, &current_link_member)
-                    .cloned()
+                match_live_bus_member_live(
+                    &parent_connection.members,
+                    &current_link_member.borrow(),
+                )
             };
             let Some(parent_member) = parent_member else {
                 continue;
@@ -3952,7 +3990,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                     neighbor_connection.clone(),
                 )
             };
-            if neighbor_name == parent_member.full_local_name {
+            if neighbor_name == parent_member.borrow().full_local_name {
                 continue;
             }
 
@@ -3980,35 +4018,45 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 let refreshed_member = {
                     let parent = parent_handle.borrow();
                     let mut parent_connection = parent.driver_connection.borrow_mut();
-                    let Some(member) = match_live_bus_member_mut_live(
+                    let Some(member_handle) = match_live_bus_member_mut_live(
                         &mut parent_connection.members,
-                        &current_link_member,
+                        &current_link_member.borrow(),
                     ) else {
                         continue;
                     };
-                    clone_live_connection_owner_into_live_bus_member(member, &promoted_connection);
-                    member.clone()
+                    clone_live_connection_owner_into_live_bus_member(
+                        &mut member_handle.borrow_mut(),
+                        &promoted_connection,
+                    );
+                    member_handle
                 };
 
                 {
                     let mut parent = parent_handle.borrow_mut();
-                    let refreshed_member = refreshed_member.snapshot();
+                    let refreshed_member = refreshed_member.clone();
                     for candidate_link in &mut parent.bus_neighbor_links {
                         let mut candidate_link = candidate_link.borrow_mut();
-                        if candidate_link.member == old_member {
-                            candidate_link.member = refreshed_member.clone().into();
+                        if Rc::ptr_eq(&candidate_link.member, &old_member)
+                            || live_bus_member_handles_eq(&candidate_link.member, &old_member)
+                        {
+                            candidate_link.member = refreshed_member.clone();
                         }
                     }
                     for candidate_link in &mut parent.bus_parent_links {
                         let mut candidate_link = candidate_link.borrow_mut();
-                        if candidate_link.member == old_member {
-                            candidate_link.member = refreshed_member.clone().into();
+                        if Rc::ptr_eq(&candidate_link.member, &old_member)
+                            || live_bus_member_handles_eq(&candidate_link.member, &old_member)
+                        {
+                            candidate_link.member = refreshed_member.clone();
                         }
                     }
                     parent.dirty = true;
                 }
 
-                if !stale_members.contains(&refreshed_member) {
+                if !stale_members
+                    .iter()
+                    .any(|candidate| live_bus_member_handles_eq(candidate, &refreshed_member))
+                {
                     stale_members.push(refreshed_member);
                 }
                 continue;
@@ -4016,7 +4064,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
 
             clone_live_bus_member_into_live_connection_owner(
                 &mut neighbor_handle.borrow().driver_connection.borrow_mut(),
-                &parent_member,
+                &parent_member.borrow(),
                 &neighbor_sheet_instance_path,
             );
             sync_live_reduced_item_connections_from_driver_handle(&neighbor_handle);
@@ -4029,7 +4077,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
 fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     indexes: &[usize],
-    stale_members: &mut Vec<LiveProjectBusMember>,
+    stale_members: &mut Vec<LiveProjectBusMemberHandle>,
 ) {
     let component = indexes
         .iter()
@@ -4090,16 +4138,19 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
                 let mut parent_connection = parent.driver_connection.borrow_mut();
                 let link_member = link.borrow().member.clone();
                 let Some(member) =
-                    match_live_bus_member_mut_live(&mut parent_connection.members, &link_member)
+                    match_live_bus_member_mut_live(
+                        &mut parent_connection.members,
+                        &link_member.borrow(),
+                    )
                 else {
                     continue;
                 };
-                let old_member = member.clone();
+                let old_member = member.borrow().clone();
                 clone_live_connection_owner_into_live_bus_member(
-                    member,
+                    &mut member.borrow_mut(),
                     &child_connection.borrow(),
                 );
-                *member != old_member
+                *member.borrow() != old_member
             };
 
             if changed {
@@ -4111,9 +4162,10 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
 
 fn replay_reduced_live_stale_bus_members_on_handles_for_component(
     component: &[LiveReducedSubgraphHandle],
-    stale_members: &[LiveProjectBusMember],
+    stale_members: &[LiveProjectBusMemberHandle],
 ) {
     for stale_member in stale_members {
+        let stale_member_snapshot = stale_member.borrow().clone();
         for handle in component {
             let is_bus = {
                 let subgraph = handle.borrow();
@@ -4131,13 +4183,19 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
                 let subgraph = handle.borrow();
                 let mut connection = subgraph.driver_connection.borrow_mut();
                 let Some(member) =
-                    match_live_bus_member_mut_live(&mut connection.members, stale_member)
+                    match_live_bus_member_mut_live(
+                        &mut connection.members,
+                        &stale_member.borrow(),
+                    )
                 else {
                     continue;
                 };
-                let old_member = member.clone();
-                clone_live_bus_member_into_live_bus_member(member, stale_member);
-                *member != old_member
+                let old_member = member.borrow().clone();
+                clone_live_bus_member_into_live_bus_member(
+                    &mut member.borrow_mut(),
+                    &stale_member_snapshot,
+                );
+                *member.borrow() != old_member
             };
 
             if changed {
@@ -4151,7 +4209,7 @@ fn replay_reduced_live_stale_bus_members_on_handles_for_component(
 fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     indexes: &[usize],
-    stale_members: &[LiveProjectBusMember],
+    stale_members: &[LiveProjectBusMemberHandle],
 ) {
     let component = indexes
         .iter()
@@ -4191,7 +4249,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
         }
 
         for parent_handle in parent_handles {
-            let mut search_candidates = Vec::new();
+            let mut search_candidates = Vec::<LiveProjectBusMember>::new();
 
             if let Some(existing_member) = existing_parent_links
                 .iter()
@@ -4200,7 +4258,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                         .as_ref()
                         .is_some_and(|candidate| Rc::ptr_eq(candidate, &parent_handle))
                 })
-                .map(|link| link.borrow().member.clone())
+                .map(|link| link.borrow().member.borrow().clone())
             {
                 search_candidates.push(existing_member);
             }
@@ -4214,7 +4272,7 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                         .as_ref()
                         .is_some_and(|candidate| Rc::ptr_eq(candidate, child_handle))
                 })
-                .map(|link| link.borrow().member.clone())
+                .map(|link| link.borrow().member.borrow().clone())
             {
                 search_candidates.push(parent_neighbor_member);
             }
@@ -4228,7 +4286,6 @@ fn refresh_reduced_live_bus_link_members_on_handles_for_component(
                     &parent_handle.borrow().driver_connection.borrow().members,
                     &search,
                 )
-                .cloned()
             }) else {
                 continue;
             };
@@ -4325,18 +4382,23 @@ fn refresh_reduced_live_multiple_bus_parent_names_on_handles(
                 let parent = parent_handle.borrow();
                 let mut parent_connection = parent.driver_connection.borrow_mut();
                 let link_member = link.borrow().member.clone();
-                let Some(member) =
-                    match_live_bus_member_mut_live(&mut parent_connection.members, &link_member)
+                let Some(member) = match_live_bus_member_mut_live(
+                    &mut parent_connection.members,
+                    &link_member.borrow(),
+                )
                 else {
                     continue;
                 };
 
-                if member.full_local_name == connection.full_local_name {
+                if member.borrow().full_local_name == connection.full_local_name {
                     continue;
                 }
 
-                let old_name = member.full_local_name.clone();
-                clone_live_connection_owner_into_live_bus_member(member, &connection);
+                let old_name = member.borrow().full_local_name.clone();
+                clone_live_connection_owner_into_live_bus_member(
+                    &mut member.borrow_mut(),
+                    &connection,
+                );
                 old_name
             };
             parent_handle.borrow_mut().dirty = true;
@@ -4467,7 +4529,7 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
     force: bool,
     visiting: &mut BTreeSet<usize>,
-    stale_members: &mut Vec<LiveProjectBusMember>,
+    stale_members: &mut Vec<LiveProjectBusMemberHandle>,
 ) {
     let start_id = live_subgraph_handle_id(start);
     if !start.borrow().dirty || !visiting.insert(start_id) {
@@ -9433,7 +9495,9 @@ mod tests {
             .expect("connected bus owner");
         let connected_bus_connection = connected_bus.borrow().driver_connection.clone();
         assert_eq!(
-            connected_bus_connection.borrow().members[0].full_local_name,
+            connected_bus_connection.borrow().members[0]
+                .borrow()
+                .full_local_name,
             "/OLD1"
         );
 
@@ -9459,7 +9523,9 @@ mod tests {
         );
 
         assert_eq!(
-            connected_bus_connection.borrow().members[0].full_local_name,
+            connected_bus_connection.borrow().members[0]
+                .borrow()
+                .full_local_name,
             "/PWR"
         );
     }
@@ -11505,23 +11571,29 @@ mod tests {
         replay_reduced_live_stale_bus_members_on_handles_for_indexes(
             &handles,
             &[0, 1],
-            &[super::LiveProjectBusMember::from(ReducedBusMember {
-                net_code: 0,
-                name: "PWR".to_string(),
-                local_name: "PWR".to_string(),
-                full_local_name: "/PWR".to_string(),
-                vector_index: Some(1),
-                kind: ReducedBusMemberKind::Net,
-                members: Vec::new(),
-            })],
+            &[Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+                ReducedBusMember {
+                    net_code: 0,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "/PWR".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                },
+            )))],
         );
 
         assert_eq!(
-            handles[0].borrow().driver_connection.borrow().members[0].full_local_name,
+            handles[0].borrow().driver_connection.borrow().members[0]
+                .borrow()
+                .full_local_name,
             "/PWR"
         );
         assert_eq!(
-            handles[1].borrow().driver_connection.borrow().members[0].full_local_name,
+            handles[1].borrow().driver_connection.borrow().members[0]
+                .borrow()
+                .full_local_name,
             "/PWR"
         );
     }
