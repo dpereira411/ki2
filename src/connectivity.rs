@@ -321,6 +321,32 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriverOwner {
     }
 }
 
+fn unattached_live_strong_driver_owner(
+    identity: Option<ReducedProjectDriverIdentity>,
+    connection: &LiveProjectConnectionHandle,
+    kind: ReducedProjectDriverKind,
+    priority: i32,
+) -> LiveProjectStrongDriverOwner {
+    #[cfg(test)]
+    {
+        return LiveProjectStrongDriverOwner::Floating {
+            identity,
+            connection: connection.clone(),
+            kind,
+            priority,
+        };
+    }
+
+    #[cfg(not(test))]
+    {
+        let _ = identity;
+        let _ = connection;
+        let _ = kind;
+        let _ = priority;
+        panic!("production live strong drivers must bind to concrete item owners");
+    }
+}
+
 impl LiveProjectStrongDriverOwner {
     // Upstream parity: local owner-side analogue for the exercised strong-driver metadata/identity
     // reads KiCad gets from the chosen live driver item and its attached `SCH_CONNECTION`. This
@@ -2697,9 +2723,11 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for binding one reduced strong-driver
     // identity back onto the exercised live item owner it belongs to before chosen-driver
-    // selection. This still returns reduced local owner variants instead of fuller live driver
-    // items, but the shared subgraph owner now owns the item-match and attachment flow instead of
-    // leaving that selection as one large free-function match around the graph.
+    // selection. Production graph build now requires those exercised drivers to bind to concrete
+    // live item owners; unattached floating owners remain only for reduced/manual test scaffolding
+    // until the fuller live driver-item graph exists. The shared subgraph owner now owns the
+    // item-match and attachment flow instead of leaving that selection as one large free-function
+    // match around the graph.
     fn attach_driver_owner_for_identity(
         &mut self,
         identity: Option<ReducedProjectDriverIdentity>,
@@ -2724,11 +2752,13 @@ impl LiveReducedSubgraph {
                                 priority,
                             )
                         })
-                        .unwrap_or(LiveProjectStrongDriverOwner::Floating {
-                            identity: fallback_identity,
-                            connection: floating_connection.clone(),
-                            kind: driver_kind,
-                            priority,
+                        .unwrap_or_else(|| {
+                            unattached_live_strong_driver_owner(
+                                fallback_identity,
+                                floating_connection,
+                                driver_kind,
+                                priority,
+                            )
                         })
                 } else {
                     self.label_links
@@ -2746,11 +2776,13 @@ impl LiveReducedSubgraph {
                                 priority,
                             )
                         })
-                        .unwrap_or(LiveProjectStrongDriverOwner::Floating {
-                            identity: fallback_identity,
-                            connection: floating_connection.clone(),
-                            kind: driver_kind,
-                            priority,
+                        .unwrap_or_else(|| {
+                            unattached_live_strong_driver_owner(
+                                fallback_identity,
+                                floating_connection,
+                                driver_kind,
+                                priority,
+                            )
                         })
                 }
             }
@@ -2767,11 +2799,13 @@ impl LiveReducedSubgraph {
                         priority,
                     )
                 })
-                .unwrap_or(LiveProjectStrongDriverOwner::Floating {
-                    identity: fallback_identity,
-                    connection: floating_connection.clone(),
-                    kind: driver_kind,
-                    priority,
+                .unwrap_or_else(|| {
+                    unattached_live_strong_driver_owner(
+                        fallback_identity,
+                        floating_connection,
+                        driver_kind,
+                        priority,
+                    )
                 }),
             Some(ReducedProjectDriverIdentity::SymbolPin {
                 symbol_uuid,
@@ -2795,18 +2829,20 @@ impl LiveReducedSubgraph {
                         priority,
                     )
                 })
-                .unwrap_or(LiveProjectStrongDriverOwner::Floating {
-                    identity: fallback_identity,
-                    connection: floating_connection.clone(),
-                    kind: driver_kind,
-                    priority,
+                .unwrap_or_else(|| {
+                    unattached_live_strong_driver_owner(
+                        fallback_identity,
+                        floating_connection,
+                        driver_kind,
+                        priority,
+                    )
                 }),
-            None => LiveProjectStrongDriverOwner::Floating {
-                identity: None,
-                connection: floating_connection.clone(),
-                kind: driver_kind,
+            None => unattached_live_strong_driver_owner(
+                None,
+                floating_connection,
+                driver_kind,
                 priority,
-            },
+            ),
         }
     }
 

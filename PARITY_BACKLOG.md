@@ -1188,6 +1188,9 @@ Current status:
         their driver handles carry the chosen net identity, so blindly aliasing text-item
         `connection` onto `driver_connection` would collapse shown-text ownership instead of
         removing a reduced carryover
+      - production live strong-driver attachment now also requires concrete item-owner binding;
+        unattached floating strong-driver owners remain only for reduced/manual test scaffolding
+        instead of silently surviving on the real graph path after owner attachment
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
       - the remaining reduced-only propagation compatibility helpers were removed from the real
