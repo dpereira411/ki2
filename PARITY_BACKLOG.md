@@ -727,9 +727,11 @@ Current status:
         the live subgraph already owns the underlying handles and driver list
       - `base_pin_count` is now gone from the active live payload; live post-propagation checks
         read shared live base-pin payload directly
-      - the only remaining active live summary field is now `driver_identity`; removing it cleanly
-        depends on fuller live driver item ownership rather than another local summary-field
-        cleanup
+      - active live subgraphs no longer cache `driver_priority`; the active path now derives it
+        from the shared live driver owner instead of keeping one more copied summary field
+      - `driver_identity` is now test-only scaffolding on the live subgraph carrier; removing it
+        cleanly from the compatibility path depends on fuller live driver item ownership rather
+        than another active summary-field cleanup
       - the exercised active bus search/rematch path no longer has to rebuild reduced connection
         snapshots just to derive member-search keys for child-net and neighbor-driver cases; those
         branches now read the shared live connection owner directly and only snapshot when a

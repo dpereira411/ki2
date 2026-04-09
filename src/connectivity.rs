@@ -967,16 +967,6 @@ fn reduced_sheet_path_depth(sheet_instance_path: &str) -> usize {
     }
 }
 
-fn reduced_strong_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> Option<i32> {
-    subgraph.drivers.first().map(|driver| driver.priority)
-}
-
-fn reduced_subgraph_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> i32 {
-    reduced_strong_driver_priority(subgraph)
-        .or_else(|| subgraph.driver_connection.as_ref().map(|_| 1))
-        .unwrap_or(0)
-}
-
 fn reduced_subgraph_driver_connection(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> ReducedProjectConnection {
@@ -984,6 +974,18 @@ fn reduced_subgraph_driver_connection(
         .driver_connection
         .clone()
         .unwrap_or_else(|| subgraph.resolved_connection.clone())
+}
+
+#[cfg(test)]
+fn reduced_strong_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> Option<i32> {
+    subgraph.drivers.first().map(|driver| driver.priority)
+}
+
+#[cfg(test)]
+fn reduced_subgraph_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> i32 {
+    reduced_strong_driver_priority(subgraph)
+        .or_else(|| subgraph.driver_connection.as_ref().map(|_| 1))
+        .unwrap_or(0)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1653,7 +1655,6 @@ struct LiveReducedSubgraph {
     #[cfg(test)]
     source_index: usize,
     driver_connection: LiveReducedConnection,
-    driver_priority: i32,
     #[cfg(test)]
     driver_identity: Option<ReducedProjectDriverIdentity>,
     drivers: Vec<ReducedProjectStrongDriver>,
@@ -1716,7 +1717,8 @@ fn live_reduced_subgraph_driver_identity_eq(
 impl PartialEq for LiveReducedSubgraph {
     fn eq(&self, other: &Self) -> bool {
         self.driver_connection == other.driver_connection
-            && self.driver_priority == other.driver_priority
+            && live_reduced_subgraph_driver_priority(self)
+                == live_reduced_subgraph_driver_priority(other)
             && live_reduced_subgraph_driver_identity_eq(self, other)
             && self.drivers == other.drivers
             && self.sheet_instance_path == other.sheet_instance_path
@@ -1774,7 +1776,7 @@ fn live_subgraph_strong_driver_count(subgraph: &LiveReducedSubgraph) -> usize {
 }
 
 fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
-    subgraph.driver_priority < 6
+    live_reduced_subgraph_driver_priority(subgraph) < 6
 }
 
 fn live_subgraph_has_hier_pins(subgraph: &LiveReducedSubgraph) -> bool {
@@ -1787,6 +1789,21 @@ fn live_subgraph_has_hier_ports(subgraph: &LiveReducedSubgraph) -> bool {
 
 fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
     subgraph.base_pins.len()
+}
+
+fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
+    subgraph
+        .drivers
+        .first()
+        .map(|driver| driver.priority)
+        .or_else(|| {
+            (!matches!(
+                subgraph.driver_connection.borrow().connection_type,
+                ReducedProjectConnectionType::None
+            ))
+            .then_some(1)
+        })
+        .unwrap_or(0)
 }
 
 fn live_subgraph_is_self_driven_symbol_pin(subgraph: &LiveReducedSubgraph) -> bool {
@@ -1915,8 +1932,9 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // per-item connection state on shared local item owners instead of projecting every
 // label/sheet-pin/hier-port/wire-item from the chosen subgraph driver only at the end of
 // propagation. The active payload now also keeps shared live base-pin payload directly instead of
-// a copied base-pin count summary; test-only driver identity still remains because the fuller live
-// driver-item owner is not ported yet.
+// a copied base-pin count summary and derives driver priority from the shared live driver owner
+// instead of caching one more copied summary field; test-only driver identity still remains
+// because the fuller live driver-item owner is not ported yet.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -1929,7 +1947,6 @@ fn build_live_reduced_subgraphs(
             driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
                 subgraph,
             )),
-            driver_priority: reduced_subgraph_driver_priority(subgraph),
             #[cfg(test)]
             driver_identity: subgraph.driver_identity.clone(),
             drivers: subgraph.drivers.clone(),
@@ -3102,7 +3119,7 @@ fn propagate_reduced_live_hierarchy_chain(
     }
 
     let mut best_index = start;
-    let mut highest = live_subgraphs[best_index].driver_priority;
+    let mut highest = live_reduced_subgraph_driver_priority(&live_subgraphs[best_index]);
     let mut best_is_strong = highest >= 3;
     let mut best_name = live_subgraphs[best_index]
         .driver_connection
@@ -3111,7 +3128,7 @@ fn propagate_reduced_live_hierarchy_chain(
 
     if highest < 6 {
         for &index in visited.iter().filter(|index| **index != start) {
-            let priority = live_subgraphs[index].driver_priority;
+            let priority = live_reduced_subgraph_driver_priority(&live_subgraphs[index]);
             let candidate_strong = priority >= 3;
             let candidate_name = live_subgraphs[index].driver_connection.name();
             let shorter_path = reduced_sheet_path_depth(&live_subgraphs[index].sheet_instance_path)
@@ -3262,7 +3279,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_live_subgraphs(
                 }
             }
 
-            if live_subgraphs[neighbor_index].driver_priority >= 6 {
+            if live_reduced_subgraph_driver_priority(&live_subgraphs[neighbor_index]) >= 6 {
                 let promoted = neighbor_connection;
                 let old_member = link_member.clone();
                 let mut parent_connection_mut =
@@ -3629,7 +3646,7 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
     }
 
     let mut best_handle = start.clone();
-    let mut highest = start_snapshot.driver_priority;
+    let mut highest = live_reduced_subgraph_driver_priority(&start_snapshot);
     let mut best_is_strong = highest >= 3;
     let mut best_name = start_snapshot.driver_connection.name().to_string();
 
@@ -3637,7 +3654,7 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
         for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
             let snapshot = handle.borrow().clone();
             let best_snapshot = best_handle.borrow().clone();
-            let priority = snapshot.driver_priority;
+            let priority = live_reduced_subgraph_driver_priority(&snapshot);
             let candidate_strong = priority >= 3;
             let candidate_name = snapshot.driver_connection.name();
             let shorter_path = reduced_sheet_path_depth(&snapshot.sheet_instance_path)
@@ -3922,7 +3939,7 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
                 }
             }
 
-            if neighbor_snapshot.driver_priority >= 6 {
+            if live_reduced_subgraph_driver_priority(&neighbor_snapshot) >= 6 {
                 let old_member = current_link_member.clone();
                 let refreshed_member = {
                     let parent = parent_handle.borrow();
@@ -10728,7 +10745,6 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: String::new(),
@@ -10759,7 +10775,6 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 }),
-                driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: "/child".to_string(),
@@ -10825,7 +10840,6 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
-            driver_priority: 0,
             driver_identity: None,
             drivers: Vec::new(),
             sheet_instance_path: String::new(),
@@ -11383,7 +11397,6 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: String::new(),
@@ -11422,7 +11435,6 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_priority: 0,
                 driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: "/child".to_string(),
