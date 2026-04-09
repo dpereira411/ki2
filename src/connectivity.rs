@@ -190,9 +190,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) name: String,
     pub(crate) resolved_connection: ReducedProjectConnection,
     pub(crate) driver_connection: Option<ReducedProjectConnection>,
-    pub(crate) driver_identity: Option<ReducedProjectDriverIdentity>,
     pub(crate) drivers: Vec<ReducedProjectStrongDriver>,
-    pub(crate) non_bus_driver_priority: Option<i32>,
     pub(crate) class: String,
     pub(crate) has_no_connect: bool,
     pub(crate) sheet_instance_path: String,
@@ -334,7 +332,6 @@ pub(crate) fn reduced_project_subgraph_driver_identity(
         .iter()
         .find(|driver| reduced_project_strong_driver_full_name(driver) == chosen_name)
         .and_then(|driver| driver.identity.as_ref())
-        .or(subgraph.driver_identity.as_ref())
 }
 
 pub(crate) fn reduced_project_subgraph_non_bus_driver_priority(
@@ -350,7 +347,6 @@ pub(crate) fn reduced_project_subgraph_non_bus_driver_priority(
             )
         })
         .map(|driver| driver.priority)
-        .or(subgraph.non_bus_driver_priority)
 }
 
 fn reduced_strong_drivers_into_live_handles(
@@ -2008,8 +2004,6 @@ struct LiveReducedSubgraph {
     #[cfg(test)]
     source_index: usize,
     driver_connection: LiveReducedConnection,
-    #[cfg(test)]
-    driver_identity: Option<ReducedProjectDriverIdentity>,
     drivers: Vec<LiveProjectStrongDriverHandle>,
     sheet_instance_path: String,
     bus_neighbor_links: Vec<LiveReducedSubgraphLinkHandle>,
@@ -2051,22 +2045,6 @@ fn live_reduced_subgraph_extra_projection_eq(
     true
 }
 
-#[cfg(test)]
-fn live_reduced_subgraph_driver_identity_eq(
-    left: &LiveReducedSubgraph,
-    right: &LiveReducedSubgraph,
-) -> bool {
-    left.driver_identity == right.driver_identity
-}
-
-#[cfg(not(test))]
-fn live_reduced_subgraph_driver_identity_eq(
-    _left: &LiveReducedSubgraph,
-    _right: &LiveReducedSubgraph,
-) -> bool {
-    true
-}
-
 fn live_base_pin_handles_to_snapshots(
     base_pins: &[LiveReducedBasePinHandle],
 ) -> Vec<ReducedNetBasePinKey> {
@@ -2081,7 +2059,6 @@ impl PartialEq for LiveReducedSubgraph {
         self.driver_connection == other.driver_connection
             && live_reduced_subgraph_driver_priority(self)
                 == live_reduced_subgraph_driver_priority(other)
-            && live_reduced_subgraph_driver_identity_eq(self, other)
             && live_strong_driver_handles_to_snapshots(&self.drivers)
                 == live_strong_driver_handles_to_snapshots(&other.drivers)
             && self.sheet_instance_path == other.sheet_instance_path
@@ -2406,8 +2383,6 @@ fn build_live_reduced_subgraphs(
             driver_connection: LiveReducedConnection::new(reduced_subgraph_driver_connection(
                 subgraph,
             )),
-            #[cfg(test)]
-            driver_identity: subgraph.driver_identity.clone(),
             drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
             sheet_instance_path: subgraph.sheet_instance_path.clone(),
             bus_neighbor_links: subgraph
@@ -6234,7 +6209,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         name: String,
         driver_connection: Option<ReducedProjectConnection>,
         drivers: Vec<ReducedProjectStrongDriver>,
-        non_bus_driver_priority: Option<i32>,
         class: String,
         has_no_connect: bool,
         sheet_instance_path: String,
@@ -6412,12 +6386,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         )
                     },
                 );
-                let non_bus_driver_priority = strong_drivers
-                    .iter()
-                    .find(|driver| {
-                        !reduced_text_is_bus(schematic, reduced_project_strong_driver_name(driver))
-                    })
-                    .map(|driver| driver.priority);
                 let (label_links, no_connect_points, bus_items, wire_items) =
                     collect_reduced_subgraph_local_membership(
                         inputs.schematics,
@@ -6493,7 +6461,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     name: entry.name.clone(),
                     driver_connection,
                     drivers: strong_drivers.clone(),
-                    non_bus_driver_priority,
                     class: class.clone(),
                     has_no_connect,
                     sheet_instance_path: sheet_path.instance_path.clone(),
@@ -6630,7 +6597,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 name: String::new(),
                 driver_connection: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: true,
                 sheet_instance_path: sheet_path.instance_path.clone(),
@@ -6752,22 +6718,13 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             resolved_full_local_name,
             pending.bus_members.clone(),
         );
-        let driver_identity = pending.driver_connection.as_ref().and_then(|connection| {
-            pending
-                .drivers
-                .iter()
-                .find(|driver| reduced_project_strong_driver_full_name(driver) == connection.name)
-                .and_then(|driver| driver.identity.clone())
-        });
         let net_identity = ReducedProjectSubgraphEntry {
             subgraph_code: subgraph_index + 1,
             code: net_identity.map(|net| net.code).unwrap_or_default(),
             name: resolved_name,
             resolved_connection,
             driver_connection: pending.driver_connection.clone(),
-            driver_identity,
             drivers: pending.drivers.clone(),
-            non_bus_driver_priority: pending.non_bus_driver_priority,
             class: if pending.class.is_empty() {
                 net_identity
                     .map(|net| net.class.clone())
@@ -9224,9 +9181,7 @@ mod tests {
                 }],
             },
             driver_connection: None,
-            driver_identity: None,
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -9331,9 +9286,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -9381,9 +9334,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -9465,9 +9416,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -9515,9 +9464,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -9573,9 +9520,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -9629,9 +9574,7 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/child".to_string(),
@@ -9722,9 +9665,7 @@ mod tests {
                     members: Vec::new(),
                 }],
             }),
-            driver_identity: None,
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -9863,9 +9804,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -9913,9 +9852,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -10882,9 +10819,7 @@ mod tests {
                 ],
             },
             driver_connection: None,
-            driver_identity: None,
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -10930,9 +10865,7 @@ mod tests {
                 members: Vec::new(),
             },
             driver_connection: None,
-            driver_identity: None,
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -11008,9 +10941,7 @@ mod tests {
                 ],
             },
             driver_connection: None,
-            driver_identity: None,
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -11056,9 +10987,7 @@ mod tests {
                 members: Vec::new(),
             },
             driver_connection: None,
-            driver_identity: None,
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -11140,9 +11069,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -11210,7 +11137,6 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 6,
@@ -11225,7 +11151,6 @@ mod tests {
                     },
                     identity: None,
                 }],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -11279,9 +11204,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -11338,7 +11261,6 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: String::new(),
                 bus_neighbor_links: Vec::new(),
@@ -11368,7 +11290,6 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: "/child".to_string(),
                 bus_neighbor_links: Vec::new(),
@@ -11433,7 +11354,6 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
-            driver_identity: None,
             drivers: Vec::new(),
             sheet_instance_path: String::new(),
             bus_neighbor_links: Vec::new(),
@@ -11520,8 +11440,6 @@ mod tests {
             },
             driver_connection: None,
             drivers: Vec::new(),
-            driver_identity: None,
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -11600,10 +11518,6 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
-            driver_identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
-                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-                at: PointKey(10, 20),
-            }),
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::SheetPin,
                 priority: 1,
@@ -11621,7 +11535,6 @@ mod tests {
                     at: PointKey(10, 20),
                 }),
             }],
-            non_bus_driver_priority: Some(1),
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -11701,11 +11614,6 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
-            driver_identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
-                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-                symbol_uuid: Some("sym".to_string()),
-                at: PointKey(10, 20),
-            }),
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
                 priority: 6,
@@ -11724,7 +11632,6 @@ mod tests {
                     at: PointKey(10, 20),
                 }),
             }],
-            non_bus_driver_priority: Some(6),
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -11815,9 +11722,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -11876,9 +11781,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -11952,8 +11855,6 @@ mod tests {
                 },
                 driver_connection: None,
                 drivers: Vec::new(),
-                driver_identity: None,
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12000,8 +11901,6 @@ mod tests {
                 },
                 driver_connection: None,
                 drivers: Vec::new(),
-                driver_identity: None,
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/child".to_string(),
@@ -12086,8 +11985,6 @@ mod tests {
                 },
                 driver_connection: None,
                 drivers: Vec::new(),
-                driver_identity: None,
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12128,8 +12025,6 @@ mod tests {
                 },
                 driver_connection: None,
                 drivers: Vec::new(),
-                driver_identity: None,
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12188,7 +12083,6 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: String::new(),
                 bus_neighbor_links: Vec::new(),
@@ -12226,7 +12120,6 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
                 sheet_instance_path: "/child".to_string(),
                 bus_neighbor_links: Vec::new(),
@@ -12332,9 +12225,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12405,9 +12296,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12445,9 +12334,7 @@ mod tests {
                 name: "/RENAMED1".to_string(),
                 resolved_connection: connection.clone(),
                 driver_connection: Some(connection.clone()),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12527,9 +12414,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12644,9 +12529,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12701,9 +12584,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12804,9 +12685,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12861,9 +12740,7 @@ mod tests {
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -12956,9 +12833,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13012,9 +12887,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13103,9 +12976,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13159,7 +13030,6 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 6,
@@ -13174,7 +13044,6 @@ mod tests {
                     },
                     identity: None,
                 }],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13266,9 +13135,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13311,9 +13178,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13405,9 +13270,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13450,9 +13313,7 @@ mod tests {
                     sheet_instance_path: "different-sheet".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13553,9 +13414,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13614,9 +13473,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13643,9 +13500,7 @@ mod tests {
                 name: "/RENAMED1".to_string(),
                 resolved_connection: connection.clone(),
                 driver_connection: Some(connection.clone()),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13713,9 +13568,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13793,7 +13646,6 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 4,
@@ -13808,7 +13660,6 @@ mod tests {
                     },
                     identity: None,
                 }],
-                non_bus_driver_priority: Some(4),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -13863,7 +13714,6 @@ mod tests {
                     sheet_instance_path: "/child".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
@@ -13878,7 +13728,6 @@ mod tests {
                     },
                     identity: None,
                 }],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/child".to_string(),
@@ -13945,7 +13794,6 @@ mod tests {
                 name: "VCC".to_string(),
                 resolved_connection: chosen.clone(),
                 driver_connection: Some(chosen.clone()),
-                driver_identity: None,
                 drivers: vec![
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
@@ -13968,7 +13816,6 @@ mod tests {
                         identity: None,
                     },
                 ],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -14011,7 +13858,6 @@ mod tests {
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
@@ -14026,7 +13872,6 @@ mod tests {
                     },
                     identity: None,
                 }],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/other".to_string(),
@@ -14087,7 +13932,6 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
@@ -14118,7 +13962,6 @@ mod tests {
                         identity: None,
                     },
                 ],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -14161,7 +14004,6 @@ mod tests {
                     sheet_instance_path: "/other".to_string(),
                     members: Vec::new(),
                 }),
-                driver_identity: None,
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
@@ -14176,7 +14018,6 @@ mod tests {
                     },
                     identity: None,
                 }],
-                non_bus_driver_priority: Some(6),
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/other".to_string(),
@@ -14236,15 +14077,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
-            driver_identity: Some(
-                crate::connectivity::ReducedProjectDriverIdentity::SymbolPin {
-                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-                    symbol_uuid: Some("r1".to_string()),
-                    at: PointKey(0, 0),
-                },
-            ),
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -14308,15 +14141,7 @@ mod tests {
                 sheet_instance_path: String::new(),
                 members: Vec::new(),
             }),
-            driver_identity: Some(
-                crate::connectivity::ReducedProjectDriverIdentity::SymbolPin {
-                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-                    symbol_uuid: Some("r1".to_string()),
-                    at: PointKey(0, 0),
-                },
-            ),
             drivers: Vec::new(),
-            non_bus_driver_priority: None,
             class: String::new(),
             has_no_connect: false,
             sheet_instance_path: String::new(),
@@ -14381,14 +14206,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: Some(
-                    crate::connectivity::ReducedProjectDriverIdentity::SheetPin {
-                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-                        at: PointKey(0, 0),
-                    },
-                ),
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -14447,9 +14265,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/child".to_string(),
@@ -14518,14 +14334,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 }),
-                driver_identity: Some(
-                    crate::connectivity::ReducedProjectDriverIdentity::SheetPin {
-                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-                        at: PointKey(0, 0),
-                    },
-                ),
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: String::new(),
@@ -14584,9 +14393,7 @@ mod tests {
                         members: Vec::new(),
                     }],
                 }),
-                driver_identity: None,
                 drivers: Vec::new(),
-                non_bus_driver_priority: None,
                 class: String::new(),
                 has_no_connect: false,
                 sheet_instance_path: "/child".to_string(),

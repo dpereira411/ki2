@@ -778,6 +778,9 @@ Current status:
       - reduced bus-conflict suppression now also derives its non-bus driver priority from the
         owned strong-driver list instead of a separate reduced subgraph summary field on the active
         ERC path
+      - reduced subgraphs no longer store `driver_identity` as exercised owner state; the current
+        reduced/live graph now derives chosen driver identity from the owned strong-driver list on
+        the active path
       - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
         exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
