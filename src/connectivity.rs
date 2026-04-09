@@ -245,6 +245,7 @@ pub(crate) struct ReducedProjectStrongDriver {
     pub(crate) priority: i32,
     pub(crate) name: String,
     pub(crate) full_name: String,
+    pub(crate) connection: ReducedProjectConnection,
     pub(crate) identity: Option<ReducedProjectDriverIdentity>,
 }
 
@@ -252,8 +253,7 @@ pub(crate) struct ReducedProjectStrongDriver {
 struct LiveProjectStrongDriver {
     kind: ReducedProjectDriverKind,
     priority: i32,
-    name: String,
-    full_name: String,
+    connection: LiveReducedConnection,
     identity: Option<ReducedProjectDriverIdentity>,
     owner: LiveProjectStrongDriverOwner,
 }
@@ -284,8 +284,7 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
         Self {
             kind: driver.kind,
             priority: driver.priority,
-            name: driver.name,
-            full_name: driver.full_name,
+            connection: LiveReducedConnection::new(driver.connection),
             identity: driver.identity,
             owner: LiveProjectStrongDriverOwner::None,
         }
@@ -294,21 +293,24 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
 
 impl LiveProjectStrongDriver {
     fn snapshot(&self) -> ReducedProjectStrongDriver {
+        let connection = self.connection.snapshot();
         ReducedProjectStrongDriver {
             kind: self.kind,
             priority: self.priority,
-            name: self.name.clone(),
-            full_name: self.full_name.clone(),
+            name: connection.local_name.clone(),
+            full_name: connection.name.clone(),
+            connection,
             identity: self.identity.clone(),
         }
     }
 
     fn metadata(&self) -> LiveStrongDriverMetadata {
+        let connection = self.connection.borrow();
         LiveStrongDriverMetadata {
             kind: self.kind,
             priority: self.priority,
-            name: self.name.clone(),
-            full_name: self.full_name.clone(),
+            name: connection.local_name.clone(),
+            full_name: connection.name.clone(),
             identity: self.identity.clone(),
         }
     }
@@ -365,7 +367,7 @@ fn live_project_strong_driver_priority(driver: &LiveProjectStrongDriver) -> i32 
 fn live_project_strong_driver_full_name(driver: &LiveProjectStrongDriver) -> String {
     live_strong_driver_metadata_from_owner(&driver.owner)
         .map(|driver| driver.full_name)
-        .unwrap_or_else(|| driver.full_name.clone())
+        .unwrap_or_else(|| driver.connection.name())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -566,6 +568,37 @@ fn build_reduced_project_connection(
         sheet_instance_path,
         members,
     }
+}
+
+fn build_reduced_project_driver_connection(
+    schematic: &Schematic,
+    sheet_instance_path: impl Into<String>,
+    local_name: impl Into<String>,
+    full_name: impl Into<String>,
+    member_sheet_prefix: &str,
+) -> ReducedProjectConnection {
+    let local_name = local_name.into();
+    let full_name = full_name.into();
+    let members = if reduced_text_is_bus(schematic, &local_name) {
+        collect_reduced_bus_member_objects_inner(
+            schematic,
+            &local_name,
+            "",
+            member_sheet_prefix,
+            &mut BTreeSet::new(),
+        )
+    } else {
+        Vec::new()
+    };
+
+    build_reduced_project_connection(
+        schematic,
+        sheet_instance_path,
+        full_name.clone(),
+        local_name,
+        full_name,
+        members,
+    )
 }
 
 fn reduced_bus_members_inner(
@@ -2226,10 +2259,11 @@ fn attach_live_hierarchy_links_to_handles(
 // keeps copied driver records, but it now attaches the exercised label, sheet-pin, and symbol-pin
 // drivers to shared live item owners on the active graph instead of leaving every strong driver as
 // a detached copied struct, and now also attaches those item owners back onto the same shared live
-// strong-driver owners used by the subgraph driver list so the active live promotion path reads
-// through shared live driver identity first. Remaining divergence is the fuller live driver-item
-// object graph and the still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph
-// behind these handles.
+// strong-driver owners used by the subgraph driver list. Those live strong-driver owners now carry
+// their own live connection carrier too, so the active live promotion path no longer keeps driver
+// names as a separate live-only string payload. Remaining divergence is the fuller live
+// driver-item object graph and the still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH`
+// object graph behind these handles.
 fn attach_live_strong_driver_owners_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
     for handle in live_subgraphs {
         let subgraph = handle.borrow_mut();
@@ -2320,8 +2354,9 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // a copied base-pin count summary and derives driver priority from the shared live driver owner
 // instead of caching one more copied summary field, and now also attaches the exercised
 // label/sheet-pin/symbol-pin strong drivers back onto shared live item owners via the same shared
-// live strong-driver owners used by the subgraph driver list. Remaining divergence is the
-// still-missing fuller live driver-item object graph.
+// live strong-driver owners used by the subgraph driver list. Those live strong-driver owners now
+// also keep a live connection carrier instead of parallel live name fields. Remaining divergence
+// is the still-missing fuller live driver-item object graph.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -6313,6 +6348,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 let strong_drivers = collect_reduced_strong_drivers(
                     schematic,
                     &sheet_path.schematic_path,
+                    &sheet_path.instance_path,
                     &connected_component,
                     &sheet_path_prefix,
                     |label| {
@@ -8177,12 +8213,14 @@ struct ReducedDriverNameCandidate {
 // sheet pins instead of leaving sheet-pin drivers on raw parser text, and now also preserves the
 // reduced driver kind the shared graph needs for `ercCheckMultipleDrivers()`-style filtering
 // instead of collapsing every strong driver to bare names, and now also carries stable reduced
-// driver identity so the later live graph can widen this copied payload into fuller driver-item
-// ownership. Remaining divergence is the still-missing live connection object plus fuller
-// power/bus-parent driver ownership.
+// driver identity plus a reduced connection owner so the later live graph can widen this payload
+// into fuller driver-item ownership without keeping driver names as a parallel string-only cache.
+// Remaining divergence is the still-missing live connection object plus fuller power/bus-parent
+// driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
+    sheet_instance_path: &str,
     connected_component: &ConnectionComponent,
     sheet_path_prefix: &str,
     mut shown_label_text: FLabel,
@@ -8216,6 +8254,17 @@ where
                 Some(ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: reduced_label_driver_priority(label),
+                    connection: build_reduced_project_driver_connection(
+                        schematic,
+                        sheet_instance_path,
+                        text.clone(),
+                        full_name.clone(),
+                        if label.kind == LabelKind::Global {
+                            ""
+                        } else {
+                            sheet_path_prefix
+                        },
+                    ),
                     name: text,
                     full_name,
                     identity: Some(ReducedProjectDriverIdentity::Label {
@@ -8240,6 +8289,13 @@ where
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::SheetPin,
                         priority: reduced_sheet_pin_driver_rank(pin.shape),
+                        connection: build_reduced_project_driver_connection(
+                            schematic,
+                            sheet_instance_path,
+                            shown.clone(),
+                            format!("{sheet_path_prefix}{shown}"),
+                            sheet_path_prefix,
+                        ),
                         name: shown.clone(),
                         full_name: format!("{sheet_path_prefix}{shown}"),
                         identity: Some(ReducedProjectDriverIdentity::SheetPin {
@@ -8271,6 +8327,29 @@ where
                                 symbol_value_text(symbol).map(|text| ReducedProjectStrongDriver {
                                     kind: ReducedProjectDriverKind::PowerPin,
                                     priority,
+                                    connection: build_reduced_project_driver_connection(
+                                        schematic,
+                                        sheet_instance_path,
+                                        text.clone(),
+                                        if symbol
+                                            .lib_symbol
+                                            .as_ref()
+                                            .is_some_and(|lib_symbol| lib_symbol.local_power)
+                                        {
+                                            format!("{sheet_path_prefix}{text}")
+                                        } else {
+                                            text.clone()
+                                        },
+                                        if symbol
+                                            .lib_symbol
+                                            .as_ref()
+                                            .is_some_and(|lib_symbol| lib_symbol.local_power)
+                                        {
+                                            sheet_path_prefix
+                                        } else {
+                                            ""
+                                        },
+                                    ),
                                     full_name: if symbol
                                         .lib_symbol
                                         .as_ref()
@@ -11138,6 +11217,15 @@ mod tests {
                     priority: 6,
                     name: "PWR".to_string(),
                     full_name: "/PWR".to_string(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/PWR".to_string(),
+                        local_name: "PWR".to_string(),
+                        full_local_name: "/PWR".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
                     identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
@@ -11524,6 +11612,15 @@ mod tests {
                 priority: 1,
                 name: "SIG".to_string(),
                 full_name: "/SIG".to_string(),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
                 identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(10, 20),
@@ -11619,6 +11716,15 @@ mod tests {
                 priority: 6,
                 name: "PWR".to_string(),
                 full_name: "PWR".to_string(),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
                 identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     symbol_uuid: Some("sym".to_string()),
@@ -13066,6 +13172,15 @@ mod tests {
                     priority: 6,
                     name: "PWR".to_string(),
                     full_name: "/PWR".to_string(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/PWR".to_string(),
+                        local_name: "PWR".to_string(),
+                        full_local_name: "/PWR".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
                     identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
@@ -13693,6 +13808,15 @@ mod tests {
                     priority: 4,
                     name: "ROOT_SIG".to_string(),
                     full_name: "/ROOT_SIG".to_string(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ROOT_SIG".to_string(),
+                        local_name: "ROOT_SIG".to_string(),
+                        full_local_name: "/ROOT_SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
                     identity: None,
                 }],
                 non_bus_driver_priority: Some(4),
@@ -13756,6 +13880,15 @@ mod tests {
                     priority: 6,
                     name: "GLOBAL_SIG".to_string(),
                     full_name: "/Child/GLOBAL_SIG".to_string(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/Child/GLOBAL_SIG".to_string(),
+                        local_name: "GLOBAL_SIG".to_string(),
+                        full_local_name: "/Child/GLOBAL_SIG".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
                     identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
@@ -13832,6 +13965,7 @@ mod tests {
                         priority: 6,
                         name: "VCC".to_string(),
                         full_name: "VCC".to_string(),
+                        connection: chosen.clone(),
                         identity: None,
                     },
                     ReducedProjectStrongDriver {
@@ -13839,6 +13973,15 @@ mod tests {
                         priority: 6,
                         name: "PWR_ALT".to_string(),
                         full_name: "PWR_ALT".to_string(),
+                        connection: ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: ReducedProjectConnectionType::Net,
+                            name: "PWR_ALT".to_string(),
+                            local_name: "PWR_ALT".to_string(),
+                            full_local_name: "PWR_ALT".to_string(),
+                            sheet_instance_path: String::new(),
+                            members: Vec::new(),
+                        },
                         identity: None,
                     },
                 ],
@@ -13891,6 +14034,15 @@ mod tests {
                     priority: 6,
                     name: "PWR_ALT".to_string(),
                     full_name: "PWR_ALT".to_string(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR_ALT".to_string(),
+                        local_name: "PWR_ALT".to_string(),
+                        full_local_name: "PWR_ALT".to_string(),
+                        sheet_instance_path: "/other".to_string(),
+                        members: Vec::new(),
+                    },
                     identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
@@ -13961,6 +14113,15 @@ mod tests {
                         priority: 6,
                         name: "VCC".to_string(),
                         full_name: "VCC".to_string(),
+                        connection: ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: ReducedProjectConnectionType::Net,
+                            name: "VCC".to_string(),
+                            local_name: "VCC".to_string(),
+                            full_local_name: "VCC".to_string(),
+                            sheet_instance_path: String::new(),
+                            members: Vec::new(),
+                        },
                         identity: None,
                     },
                     ReducedProjectStrongDriver {
@@ -13968,6 +14129,15 @@ mod tests {
                         priority: 6,
                         name: "PWR_ALT".to_string(),
                         full_name: "PWR_ALT".to_string(),
+                        connection: ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: ReducedProjectConnectionType::Net,
+                            name: "PWR_ALT".to_string(),
+                            local_name: "PWR_ALT".to_string(),
+                            full_local_name: "PWR_ALT".to_string(),
+                            sheet_instance_path: String::new(),
+                            members: Vec::new(),
+                        },
                         identity: None,
                     },
                 ],
@@ -14020,6 +14190,15 @@ mod tests {
                     priority: 6,
                     name: "PWR_ALT".to_string(),
                     full_name: "PWR_ALT".to_string(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR_ALT".to_string(),
+                        local_name: "PWR_ALT".to_string(),
+                        full_local_name: "PWR_ALT".to_string(),
+                        sheet_instance_path: "/other".to_string(),
+                        members: Vec::new(),
+                    },
                     identity: None,
                 }],
                 non_bus_driver_priority: Some(6),
