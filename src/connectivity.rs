@@ -459,9 +459,41 @@ impl LiveProjectStrongDriverOwner {
     fn project_onto_reduced(&self, target: &mut ReducedProjectStrongDriver) {
         target.kind = self.kind();
         target.priority = self.priority();
-        self.connection_handle()
-            .borrow()
-            .project_onto_reduced(&mut target.connection);
+        match self {
+            LiveProjectStrongDriverOwner::Floating { connection, .. } => {
+                connection.borrow().project_onto_reduced(&mut target.connection);
+            }
+            LiveProjectStrongDriverOwner::Label { owner, .. } => {
+                owner
+                    .upgrade()
+                    .expect("live label driver requires an attached owner")
+                    .borrow()
+                    .project_driver_connection_onto_reduced(&mut target.connection);
+            }
+            LiveProjectStrongDriverOwner::SheetPin { owner, .. } => {
+                owner
+                    .upgrade()
+                    .expect("live sheet-pin driver requires an attached owner")
+                    .borrow()
+                    .project_driver_connection_onto_reduced(&mut target.connection);
+            }
+            LiveProjectStrongDriverOwner::HierPort { owner, .. } => {
+                owner
+                    .upgrade()
+                    .expect("live hierarchical-port driver requires an attached owner")
+                    .borrow()
+                    .project_driver_connection_onto_reduced(&mut target.connection);
+            }
+            LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner
+                    .upgrade()
+                    .expect("live symbol-pin driver requires an attached owner")
+                    .borrow()
+                    .driver_connection
+                    .borrow()
+                    .project_onto_reduced(&mut target.connection);
+            }
+        }
         target.identity = self.identity();
     }
 
@@ -1233,6 +1265,17 @@ fn assign_reduced_bus_member_net_codes(
         } else {
             member.net_code = 0;
         }
+    }
+}
+
+fn reduced_sheet_path_depth(sheet_instance_path: &str) -> usize {
+    if sheet_instance_path.is_empty() {
+        0
+    } else {
+        sheet_instance_path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .count()
     }
 }
 
@@ -2093,6 +2136,17 @@ impl LiveReducedLabelLink {
             target.local_name = self.shown_text_local_name.clone();
         }
     }
+
+    // Upstream parity: local text-driver projection analogue for
+    // `CONNECTION_SUBGRAPH::GetNameForDriver()` on label drivers. The live connection may have
+    // been propagated to the chosen net name, but the driver-conflict name remains owned by the
+    // label shown text until the fuller `SCH_LABEL_BASE` driver item is ported.
+    fn project_driver_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
+        self.driver_connection.borrow().project_onto_reduced(target);
+        if !self.shown_text_local_name.is_empty() {
+            target.local_name = self.shown_text_local_name.clone();
+        }
+    }
 }
 
 impl LiveReducedHierSheetPinLink {
@@ -2160,6 +2214,17 @@ impl LiveReducedHierSheetPinLink {
             target.local_name = self.shown_text_local_name.clone();
         }
     }
+
+    // Upstream parity: local sheet-pin driver projection analogue for
+    // `CONNECTION_SUBGRAPH::GetNameForDriver()`. The reduced live owner still carries the shown
+    // text instead of a full `SCH_SHEET_PIN`, so projection reapplies that text after connection
+    // propagation has rewritten the attached driver connection.
+    fn project_driver_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
+        self.driver_connection.borrow().project_onto_reduced(target);
+        if !self.shown_text_local_name.is_empty() {
+            target.local_name = self.shown_text_local_name.clone();
+        }
+    }
 }
 
 impl LiveReducedHierPortLink {
@@ -2221,6 +2286,17 @@ impl LiveReducedHierPortLink {
 
     fn project_item_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
         self.connection.borrow().project_onto_reduced(target);
+        if !self.shown_text_local_name.is_empty() {
+            target.local_name = self.shown_text_local_name.clone();
+        }
+    }
+
+    // Upstream parity: local hierarchical-label driver projection analogue for
+    // `CONNECTION_SUBGRAPH::GetNameForDriver()`. This preserves the hierarchical-port shown text
+    // for driver diagnostics even when the live driver connection has been cloned from a stronger
+    // hierarchy-chain driver.
+    fn project_driver_connection_onto_reduced(&self, target: &mut ReducedProjectConnection) {
+        self.driver_connection.borrow().project_onto_reduced(target);
         if !self.shown_text_local_name.is_empty() {
             target.local_name = self.shown_text_local_name.clone();
         }
@@ -3230,16 +3306,11 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for the hierarchy-chain slice inside
     // `propagateToNeighbors()`. This still mutates reduced live carriers instead of full local
-    // `CONNECTION_SUBGRAPH` objects, but the shared subgraph owner now owns the matched
-    // parent/child traversal and clones the starting subgraph's current live driver connection
-    // through that hierarchy chain instead of re-ranking all visited handles as one local
-    // "best" connection. Remaining divergence is the still-missing fuller live subgraph object
-    // and per-item `GetNameForDriver()` cache.
-    fn propagate_hierarchy_chain(
-        start: &LiveReducedSubgraphHandle,
-        chosen_connection: &LiveProjectConnectionHandle,
-        force: bool,
-    ) {
+    // `CONNECTION_SUBGRAPH` objects, but the shared subgraph owner now owns the traversal and
+    // chosen-driver rewrite for one hierarchy-connected component, and that rewrite now stays on
+    // the chosen live driver handle instead of snapshotting a reduced-shaped chosen connection
+    // through the active propagation path.
+    fn propagate_hierarchy_chain(start: &LiveReducedSubgraphHandle, force: bool) {
         let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
         let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
         if !force && start_has_hier_ports && start_has_hier_pins {
@@ -3269,6 +3340,42 @@ impl LiveReducedSubgraph {
                 }
             }
         }
+
+        let mut best_handle = start.clone();
+        let mut highest = live_reduced_subgraph_driver_priority(&start.borrow());
+        let mut best_is_strong = highest >= 3;
+        let mut best_name = start.borrow().driver_connection.borrow().name.clone();
+
+        if highest < 6 {
+            for handle in visited.iter().filter(|handle| !Rc::ptr_eq(handle, start)) {
+                let priority = live_reduced_subgraph_driver_priority(&handle.borrow());
+                let candidate_strong = priority >= 3;
+                let candidate_name = handle.borrow().driver_connection.borrow().name.clone();
+                let candidate_depth =
+                    reduced_sheet_path_depth(&handle.borrow().sheet_instance_path);
+                let best_depth =
+                    reduced_sheet_path_depth(&best_handle.borrow().sheet_instance_path);
+                let shorter_path = candidate_depth < best_depth;
+                let as_good_path = candidate_depth <= best_depth;
+
+                if (priority >= 6)
+                    || (!best_is_strong && candidate_strong)
+                    || (priority > highest && candidate_strong)
+                    || (priority == highest && candidate_strong && shorter_path)
+                    || ((best_is_strong == candidate_strong)
+                        && as_good_path
+                        && (priority == highest)
+                        && (candidate_name < best_name))
+                {
+                    best_handle = handle.clone();
+                    highest = priority;
+                    best_is_strong = candidate_strong;
+                    best_name = candidate_name;
+                }
+            }
+        }
+
+        let chosen_connection = best_handle.borrow().driver_connection.clone();
 
         for handle in visited {
             let mut subgraph = handle.borrow_mut();
@@ -3439,15 +3546,19 @@ impl LiveReducedSubgraph {
             .filter(|handle| handle.borrow().dirty)
             .cloned()
             .collect::<Vec<_>>();
-        let start_hierarchy_connection = live_subgraph_has_hierarchy_handles_from_handle(start)
-            .then(|| start.borrow().driver_connection.clone());
 
         for handle in &dirty_active {
             handle.borrow_mut().dirty = false;
         }
 
-        if let Some(chosen_connection) = start_hierarchy_connection {
-            Self::propagate_hierarchy_chain(start, &chosen_connection, force);
+        for handle in &dirty_active {
+            let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
+
+            if !has_hierarchy_links {
+                continue;
+            }
+
+            Self::propagate_hierarchy_chain(handle, force);
         }
         Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
         Self::refresh_bus_parent_members(live_subgraphs, &dirty_active);
@@ -15526,7 +15637,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_hierarchy_driver_chain_keeps_starting_driver_connection() {
+    fn reduced_hierarchy_driver_chain_uses_best_driver() {
         let mut graph = vec![
             ReducedProjectSubgraphEntry {
                 subgraph_code: 1,
@@ -15671,12 +15782,45 @@ mod tests {
 
         refresh_reduced_live_graph_propagation(&mut graph);
 
-        assert_eq!(graph[0].name, "/ROOT_SIG");
-        assert_eq!(graph[1].name, "/ROOT_SIG");
+        assert_eq!(graph[0].name, "/Child/GLOBAL_SIG");
+        assert_eq!(graph[1].name, "/Child/GLOBAL_SIG");
         assert_eq!(
             graph[0].driver_connection.full_local_name,
-            "/ROOT_SIG"
+            "/Child/GLOBAL_SIG"
         );
+    }
+
+    #[test]
+    fn dynamic_power_hierarchy_preserves_text_driver_names_after_propagation() {
+        let root_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch");
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let child_gnd_subgraphs = graph
+            .subgraphs
+            .iter()
+            .filter(|subgraph| !subgraph.sheet_instance_path.is_empty() && subgraph.name == "GND")
+            .collect::<Vec<_>>();
+
+        assert_eq!(child_gnd_subgraphs.len(), 3);
+        for subgraph in child_gnd_subgraphs {
+            assert!(
+                subgraph.drivers.iter().any(|driver| {
+                    driver.kind == ReducedProjectDriverKind::Label
+                        && driver.connection.name == "GND"
+                        && driver.connection.local_name == "REF_NODE"
+                }),
+                "hierarchical-label driver should keep shown text after GND propagation: {subgraph:?}"
+            );
+            assert!(
+                !subgraph.drivers.iter().any(|driver| {
+                    driver.kind == ReducedProjectDriverKind::Label
+                        && driver.connection.local_name == "GND"
+                }),
+                "text driver local name should not be overwritten by propagated net name: {subgraph:?}"
+            );
+        }
     }
 
     #[test]
