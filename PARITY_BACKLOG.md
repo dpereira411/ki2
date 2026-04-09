@@ -800,6 +800,9 @@ Current status:
       - active bus-neighbor search, parent-member refresh, and bus-link rematch now match live bus
         members directly from shared live connection owners instead of fabricating temporary
         member-shaped search objects from those connections first
+      - active live strong-driver attachment now reads driver identity from the reduced input graph
+        at handle-attachment time; copied live driver identity remains only as test scaffolding on
+        the value-owned live carrier
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

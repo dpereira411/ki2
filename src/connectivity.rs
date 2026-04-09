@@ -250,6 +250,7 @@ struct LiveProjectStrongDriver {
     kind: ReducedProjectDriverKind,
     priority: i32,
     connection: LiveReducedConnection,
+    #[cfg(test)]
     identity: Option<ReducedProjectDriverIdentity>,
     owner: LiveProjectStrongDriverOwner,
 }
@@ -272,6 +273,7 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
             kind: driver.kind,
             priority: driver.priority,
             connection: LiveReducedConnection::new(driver.connection),
+            #[cfg(test)]
             identity: driver.identity,
             owner: LiveProjectStrongDriverOwner::None,
         }
@@ -285,7 +287,10 @@ impl LiveProjectStrongDriver {
             kind: self.kind,
             priority: self.priority,
             connection,
+            #[cfg(test)]
             identity: self.identity.clone(),
+            #[cfg(not(test))]
+            identity: None,
         }
     }
 }
@@ -2167,7 +2172,7 @@ fn build_live_reduced_subgraph_handles(
     attach_live_subgraph_links_to_handles(&handles, reduced_subgraphs);
     attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
     attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
-    attach_live_strong_driver_owners_to_handles(&handles);
+    attach_live_strong_driver_owners_to_handles(&handles, reduced_subgraphs);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
 }
@@ -2254,12 +2259,19 @@ fn attach_live_hierarchy_links_to_handles(
 // names as a separate live-only string payload. Remaining divergence is the fuller live
 // driver-item object graph and the still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH`
 // object graph behind these handles.
-fn attach_live_strong_driver_owners_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
-    for handle in live_subgraphs {
+fn attach_live_strong_driver_owners_to_handles(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
+) {
+    for (index, handle) in live_subgraphs.iter().enumerate() {
         let subgraph = handle.borrow_mut();
 
-        for driver in &subgraph.drivers {
-            let identity = driver.borrow().identity.clone();
+        for (driver, reduced_driver) in subgraph
+            .drivers
+            .iter()
+            .zip(reduced_subgraphs[index].drivers.iter())
+        {
+            let identity = reduced_driver.identity.clone();
             let owner = match identity {
                 Some(ReducedProjectDriverIdentity::Label { at, kind, .. }) => {
                     if kind == reduced_label_kind_sort_key(LabelKind::Hierarchical) {
