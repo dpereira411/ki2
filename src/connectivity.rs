@@ -5779,9 +5779,9 @@ where
 // reused-screen de-duplication can happen above the shared graph boundary, and final reduced
 // subgraph names now also derive from the required reduced `driver_connection` owner instead of
 // treating `name` as an independent production owner. Pending reduced subgraph assembly now also
-// reads the pending name only through that pending driver owner instead of carrying a second
-// pending `name` field. The outward reduced node carrier is still narrower than a real
-// `CONNECTION_SUBGRAPH` item owner.
+// keys its pending net/base-pin/node side maps through that pending driver owner instead of
+// carrying a second pending `name` field beside it. The outward reduced node carrier is still
+// narrower than a real `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
@@ -6056,6 +6056,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     });
                 let chosen_driver_index =
                     chosen_reduced_driver_index(&strong_drivers, chosen_driver_identity.as_ref());
+                let pending_name = driver_connection.name.clone();
 
                 pending_subgraphs.push(PendingProjectSubgraph {
                     driver_connection,
@@ -6077,20 +6078,20 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     wire_items,
                 });
 
-                nets.entry(entry.name.clone()).or_insert_with(|| {
+                nets.entry(pending_name.clone()).or_insert_with(|| {
                     (
                         class.clone(),
                         has_no_connect,
                         BTreeMap::new(),
                         all_base_pins_by_net
-                            .get(&entry.name)
+                            .get(&pending_name)
                             .cloned()
                             .unwrap_or_default(),
                     )
                 });
 
                 all_base_pins_by_net
-                    .entry(entry.name.clone())
+                    .entry(pending_name.clone())
                     .or_default()
                     .extend(base_pins.iter().map(|base_pin| base_pin.key.clone()));
 
@@ -6121,7 +6122,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                         .expect("shared reduced net map must keep base pin identity");
 
                     let candidate = (
-                        entry.name.clone(),
+                        pending_name.clone(),
                         class.clone(),
                         has_no_connect,
                         node,

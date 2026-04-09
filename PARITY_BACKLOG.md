@@ -1133,6 +1133,9 @@ Current status:
       - pending reduced graph assembly now also materializes subgraph `driver_connection` directly
         instead of carrying an optional pending driver owner and reconstructing fallback
         local/full-local names later in final reduced graph assembly
+      - pending reduced graph assembly now also keys its pending net/base-pin/node side maps
+        through that pending `driver_connection.name` owner instead of the earlier pre-owner
+        `entry.name` carrier
       - `ReducedProjectSubgraphEntry.driver_connection` is now required owner state too; the
         optional reduced carrier is gone from production paths, helper paths, ERC consumers, and
         the reduced-graph fixtures that exercise the real graph flow
