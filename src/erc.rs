@@ -388,11 +388,8 @@ fn apply_configured_rule_severity(
         "erc-bus-entry-conflict" => {
             configured_rule_severity(project, "net_not_bus_member", Some(Severity::Warning))
         }
-        "erc-pin-to-pin-warning" => {
-            configured_rule_severity(project, "pin_to_pin", Some(Severity::Warning))
-        }
-        "erc-pin-to-pin-error" => {
-            configured_rule_severity(project, "pin_to_pin", Some(Severity::Error))
+        "erc-pin-to-pin" => {
+            configured_rule_severity(project, "pin_to_pin", Some(diagnostic.severity))
         }
         "erc-pin-not-driven" => {
             configured_rule_severity(project, "pin_not_driven", Some(Severity::Error))
@@ -3117,11 +3114,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                     PinConflict::Error => Severity::Error,
                     PinConflict::Ok => continue,
                 },
-                code: match conflict {
-                    PinConflict::Warning => "erc-pin-to-pin-warning",
-                    PinConflict::Error => "erc-pin-to-pin-error",
-                    PinConflict::Ok => continue,
-                },
+                code: "erc-pin-to-pin",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: format!(
                     "Pins of type {} and {} are connected",

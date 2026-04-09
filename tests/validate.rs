@@ -5973,7 +5973,9 @@ fn erc_reports_conflicting_pin_types_on_same_net() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+        .filter(|diagnostic| {
+            diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+        })
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
@@ -5995,7 +5997,9 @@ fn erc_reports_reused_screen_pin_conflicts_in_issue10926_fixture() {
     let diagnostics = erc::run(&project);
     let pin_conflicts = diagnostics
         .iter()
-        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+        .filter(|diagnostic| {
+            diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+        })
         .collect::<Vec<_>>();
 
     assert_eq!(pin_conflicts.len(), 3, "{pin_conflicts:#?}");
@@ -6052,7 +6056,9 @@ fn erc_reports_root_sheet_hier_label_and_driver_gaps_in_issue10926_child_fixture
     assert_eq!(
         diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+            .filter(|diagnostic| {
+                diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+            })
             .count(),
         1
     );
@@ -6165,7 +6171,9 @@ fn erc_reports_hidden_unconnected_pins_in_issue6588_fixture() {
     assert_eq!(
         diagnostics
             .iter()
-            .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+            .filter(|diagnostic| {
+                diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+            })
             .count(),
         2,
         "{diagnostics:#?}"
@@ -6280,7 +6288,7 @@ fn erc_ignores_false_bus_entry_warnings_in_issue12814_drive_fixture() {
     assert!(
         diagnostics
             .iter()
-            .all(|diagnostic| diagnostic.code != "erc-pin-to-pin-error"),
+            .all(|diagnostic| diagnostic.code != "erc-pin-to-pin"),
         "{diagnostics:#?}"
     );
 }
@@ -6350,12 +6358,16 @@ fn erc_uses_project_pin_map_overrides() {
     assert!(
         diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "erc-pin-to-pin-warning")
+            .any(|diagnostic| {
+                diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Warning
+            })
     );
     assert!(
         !diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+            .any(|diagnostic| {
+                diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+            })
     );
 
     let _ = fs::remove_file(schematic_path);
@@ -6419,7 +6431,9 @@ fn erc_reports_unspecified_pins_connected_to_power_inputs() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-warning")
+        .filter(|diagnostic| {
+            diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Warning
+        })
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
@@ -6461,7 +6475,9 @@ fn erc_skips_stacked_same_symbol_pin_conflicts() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project)
         .into_iter()
-        .filter(|diagnostic| diagnostic.code == "erc-pin-to-pin-error")
+        .filter(|diagnostic| {
+            diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+        })
         .collect::<Vec<_>>();
 
     assert!(diagnostics.is_empty(), "{diagnostics:#?}");
