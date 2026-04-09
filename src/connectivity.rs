@@ -1036,10 +1036,13 @@ fn clone_reduced_connection_into_subgraph(
 ) {
     subgraph.name = connection.name.clone();
     clone_reduced_connection_into_live_connection(&mut subgraph.resolved_connection, connection);
-
-    if let Some(driver_connection) = &mut subgraph.driver_connection {
-        clone_reduced_connection_into_live_connection(driver_connection, connection);
-    }
+    clone_reduced_connection_into_live_connection(
+        subgraph
+            .driver_connection
+            .as_mut()
+            .expect("reduced parity helpers require a materialized subgraph driver connection"),
+        connection,
+    );
 
     for link in &mut subgraph.label_links {
         clone_reduced_connection_into_live_connection(&mut link.connection, connection);
@@ -1190,10 +1193,9 @@ fn reduced_sheet_path_depth(sheet_instance_path: &str) -> usize {
 fn reduced_subgraph_driver_connection(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> ReducedProjectConnection {
-    subgraph
-        .driver_connection
-        .clone()
-        .expect("active reduced graph requires a materialized subgraph driver connection")
+    subgraph.driver_connection.clone().expect(
+        "active reduced graph and reduced parity helpers require a materialized subgraph driver connection",
+    )
 }
 
 #[cfg(test)]
@@ -1204,7 +1206,7 @@ fn reduced_strong_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> Opt
 #[cfg(test)]
 fn reduced_subgraph_driver_priority(subgraph: &ReducedProjectSubgraphEntry) -> i32 {
     reduced_strong_driver_priority(subgraph)
-        .or_else(|| subgraph.driver_connection.as_ref().map(|_| 1))
+        .or(Some(1))
         .unwrap_or(0)
 }
 
@@ -4955,12 +4957,17 @@ fn refresh_reduced_multiple_bus_parent_names(
                 continue;
             };
 
-            if let Some(driver_connection) = &mut parent.driver_connection {
-                if let Some(member) =
-                    match_reduced_bus_member_mut(&mut driver_connection.members, &link.member)
-                {
-                    clone_reduced_connection_into_bus_member(member, &connection);
-                }
+            if let Some(member) = match_reduced_bus_member_mut(
+                &mut parent
+                    .driver_connection
+                    .as_mut()
+                    .expect(
+                        "reduced parity helpers require a materialized parent subgraph driver connection",
+                    )
+                    .members,
+                &link.member,
+            ) {
+                clone_reduced_connection_into_bus_member(member, &connection);
             }
 
             for candidate in reduced_subgraphs.iter_mut() {
@@ -4987,10 +4994,7 @@ fn refresh_reduced_bus_members_from_neighbor_connections(
 
     for child_index in 0..reduced_subgraphs.len() {
         let child_sheet_instance_path = reduced_subgraphs[child_index].sheet_instance_path.clone();
-        let child_connection = reduced_subgraphs[child_index]
-            .driver_connection
-            .clone()
-            .unwrap_or_else(|| reduced_subgraphs[child_index].resolved_connection.clone());
+        let child_connection = reduced_subgraph_driver_connection(&reduced_subgraphs[child_index]);
 
         if child_connection.connection_type != ReducedProjectConnectionType::Net {
             refreshed_parent_links[child_index] =
@@ -5041,12 +5045,17 @@ fn refresh_reduced_bus_members_from_neighbor_connections(
                 link.member.clone().into()
             };
 
-            if let Some(driver_connection) = &mut parent.driver_connection {
-                if let Some(member) =
-                    match_reduced_bus_member_mut(&mut driver_connection.members, &link.member)
-                {
-                    clone_reduced_connection_into_bus_member(member, &child_connection);
-                }
+            if let Some(member) = match_reduced_bus_member_mut(
+                &mut parent
+                    .driver_connection
+                    .as_mut()
+                    .expect(
+                        "reduced parity helpers require a materialized parent subgraph driver connection",
+                    )
+                    .members,
+                &link.member,
+            ) {
+                clone_reduced_connection_into_bus_member(member, &child_connection);
             }
 
             refreshed_parent_links[child_index].push(ReducedProjectBusNeighborLink {
