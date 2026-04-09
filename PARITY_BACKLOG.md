@@ -995,6 +995,9 @@ Current status:
         - hierarchy-chain propagation
         - global secondary-driver promotion
         - dirty-root recursion / revisit scheduling
+      - post-pass live graph updates now also live on the shared live subgraph owner:
+        - bus parent/neighbor link rematch
+        - multiple-bus-parent rename and same-name recache
       - active strong-driver kind/priority/identity/connection reads now also live on the shared
         live driver owner itself instead of free helper accessors around that owner
       - active bus-member lookup on bus-neighbor propagation, parent refresh, link rematch, stale
