@@ -3341,11 +3341,16 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for the hierarchy-chain slice inside
     // `propagateToNeighbors()`. This still mutates reduced live carriers instead of full local
-    // `CONNECTION_SUBGRAPH` objects, but the shared subgraph owner now owns the traversal and
-    // chosen-driver rewrite for one hierarchy-connected component, and that rewrite now stays on
-    // the chosen live driver handle instead of snapshotting a reduced-shaped chosen connection
-    // through the active propagation path.
-    fn propagate_hierarchy_chain(start: &LiveReducedSubgraphHandle, force: bool) {
+    // `CONNECTION_SUBGRAPH` objects, but the shared subgraph owner now owns the traversal,
+    // chosen-driver rewrite, and immediate bus-neighbor propagation for one hierarchy-connected
+    // component. The rewrite now stays on the chosen live driver handle instead of snapshotting a
+    // reduced-shaped chosen connection through the active propagation path.
+    fn propagate_hierarchy_chain(
+        start: &LiveReducedSubgraphHandle,
+        live_subgraphs: &[LiveReducedSubgraphHandle],
+        force: bool,
+        stale_members: &mut Vec<LiveProjectBusMemberHandle>,
+    ) {
         let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
         let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
         if !force && start_has_hier_ports && start_has_hier_pins {
@@ -3411,14 +3416,22 @@ impl LiveReducedSubgraph {
         }
 
         let chosen_connection = best_handle.borrow().driver_connection.clone();
+        let chosen_is_bus = matches!(
+            chosen_connection.borrow().connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        );
 
-        for handle in visited {
+        for handle in &visited {
             let target_connection = handle.borrow().driver_connection.clone();
             let changed = clone_live_connection_handle_from_handle_if_changed(
                 &target_connection,
                 &chosen_connection,
             );
             handle.borrow_mut().dirty = changed;
+        }
+
+        if chosen_is_bus {
+            Self::refresh_bus_neighbor_drivers(live_subgraphs, &visited, stale_members);
         }
     }
 
@@ -3578,7 +3591,7 @@ impl LiveReducedSubgraph {
                 continue;
             }
 
-            Self::propagate_hierarchy_chain(handle, force);
+            Self::propagate_hierarchy_chain(handle, live_subgraphs, force, stale_members);
         }
         Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
         Self::refresh_bus_parent_members(live_subgraphs, &dirty_active);
