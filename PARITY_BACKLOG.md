@@ -1199,6 +1199,15 @@ Current status:
       - production ERC bus-entry conflict checks now also read connected-bus state through the
         graph-owned reduced `driver_connection` owner instead of the parallel reduced
         `resolved_connection` boundary carrier
+      - reduced final graph assembly and reduced graph-name/netcode cache rebuild now both mirror
+        outward `name` / `resolved_connection` state through one reduced subgraph-owner boundary
+        sync path instead of assigning those parallel boundary fields independently at each site
+      - live-to-reduced subgraph projection now also uses that same reduced subgraph-owner
+        boundary sync path after projecting the chosen live driver owner
+      - reduced subgraphs no longer duplicate chosen driver identity as parallel subgraph state;
+        the chosen reduced driver now lives as an owner index into the reduced driver list, and
+        chosen-driver identity is derived from that chosen driver owner on reduced ERC/live-build
+        paths
       - after those removals, the remaining helper/wrapper survivors are semantically real owner
         boundaries or boundary projection scaffolding, not another duplicate propagation engine
     - concrete next unblock path:
