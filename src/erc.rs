@@ -2404,10 +2404,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     code: "erc-unconnected-wire-endpoint",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: if wire_item.is_bus_entry {
-                        format!(
-                            "Unconnected wire to bus entry at {}, {}",
-                            endpoint_at[0], endpoint_at[1]
-                        )
+                        "Unconnected wire to bus entry".to_string()
                     } else {
                         "Unconnected wire endpoint".to_string()
                     },
@@ -2705,18 +2702,11 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         }
 
         if has_bus_item && has_net_item {
-            let report_at = net_at.unwrap_or([
-                f64::from_bits(subgraph.anchor.0),
-                f64::from_bits(subgraph.anchor.1),
-            ]);
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 code: "erc-bus-to-net-conflict",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Bus and net items are graphically connected at {}, {}",
-                    report_at[0], report_at[1]
-                ),
+                message: "Invalid connection between bus and net items".to_string(),
                 path: Some(sheet_path.schematic_path.clone()),
                 span: None,
                 line: None,

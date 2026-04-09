@@ -3585,11 +3585,11 @@ fn erc_reports_floating_bus_entries_and_dangling_bus_entry_endpoints() {
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-unconnected-wire-endpoint"
-            && diagnostic.message == "Unconnected wire to bus entry at 0, 0"
+            && diagnostic.message == "Unconnected wire to bus entry"
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-unconnected-wire-endpoint"
-            && diagnostic.message == "Unconnected wire to bus entry at 10, 10"
+            && diagnostic.message == "Unconnected wire to bus entry"
     }));
 
     let _ = fs::remove_file(path);
@@ -3611,11 +3611,15 @@ fn erc_allows_bus_entry_endpoint_connected_to_wire() {
     let project = SchematicProject::from_load_result(loaded);
     let diagnostics = erc::run(&project);
 
-    assert!(
-        !diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "erc-unconnected-wire-endpoint"
-                && diagnostic.message == "Unconnected wire to bus entry at 0, 0"
-        }),
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "erc-unconnected-wire-endpoint"
+                    && diagnostic.message == "Unconnected wire to bus entry"
+            })
+            .count(),
+        1,
         "{diagnostics:#?}"
     );
 
@@ -3640,7 +3644,7 @@ fn erc_reports_bus_to_net_conflicts_from_connected_lines() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-bus-to-net-conflict"
-            && diagnostic.message == "Bus and net items are graphically connected at -10, 0"
+            && diagnostic.message == "Invalid connection between bus and net items"
     }));
 
     let _ = fs::remove_file(path);
@@ -3665,7 +3669,7 @@ fn erc_reports_bus_to_net_conflicts_from_bus_label_and_wire() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-bus-to-net-conflict"
-            && diagnostic.message == "Bus and net items are graphically connected at 0, 0"
+            && diagnostic.message == "Invalid connection between bus and net items"
     }));
 
     let _ = fs::remove_file(path);
@@ -3713,7 +3717,7 @@ fn erc_reports_bus_to_bus_conflicts() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-bus-to-net-conflict"
-            && diagnostic.message == "Bus and net items are graphically connected at -5, 5"
+            && diagnostic.message == "Invalid connection between bus and net items"
     }));
 
     let _ = fs::remove_file(root_path);
@@ -3763,7 +3767,7 @@ fn erc_reports_bus_to_bus_conflicts_from_sheet_pin_shown_text() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-bus-to-net-conflict"
-            && diagnostic.message == "Bus and net items are graphically connected at -5, 5"
+            && diagnostic.message == "Invalid connection between bus and net items"
     }));
 
     let _ = fs::remove_file(root_path);
