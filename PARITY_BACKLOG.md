@@ -958,6 +958,9 @@ Current status:
         - live base-pin owners now also carry explicit pin-local text preservation state for
           attached strong-driver branches instead of re-deriving that choice from
           `local_name` string shapes on every clone
+        - label/sheet-pin/hier-port item-owner refresh now also preserves shown-text local names
+          on an item-owner clone path instead of relying on the shared live connection clone to
+          keep non-empty `local_name` values for every net connection in the graph
         - the shared live subgraph owner now drives both the active handle path and the
           compatibility live-subgraph path for that refresh flow
       - active reduced projection of chosen-driver state, strong-driver snapshots, label/sheet-pin/

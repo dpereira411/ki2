@@ -1607,8 +1607,11 @@ impl From<ReducedProjectConnection> for LiveProjectConnection {
 impl LiveProjectConnection {
     // Upstream parity: local live-owner bridge toward `SCH_CONNECTION::Clone()` on the shared live
     // graph. This still mutates a reduced local connection carrier instead of a full live
-    // `SCH_CONNECTION`, but the active graph now routes live-to-live connection cloning through the
-    // connection owner itself instead of open-coding field updates at each call site.
+    // `SCH_CONNECTION`, but the active graph now routes live-to-live connection cloning through
+    // the connection owner itself instead of open-coding field updates at each call site.
+    // Owner-specific shown-text preservation for net connections now lives on item owners instead
+    // of this shared connection clone, while bus clones still preserve existing local/member
+    // identity on the shared owner.
     fn clone_from_live_connection(&mut self, source: &LiveProjectConnection) {
         let existing_local_name = self.local_name.clone();
         let existing_members = self.members.clone();
@@ -1616,7 +1619,14 @@ impl LiveProjectConnection {
         self.net_code = source.net_code;
         self.connection_type = source.connection_type;
         self.name = source.name.clone();
-        if existing_local_name.is_empty() {
+        if matches!(
+            self.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) {
+            if existing_local_name.is_empty() {
+                self.local_name = source.local_name.clone();
+            }
+        } else {
             self.local_name = source.local_name.clone();
         }
         self.full_local_name = source.full_local_name.clone();
@@ -1994,6 +2004,21 @@ fn clone_live_connection_owner_into_live_connection_owner(
     target.clone_from_live_connection(source);
 }
 
+// Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` behavior
+// the exercised label/sheet-pin/hier-port branches need during `UpdateItemConnections()`. This
+// still operates on the reduced local connection carrier, but shown-text preservation now belongs
+// to the item-owner clone path instead of the shared connection clone itself.
+fn clone_live_connection_owner_into_live_item_connection_owner(
+    target: &mut LiveProjectConnection,
+    source: &LiveProjectConnection,
+) {
+    let existing_local_name = target.local_name.clone();
+    clone_live_connection_owner_into_live_connection_owner(target, source);
+    if !existing_local_name.is_empty() {
+        target.local_name = existing_local_name;
+    }
+}
+
 #[cfg(test)]
 fn clone_reduced_connection_into_live_connection_owner(
     target: &mut LiveProjectConnection,
@@ -2182,7 +2207,7 @@ impl LiveReducedLabelLink {
             return;
         }
 
-        clone_live_connection_owner_into_live_connection_owner(
+        clone_live_connection_owner_into_live_item_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
@@ -2239,7 +2264,7 @@ impl LiveReducedHierSheetPinLink {
             return;
         }
 
-        clone_live_connection_owner_into_live_connection_owner(
+        clone_live_connection_owner_into_live_item_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
@@ -2294,7 +2319,7 @@ impl LiveReducedHierPortLink {
             return;
         }
 
-        clone_live_connection_owner_into_live_connection_owner(
+        clone_live_connection_owner_into_live_item_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
