@@ -3638,20 +3638,11 @@ impl LiveReducedSubgraph {
     // from live subgraphs during graph build. The active handle path now keeps that root loop on
     // the shared subgraph owner instead of a free outer coordinator around the graph.
     fn run_dirty_roots(live_subgraphs: &[LiveReducedSubgraphHandle], force: bool) {
-        let max_roots = live_subgraphs
-            .len()
-            .saturating_mul(live_subgraphs.len().max(1));
         let global_subgraphs = Self::collect_global_subgraph_handles(live_subgraphs);
-        let mut roots = 0;
 
         for start in live_subgraphs {
             if !start.borrow().dirty {
                 continue;
-            }
-
-            roots += 1;
-            if roots > max_roots {
-                break;
             }
 
             let mut stale_members = Vec::new();
