@@ -2657,9 +2657,10 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             f64::from_bits(bus_entry.start.0),
             f64::from_bits(bus_entry.start.1),
         ];
-        let bus_connection = bus_entry
-            .connected_bus_subgraph_index
-            .and_then(|index| reduced_project_subgraph_by_index(&graph, index))
+        let bus_connection =
+            crate::connectivity::reduced_project_connected_bus_subgraph_for_wire_item(
+                &graph, &subgraph, bus_entry,
+            )
             .map(|bus_subgraph| &bus_subgraph.driver_connection)
             .unwrap_or(&subgraph.driver_connection);
         if !matches!(
