@@ -2542,7 +2542,7 @@ struct LiveReducedSubgraphWireItem {
     start: PointKey,
     end: PointKey,
     is_bus_entry: bool,
-    connection: Option<LiveProjectConnectionHandle>,
+    connection: LiveProjectConnectionHandle,
     connected_bus_item_handle: Option<Weak<RefCell<LiveReducedSubgraphWireItem>>>,
     parent_subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
@@ -3064,10 +3064,12 @@ impl LiveReducedSubgraph {
         for item in &self.bus_items {
             let mut item_ref = item.borrow_mut();
             item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
-            item_ref.connection = Some(self.driver_connection.clone());
+            item_ref.connection = self.driver_connection.clone();
         }
         for item in &self.wire_items {
-            item.borrow_mut().parent_subgraph_handle = Some(Rc::downgrade(handle));
+            let mut item_ref = item.borrow_mut();
+            item_ref.parent_subgraph_handle = Some(Rc::downgrade(handle));
+            item_ref.connection = self.driver_connection.clone();
         }
     }
 
@@ -4374,12 +4376,13 @@ fn build_live_reduced_subgraph_handles(
         .iter()
         .enumerate()
         .map(|(_index, subgraph)| {
+            let live_driver_connection = Rc::new(RefCell::new(
+                reduced_subgraph_driver_connection(subgraph).into(),
+            ));
             Rc::new(RefCell::new(LiveReducedSubgraph {
                 #[cfg(test)]
                 source_index: _index,
-                driver_connection: Rc::new(RefCell::new(
-                    reduced_subgraph_driver_connection(subgraph).into(),
-                )),
+                driver_connection: live_driver_connection.clone(),
                 drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
                 chosen_driver: None,
                 sheet_instance_path: subgraph.sheet_instance_path.clone(),
@@ -4491,7 +4494,7 @@ fn build_live_reduced_subgraph_handles(
                             start: item.start,
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
-                            connection: None,
+                            connection: live_driver_connection.clone(),
                             connected_bus_item_handle: None,
                             parent_subgraph_handle: None,
                         }))
@@ -4506,7 +4509,7 @@ fn build_live_reduced_subgraph_handles(
                             start: item.start,
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
-                            connection: None,
+                            connection: live_driver_connection.clone(),
                             connected_bus_item_handle: None,
                             parent_subgraph_handle: None,
                         }))
@@ -10594,11 +10597,7 @@ mod tests {
             .as_ref()
             .and_then(Weak::upgrade)
             .expect("connected bus item owner");
-        let connected_bus_connection = connected_bus_item
-            .borrow()
-            .connection
-            .clone()
-            .expect("connected bus item connection");
+        let connected_bus_connection = connected_bus_item.borrow().connection.clone();
         assert_eq!(
             connected_bus_connection.borrow().members[0]
                 .borrow()
@@ -13251,6 +13250,11 @@ mod tests {
 
         assert_eq!(shared.borrow().driver_connection.borrow().name, "/RENAMED");
         assert!(!shared.borrow().dirty);
+        let wire_item_connection = shared.borrow().wire_items[0].borrow().connection.clone();
+        assert!(Rc::ptr_eq(
+            &wire_item_connection,
+            &shared.borrow().driver_connection
+        ));
         let attached_bus_item = shared.borrow().wire_items[0]
             .borrow()
             .connected_bus_item_handle
@@ -13261,11 +13265,7 @@ mod tests {
             &attached_bus_item,
             &shared.borrow().bus_items[0]
         ));
-        let attached_bus_connection = attached_bus_item
-            .borrow()
-            .connection
-            .clone()
-            .expect("attached live bus connection");
+        let attached_bus_connection = attached_bus_item.borrow().connection.clone();
         assert!(super::live_connection_clone_eq(
             &attached_bus_connection.borrow(),
             &shared.borrow().driver_connection.borrow()
