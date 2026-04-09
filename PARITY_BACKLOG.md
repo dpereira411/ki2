@@ -1176,6 +1176,31 @@ Current status:
         removing a reduced carryover
       - after those topology cuts, the remaining same-sized active handle/item-graph slices are
         exhausted; what remains is the broader live per-pin / live-connection object expansion
+      - the remaining reduced-only propagation compatibility helpers were removed from the real
+        graph path and from duplicated coverage:
+        - reduced propagation compatibility helpers were dropped
+        - reduced bus/hierarchy snapshot wrappers were dropped
+        - the reduced post-live bus-entry attachment pass was dropped
+      - the test-only active-handle helper layer was then narrowed further:
+        - the `LiveReducedConnection` test wrapper shell was removed, so direct live connection
+          owner tests now use `LiveProjectConnection` handles directly
+        - remaining test-only propagation handle forwarders were removed, so bus-neighbor
+          promotion, bus-parent refresh, stale-member replay, bus-link rematch, and propagation
+          component collection tests now call `LiveReducedSubgraph` owner methods directly
+      - exercised text-item driver owners now also seed their dedicated live driver-connection
+        handles from the reduced item-owned connection instead of starting from empty `NONE`
+        sentinels before attachment
+      - pending reduced subgraph assembly no longer carries a parallel pending `name` field; the
+        pending reduced subgraph name now flows only through the materialized pending
+        `driver_connection` owner
+      - remaining production ERC same-name and fallback net-name reads now also flow through the
+        graph-owned reduced `driver_connection` owner instead of reduced `subgraph.name` or
+        `resolved_connection.name`
+      - production ERC bus-entry conflict checks now also read connected-bus state through the
+        graph-owned reduced `driver_connection` owner instead of the parallel reduced
+        `resolved_connection` boundary carrier
+      - after those removals, the remaining helper/wrapper survivors are semantically real owner
+        boundaries or boundary projection scaffolding, not another duplicate propagation engine
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

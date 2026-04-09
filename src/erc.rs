@@ -2616,12 +2616,11 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts()`.
 // This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still lacks live
-// `SCH_CONNECTION` plus connected-bus-item ownership, but it now reads the shared reduced
-// resolved/driver connection owners on each subgraph instead of mixing bus/member/full-name state
-// from unrelated string caches. It still compares flattened reduced `FullLocalName()` values and
-// still diverges on fuller resolved bus-object ownership plus cached live driver connections.
-// The exercised fallback net name on the real graph path now also comes from the graph-owned
-// reduced driver connection instead of the parallel reduced subgraph `name` field.
+// `SCH_CONNECTION` plus connected-bus-item ownership, but the exercised real graph path now reads
+// bus, member, and fallback net-name state through the graph-owned reduced `driver_connection`
+// owners instead of mixing those checks across parallel reduced boundary carriers. It still
+// compares flattened reduced `FullLocalName()` values and still diverges on fuller resolved
+// bus-object ownership plus cached live driver connections.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2647,8 +2646,8 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let bus_connection = bus_entry
             .connected_bus_subgraph_index
             .and_then(|index| reduced_project_subgraph_by_index(&graph, index))
-            .map(|bus_subgraph| &bus_subgraph.resolved_connection)
-            .unwrap_or(&subgraph.resolved_connection);
+            .map(|bus_subgraph| &bus_subgraph.driver_connection)
+            .unwrap_or(&subgraph.driver_connection);
         if !matches!(
             bus_connection.connection_type,
             crate::connectivity::ReducedProjectConnectionType::Bus
