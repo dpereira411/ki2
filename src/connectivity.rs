@@ -3562,7 +3562,6 @@ impl LiveReducedSubgraph {
         Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
         Self::refresh_bus_parent_members(live_subgraphs, &dirty_active);
         Self::replay_stale_bus_members(live_subgraphs, &active, stale_members);
-        Self::refresh_bus_link_members(live_subgraphs, &active);
 
         let recurse_targets = live_subgraphs
             .iter()
