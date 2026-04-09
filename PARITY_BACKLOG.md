@@ -760,10 +760,10 @@ Current status:
         label, sheet-pin, and power-pin drivers, so the next live driver-owner step can map those
         copied strong-driver entries onto fuller live item owners instead of rebuilding identity
         from names alone
-      - the active live graph now also attaches the exercised label and sheet-pin strong drivers
-        back onto shared live item owners; the remaining live driver-owner gap is the symbol-pin /
-        power-pin side and the fuller shared driver-item object graph, not label/sheet-pin owner
-        lookup on the active path
+      - the active live graph now also attaches the exercised label, sheet-pin, and symbol-pin
+        strong drivers back onto shared live item owners; the remaining live driver-owner gap is
+        the power-pin side and the fuller shared driver-item object graph, not label/sheet-pin/
+        symbol-pin owner lookup on the active path
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
         the owning live subgraph dirty at the mutation site; the recursive walk still keeps one
         whole-subgraph compatibility compare for any remaining in-pass mutations that have not yet
