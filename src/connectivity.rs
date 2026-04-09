@@ -2558,8 +2558,6 @@ struct LiveReducedSubgraphWireItem {
     end: PointKey,
     is_bus_entry: bool,
     connection: Option<LiveReducedConnection>,
-    #[cfg(test)]
-    connected_bus_connection: Option<LiveReducedConnection>,
     connected_bus_item_handle: Option<Weak<RefCell<LiveReducedSubgraphWireItem>>>,
     parent_subgraph_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
 }
@@ -2577,10 +2575,10 @@ impl Eq for LiveReducedSubgraphWireItem {}
 
 #[cfg(test)]
 fn live_reduced_subgraph_wire_item_extra_eq(
-    left: &LiveReducedSubgraphWireItem,
-    right: &LiveReducedSubgraphWireItem,
+    _left: &LiveReducedSubgraphWireItem,
+    _right: &LiveReducedSubgraphWireItem,
 ) -> bool {
-    left.connected_bus_connection == right.connected_bus_connection
+    true
 }
 
 #[cfg(not(test))]
@@ -3156,8 +3154,6 @@ fn build_live_reduced_subgraph_handles(
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
                             connection: None,
-                            #[cfg(test)]
-                            connected_bus_connection: None,
                             connected_bus_item_handle: None,
                             parent_subgraph_handle: None,
                         }))
@@ -3173,8 +3169,6 @@ fn build_live_reduced_subgraph_handles(
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
                             connection: None,
-                            #[cfg(test)]
-                            connected_bus_connection: None,
                             connected_bus_item_handle: None,
                             parent_subgraph_handle: None,
                         }))
