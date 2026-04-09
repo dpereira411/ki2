@@ -842,6 +842,10 @@ Current status:
       - the reduced project graph now projects graph-owned per-pin driver connections out of the
         live base-pin owners, so symbol-pin driver-name queries no longer have to collapse back to
         the whole-subgraph driver connection
+      - reduced strong-driver collection and reduced driver-name candidate ranking now also keep
+        connected symbol pins as separate projected candidates instead of collapsing each symbol to
+        the first matching pin before ranking, which is closer to KiCad's per-`SCH_PIN`
+        `ResolveDrivers()` ordering
       - reduced/live subgraphs now also preserve richer base-pin payload:
         `ReducedProjectBasePin { key, number, electrical_type }`
         so the graph no longer has to collapse pin-owned state to bare `ReducedNetBasePinKey`
