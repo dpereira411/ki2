@@ -1904,7 +1904,6 @@ struct LiveReducedLabelLink {
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
     shown_text_local_name: String,
-    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedLabelLinkHandle = Rc<RefCell<LiveReducedLabelLink>>;
 
@@ -1917,7 +1916,6 @@ struct LiveReducedHierSheetPinLink {
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
     shown_text_local_name: String,
-    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedHierSheetPinLinkHandle = Rc<RefCell<LiveReducedHierSheetPinLink>>;
 
@@ -1929,7 +1927,6 @@ struct LiveReducedHierPortLink {
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
     shown_text_local_name: String,
-    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 
@@ -1957,7 +1954,6 @@ struct LiveReducedBasePin {
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
     preserved_local_name: Option<String>,
-    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 
 type LiveReducedBasePinHandle = Rc<RefCell<LiveReducedBasePin>>;
@@ -2429,7 +2425,6 @@ struct LiveReducedSubgraphWireItem {
     is_bus_entry: bool,
     connection: LiveProjectConnectionHandle,
     connected_bus_connection_handle: Option<LiveProjectConnectionHandle>,
-    parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 
 impl LiveReducedSubgraphWireItem {
@@ -2648,7 +2643,6 @@ impl LiveReducedSubgraph {
     // path.
     fn attach_from_reduced(
         &mut self,
-        handle: &LiveReducedSubgraphHandle,
         reduced_subgraph: &ReducedProjectSubgraphEntry,
         live_subgraphs: &[LiveReducedSubgraphHandle],
     ) {
@@ -2685,7 +2679,7 @@ impl LiveReducedSubgraph {
         }
 
         self.refresh_base_pin_connections_from_driver(false);
-        self.attach_item_parent_handles(handle);
+        self.attach_item_connections_from_driver();
     }
 
     // Upstream parity: local live-subgraph analogue for attaching bus-entry connected-bus
@@ -2944,31 +2938,18 @@ impl LiveReducedSubgraph {
             .collect();
     }
 
-    // Upstream parity: local live-subgraph analogue for attaching exercised wire/bus item owners
-    // back onto their parent subgraph during graph build. The item payload is still reduced, but
-    // the shared subgraph owner now owns the parent-handle and bus-item connection attachment
-    // instead of leaving that setup in a separate builder loop.
-    fn attach_item_parent_handles(&mut self, handle: &LiveReducedSubgraphHandle) {
-        for base_pin in &self.base_pins {
-            base_pin.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
-        }
-        for link in &self.label_links {
-            link.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
-        }
-        for pin in &self.hier_sheet_pins {
-            pin.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
-        }
-        for port in &self.hier_ports {
-            port.borrow_mut().parent_subgraph_handle = Rc::downgrade(handle);
-        }
+    // Upstream parity: local live-subgraph analogue for binding exercised wire/bus item
+    // connections onto the chosen live subgraph connection during graph build. The item payload is
+    // still reduced, but the shared subgraph owner now owns that exercised item-connection
+    // attachment instead of leaving it in a separate builder loop. Remaining divergence is the
+    // still-missing fuller live item pointer graph beyond these direct connection handles.
+    fn attach_item_connections_from_driver(&mut self) {
         for item in &self.bus_items {
             let mut item_ref = item.borrow_mut();
-            item_ref.parent_subgraph_handle = Rc::downgrade(handle);
             item_ref.connection = self.driver_connection.clone();
         }
         for item in &self.wire_items {
             let mut item_ref = item.borrow_mut();
-            item_ref.parent_subgraph_handle = Rc::downgrade(handle);
             item_ref.connection = self.driver_connection.clone();
         }
     }
@@ -4343,7 +4324,6 @@ fn build_live_reduced_subgraph_handles(
                             preserved_local_name: pin
                                 .preserve_local_name_on_refresh
                                 .then(|| pin.driver_connection.local_name.clone()),
-                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4368,7 +4348,6 @@ fn build_live_reduced_subgraph_handles(
                             )),
                             driver: None,
                             shown_text_local_name: link.connection.local_name.clone(),
-                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4385,7 +4364,6 @@ fn build_live_reduced_subgraph_handles(
                             driver_connection: Rc::new(RefCell::new(pin.connection.clone().into())),
                             driver: None,
                             shown_text_local_name: pin.connection.local_name.clone(),
-                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4403,7 +4381,6 @@ fn build_live_reduced_subgraph_handles(
                             )),
                             driver: None,
                             shown_text_local_name: port.connection.local_name.clone(),
-                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4418,7 +4395,6 @@ fn build_live_reduced_subgraph_handles(
                             is_bus_entry: item.is_bus_entry,
                             connection: live_driver_connection.clone(),
                             connected_bus_connection_handle: None,
-                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4433,7 +4409,6 @@ fn build_live_reduced_subgraph_handles(
                             is_bus_entry: item.is_bus_entry,
                             connection: live_driver_connection.clone(),
                             connected_bus_connection_handle: None,
-                            parent_subgraph_handle: Weak::new(),
                         }))
                     })
                     .collect(),
@@ -4444,7 +4419,7 @@ fn build_live_reduced_subgraph_handles(
     for (index, handle) in handles.iter().enumerate() {
         handle
             .borrow_mut()
-            .attach_from_reduced(handle, &reduced_subgraphs[index], &handles);
+            .attach_from_reduced(&reduced_subgraphs[index], &handles);
     }
     LiveReducedSubgraph::attach_connected_bus_items(&handles);
     handles
@@ -12672,12 +12647,6 @@ mod tests {
             super::LiveProjectStrongDriverOwner::Label { owner, .. } => {
                 let owner = owner.upgrade().expect("label owner");
                 assert!(Rc::ptr_eq(&owner, &subgraph.label_links[0]));
-                let parent_subgraph = owner
-                    .borrow()
-                    .parent_subgraph_handle
-                    .upgrade()
-                    .expect("label parent subgraph");
-                assert!(Rc::ptr_eq(&parent_subgraph, &handles[0]));
                 let owner_ref = owner.borrow();
                 let driver_connection = owner_ref.driver_connection.clone();
                 let item_connection = owner_ref.connection.clone();
@@ -12811,12 +12780,6 @@ mod tests {
         match owner {
             super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
                 let owner = owner.upgrade().expect("symbol pin owner");
-                let parent_subgraph = owner
-                    .borrow()
-                    .parent_subgraph_handle
-                    .upgrade()
-                    .expect("symbol pin parent subgraph");
-                assert!(Rc::ptr_eq(&parent_subgraph, &handles[0]));
                 assert_eq!(owner.borrow().pin.key.symbol_uuid.as_deref(), Some("sym"));
                 assert_eq!(owner.borrow().pin.key.at, PointKey(10, 20));
                 assert_eq!(owner.borrow().pin.key.number.as_deref(), Some("1"));
