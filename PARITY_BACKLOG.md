@@ -955,6 +955,9 @@ Current status:
           kind-mismatch adoption
         - live base-pin owners decide their own setup-time preservation vs chosen-connection
           adoption
+        - live base-pin owners now also carry explicit pin-local text preservation state for
+          attached strong-driver branches instead of re-deriving that choice from
+          `local_name` string shapes on every clone
         - the shared live subgraph owner now drives both the active handle path and the
           compatibility live-subgraph path for that refresh flow
       - active reduced projection of chosen-driver state, strong-driver snapshots, label/sheet-pin/
