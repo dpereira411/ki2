@@ -5848,14 +5848,15 @@ where
 // identity now rides on that same owner so `RunERC()`-style reused-screen de-duplication can
 // happen above the shared graph boundary, and final reduced subgraph names now also derive from
 // the required reduced `driver_connection` owner instead of treating `name` as an independent
-// production owner. The outward reduced node carrier is still narrower than a real
+// production owner. Pending reduced subgraph assembly now also reads the pending name only
+// through that pending driver owner instead of carrying a second pending `name` field. The
+// outward reduced node carrier is still narrower than a real
 // `CONNECTION_SUBGRAPH` item owner.
 pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     inputs: ReducedProjectGraphInputs<'_>,
     for_board: bool,
 ) -> ReducedProjectNetGraph {
     struct PendingProjectSubgraph {
-        name: String,
         driver_connection: ReducedProjectConnection,
         chosen_driver_identity: Option<ReducedProjectDriverIdentity>,
         drivers: Vec<ReducedProjectStrongDriver>,
@@ -6114,7 +6115,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     });
 
                 pending_subgraphs.push(PendingProjectSubgraph {
-                    name: entry.name.clone(),
                     driver_connection,
                     chosen_driver_identity,
                     drivers: strong_drivers.clone(),
@@ -6264,7 +6264,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             );
 
             pending_subgraphs.push(PendingProjectSubgraph {
-                name: String::new(),
                 driver_connection,
                 chosen_driver_identity: None,
                 drivers: Vec::new(),
@@ -6326,24 +6325,25 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut net_identities_by_name = BTreeMap::<String, ReducedProjectNetIdentity>::new();
 
     for (subgraph_index, pending) in pending_subgraphs.into_iter().enumerate() {
-        if !pending.name.is_empty() && !net_identities_by_name.contains_key(&pending.name) {
+        let pending_name = pending.driver_connection.name.clone();
+        if !pending_name.is_empty() && !net_identities_by_name.contains_key(&pending_name) {
             let (class, has_no_connect, _nodes, _base_pins) =
-                nets.get(&pending.name).cloned().unwrap_or_default();
+                nets.get(&pending_name).cloned().unwrap_or_default();
             let code = net_identities_by_name.len() + 1;
             net_identities_by_name.insert(
-                pending.name.clone(),
+                pending_name.clone(),
                 ReducedProjectNetIdentity {
                     code,
-                    name: pending.name.clone(),
+                    name: pending_name.clone(),
                     class,
                     has_no_connect,
                 },
             );
         }
-        let net_identity = net_identities_by_name.get(&pending.name);
+        let net_identity = net_identities_by_name.get(&pending_name);
         let resolved_name = net_identity
             .map(|net| net.name.clone())
-            .unwrap_or_else(|| pending.name.clone());
+            .unwrap_or_else(|| pending_name.clone());
         let mut driver_connection = pending.driver_connection.clone();
         driver_connection.name = resolved_name.clone();
         let mut resolved_connection = driver_connection.clone();
