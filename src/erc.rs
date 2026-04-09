@@ -2715,9 +2715,9 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
             }
         }
 
-        let suppress_conflict = subgraph
-            .non_bus_driver_priority
-            .is_some_and(|priority| priority >= 6);
+        let suppress_conflict =
+            crate::connectivity::reduced_project_subgraph_non_bus_driver_priority(&subgraph)
+                .is_some_and(|priority| priority >= 6);
 
         if test_names
             .iter()

@@ -775,6 +775,9 @@ Current status:
       - reduced/ERC reused-screen driver-instance de-dup now derives chosen driver identity from
         the chosen driver connection plus the owned strong-driver list instead of a separate pending
         subgraph identity cache
+      - reduced bus-conflict suppression now also derives its non-bus driver priority from the
+        owned strong-driver list instead of a separate reduced subgraph summary field on the active
+        ERC path
       - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
         exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark

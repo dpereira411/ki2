@@ -337,6 +337,22 @@ pub(crate) fn reduced_project_subgraph_driver_identity(
         .or(subgraph.driver_identity.as_ref())
 }
 
+pub(crate) fn reduced_project_subgraph_non_bus_driver_priority(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<i32> {
+    subgraph
+        .drivers
+        .iter()
+        .find(|driver| {
+            !matches!(
+                driver.connection.connection_type,
+                ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+            )
+        })
+        .map(|driver| driver.priority)
+        .or(subgraph.non_bus_driver_priority)
+}
+
 fn reduced_strong_drivers_into_live_handles(
     drivers: Vec<ReducedProjectStrongDriver>,
 ) -> Vec<LiveProjectStrongDriverHandle> {
