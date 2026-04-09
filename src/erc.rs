@@ -2,7 +2,8 @@ use crate::connectivity::{
     ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_connection_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_graph, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name, reduced_bus_member_full_local_names,
+    collect_reduced_project_subgraphs_by_name,
+    collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
     reduced_project_symbol_pin_inventory, resolve_reduced_project_subgraph_at,
     resolve_reduced_project_subgraph_for_no_connect,
@@ -3128,20 +3129,9 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
     let graph = project.reduced_project_net_graph(false);
 
     for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for item in &schematic.screen.items {
-            let SchItem::Symbol(symbol) = item else {
-                continue;
-            };
-
-            let Some(pin_inventory) =
-                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
-            else {
-                continue;
-            };
-
+        for pin_inventory in
+            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
+        {
             if pin_inventory.duplicate_pin_numbers_are_jumpers {
                 continue;
             }
@@ -3206,7 +3196,11 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
                         "Pin {} on symbol '{}' is connected to different nets: {} and {}",
                         pin_number, reference, first_display, conflict_display
                     ),
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: pin_inventory
+                        .pins
+                        .first()
+                        .map(|pin| pin.schematic_path.clone())
+                        .or_else(|| Some(sheet_path.schematic_path.clone())),
                     span: None,
                     line: None,
                     column: None,
@@ -3580,20 +3574,9 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
     );
 
     for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for item in &schematic.screen.items {
-            let SchItem::Symbol(symbol) = item else {
-                continue;
-            };
-
-            let Some(pin_inventory) =
-                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
-            else {
-                continue;
-            };
-
+        for pin_inventory in
+            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
+        {
             for pin in &pin_inventory.pins {
                 let Some(number) = pin.number.as_deref() else {
                     continue;
@@ -3611,7 +3594,7 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
                         "Pin number resembles stacked pin notation but is invalid: '{}'",
                         number
                     ),
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: Some(pin.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
@@ -3636,19 +3619,9 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
     let graph = project.reduced_project_net_graph(false);
 
     for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for item in &schematic.screen.items {
-            let SchItem::Symbol(symbol) = item else {
-                continue;
-            };
-
-            let Some(pin_inventory) =
-                reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
-            else {
-                continue;
-            };
+        for pin_inventory in
+            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
+        {
             let mut has_ground_net = false;
             let mut mismatched_pins = Vec::new();
 
@@ -3691,7 +3664,11 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     code: "erc-ground-pin-not-ground",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: format!("Pin {} not connected to ground net", pin_name),
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: pin_inventory
+                        .pins
+                        .first()
+                        .map(|pin| pin.schematic_path.clone())
+                        .or_else(|| Some(sheet_path.schematic_path.clone())),
                     span: None,
                     line: None,
                     column: None,
@@ -3778,35 +3755,41 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                     }
                 }
                 SchItem::Symbol(symbol) => {
-                    if let Some(point) =
-                        reduced_project_symbol_pin_inventory(&graph, sheet_path, symbol)
-                            .into_iter()
-                            .flat_map(|inventory| inventory.pins.iter())
-                            .find(|pin| {
-                                pin.electrical_type.as_deref() != Some("no_connect")
-                                    && !point_is_on_grid(
-                                        [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
-                                        grid_size_mm,
-                                    )
-                            })
-                            .map(|pin| [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)])
-                    {
-                        diagnostics.push(Diagnostic {
-                            severity: Severity::Warning,
-                            code: "erc-endpoint-off-grid",
-                            kind: crate::diagnostic::DiagnosticKind::Validation,
-                            message: format!(
-                                "Endpoint off connection grid at {}, {}",
-                                point[0], point[1]
-                            ),
-                            path: Some(schematic.path.clone()),
-                            span: None,
-                            line: None,
-                            column: None,
-                        });
-                    }
+                    let _ = symbol;
                 }
                 _ => {}
+            }
+        }
+
+        for pin_inventory in
+            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
+        {
+            if let Some(point) = pin_inventory
+                .pins
+                .iter()
+                .find(|pin| {
+                    pin.electrical_type.as_deref() != Some("no_connect")
+                        && !point_is_on_grid(
+                            [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
+                            grid_size_mm,
+                        )
+                })
+                .map(|pin| [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)])
+            {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "erc-endpoint-off-grid",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!("Endpoint off connection grid at {}, {}", point[0], point[1]),
+                    path: pin_inventory
+                        .pins
+                        .first()
+                        .map(|pin| pin.schematic_path.clone())
+                        .or_else(|| Some(sheet_path.schematic_path.clone())),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
             }
         }
     }
