@@ -6396,6 +6396,12 @@ fn segment_components(segments: &[[[f64; 2]; 2]], junctions: &[[f64; 2]]) -> Vec
     components
 }
 
+fn union_point_indexes(point_indexes: &[usize], dsu: &mut DisjointSet) {
+    for pair in point_indexes.windows(2) {
+        dsu.union(pair[0], pair[1]);
+    }
+}
+
 struct DisjointSet {
     parent: Vec<usize>,
 }
@@ -6430,6 +6436,9 @@ impl DisjointSet {
 // `CONNECTION_GRAPH` subgraphs. This is not a 1:1 graph owner because the Rust tree still lacks
 // KiCad's full subgraph/netcode/driver objects. It exists so loader, ERC, and export can share
 // one grouped connection carrier instead of each rebuilding its own net-like component queries.
+// Connected symbol pins now also mirror KiCad's `updateSymbolConnectivity()` jumper linking:
+// duplicate pin numbers marked as jumpers and explicit `jumper_pin_groups` are unioned before
+// component extraction instead of being left to later ERC-only special cases.
 pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<ConnectionComponent> {
     let point_snapshot = collect_connection_points(schematic);
     let points = point_snapshot.into_values().collect::<Vec<_>>();
@@ -6488,8 +6497,63 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
     }
 
     for point_indexes in component_points.values() {
-        for pair in point_indexes.windows(2) {
-            dsu.union(pair[0], pair[1]);
+        union_point_indexes(point_indexes, &mut dsu);
+    }
+
+    for item in &schematic.screen.items {
+        let SchItem::Symbol(symbol) = item else {
+            continue;
+        };
+        let Some(lib_symbol) = symbol.lib_symbol.as_ref() else {
+            continue;
+        };
+        let projected_pins = projected_symbol_pin_info(symbol);
+        let mut point_indexes_by_number = BTreeMap::<String, Vec<usize>>::new();
+
+        for pin in &projected_pins {
+            let Some(pin_number) = pin.number.as_ref() else {
+                continue;
+            };
+            let point_indexes = points
+                .iter()
+                .enumerate()
+                .filter_map(|(point_index, point)| {
+                    point
+                        .members
+                        .iter()
+                        .any(|member| {
+                            member.kind == ConnectionMemberKind::SymbolPin
+                                && member.symbol_uuid == symbol.uuid
+                                && points_equal(member.at, pin.at)
+                        })
+                        .then_some(point_index)
+                })
+                .collect::<Vec<_>>();
+
+            if point_indexes.is_empty() {
+                continue;
+            }
+
+            point_indexes_by_number
+                .entry(pin_number.clone())
+                .or_default()
+                .extend(point_indexes);
+        }
+
+        if lib_symbol.duplicate_pin_numbers_are_jumpers {
+            for point_indexes in point_indexes_by_number.values() {
+                union_point_indexes(point_indexes, &mut dsu);
+            }
+        }
+
+        for group in &lib_symbol.jumper_pin_groups {
+            let point_indexes = group
+                .iter()
+                .filter_map(|pin_number| point_indexes_by_number.get(pin_number))
+                .flatten()
+                .copied()
+                .collect::<Vec<_>>();
+            union_point_indexes(&point_indexes, &mut dsu);
         }
     }
 
@@ -11473,6 +11537,150 @@ mod tests {
 
         let _ = fs::remove_file(&root_path);
         let _ = fs::remove_file(&child_path);
+    }
+
+    #[test]
+    fn collect_connection_components_links_duplicate_jumper_pin_numbers() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_duplicate_jumper_pin_numbers_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:JumperDup"
+      (duplicate_pin_numbers_are_jumpers yes)
+      (property "Reference" "JP" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "JumperDup" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "JumperDup_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:JumperDup")
+    (uuid "73050000-0000-0000-0000-000000000601")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "JumperDup" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "NET_B" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let components = super::collect_connection_components(&schematic);
+
+        assert_eq!(components.len(), 1);
+        assert_eq!(
+            components[0]
+                .members
+                .iter()
+                .filter(|member| member.kind == super::ConnectionMemberKind::SymbolPin)
+                .count(),
+            2
+        );
+        assert!(
+            components[0]
+                .members
+                .iter()
+                .any(|member| member.kind == super::ConnectionMemberKind::Label
+                    && crate::loader::points_equal(member.at, [-10.0, 0.0]))
+        );
+        assert!(
+            components[0]
+                .members
+                .iter()
+                .any(|member| member.kind == super::ConnectionMemberKind::Label
+                    && crate::loader::points_equal(member.at, [20.0, 0.0]))
+        );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn collect_connection_components_links_jumper_pin_groups() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_jumper_pin_groups_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:JumperGroup"
+      (jumper_pin_groups ("1" "2"))
+      (property "Reference" "JP" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "JumperGroup" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "JumperGroup_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin passive line (at 10 0 0) (length 2.54)
+          (name "B" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "Device:JumperGroup")
+    (uuid "73050000-0000-0000-0000-000000000602")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "JP1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "JumperGroup" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "NET_A" (shape input) (at -10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 10 0) (xy 20 0)))
+  (global_label "NET_B" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let components = super::collect_connection_components(&schematic);
+
+        assert_eq!(components.len(), 1);
+        assert_eq!(
+            components[0]
+                .members
+                .iter()
+                .filter(|member| member.kind == super::ConnectionMemberKind::SymbolPin)
+                .count(),
+            2
+        );
+        assert!(
+            components[0]
+                .members
+                .iter()
+                .any(|member| member.kind == super::ConnectionMemberKind::Label
+                    && crate::loader::points_equal(member.at, [-10.0, 0.0]))
+        );
+        assert!(
+            components[0]
+                .members
+                .iter()
+                .any(|member| member.kind == super::ConnectionMemberKind::Label
+                    && crate::loader::points_equal(member.at, [20.0, 0.0]))
+        );
+
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

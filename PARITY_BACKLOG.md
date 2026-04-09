@@ -852,6 +852,10 @@ Current status:
         connected sheet pins as separate candidates instead of collapsing each `SCH_SHEET` to one
         local winner before ranking, which is closer to KiCad's per-`SCH_SHEET_PIN`
         `ResolveDrivers()` ordering
+      - symbol connectivity now also links duplicate-pin-number jumpers and explicit
+        `jumper_pin_groups` before component extraction, which is closer to KiCad's
+        `updateSymbolConnectivity()` setup path instead of leaving jumper semantics to later
+        ERC-only special cases
       - reduced/live subgraphs now also preserve richer base-pin payload:
         `ReducedProjectBasePin { key, number, electrical_type }`
         so the graph no longer has to collapse pin-owned state to bare `ReducedNetBasePinKey`
