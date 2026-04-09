@@ -1083,6 +1083,12 @@ Current status:
         already go through live owner-side driver connections, and once that reduced fallback picks
         a text-item driver the chosen live text-driver owner is now promoted onto the chosen
         connection before the subgraph adopts it
+      - reduced projection no longer preserves stale `chosen_driver_identity` from the pre-live
+        reduced graph; chosen-driver identity at the graph boundary now projects only from the
+        chosen live owner graph
+      - reduced projection now also materializes `driver_connection` from the live chosen subgraph
+        owner even when the reduced entry started with `driver_connection: None`, so that boundary
+        no longer depends on pre-live optional driver-connection state
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity

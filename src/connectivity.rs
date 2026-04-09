@@ -3145,16 +3145,15 @@ impl LiveReducedSubgraph {
         let live_driver = self.driver_connection.borrow();
         reduced.name = live_driver.name.clone();
         live_driver.project_onto_reduced(&mut reduced.resolved_connection);
-
-        if let Some(driver_connection) = &mut reduced.driver_connection {
-            live_driver.project_onto_reduced(driver_connection);
-        }
+        let driver_connection = reduced
+            .driver_connection
+            .get_or_insert_with(|| live_driver.snapshot());
+        live_driver.project_onto_reduced(driver_connection);
         reduced.drivers = live_strong_driver_handles_to_snapshots(&self.drivers);
         reduced.chosen_driver_identity = self
             .chosen_driver
             .as_ref()
-            .and_then(|driver| driver.borrow().identity())
-            .or_else(|| reduced.chosen_driver_identity.clone());
+            .and_then(|driver| driver.borrow().identity());
 
         for (target, source) in reduced.label_links.iter_mut().zip(self.label_links.iter()) {
             let source = source.borrow();
