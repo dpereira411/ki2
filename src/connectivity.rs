@@ -555,7 +555,6 @@ pub(crate) struct ReducedProjectNetGraph {
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
-    pin_driver_connections: BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
     pin_driver_connections_by_location:
         BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
@@ -2410,9 +2409,8 @@ impl LiveReducedBasePin {
     // instead of live `SCH_PIN* -> SCH_CONNECTION*` lookups, but the pin owner now decides how its
     // dedicated pin-driver connection is exported to those reduced maps instead of leaving that
     // owner walk in an external collector loop.
-    fn project_driver_connection(
+    fn project_driver_connection_by_location(
         &self,
-        by_pin: &mut BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
         by_location: &mut BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
     ) {
         let mut connection = ReducedProjectConnection {
@@ -2431,7 +2429,6 @@ impl LiveReducedBasePin {
             return;
         }
 
-        by_pin.insert(self.pin.key.clone(), connection.clone());
         by_location
             .entry(ReducedProjectPinIdentityKey {
                 sheet_instance_path: self.pin.key.sheet_instance_path.clone(),
@@ -3259,15 +3256,14 @@ impl LiveReducedSubgraph {
     // connections back out of the shared graph owner. The reduced caller surface still consumes
     // pin-driver maps, but the shared live subgraph now delegates that projection to its live
     // base-pin owners instead of an external free collector loop.
-    fn project_pin_driver_connections(
+    fn project_pin_driver_connections_by_location(
         &self,
-        by_pin: &mut BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
         by_location: &mut BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
     ) {
         for base_pin in &self.base_pins {
             base_pin
                 .borrow()
-                .project_driver_connection(by_pin, by_location);
+                .project_driver_connection_by_location(by_location);
         }
     }
 
@@ -4723,20 +4719,16 @@ fn reduced_project_hierarchy_indexes_from_live_subgraph(
 
 fn collect_reduced_project_pin_driver_connections_from_live_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> (
-    BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
-    BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
-) {
-    let mut by_pin = BTreeMap::new();
+) -> BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection> {
     let mut by_location = BTreeMap::new();
 
     for handle in live_subgraphs {
         handle
             .borrow()
-            .project_pin_driver_connections(&mut by_pin, &mut by_location);
+            .project_pin_driver_connections_by_location(&mut by_location);
     }
 
-    (by_pin, by_location)
+    by_location
 }
 
 // Upstream parity: local bridge for projecting the active shared live subgraph owner back onto
@@ -7479,7 +7471,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     attach_reduced_connected_bus_items(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
-    let (pin_driver_connections, pin_driver_connections_by_location) =
+    let pin_driver_connections_by_location =
         collect_reduced_project_pin_driver_connections_from_live_handles(&live_subgraphs);
 
     ReducedProjectNetGraph {
@@ -7488,7 +7480,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraphs_by_sheet_and_name,
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
-        pin_driver_connections,
         pin_driver_connections_by_location,
         point_subgraph_identities,
         label_subgraph_identities,
@@ -8347,48 +8338,50 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name, pin_number)
-        .and_then(|subgraph| {
-            pin_name
-                .and_then(|pin_name| {
-                    subgraph.base_pins.iter().find(|base_pin| {
-                        base_pin.key
-                            == reduced_project_base_pin_key(sheet_path, symbol, at, pin_name, pin_number)
-                    })
+    resolve_reduced_project_subgraph_for_symbol_pin(
+        graph, sheet_path, symbol, at, pin_name, pin_number,
+    )
+    .and_then(|subgraph| {
+        pin_name
+            .and_then(|pin_name| {
+                subgraph.base_pins.iter().find(|base_pin| {
+                    base_pin.key
+                        == reduced_project_base_pin_key(
+                            sheet_path, symbol, at, pin_name, pin_number,
+                        )
                 })
-                .or_else(|| {
-                    subgraph.base_pins.iter().find(|base_pin| {
-                        base_pin.key.symbol_uuid == symbol.uuid
-                            && base_pin.key.at == point_key(at)
-                            && (pin_number.is_none()
-                                || base_pin.key.number.as_deref() == pin_number)
-                    })
-                })
-                .map(|base_pin| &base_pin.driver_connection)
-        })
-        .or_else(|| {
-            graph
-                .pin_driver_connections_by_location
-                .get(&reduced_project_pin_identity_key(
-                    sheet_path, symbol, at, pin_number,
-                ))
-        })
-        .and_then(|connection| {
-            (!connection.local_name.is_empty()
-                && !is_auto_generated_net_name(&connection.local_name))
-            .then(|| connection.local_name.clone())
-        })
-        .or_else(|| {
-            resolve_reduced_project_subgraph_for_symbol_pin(
-                graph, sheet_path, symbol, at, pin_name, pin_number,
-            )
-            .and_then(|subgraph| {
-                subgraph
-                    .driver_connection
-                    .as_ref()
-                    .map(|connection| connection.local_name.clone())
             })
+            .or_else(|| {
+                subgraph.base_pins.iter().find(|base_pin| {
+                    base_pin.key.symbol_uuid == symbol.uuid
+                        && base_pin.key.at == point_key(at)
+                        && (pin_number.is_none() || base_pin.key.number.as_deref() == pin_number)
+                })
+            })
+            .map(|base_pin| &base_pin.driver_connection)
+    })
+    .or_else(|| {
+        graph
+            .pin_driver_connections_by_location
+            .get(&reduced_project_pin_identity_key(
+                sheet_path, symbol, at, pin_number,
+            ))
+    })
+    .and_then(|connection| {
+        (!connection.local_name.is_empty() && !is_auto_generated_net_name(&connection.local_name))
+            .then(|| connection.local_name.clone())
+    })
+    .or_else(|| {
+        resolve_reduced_project_subgraph_for_symbol_pin(
+            graph, sheet_path, symbol, at, pin_name, pin_number,
+        )
+        .and_then(|subgraph| {
+            subgraph
+                .driver_connection
+                .as_ref()
+                .map(|connection| connection.local_name.clone())
         })
+    })
 }
 
 // Upstream parity: reduced local analogue for the connection-point half of
@@ -11707,7 +11700,6 @@ mod tests {
             subgraphs_by_sheet_and_name: BTreeMap::new(),
             pin_subgraph_identities: BTreeMap::new(),
             pin_subgraph_identities_by_location: BTreeMap::new(),
-            pin_driver_connections: BTreeMap::new(),
             pin_driver_connections_by_location: BTreeMap::from([
                 (
                     super::ReducedProjectPinIdentityKey {
@@ -11849,7 +11841,6 @@ mod tests {
                 },
                 0,
             )]),
-            pin_driver_connections: BTreeMap::new(),
             pin_driver_connections_by_location: BTreeMap::from([(
                 super::ReducedProjectPinIdentityKey {
                     sheet_instance_path: String::new(),
