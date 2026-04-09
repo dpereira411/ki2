@@ -430,6 +430,7 @@ struct ReducedProjectPinIdentityKey {
     sheet_instance_path: String,
     symbol_uuid: Option<String>,
     at: PointKey,
+    number: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -3275,6 +3276,7 @@ fn collect_reduced_project_pin_driver_connections_from_live_handles(
                     sheet_instance_path: base_pin.pin.key.sheet_instance_path.clone(),
                     symbol_uuid: base_pin.pin.key.symbol_uuid.clone(),
                     at: base_pin.pin.key.at,
+                    number: base_pin.pin.key.number.clone(),
                 })
                 .or_insert(connection);
         }
@@ -7345,6 +7347,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
                     symbol_uuid: base_pin.key.symbol_uuid.clone(),
                     at: base_pin.key.at,
+                    number: base_pin.key.number.clone(),
                 },
                 index,
             );
@@ -7891,11 +7894,13 @@ fn reduced_project_pin_identity_key(
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
     at: [f64; 2],
+    pin_number: Option<&str>,
 ) -> ReducedProjectPinIdentityKey {
     ReducedProjectPinIdentityKey {
         sheet_instance_path: sheet_path.instance_path.clone(),
         symbol_uuid: symbol.uuid.clone(),
         at: point_key(at),
+        number: pin_number.map(str::to_string),
     }
 }
 
@@ -8320,10 +8325,11 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for the symbol-pin half of
 // `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
-// item map because the Rust tree still uses `(sheet instance path, symbol uuid, projected pin
-// point)` instead of a live `SCH_PIN*`, but it preserves shared pin-to-subgraph identity instead
-// of flattening all pin lookups straight to whole-net identity. Remaining divergence is fuller
-// item ownership for non-pin items and the still-missing live `CONNECTION_SUBGRAPH` object.
+// item map because the Rust tree still uses reduced projected pin identity instead of a live
+// `SCH_PIN*`, but it preserves shared pin-to-subgraph identity, and both the named and by-location
+// lookup edges now include projected pin number so stacked pins do not collapse before the shared
+// graph owner sees them. Remaining divergence is fuller item ownership for non-pin items and the
+// still-missing live `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     graph: &'a ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8344,7 +8350,9 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
         .or_else(|| {
             graph
                 .pin_subgraph_identities_by_location
-                .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
+                .get(&reduced_project_pin_identity_key(
+                    sheet_path, symbol, at, pin_number,
+                ))
                 .and_then(|index| graph.subgraphs.get(*index))
         })
 }
@@ -8352,9 +8360,10 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 // Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
-// graph-owned per-pin driver connections projected from the live base-pin owners instead of always
-// collapsing symbol-pin driver-name queries to the chosen whole-subgraph driver connection.
-// Remaining divergence is fuller live connection-object caching and item ownership.
+// graph-owned per-pin driver connections projected from the live base-pin owners, and both the
+// named and by-location lookup edges now include projected pin number so stacked pins do not
+// collapse to one driver-name query. Remaining divergence is fuller live connection-object caching
+// and item ownership.
 pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8374,7 +8383,9 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
         .or_else(|| {
             graph
                 .pin_driver_connections_by_location
-                .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
+                .get(&reduced_project_pin_identity_key(
+                    sheet_path, symbol, at, pin_number,
+                ))
         })
         .map(|connection| connection.local_name.clone())
         .or_else(|| {
@@ -11424,6 +11435,140 @@ mod tests {
 
         assert_eq!(driver_name, "VCC");
         assert_eq!(net_name.name, "SIG");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_driver_name_by_location_distinguishes_stacked_pin_numbers() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_stacked_pin_location_driver_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:Stacked"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "Stacked" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "Stacked_1_1"
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "PWR" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1)))))
+        (pin input line (at 0 0 180) (length 2.54)
+          (name "PWR" (effects (font (size 1 1))))
+          (number "2" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "device:Stacked")
+    (uuid "73050000-0000-0000-0000-000000000302")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "Stacked" (at 0 0 0) (effects (font (size 1 1))))))"##,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let schematic = loaded
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+            .expect("root schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("symbol");
+        let graph = super::ReducedProjectNetGraph {
+            subgraphs: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            pin_driver_connections: BTreeMap::new(),
+            pin_driver_connections_by_location: BTreeMap::from([
+                (
+                    super::ReducedProjectPinIdentityKey {
+                        sheet_instance_path: sheet_path.instance_path.clone(),
+                        symbol_uuid: symbol.uuid.clone(),
+                        at: super::point_key([0.0, 0.0]),
+                        number: Some("1".to_string()),
+                    },
+                    super::ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: super::ReducedProjectConnectionType::Net,
+                        name: "VCC".to_string(),
+                        local_name: "VCC".to_string(),
+                        full_local_name: "VCC".to_string(),
+                        sheet_instance_path: sheet_path.instance_path.clone(),
+                        members: Vec::new(),
+                    },
+                ),
+                (
+                    super::ReducedProjectPinIdentityKey {
+                        sheet_instance_path: sheet_path.instance_path.clone(),
+                        symbol_uuid: symbol.uuid.clone(),
+                        at: super::point_key([0.0, 0.0]),
+                        number: Some("2".to_string()),
+                    },
+                    super::ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: super::ReducedProjectConnectionType::Net,
+                        name: "GND".to_string(),
+                        local_name: "GND".to_string(),
+                        full_local_name: "GND".to_string(),
+                        sheet_instance_path: sheet_path.instance_path.clone(),
+                        members: Vec::new(),
+                    },
+                ),
+            ]),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_symbol_pin(
+                &graph,
+                &sheet_path,
+                symbol,
+                [0.0, 0.0],
+                None,
+                Some("1"),
+            )
+            .as_deref(),
+            Some("VCC")
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_symbol_pin(
+                &graph,
+                &sheet_path,
+                symbol,
+                [0.0, 0.0],
+                None,
+                Some("2"),
+            )
+            .as_deref(),
+            Some("GND")
+        );
 
         let _ = fs::remove_file(path);
     }

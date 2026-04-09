@@ -874,6 +874,8 @@ Current status:
       - strong-driver and driver-name symbol-pin identity now also carries projected pin number,
         so stacked same-position pins no longer collapse during reduced candidate ranking or live
         symbol-pin owner attachment
+      - the reduced project-graph by-location fallback now also keys by projected pin number, so
+        nameless stacked pin lookups no longer collapse at that fallback edge either
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage
