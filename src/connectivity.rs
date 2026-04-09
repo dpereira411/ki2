@@ -243,8 +243,6 @@ pub(crate) enum ReducedProjectDriverKind {
 pub(crate) struct ReducedProjectStrongDriver {
     pub(crate) kind: ReducedProjectDriverKind,
     pub(crate) priority: i32,
-    pub(crate) name: String,
-    pub(crate) full_name: String,
     pub(crate) connection: ReducedProjectConnection,
     pub(crate) identity: Option<ReducedProjectDriverIdentity>,
 }
@@ -297,8 +295,6 @@ impl LiveProjectStrongDriver {
         ReducedProjectStrongDriver {
             kind: self.kind,
             priority: self.priority,
-            name: connection.local_name.clone(),
-            full_name: connection.name.clone(),
             connection,
             identity: self.identity.clone(),
         }
@@ -314,6 +310,14 @@ impl LiveProjectStrongDriver {
             identity: self.identity.clone(),
         }
     }
+}
+
+pub(crate) fn reduced_project_strong_driver_name(driver: &ReducedProjectStrongDriver) -> &str {
+    &driver.connection.local_name
+}
+
+pub(crate) fn reduced_project_strong_driver_full_name(driver: &ReducedProjectStrongDriver) -> &str {
+    &driver.connection.name
 }
 
 fn reduced_strong_drivers_into_live_handles(
@@ -5151,7 +5155,7 @@ fn refresh_reduced_global_secondary_driver_promotions(
         }
 
         for secondary_driver in reduced_subgraphs[subgraph_index].drivers.clone() {
-            if secondary_driver.full_name == chosen_connection.name {
+            if reduced_project_strong_driver_full_name(&secondary_driver) == chosen_connection.name {
                 continue;
             }
 
@@ -5173,7 +5177,8 @@ fn refresh_reduced_global_secondary_driver_promotions(
                     .drivers
                     .iter()
                     .any(|candidate_driver| {
-                        candidate_driver.full_name == secondary_driver.full_name
+                        reduced_project_strong_driver_full_name(candidate_driver)
+                            == reduced_project_strong_driver_full_name(&secondary_driver)
                     })
                 {
                     continue;
@@ -6382,7 +6387,9 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 );
                 let non_bus_driver_priority = strong_drivers
                     .iter()
-                    .find(|driver| !reduced_text_is_bus(schematic, &driver.name))
+                    .find(|driver| {
+                        !reduced_text_is_bus(schematic, reduced_project_strong_driver_name(driver))
+                    })
                     .map(|driver| driver.priority);
                 let (label_links, no_connect_points, bus_items, wire_items) =
                     collect_reduced_subgraph_local_membership(
@@ -8265,8 +8272,6 @@ where
                             sheet_path_prefix
                         },
                     ),
-                    name: text,
-                    full_name,
                     identity: Some(ReducedProjectDriverIdentity::Label {
                         schematic_path: schematic_path.to_path_buf(),
                         at: point_key(label.at),
@@ -8296,8 +8301,6 @@ where
                             format!("{sheet_path_prefix}{shown}"),
                             sheet_path_prefix,
                         ),
-                        name: shown.clone(),
-                        full_name: format!("{sheet_path_prefix}{shown}"),
                         identity: Some(ReducedProjectDriverIdentity::SheetPin {
                             schematic_path: schematic_path.to_path_buf(),
                             at: point_key(pin.at),
@@ -8307,7 +8310,10 @@ where
                 .max_by(|lhs, rhs| {
                     lhs.priority
                         .cmp(&rhs.priority)
-                        .then_with(|| rhs.name.cmp(&lhs.name))
+                        .then_with(|| {
+                            reduced_project_strong_driver_name(rhs)
+                                .cmp(reduced_project_strong_driver_name(lhs))
+                        })
                 }),
             SchItem::Symbol(symbol) => {
                 let unit_pins = projected_symbol_pin_info(symbol);
@@ -8350,16 +8356,6 @@ where
                                             ""
                                         },
                                     ),
-                                    full_name: if symbol
-                                        .lib_symbol
-                                        .as_ref()
-                                        .is_some_and(|lib_symbol| lib_symbol.local_power)
-                                    {
-                                        format!("{sheet_path_prefix}{text}")
-                                    } else {
-                                        text.clone()
-                                    },
-                                    name: text,
                                     identity: Some(ReducedProjectDriverIdentity::SymbolPin {
                                         schematic_path: schematic_path.to_path_buf(),
                                         symbol_uuid: symbol.uuid.clone(),
@@ -8372,14 +8368,19 @@ where
             _ => None,
         })
         .filter(|driver| {
-            !driver.name.is_empty() && !driver.name.contains("${") && !driver.name.starts_with('<')
+            !reduced_project_strong_driver_name(driver).is_empty()
+                && !reduced_project_strong_driver_name(driver).contains("${")
+                && !reduced_project_strong_driver_name(driver).starts_with('<')
         })
         .collect::<Vec<_>>();
 
     drivers.sort_by(|lhs, rhs| {
         rhs.priority
             .cmp(&lhs.priority)
-            .then_with(|| lhs.name.cmp(&rhs.name))
+            .then_with(|| {
+                reduced_project_strong_driver_name(lhs)
+                    .cmp(reduced_project_strong_driver_name(rhs))
+            })
     });
     drivers
 }
@@ -10367,7 +10368,7 @@ mod tests {
             resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.resolved_connection.local_name, "SIG");
         assert!(by_point.drivers.iter().any(|driver| {
-            driver.name == "SIG"
+            super::reduced_project_strong_driver_name(driver) == "SIG"
                 && matches!(
                     driver.identity,
                     Some(super::ReducedProjectDriverIdentity::SheetPin { .. })
@@ -10463,7 +10464,9 @@ mod tests {
             by_point
                 .drivers
                 .iter()
-                .any(|driver| driver.name == child_sheet.instance_path)
+                .any(|driver| {
+                    super::reduced_project_strong_driver_name(driver) == child_sheet.instance_path
+                })
         );
 
         let _ = fs::remove_file(root_path);
@@ -11215,8 +11218,6 @@ mod tests {
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 6,
-                    name: "PWR".to_string(),
-                    full_name: "/PWR".to_string(),
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -11610,8 +11611,6 @@ mod tests {
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::SheetPin,
                 priority: 1,
-                name: "SIG".to_string(),
-                full_name: "/SIG".to_string(),
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -11714,8 +11713,6 @@ mod tests {
             drivers: vec![ReducedProjectStrongDriver {
                 kind: ReducedProjectDriverKind::PowerPin,
                 priority: 6,
-                name: "PWR".to_string(),
-                full_name: "PWR".to_string(),
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -13170,8 +13167,6 @@ mod tests {
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 6,
-                    name: "PWR".to_string(),
-                    full_name: "/PWR".to_string(),
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -13806,8 +13801,6 @@ mod tests {
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::Label,
                     priority: 4,
-                    name: "ROOT_SIG".to_string(),
-                    full_name: "/ROOT_SIG".to_string(),
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -13878,8 +13871,6 @@ mod tests {
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
-                    name: "GLOBAL_SIG".to_string(),
-                    full_name: "/Child/GLOBAL_SIG".to_string(),
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -13963,16 +13954,12 @@ mod tests {
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
                         priority: 6,
-                        name: "VCC".to_string(),
-                        full_name: "VCC".to_string(),
                         connection: chosen.clone(),
                         identity: None,
                     },
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
                         priority: 6,
-                        name: "PWR_ALT".to_string(),
-                        full_name: "PWR_ALT".to_string(),
                         connection: ReducedProjectConnection {
                             net_code: 0,
                             connection_type: ReducedProjectConnectionType::Net,
@@ -14032,8 +14019,6 @@ mod tests {
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
-                    name: "PWR_ALT".to_string(),
-                    full_name: "PWR_ALT".to_string(),
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -14111,8 +14096,6 @@ mod tests {
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
                         priority: 6,
-                        name: "VCC".to_string(),
-                        full_name: "VCC".to_string(),
                         connection: ReducedProjectConnection {
                             net_code: 0,
                             connection_type: ReducedProjectConnectionType::Net,
@@ -14127,8 +14110,6 @@ mod tests {
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::PowerPin,
                         priority: 6,
-                        name: "PWR_ALT".to_string(),
-                        full_name: "PWR_ALT".to_string(),
                         connection: ReducedProjectConnection {
                             net_code: 0,
                             connection_type: ReducedProjectConnectionType::Net,
@@ -14188,8 +14169,6 @@ mod tests {
                 drivers: vec![ReducedProjectStrongDriver {
                     kind: ReducedProjectDriverKind::PowerPin,
                     priority: 6,
-                    name: "PWR_ALT".to_string(),
-                    full_name: "PWR_ALT".to_string(),
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,

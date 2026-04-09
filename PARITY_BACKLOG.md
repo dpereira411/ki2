@@ -770,6 +770,8 @@ Current status:
       - strong drivers now also carry connection owners on both the reduced and live path, so
         driver names stop living only as parallel string fields while the graph moves toward fuller
         live driver-item objects
+      - reduced-path ERC and reduced-path driver filtering now also read driver names through those
+        connection owners instead of a separate reduced strong-driver string cache
       - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
         exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark

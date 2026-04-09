@@ -2652,11 +2652,16 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         }
         let mut test_names = Vec::new();
         if let Some(non_bus_driver) = subgraph.drivers.iter().find(|driver| {
-            !driver.full_name.is_empty()
-                && driver.full_name != bus_connection.full_local_name
-                && driver.name != bus_connection.local_name
+            !crate::connectivity::reduced_project_strong_driver_full_name(driver).is_empty()
+                && crate::connectivity::reduced_project_strong_driver_full_name(driver)
+                    != bus_connection.full_local_name
+                && crate::connectivity::reduced_project_strong_driver_name(driver)
+                    != bus_connection.local_name
         }) {
-            test_names.push(non_bus_driver.full_name.clone());
+            test_names.push(
+                crate::connectivity::reduced_project_strong_driver_full_name(non_bus_driver)
+                    .to_string(),
+            );
         }
         if let Some(driver_connection) = &subgraph.driver_connection {
             if driver_connection.connection_type
@@ -2697,7 +2702,8 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 subgraph
                     .drivers
                     .iter()
-                    .map(|driver| driver.full_name.clone())
+                    .map(crate::connectivity::reduced_project_strong_driver_full_name)
+                    .map(str::to_string)
                     .filter(|name| {
                         !bus_members.iter().any(|member| member == name)
                             && name != &bus_connection.full_local_name
@@ -2960,12 +2966,15 @@ pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
             matches!(
                 driver.kind,
                 ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
-            ) && driver.name != primary_driver.name
+            ) && crate::connectivity::reduced_project_strong_driver_name(driver)
+                != crate::connectivity::reduced_project_strong_driver_name(primary_driver)
         }) else {
             continue;
         };
-        let primary_name = primary_driver.name.clone();
-        let secondary_name = secondary_driver.name.clone();
+        let primary_name =
+            crate::connectivity::reduced_project_strong_driver_name(primary_driver).to_string();
+        let secondary_name =
+            crate::connectivity::reduced_project_strong_driver_name(secondary_driver).to_string();
         let path = project
             .sheet_paths
             .iter()
