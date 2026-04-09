@@ -248,16 +248,26 @@ pub(crate) struct ReducedProjectStrongDriver {
     pub(crate) identity: Option<ReducedProjectDriverIdentity>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug)]
 struct LiveProjectStrongDriver {
     kind: ReducedProjectDriverKind,
     priority: i32,
     name: String,
     full_name: String,
     identity: Option<ReducedProjectDriverIdentity>,
+    owner: LiveProjectStrongDriverOwner,
 }
 
 type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriver>>;
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+enum LiveProjectStrongDriverOwner {
+    None,
+    Label(Weak<RefCell<LiveReducedLabelLink>>),
+    SheetPin(Weak<RefCell<LiveReducedHierSheetPinLink>>),
+    HierPort(Weak<RefCell<LiveReducedHierPortLink>>),
+}
 
 impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
     fn from(driver: ReducedProjectStrongDriver) -> Self {
@@ -267,6 +277,7 @@ impl From<ReducedProjectStrongDriver> for LiveProjectStrongDriver {
             name: driver.name,
             full_name: driver.full_name,
             identity: driver.identity,
+            owner: LiveProjectStrongDriverOwner::None,
         }
     }
 }
@@ -1933,6 +1944,7 @@ fn build_live_reduced_subgraph_handles(
     attach_live_subgraph_links_to_handles(&handles, reduced_subgraphs);
     attach_live_bus_parent_handles_to_handles(&handles, reduced_subgraphs);
     attach_live_hierarchy_links_to_handles(&handles, reduced_subgraphs);
+    attach_live_strong_driver_owners_to_handles(&handles);
     attach_live_connected_bus_items_to_handles(&handles);
     handles
 }
@@ -2009,6 +2021,54 @@ fn attach_live_hierarchy_links_to_handles(
     }
 }
 
+// Upstream parity: local bridge toward live driver-item ownership on the shared live graph.
+// KiCad's strong-driver selection ultimately points back to live items; this reduced bridge still
+// keeps copied driver records, but it now attaches the exercised label and sheet-pin drivers to
+// shared live item owners on the active graph instead of leaving every strong driver as a detached
+// copied struct. Remaining divergence is fuller symbol-pin/power-pin driver ownership and the
+// still-missing live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` object graph behind these handles.
+fn attach_live_strong_driver_owners_to_handles(live_subgraphs: &[LiveReducedSubgraphHandle]) {
+    for handle in live_subgraphs {
+        let subgraph = handle.borrow_mut();
+
+        for driver in &subgraph.drivers {
+            let identity = driver.borrow().identity.clone();
+            let owner = match identity {
+                Some(ReducedProjectDriverIdentity::Label { at, kind, .. }) => {
+                    if kind == reduced_label_kind_sort_key(LabelKind::Hierarchical) {
+                        subgraph
+                            .hier_ports
+                            .iter()
+                            .find(|port| port.borrow().at == at)
+                            .map(|port| LiveProjectStrongDriverOwner::HierPort(Rc::downgrade(port)))
+                            .unwrap_or(LiveProjectStrongDriverOwner::None)
+                    } else {
+                        subgraph
+                            .label_links
+                            .iter()
+                            .find(|link| {
+                                let link = link.borrow();
+                                link.at == at && reduced_label_kind_sort_key(link.kind) == kind
+                            })
+                            .map(|link| LiveProjectStrongDriverOwner::Label(Rc::downgrade(link)))
+                            .unwrap_or(LiveProjectStrongDriverOwner::None)
+                    }
+                }
+                Some(ReducedProjectDriverIdentity::SheetPin { at, .. }) => subgraph
+                    .hier_sheet_pins
+                    .iter()
+                    .find(|pin| pin.borrow().at == at)
+                    .map(|pin| LiveProjectStrongDriverOwner::SheetPin(Rc::downgrade(pin)))
+                    .unwrap_or(LiveProjectStrongDriverOwner::None),
+                Some(ReducedProjectDriverIdentity::SymbolPin { .. }) | None => {
+                    LiveProjectStrongDriverOwner::None
+                }
+            };
+            driver.borrow_mut().owner = owner;
+        }
+    }
+}
+
 // Upstream parity: local bridge for item-owned connection refresh against the shared live
 // subgraph owner. This still mutates reduced live item carriers instead of real `SCH_ITEM`
 // pointers, but labels, sheet pins, hierarchy ports, and wire items now all sit on shared live
@@ -2034,8 +2094,9 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
 // label/sheet-pin/hier-port/wire-item from the chosen subgraph driver only at the end of
 // propagation. The active payload now also keeps shared live base-pin payload directly instead of
 // a copied base-pin count summary and derives driver priority from the shared live driver owner
-// instead of caching one more copied summary field; test-only driver identity still remains
-// because the fuller live driver-item owner is not ported yet.
+// instead of caching one more copied summary field, and now also attaches the exercised label and
+// sheet-pin strong drivers back onto shared live item owners. Remaining divergence is fuller
+// symbol-pin/power-pin driver ownership and the still-missing live driver-item object graph.
 fn build_live_reduced_subgraphs(
     reduced_subgraphs: &[ReducedProjectSubgraphEntry],
 ) -> Vec<LiveReducedSubgraph> {
@@ -11191,6 +11252,91 @@ mod tests {
             .and_then(Weak::upgrade)
             .expect("attached live bus");
         assert!(Rc::ptr_eq(&attached_bus, &shared));
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_attach_sheet_pin_driver_owners() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            driver_identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(10, 20),
+            }),
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::SheetPin,
+                priority: 1,
+                name: "SIG".to_string(),
+                full_name: "/SIG".to_string(),
+                identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(10, 20),
+                }),
+            }],
+            non_bus_driver_priority: Some(1),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                at: PointKey(10, 20),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+        let owner = subgraph.drivers[0].borrow().owner.clone();
+
+        match owner {
+            super::LiveProjectStrongDriverOwner::SheetPin(owner) => {
+                let owner = owner.upgrade().expect("sheet pin owner");
+                assert!(Rc::ptr_eq(&owner, &subgraph.hier_sheet_pins[0]));
+            }
+            _ => panic!("expected sheet pin strong-driver owner"),
+        }
     }
 
     #[test]
