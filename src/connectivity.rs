@@ -3295,9 +3295,6 @@ impl LiveReducedSubgraph {
                 let mut connection = subgraph.driver_connection.borrow_mut();
                 connection.connection_type = connection_type;
                 connection.members = members;
-                drop(connection);
-                drop(subgraph);
-                sync_live_reduced_item_connections_from_driver_handle(handle);
             }
         }
     }
