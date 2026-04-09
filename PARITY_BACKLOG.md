@@ -761,9 +761,13 @@ Current status:
         copied strong-driver entries onto fuller live item owners instead of rebuilding identity
         from names alone
       - the active live graph now also attaches the exercised label, sheet-pin, and symbol-pin
-        strong drivers back onto shared live item owners; the remaining live driver-owner gap is
-        the power-pin side and the fuller shared driver-item object graph, not label/sheet-pin/
-        symbol-pin owner lookup on the active path
+        strong drivers back onto shared live item owners, and exercised power-pin drivers now
+        follow that same symbol-pin owner path
+      - immutable driver metadata now also sits on those shared live item owners, and active
+        global secondary-driver promotion reads priority/full-name through the owner first instead
+        of going back to copied strong-driver fields on the active path
+      - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
+        exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
         the owning live subgraph dirty at the mutation site; the recursive walk still keeps one
         whole-subgraph compatibility compare for any remaining in-pass mutations that have not yet
