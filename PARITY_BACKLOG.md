@@ -756,6 +756,10 @@ Current status:
       - compatibility item-update paths now derive the exercised self-driven symbol-pin and
         sheet-pin branches from base-pin / hierarchy ownership instead of reading copied
         `driver_identity` branch state during updates
+      - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
+        the owning live subgraph dirty at the mutation site; the recursive walk still keeps one
+        whole-subgraph compatibility compare for any remaining in-pass mutations that have not yet
+        moved fully onto explicit dirty ownership
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
