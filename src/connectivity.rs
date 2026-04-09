@@ -270,6 +270,7 @@ pub(crate) enum ReducedProjectDriverIdentity {
 pub(crate) enum ReducedProjectDriverKind {
     Label,
     SheetPin,
+    Pin,
     PowerPin,
 }
 
@@ -2372,18 +2373,22 @@ impl LiveReducedBasePin {
             return;
         }
 
-        clone_live_connection_owner_into_live_base_pin_connection_owner(
-            &mut self.connection.borrow_mut(),
-            &driver_connection.borrow(),
-            self.preserved_local_name.as_deref(),
-        );
-
-        if refresh_attached_strong_driver_pins && self.driver.is_some() {
+        if !Rc::ptr_eq(&self.connection, driver_connection) {
             clone_live_connection_owner_into_live_base_pin_connection_owner(
-                &mut self.driver_connection.borrow_mut(),
+                &mut self.connection.borrow_mut(),
                 &driver_connection.borrow(),
                 self.preserved_local_name.as_deref(),
             );
+        }
+
+        if refresh_attached_strong_driver_pins && self.driver.is_some() {
+            if !Rc::ptr_eq(&self.driver_connection, driver_connection) {
+                clone_live_connection_owner_into_live_base_pin_connection_owner(
+                    &mut self.driver_connection.borrow_mut(),
+                    &driver_connection.borrow(),
+                    self.preserved_local_name.as_deref(),
+                );
+            }
         }
     }
 
@@ -4386,7 +4391,15 @@ fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 
 }
 
 fn live_subgraph_is_self_driven_symbol_pin(subgraph: &LiveReducedSubgraph) -> bool {
-    live_subgraph_strong_driver_count(subgraph) == 0
+    let has_weak_symbol_pin_driver = subgraph.drivers.len() == 1
+        && matches!(
+            &*subgraph.drivers[0].borrow(),
+            LiveProjectStrongDriverOwner::SymbolPin { kind, priority, .. }
+                if *kind == ReducedProjectDriverKind::Pin
+                    && *priority == reduced_pin_driver_priority()
+        );
+
+    (live_subgraph_strong_driver_count(subgraph) == 0 || has_weak_symbol_pin_driver)
         && live_subgraph_base_pin_count(subgraph) == 1
         && subgraph.hier_sheet_pins.is_empty()
 }
@@ -8708,7 +8721,7 @@ fn reduced_local_driver_identity_to_project_identity(
     }
 }
 
-// Upstream parity: reduced local analogue for the strong-driver collection inside
+// Upstream parity: reduced local analogue for the driver collection inside
 // `CONNECTION_SUBGRAPH::ResolveDrivers()`. This is not a 1:1 KiCad driver cache because the Rust
 // tree still lacks live `SCH_CONNECTION` objects and full subgraph ownership, but it now keeps
 // the shared graph's strong-driver names on the same shown-text owner KiCad uses for labels and
@@ -8724,8 +8737,10 @@ fn reduced_local_driver_identity_to_project_identity(
 // drivers now also prefer the projected pin shown name before the symbol value so multi-pin power
 // symbols keep per-pin driver text through the shared graph owner. The reduced collection now
 // also mirrors KiCad's strong-driver cleanup by dropping weak sheet-pin/default-pin drivers once a
-// hierarchical-label-or-stronger driver exists. Remaining divergence is the still-missing live
-// connection object plus fuller power/bus-parent driver ownership.
+// hierarchical-label-or-stronger driver exists. Ordinary symbol pins now participate as weak
+// `SCH_PIN_T` drivers before that cleanup instead of existing only as a priority fallback on the
+// reduced subgraph. Remaining divergence is the still-missing live connection object plus fuller
+// power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
@@ -8845,6 +8860,28 @@ where
                                     text.clone(),
                                     full_name,
                                     if local_power { sheet_path_prefix } else { "" },
+                                ),
+                                identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                                    schematic_path: schematic_path.to_path_buf(),
+                                    symbol_uuid: symbol.uuid.clone(),
+                                    at: point_key(pin.at),
+                                    pin_number: pin.number.clone(),
+                                }),
+                            });
+                        }
+                    } else if symbol.in_netlist && symbol.on_board {
+                        if let Some(text) =
+                            reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
+                        {
+                            drivers.push(ReducedProjectStrongDriver {
+                                kind: ReducedProjectDriverKind::Pin,
+                                priority: reduced_pin_driver_priority(),
+                                connection: build_reduced_project_driver_connection(
+                                    schematic,
+                                    sheet_instance_path,
+                                    text.clone(),
+                                    text,
+                                    "",
                                 ),
                                 identity: Some(ReducedProjectDriverIdentity::SymbolPin {
                                     schematic_path: schematic_path.to_path_buf(),
