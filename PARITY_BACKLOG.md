@@ -978,6 +978,13 @@ Current status:
       - the duplicate value-owned post-propagation item-refresh compatibility path was also
         redirected onto that same handle graph and removed, so exercised live item refresh now
         goes through one shared handle-based owner path in both active and compatibility coverage
+      - the remaining reduced-only propagation compatibility helpers were then removed from the
+        test surface too:
+        - multiple-bus-parent rename/recache
+        - global secondary-driver promotion
+        - reduced post-propagation item refresh
+      - exercised coverage for those branches now stays on the active handle graph instead of
+        maintaining duplicate reduced-only propagation helpers beside it
       - live handle construction now also builds shared live subgraph handles directly instead of
         first building a temporary value-owned `Vec<LiveReducedSubgraph>` and wrapping it later
       - reduced connection/member projection at the graph boundary now belongs to the shared live
