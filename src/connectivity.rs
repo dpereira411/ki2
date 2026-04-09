@@ -1260,12 +1260,12 @@ fn clone_live_bus_member_handle_into_live_bus_member_handle(
     }
 
     // Upstream parity: local live member analogue for the recursive `SCH_CONNECTION::Clone()`
-    // member path. This still snapshots one source member before mutating the target handle so
-    // the reduced live graph can avoid aliasing the same RefCell-backed member tree through two
-    // recursive paths. Remaining divergence is fuller live member/pointer ownership on the shared
-    // connection/subgraph graph.
-    let source_snapshot = live_bus_member_handle_snapshot(source);
-    clone_reduced_bus_member_into_live_bus_member(&mut target.borrow_mut(), &source_snapshot);
+    // member path. Active clone now reads the shared live source member directly instead of
+    // snapshotting it into a temporary reduced member first, which keeps recursive replay on the
+    // same live owner graph through member refresh. Remaining divergence is fuller live
+    // member/pointer ownership on the shared connection/subgraph graph.
+    let source = source.borrow();
+    clone_live_bus_member_into_live_bus_member(&mut target.borrow_mut(), &source);
 }
 
 fn clone_live_bus_member_into_live_connection_owner(
@@ -1759,6 +1759,7 @@ fn live_bus_member_clone_eq_to_connection(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn clone_reduced_bus_member_into_live_bus_member(
     target: &mut LiveProjectBusMember,
     source: &ReducedBusMember,
@@ -14737,6 +14738,64 @@ mod tests {
                 .full_local_name,
             "/PWR"
         );
+    }
+
+    #[test]
+    fn clone_live_bus_member_handle_preserves_nested_member_handles() {
+        let target_child = Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            ReducedBusMember {
+                net_code: 0,
+                name: "OLD1".to_string(),
+                local_name: "OLD1".to_string(),
+                full_local_name: "/OLD1".to_string(),
+                vector_index: Some(1),
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            },
+        )));
+        let target = Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            ReducedBusMember {
+                net_code: 0,
+                name: "BUS".to_string(),
+                local_name: "BUS".to_string(),
+                full_local_name: "/BUS".to_string(),
+                vector_index: None,
+                kind: ReducedBusMemberKind::Bus,
+                members: vec![target_child.borrow().snapshot()],
+            },
+        )));
+        target.borrow_mut().members = vec![target_child.clone()];
+
+        let source_child = Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            ReducedBusMember {
+                net_code: 0,
+                name: "RENAMED1".to_string(),
+                local_name: "RENAMED1".to_string(),
+                full_local_name: "/RENAMED1".to_string(),
+                vector_index: Some(1),
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            },
+        )));
+        let source = Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            ReducedBusMember {
+                net_code: 0,
+                name: "BUS".to_string(),
+                local_name: "BUS".to_string(),
+                full_local_name: "/BUS".to_string(),
+                vector_index: None,
+                kind: ReducedBusMemberKind::Bus,
+                members: vec![source_child.borrow().snapshot()],
+            },
+        )));
+        source.borrow_mut().members = vec![source_child];
+
+        super::clone_live_bus_member_handle_into_live_bus_member_handle(&target, &source);
+
+        let refreshed_child = target.borrow().members[0].clone();
+        assert!(Rc::ptr_eq(&refreshed_child, &target_child));
+        assert_eq!(refreshed_child.borrow().name, "RENAMED1");
+        assert_eq!(refreshed_child.borrow().full_local_name, "/RENAMED1");
     }
 
     #[test]
