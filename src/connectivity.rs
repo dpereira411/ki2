@@ -4667,18 +4667,14 @@ fn refresh_reduced_live_bus_neighbor_drivers(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
     let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
-    let all_indexes = (0..live_subgraphs.len()).collect::<Vec<_>>();
+    let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
     let mut stale_members = Vec::new();
-    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
+    LiveReducedSubgraph::refresh_bus_neighbor_drivers(
         &live_subgraphs,
-        &all_indexes,
+        &component,
         &mut stale_members,
     );
-    replay_reduced_live_stale_bus_members_on_handles_for_indexes(
-        &live_subgraphs,
-        &all_indexes,
-        &stale_members,
-    );
+    LiveReducedSubgraph::replay_stale_bus_members(&component, &stale_members);
     apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
@@ -4691,7 +4687,7 @@ fn refresh_reduced_live_bus_neighbor_drivers(
 fn refresh_reduced_live_bus_parent_members(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
     let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
-    refresh_reduced_live_bus_parent_members_on_handles_for_component(&live_subgraphs, &component);
+    LiveReducedSubgraph::refresh_bus_parent_members(&live_subgraphs, &component);
     apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
 }
 
@@ -4736,239 +4732,6 @@ fn refresh_reduced_live_bus_link_members(reduced_subgraphs: &mut [ReducedProject
 // `CONNECTION_SUBGRAPH` objects, but the active recursive graph build now walks shared subgraph
 // handles and uses handle identity plus narrow live handle reads instead of cloning whole live
 // subgraph wrappers for traversal.
-#[cfg(test)]
-fn collect_live_reduced_propagation_component_from_handles(
-    start: usize,
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-) -> Vec<usize> {
-    LiveReducedSubgraph::collect_propagation_component_handles(
-        &live_subgraphs[start],
-        live_subgraphs,
-    )
-    .into_iter()
-    .map(|handle| handle.borrow().source_index)
-    .collect()
-}
-
-// Upstream parity: local bridge for the global-secondary-driver promotion branch on the shared
-// live subgraph owner. The active recursion now promotes the shared live connection owner itself
-// instead of snapshotting the chosen connection through reduced carriers, while still revisiting
-// shared subgraph handles by handle identity and narrow live-owner reads instead of cloning whole
-// live subgraph wrappers. Active equality checks now also compare clone-equivalent live connection
-// owners directly instead of snapshotting reduced connections.
-#[cfg(test)]
-fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    component: &[LiveReducedSubgraphHandle],
-    stale_members: &mut Vec<LiveProjectBusMemberHandle>,
-) {
-    LiveReducedSubgraph::refresh_bus_neighbor_drivers(live_subgraphs, component, stale_members);
-}
-
-#[cfg(test)]
-fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    indexes: &[usize],
-    stale_members: &mut Vec<LiveProjectBusMemberHandle>,
-) {
-    let component = indexes
-        .iter()
-        .filter_map(|index| live_subgraphs.get(*index).cloned())
-        .collect::<Vec<_>>();
-    refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
-        live_subgraphs,
-        &component,
-        stale_members,
-    );
-}
-
-#[cfg(test)]
-fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    component: &[LiveReducedSubgraphHandle],
-) {
-    LiveReducedSubgraph::refresh_bus_parent_members(live_subgraphs, component);
-}
-
-#[cfg(test)]
-fn replay_reduced_live_stale_bus_members_on_handles_for_component(
-    component: &[LiveReducedSubgraphHandle],
-    stale_members: &[LiveProjectBusMemberHandle],
-) {
-    LiveReducedSubgraph::replay_stale_bus_members(component, stale_members);
-}
-
-#[cfg(test)]
-fn replay_reduced_live_stale_bus_members_on_handles_for_indexes(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    indexes: &[usize],
-    stale_members: &[LiveProjectBusMemberHandle],
-) {
-    let component = indexes
-        .iter()
-        .filter_map(|index| live_subgraphs.get(*index).cloned())
-        .collect::<Vec<_>>();
-    replay_reduced_live_stale_bus_members_on_handles_for_component(&component, stale_members);
-}
-
-#[cfg(test)]
-fn refresh_reduced_live_bus_link_members_on_handles_for_component(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    component: &[LiveReducedSubgraphHandle],
-) {
-    // Upstream parity: local live-handle analogue for rematching bus parent/neighbor links after
-    // propagation. Active refresh now prefers the attached live parent/child handles, shared live
-    // connection owners, handle-keyed refresh state, and the existing shared live link owners over
-    // copied link or subgraph indexes. This helper still uses a narrower local link wrapper than a
-    // full `CONNECTION_SUBGRAPH` neighbor object, but active rematch now mutates those shared link
-    // owners in place instead of rebuilding fresh link wrappers on each pass, and still marks the
-    // live owner dirty when attached topology changes so recursive revisits follow live dirty-state
-    // directly instead of whole-subgraph equality checks.
-    let mut refreshed_parent_links = BTreeMap::<usize, Vec<LiveReducedSubgraphLinkHandle>>::new();
-
-    for child_handle in component {
-        let child_id = live_subgraph_handle_id(child_handle);
-        let child_connection = child_handle.borrow().driver_connection.clone();
-        let existing_parent_links = child_handle.borrow().bus_parent_links.clone();
-
-        let mut parent_handles = live_subgraph_bus_parent_handles_from_handle(child_handle)
-            .into_iter()
-            .collect::<Vec<_>>();
-        for link in &existing_parent_links {
-            let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, link) else {
-                continue;
-            };
-            if !parent_handles
-                .iter()
-                .any(|candidate| Rc::ptr_eq(candidate, &parent_handle))
-            {
-                parent_handles.push(parent_handle);
-            }
-        }
-
-        for parent_handle in parent_handles {
-            let existing_member = existing_parent_links
-                .iter()
-                .find(|link| {
-                    live_subgraph_handle_for_link(live_subgraphs, link)
-                        .as_ref()
-                        .is_some_and(|candidate| Rc::ptr_eq(candidate, &parent_handle))
-                })
-                .map(|link| link.borrow().member.clone());
-
-            let parent_neighbor_member = parent_handle
-                .borrow()
-                .bus_neighbor_links
-                .iter()
-                .find(|link| {
-                    live_subgraph_handle_for_link(live_subgraphs, link)
-                        .as_ref()
-                        .is_some_and(|candidate| Rc::ptr_eq(candidate, child_handle))
-                })
-                .map(|link| link.borrow().member.clone());
-
-            let refreshed_member = existing_member
-                .as_ref()
-                .and_then(|search| {
-                    parent_handle
-                        .borrow()
-                        .driver_connection
-                        .borrow()
-                        .find_member_live(&search.borrow())
-                })
-                .or_else(|| {
-                    parent_neighbor_member.as_ref().and_then(|search| {
-                        parent_handle
-                            .borrow()
-                            .driver_connection
-                            .borrow()
-                            .find_member_live(&search.borrow())
-                    })
-                })
-                .or_else(|| {
-                    parent_handle
-                        .borrow()
-                        .driver_connection
-                        .borrow()
-                        .find_member_for_connection(&child_connection.borrow())
-                });
-
-            let Some(refreshed_member) = refreshed_member else {
-                continue;
-            };
-
-            let existing_link = existing_parent_links.iter().find(|link| {
-                live_subgraph_handle_for_link(live_subgraphs, link)
-                    .as_ref()
-                    .is_some_and(|candidate| Rc::ptr_eq(candidate, &parent_handle))
-            });
-
-            refreshed_parent_links.entry(child_id).or_default().push(
-                update_live_subgraph_link_handle(existing_link, refreshed_member, &parent_handle),
-            );
-        }
-    }
-
-    let mut refreshed_neighbor_links = BTreeMap::<usize, Vec<LiveReducedSubgraphLinkHandle>>::new();
-
-    for child_handle in component {
-        let child_id = live_subgraph_handle_id(child_handle);
-        for link in refreshed_parent_links.get(&child_id).into_iter().flatten() {
-            let Some(neighbor_handle) = live_subgraph_handle_for_link(live_subgraphs, link) else {
-                continue;
-            };
-            let existing_neighbor_links = neighbor_handle.borrow().bus_neighbor_links.clone();
-            let existing_link = existing_neighbor_links.iter().find(|candidate| {
-                live_subgraph_handle_for_link(live_subgraphs, candidate)
-                    .as_ref()
-                    .is_some_and(|existing_child| Rc::ptr_eq(existing_child, child_handle))
-            });
-            refreshed_neighbor_links
-                .entry(live_subgraph_handle_id(&neighbor_handle))
-                .or_default()
-                .push(update_live_subgraph_link_handle(
-                    existing_link,
-                    link.borrow().member.clone(),
-                    child_handle,
-                ));
-        }
-    }
-
-    for handle in component {
-        let handle_id = live_subgraph_handle_id(handle);
-        let mut live = handle.borrow_mut();
-        let mut next_parent_links = refreshed_parent_links
-            .get(&handle_id)
-            .cloned()
-            .unwrap_or_default();
-        sort_dedup_live_subgraph_link_handles(&mut next_parent_links);
-        let mut next_neighbor_links = refreshed_neighbor_links
-            .get(&handle_id)
-            .cloned()
-            .unwrap_or_default();
-        sort_dedup_live_subgraph_link_handles(&mut next_neighbor_links);
-        let links_changed = live.bus_parent_links != next_parent_links
-            || live.bus_neighbor_links != next_neighbor_links;
-        live.bus_parent_links = next_parent_links;
-        live.bus_neighbor_links = next_neighbor_links;
-        if links_changed {
-            live.dirty = true;
-        }
-    }
-}
-
-#[cfg(test)]
-fn refresh_reduced_live_bus_link_members_on_handles_for_indexes(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
-    indexes: &[usize],
-) {
-    let component = indexes
-        .iter()
-        .filter_map(|index| live_subgraphs.get(*index).cloned())
-        .collect::<Vec<_>>();
-    refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &component);
-}
-
 fn refresh_reduced_live_post_propagation_item_connections_on_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
 ) {
@@ -8888,18 +8651,13 @@ mod tests {
         ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
         clone_reduced_connection_into_live_connection_owner,
-        collect_live_reduced_propagation_component_from_handles,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         recache_live_reduced_subgraph_name_from_handles,
         recache_live_reduced_subgraph_name_handle_cache_from_handles, reduced_bus_member_objects,
-        refresh_reduced_live_bus_link_members,
-        refresh_reduced_live_bus_link_members_on_handles_for_indexes,
-        refresh_reduced_live_bus_neighbor_drivers,
-        refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes,
+        refresh_reduced_live_bus_link_members, refresh_reduced_live_bus_neighbor_drivers,
         refresh_reduced_live_bus_parent_members, refresh_reduced_live_graph_propagation,
         refresh_reduced_live_multiple_bus_parent_names,
-        refresh_reduced_live_post_propagation_item_connections,
-        replay_reduced_live_stale_bus_members_on_handles_for_indexes, resolve_reduced_net_name_at,
+        refresh_reduced_live_post_propagation_item_connections, resolve_reduced_net_name_at,
         resolve_reduced_project_net_at, resolve_reduced_project_subgraph_at,
         resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
@@ -9812,11 +9570,8 @@ mod tests {
         ];
 
         let live = build_live_reduced_subgraph_handles(&reduced);
-        refresh_reduced_live_bus_neighbor_drivers_on_handles_for_indexes(
-            &live,
-            &[0],
-            &mut Vec::new(),
-        );
+        let component = vec![live[0].clone()];
+        LiveReducedSubgraph::refresh_bus_neighbor_drivers(&live, &component, &mut Vec::new());
 
         let live_bus_entry = live[1].borrow();
         let connected_bus_item = live_bus_entry.wire_items[0]
@@ -13511,7 +13266,11 @@ mod tests {
             child.hier_parent_index = None;
         }
 
-        let mut component = collect_live_reduced_propagation_component_from_handles(0, &handles);
+        let mut component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[0], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
         component.sort_unstable();
 
         assert_eq!(component, vec![0, 1]);
@@ -13631,7 +13390,11 @@ mod tests {
         ];
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
-        let mut component = collect_live_reduced_propagation_component_from_handles(1, &handles);
+        let mut component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[1], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
         component.sort_unstable();
 
         assert_eq!(component, vec![0, 1]);
@@ -13789,7 +13552,8 @@ mod tests {
             member.full_local_name = "/RENAMED1".to_string();
         }
 
-        refresh_reduced_live_bus_link_members_on_handles_for_indexes(&handles, &[0, 1]);
+        let component = vec![handles[0].clone(), handles[1].clone()];
+        LiveReducedSubgraph::refresh_bus_link_members(&handles, &component);
 
         let new_parent_link = handles[1].borrow().bus_parent_links[0].clone();
         let new_neighbor_link = handles[0].borrow().bus_neighbor_links[0].clone();
@@ -13892,9 +13656,9 @@ mod tests {
             .map(|subgraph| Rc::new(RefCell::new(subgraph)))
             .collect::<Vec<_>>();
 
-        replay_reduced_live_stale_bus_members_on_handles_for_indexes(
-            &handles,
-            &[0, 1],
+        let component = vec![handles[0].clone(), handles[1].clone()];
+        LiveReducedSubgraph::replay_stale_bus_members(
+            &component,
             &[Rc::new(RefCell::new(super::LiveProjectBusMember::from(
                 ReducedBusMember {
                     net_code: 0,
