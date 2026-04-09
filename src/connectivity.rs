@@ -5614,7 +5614,9 @@ fn attach_reduced_connected_bus_items(reduced_subgraphs: &mut [ReducedProjectSub
 // the Rust tree still rebuilds reduced lookup maps from snapshots instead of mutating live graph
 // maps as names change, but it keeps the final shared `(name, sheet+name)` indexes and first-seen
 // net codes aligned with the post-propagation reduced subgraph names instead of stale pre-rename
-// values. Remaining divergence is the still-missing live cache mutation on real subgraph objects.
+// values. Outward reduced `resolved_connection` state is now re-derived from the required reduced
+// `driver_connection` owner during this cache rebuild instead of assigning both in parallel.
+// Remaining divergence is the still-missing live cache mutation on real subgraph objects.
 fn rebuild_reduced_project_graph_name_caches(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) -> (
@@ -5630,8 +5632,9 @@ fn rebuild_reduced_project_graph_name_caches(
             let next_code = net_codes.len() + 1;
             let code = *net_codes.entry(subgraph.name.clone()).or_insert(next_code);
             subgraph.code = code;
-            assign_reduced_connection_net_codes(&mut subgraph.resolved_connection, &mut net_codes);
             assign_reduced_connection_net_codes(&mut subgraph.driver_connection, &mut net_codes);
+            subgraph.resolved_connection = subgraph.driver_connection.clone();
+            subgraph.resolved_connection.name = subgraph.name.clone();
 
             for link in &mut subgraph.label_links {
                 assign_reduced_connection_net_codes(&mut link.connection, &mut net_codes);
