@@ -3869,7 +3869,7 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
         for item in &schematic.screen.items {
             match item {
                 SchItem::Wire(line) => {
-                    if let Some(point) = line
+                    if line
                         .points
                         .first()
                         .copied()
@@ -3880,15 +3880,13 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                                 .copied()
                                 .filter(|point| !point_is_on_grid(*point, grid_size_mm))
                         })
+                        .is_some()
                     {
                         diagnostics.push(Diagnostic {
                             severity: Severity::Warning,
                             code: "erc-endpoint-off-grid",
                             kind: crate::diagnostic::DiagnosticKind::Validation,
-                            message: format!(
-                                "Endpoint off connection grid at {}, {}",
-                                point[0], point[1]
-                            ),
+                            message: "Symbol pin or wire end off connection grid".to_string(),
                             path: Some(schematic.path.clone()),
                             span: None,
                             line: None,
@@ -3909,10 +3907,7 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                             severity: Severity::Warning,
                             code: "erc-endpoint-off-grid",
                             kind: crate::diagnostic::DiagnosticKind::Validation,
-                            message: format!(
-                                "Endpoint off connection grid at {}, {}",
-                                point[0], point[1]
-                            ),
+                            message: "Symbol pin or wire end off connection grid".to_string(),
                             path: Some(schematic.path.clone()),
                             span: None,
                             line: None,
@@ -3930,7 +3925,7 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
         for pin_inventory in
             collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
         {
-            if let Some(point) = pin_inventory
+            if pin_inventory
                 .pins
                 .iter()
                 .find(|pin| {
@@ -3940,13 +3935,13 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                             grid_size_mm,
                         )
                 })
-                .map(|pin| [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)])
+                .is_some()
             {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-endpoint-off-grid",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!("Endpoint off connection grid at {}, {}", point[0], point[1]),
+                    message: "Symbol pin or wire end off connection grid".to_string(),
                     path: pin_inventory
                         .pins
                         .first()
