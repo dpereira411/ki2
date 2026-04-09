@@ -1126,6 +1126,9 @@ pub fn check_unresolved_text_variables(project: &SchematicProject) -> Vec<Diagno
                 }
                 SchItem::Label(label) => {
                     for property in &label.properties {
+                        if !property.visible {
+                            continue;
+                        }
                         let shown = shown_label_property_text(project, sheet_path, label, property);
 
                         if shown.contains("${") {

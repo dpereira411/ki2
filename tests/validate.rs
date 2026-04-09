@@ -4668,7 +4668,7 @@ fn erc_reports_unresolved_text_variables_on_exercised_items() {
         .filter(|diagnostic| diagnostic.code == "erc-unresolved-variable")
         .collect::<Vec<_>>();
 
-    assert_eq!(diagnostics.len(), 5);
+    assert_eq!(diagnostics.len(), 4);
     assert!(
         diagnostics.iter().any(|diagnostic| {
             diagnostic.message == "Unresolved text variable in schematic text"
@@ -4679,9 +4679,6 @@ fn erc_reports_unresolved_text_variables_on_exercised_items() {
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.message == "Unresolved text variable in label field 'Custom'"
-    }));
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.message == "Unresolved text variable in label field 'Intersheet References'"
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.message == "Unresolved text variable in sheet pin '${UNKNOWN_PIN}'"
@@ -6125,6 +6122,23 @@ fn erc_reports_dangling_global_label_on_no_connect_line_fixture() {
             diagnostic.code == "erc-label-not-connected"
                 && diagnostic.message == "Label is not connected at 63.5, 30.48"
         }),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn erc_ignores_hidden_intersheet_ref_label_properties_in_label_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/erc_label_test.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-unresolved-variable"),
         "{diagnostics:#?}"
     );
 }
