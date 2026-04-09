@@ -6800,20 +6800,6 @@ pub(crate) fn collect_reduced_project_net_map(
         .collect()
 }
 
-#[allow(dead_code)]
-// Upstream parity: reduced local analogue for iterating `ConnectionGraph()->GetNetMap()` subgraph
-// members on the project graph path. This is not a 1:1 KiCad container because the Rust tree
-// still stores reduced cloned subgraph snapshots instead of live `CONNECTION_SUBGRAPH*` objects,
-// but it preserves the graph-owned subgraph boundary for exporter/ERC callers instead of forcing
-// every consumer through pre-flattened whole-net entries only. Remaining divergence is the still-
-// missing live subgraph object model and cached driver connections.
-pub(crate) fn collect_reduced_project_subgraphs(
-    project: &SchematicProject,
-    for_board: bool,
-) -> Vec<ReducedProjectSubgraphEntry> {
-    project.reduced_project_net_graph(for_board).subgraphs
-}
-
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::GetNetMap or none
 // parity_status: partial
