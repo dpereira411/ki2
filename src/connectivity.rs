@@ -2265,6 +2265,130 @@ struct LiveReducedBasePin {
 
 type LiveReducedBasePinHandle = Rc<RefCell<LiveReducedBasePin>>;
 
+impl LiveReducedLabelLink {
+    // Upstream parity: local item-owner analogue for the exercised
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()` label branch. This still mutates a reduced
+    // live item carrier instead of a real `SCH_LABEL`, but the label owner now decides whether to
+    // adopt the chosen live connection and keeps the `item != m_driver` skip on the owner path
+    // instead of leaving that policy in a separate helper loop.
+    fn refresh_from_driver_connection(
+        &mut self,
+        chosen_driver: Option<&LiveProjectStrongDriverHandle>,
+        driver_connection: &LiveReducedConnection,
+        driver_connection_type: ReducedProjectConnectionType,
+    ) {
+        if chosen_driver
+            .zip(self.driver.as_ref())
+            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
+        {
+            return;
+        }
+
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            self.connection.borrow().connection_type,
+        ) {
+            return;
+        }
+
+        self.connection.clone_from(driver_connection);
+    }
+}
+
+impl LiveReducedHierSheetPinLink {
+    // Upstream parity: local item-owner analogue for the exercised sheet-pin branch of
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still runs on a reduced live link owner
+    // instead of a real `SCH_SHEET_PIN`, but the owner now applies the chosen-driver skip and
+    // connection-kind guard directly.
+    fn refresh_from_driver_connection(
+        &mut self,
+        chosen_driver: Option<&LiveProjectStrongDriverHandle>,
+        driver_connection: &LiveReducedConnection,
+        driver_connection_type: ReducedProjectConnectionType,
+    ) {
+        if chosen_driver
+            .zip(self.driver.as_ref())
+            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
+        {
+            return;
+        }
+
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            self.connection.borrow().connection_type,
+        ) {
+            return;
+        }
+
+        self.connection.clone_from(driver_connection);
+    }
+}
+
+impl LiveReducedHierPortLink {
+    // Upstream parity: local item-owner analogue for the exercised hierarchical-port branch of
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. The live owner still wraps reduced payload,
+    // but it now owns the exercised update decision instead of helper-side branch duplication.
+    fn refresh_from_driver_connection(
+        &mut self,
+        chosen_driver: Option<&LiveProjectStrongDriverHandle>,
+        driver_connection: &LiveReducedConnection,
+        driver_connection_type: ReducedProjectConnectionType,
+    ) {
+        if chosen_driver
+            .zip(self.driver.as_ref())
+            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
+        {
+            return;
+        }
+
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            self.connection.borrow().connection_type,
+        ) {
+            return;
+        }
+
+        self.connection.clone_from(driver_connection);
+    }
+}
+
+impl LiveReducedBasePin {
+    // Upstream parity: local pin-owner analogue for the exercised pin branch of
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still updates a reduced live base-pin
+    // owner instead of a real `SCH_PIN`, but the owner now decides whether to preserve setup-time
+    // pin-owned state, skip the chosen driver, and adopt the chosen live connection.
+    fn refresh_from_driver_connection(
+        &mut self,
+        chosen_driver: Option<&LiveProjectStrongDriverHandle>,
+        driver_connection: &LiveReducedConnection,
+        driver_connection_type: ReducedProjectConnectionType,
+        refresh_attached_strong_driver_pins: bool,
+    ) {
+        if chosen_driver
+            .zip(self.driver.as_ref())
+            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
+        {
+            return;
+        }
+
+        if !refresh_attached_strong_driver_pins && self.driver.is_some() {
+            return;
+        }
+
+        if reduced_connection_kind_mismatch(
+            driver_connection_type,
+            self.connection.borrow().connection_type,
+        ) {
+            return;
+        }
+
+        clone_live_connection_owner_into_live_base_pin_connection_owner(
+            &mut self.connection.borrow_mut(),
+            &driver_connection.borrow(),
+        );
+    }
+}
+
 fn live_strong_driver_handle_snapshot(
     driver: &LiveProjectStrongDriverHandle,
 ) -> ReducedProjectStrongDriver {
@@ -3037,29 +3161,11 @@ fn sync_live_reduced_base_pin_connections_from_driver_handle(
     let chosen_driver = subgraph.chosen_driver.clone();
 
     for base_pin in &subgraph.base_pins {
-        if chosen_driver
-            .as_ref()
-            .zip(base_pin.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if !refresh_attached_strong_driver_pins && base_pin.borrow().driver.is_some() {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
+        base_pin.borrow_mut().refresh_from_driver_connection(
+            chosen_driver.as_ref(),
+            &driver_connection,
             driver_connection_type,
-            base_pin.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        let base_pin = base_pin.borrow();
-        clone_live_connection_owner_into_live_base_pin_connection_owner(
-            &mut base_pin.connection.borrow_mut(),
-            &driver_connection.borrow(),
+            refresh_attached_strong_driver_pins,
         );
     }
 }
@@ -3080,58 +3186,25 @@ fn sync_live_reduced_item_connections_from_driver_handle(handle: &LiveReducedSub
     let chosen_driver = subgraph.chosen_driver.clone();
 
     for link in &subgraph.label_links {
-        if chosen_driver
-            .as_ref()
-            .zip(link.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
+        link.borrow_mut().refresh_from_driver_connection(
+            chosen_driver.as_ref(),
+            &driver_connection,
             driver_connection_type,
-            link.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        link.borrow_mut().connection.clone_from(&driver_connection);
+        );
     }
     for pin in &subgraph.hier_sheet_pins {
-        if chosen_driver
-            .as_ref()
-            .zip(pin.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
+        pin.borrow_mut().refresh_from_driver_connection(
+            chosen_driver.as_ref(),
+            &driver_connection,
             driver_connection_type,
-            pin.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        pin.borrow_mut().connection.clone_from(&driver_connection);
+        );
     }
     for port in &subgraph.hier_ports {
-        if chosen_driver
-            .as_ref()
-            .zip(port.borrow().driver.as_ref())
-            .is_some_and(|(chosen, owner)| Rc::ptr_eq(chosen, owner))
-        {
-            continue;
-        }
-
-        if reduced_connection_kind_mismatch(
+        port.borrow_mut().refresh_from_driver_connection(
+            chosen_driver.as_ref(),
+            &driver_connection,
             driver_connection_type,
-            port.borrow().connection.borrow().connection_type,
-        ) {
-            continue;
-        }
-
-        port.borrow_mut().connection.clone_from(&driver_connection);
+        );
     }
 
     drop(subgraph);
