@@ -2413,6 +2413,25 @@ impl LiveReducedLabelLink {
 
         self.connection.clone_from(driver_connection);
     }
+
+    // Upstream parity: local live label-owner analogue for binding one exercised strong driver
+    // back onto the chosen item owner. This still returns a reduced local driver-owner variant
+    // instead of a fuller live driver-item object, but it moves label attachment state onto the
+    // label owner instead of open-coding it inside the subgraph builder.
+    fn attach_strong_driver(
+        &mut self,
+        owner: &LiveReducedLabelLinkHandle,
+        driver: &LiveProjectStrongDriverHandle,
+        kind: ReducedProjectDriverKind,
+        priority: i32,
+    ) -> LiveProjectStrongDriverOwner {
+        self.driver = Some(driver.clone());
+        LiveProjectStrongDriverOwner::Label {
+            owner: Rc::downgrade(owner),
+            kind,
+            priority,
+        }
+    }
 }
 
 impl LiveReducedHierSheetPinLink {
@@ -2442,6 +2461,24 @@ impl LiveReducedHierSheetPinLink {
 
         self.connection.clone_from(driver_connection);
     }
+
+    // Upstream parity: local live sheet-pin-owner analogue for exercised strong-driver binding.
+    // The fuller live driver-item graph is still missing, but the shared sheet-pin owner now owns
+    // the driver attachment side effect instead of leaving it in the surrounding builder logic.
+    fn attach_strong_driver(
+        &mut self,
+        owner: &LiveReducedHierSheetPinLinkHandle,
+        driver: &LiveProjectStrongDriverHandle,
+        kind: ReducedProjectDriverKind,
+        priority: i32,
+    ) -> LiveProjectStrongDriverOwner {
+        self.driver = Some(driver.clone());
+        LiveProjectStrongDriverOwner::SheetPin {
+            owner: Rc::downgrade(owner),
+            kind,
+            priority,
+        }
+    }
 }
 
 impl LiveReducedHierPortLink {
@@ -2469,6 +2506,23 @@ impl LiveReducedHierPortLink {
         }
 
         self.connection.clone_from(driver_connection);
+    }
+
+    // Upstream parity: local live hierarchical-port-owner analogue for exercised strong-driver
+    // binding on the shared graph.
+    fn attach_strong_driver(
+        &mut self,
+        owner: &LiveReducedHierPortLinkHandle,
+        driver: &LiveProjectStrongDriverHandle,
+        kind: ReducedProjectDriverKind,
+        priority: i32,
+    ) -> LiveProjectStrongDriverOwner {
+        self.driver = Some(driver.clone());
+        LiveProjectStrongDriverOwner::HierPort {
+            owner: Rc::downgrade(owner),
+            kind,
+            priority,
+        }
     }
 }
 
@@ -2506,6 +2560,27 @@ impl LiveReducedBasePin {
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
         );
+    }
+
+    // Upstream parity: local live base-pin-owner analogue for exercised symbol-pin/power-pin
+    // strong-driver binding. This still uses the reduced live base-pin owner instead of a fuller
+    // live `SCH_PIN`, but the base-pin owner now owns the driver attachment and pin-owned
+    // connection seeding side effect instead of leaving that branch in the surrounding builder.
+    fn attach_strong_driver(
+        &mut self,
+        owner: &LiveReducedBasePinHandle,
+        driver: &LiveProjectStrongDriverHandle,
+        floating_connection: &LiveReducedConnection,
+        kind: ReducedProjectDriverKind,
+        priority: i32,
+    ) -> LiveProjectStrongDriverOwner {
+        self.connection.clone_from(floating_connection);
+        self.driver = Some(driver.clone());
+        LiveProjectStrongDriverOwner::SymbolPin {
+            owner: Rc::downgrade(owner),
+            kind,
+            priority,
+        }
     }
 }
 
@@ -3269,13 +3344,12 @@ fn attach_live_strong_driver_owners_to_handles(
                             .iter()
                             .find(|port| port.borrow().at == at)
                             .map(|port| {
-                                let mut port_ref = port.borrow_mut();
-                                port_ref.driver = Some(driver.clone());
-                                LiveProjectStrongDriverOwner::HierPort {
-                                    owner: Rc::downgrade(port),
-                                    kind: driver_kind,
+                                port.borrow_mut().attach_strong_driver(
+                                    port,
+                                    driver,
+                                    driver_kind,
                                     priority,
-                                }
+                                )
                             })
                             .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                                 identity: identity.clone(),
@@ -3292,13 +3366,12 @@ fn attach_live_strong_driver_owners_to_handles(
                                 link.at == at && reduced_label_kind_sort_key(link.kind) == kind
                             })
                             .map(|link| {
-                                let mut link_ref = link.borrow_mut();
-                                link_ref.driver = Some(driver.clone());
-                                LiveProjectStrongDriverOwner::Label {
-                                    owner: Rc::downgrade(link),
-                                    kind: driver_kind,
+                                link.borrow_mut().attach_strong_driver(
+                                    link,
+                                    driver,
+                                    driver_kind,
                                     priority,
-                                }
+                                )
                             })
                             .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                                 identity: identity.clone(),
@@ -3313,13 +3386,8 @@ fn attach_live_strong_driver_owners_to_handles(
                     .iter()
                     .find(|pin| pin.borrow().at == at)
                     .map(|pin| {
-                        let mut pin_ref = pin.borrow_mut();
-                        pin_ref.driver = Some(driver.clone());
-                        LiveProjectStrongDriverOwner::SheetPin {
-                            owner: Rc::downgrade(pin),
-                            kind: driver_kind,
-                            priority,
-                        }
+                        pin.borrow_mut()
+                            .attach_strong_driver(pin, driver, driver_kind, priority)
                     })
                     .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                         identity: identity.clone(),
@@ -3342,17 +3410,13 @@ fn attach_live_strong_driver_owners_to_handles(
                             && key.number.as_ref() == pin_number.as_ref()
                     })
                     .map(|base_pin| {
-                        {
-                            let base_pin_ref = base_pin.borrow();
-                            base_pin_ref.connection.clone_from(&floating_connection);
-                        }
-                        let mut base_pin_ref = base_pin.borrow_mut();
-                        base_pin_ref.driver = Some(driver.clone());
-                        LiveProjectStrongDriverOwner::SymbolPin {
-                            owner: Rc::downgrade(base_pin),
-                            kind: driver_kind,
+                        base_pin.borrow_mut().attach_strong_driver(
+                            base_pin,
+                            driver,
+                            &floating_connection,
+                            driver_kind,
                             priority,
-                        }
+                        )
                     })
                     .unwrap_or(LiveProjectStrongDriverOwner::Floating {
                         identity: identity.clone(),
