@@ -99,6 +99,7 @@ pub(crate) struct ReducedProjectBasePin {
     pub(crate) electrical_type: Option<String>,
     pub(crate) connection: ReducedProjectConnection,
     pub(crate) driver_connection: ReducedProjectConnection,
+    pub(crate) preserve_local_name_on_refresh: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -4277,6 +4278,7 @@ fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> Reduced
         electrical_type: base_pin.pin.electrical_type.clone(),
         connection: base_pin.connection.borrow().snapshot(),
         driver_connection: base_pin.driver_connection.borrow().snapshot(),
+        preserve_local_name_on_refresh: base_pin.preserve_local_name_on_refresh,
     }
 }
 
@@ -4503,7 +4505,7 @@ fn build_live_reduced_subgraph_handles(
                                 pin.driver_connection.clone().into(),
                             )),
                             driver: None,
-                            preserve_local_name_on_refresh: false,
+                            preserve_local_name_on_refresh: pin.preserve_local_name_on_refresh,
                             parent_subgraph_handle: Weak::new(),
                         }))
                     })
@@ -6623,6 +6625,12 @@ where
                         &unit_pins,
                         sheet_instance_path,
                     ),
+                    preserve_local_name_on_refresh: reduced_power_pin_driver_priority(
+                        symbol,
+                        pin.electrical_type.as_deref(),
+                    )
+                    .is_some()
+                        && reduced_power_pin_driver_text(symbol, pin).is_some(),
                 };
                 base_pins.push(base_pin);
 
@@ -8305,11 +8313,11 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
 // graph-owned per-pin driver connections projected on the reduced base-pin payload itself, and
 // both the named and by-location subgraph lookup edges now include projected pin number so
-// stacked pins do not collapse to one driver-name query. Base-pin owners now also start with
-// `updatePinConnectivity()`-style seeded names, so this lookup ignores auto-generated pin-owned
-// names when the graph has a better chosen driver and only reports the pin-owned name directly for
-// exercised power-pin and pin-default branches. Remaining divergence is fuller live
-// connection-object caching and item ownership.
+// stacked pins do not collapse to one driver-name query. Base-pin owners now also project
+// explicit pin-local-name preservation state from the live pin owner, so this lookup no longer
+// guesses from `Net-(` string shapes when deciding whether to report the pin-owned name or the
+// chosen subgraph driver name. Remaining divergence is fuller live connection-object caching and
+// item ownership.
 pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -8338,11 +8346,15 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
                         && (pin_number.is_none() || base_pin.key.number.as_deref() == pin_number)
                 })
             })
-            .map(|base_pin| &base_pin.driver_connection)
+            .map(|base_pin| {
+                (
+                    base_pin.preserve_local_name_on_refresh,
+                    &base_pin.driver_connection,
+                )
+            })
     })
-    .and_then(|connection| {
-        (!connection.local_name.is_empty() && !is_auto_generated_net_name(&connection.local_name))
-            .then(|| connection.local_name.clone())
+    .and_then(|(preserve_local_name_on_refresh, connection)| {
+        preserve_local_name_on_refresh.then(|| connection.local_name.clone())
     })
     .or_else(|| {
         resolve_reduced_project_subgraph_for_symbol_pin(
@@ -11787,6 +11799,7 @@ mod tests {
                             sheet_instance_path: sheet_path.instance_path.clone(),
                             members: Vec::new(),
                         },
+                        preserve_local_name_on_refresh: true,
                     },
                     super::ReducedProjectBasePin {
                         schematic_path: sheet_path.schematic_path.clone(),
@@ -11817,6 +11830,7 @@ mod tests {
                             sheet_instance_path: sheet_path.instance_path.clone(),
                             members: Vec::new(),
                         },
+                        preserve_local_name_on_refresh: true,
                     },
                 ],
                 label_links: Vec::new(),
@@ -13668,6 +13682,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: true,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -13833,6 +13848,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: true,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -13938,6 +13954,7 @@ mod tests {
                     members: Vec::new(),
                 },
                 driver_connection: chosen.clone(),
+                preserve_local_name_on_refresh: true,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -14150,6 +14167,7 @@ mod tests {
                         sheet_instance_path: String::new(),
                         members: Vec::new(),
                     },
+                    preserve_local_name_on_refresh: true,
                 },
                 super::ReducedProjectBasePin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -14180,6 +14198,7 @@ mod tests {
                         sheet_instance_path: String::new(),
                         members: Vec::new(),
                     },
+                    preserve_local_name_on_refresh: true,
                 },
             ],
             label_links: Vec::new(),
@@ -16984,6 +17003,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: false,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17066,6 +17086,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: false,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17148,6 +17169,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: false,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17249,6 +17271,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: false,
             }],
             label_links: vec![ReducedLabelLink {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -17396,6 +17419,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: true,
             }],
             label_links: vec![ReducedLabelLink {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -17533,6 +17557,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: true,
             }],
             label_links: vec![ReducedLabelLink {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
@@ -17636,6 +17661,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: false,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17738,6 +17764,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: true,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17854,6 +17881,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: true,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),
@@ -17936,6 +17964,7 @@ mod tests {
                     sheet_instance_path: String::new(),
                     members: Vec::new(),
                 },
+                preserve_local_name_on_refresh: false,
             }],
             label_links: Vec::new(),
             no_connect_points: Vec::new(),

@@ -958,6 +958,9 @@ Current status:
         - live base-pin owners now also carry explicit pin-local text preservation state for
           attached strong-driver branches instead of re-deriving that choice from
           `local_name` string shapes on every clone
+        - reduced base-pin projection now also carries that explicit pin-local text preservation
+          state, so reduced symbol-pin driver-name lookup no longer guesses from `Net-(` string
+          shapes when deciding whether to report the pin-owned name or the chosen driver name
         - label/sheet-pin/hier-port item-owner refresh now also preserves shown-text local names
           on an item-owner clone path instead of relying on the shared live connection clone to
           keep non-empty `local_name` values for every net connection in the graph
