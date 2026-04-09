@@ -803,6 +803,9 @@ Current status:
       - active live strong-driver attachment now reads driver identity from the reduced input graph
         at handle-attachment time; copied live driver identity remains only as test scaffolding on
         the value-owned live carrier
+      - active non-test live strong-driver rank metadata no longer lives on copied driver fields;
+        `kind` and `priority` now ride on the attached owner variant, with copied fields kept only
+        for test/value-carrier scaffolding
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
