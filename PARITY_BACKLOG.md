@@ -839,6 +839,9 @@ Current status:
       - live base pins now always carry a live connection owner instead of an optional carrier
       - attached symbol-pin drivers now also seed the base-pin live connection owner from the
         pin-owned driver connection instead of leaving that owner blank
+      - the reduced project graph now projects graph-owned per-pin driver connections out of the
+        live base-pin owners, so symbol-pin driver-name queries no longer have to collapse back to
+        the whole-subgraph driver connection
       - remaining gap is the richer per-pin update/selection logic on that owner for multi-pin
         power-pin/base-pin branches
     - concrete next unblock path:

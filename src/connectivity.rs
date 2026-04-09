@@ -455,6 +455,9 @@ pub(crate) struct ReducedProjectNetGraph {
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
     pin_subgraph_identities: BTreeMap<ReducedNetBasePinKey, usize>,
     pin_subgraph_identities_by_location: BTreeMap<ReducedProjectPinIdentityKey, usize>,
+    pin_driver_connections: BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
+    pin_driver_connections_by_location:
+        BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
     label_subgraph_identities: BTreeMap<ReducedProjectLabelIdentityKey, usize>,
     no_connect_subgraph_identities: BTreeMap<ReducedProjectNoConnectIdentityKey, usize>,
@@ -3234,6 +3237,38 @@ fn reduced_project_hierarchy_indexes_from_live_subgraph(
     (parent_index, child_indexes)
 }
 
+fn collect_reduced_project_pin_driver_connections_from_live_handles(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+) -> (
+    BTreeMap<ReducedNetBasePinKey, ReducedProjectConnection>,
+    BTreeMap<ReducedProjectPinIdentityKey, ReducedProjectConnection>,
+) {
+    let mut by_pin = BTreeMap::new();
+    let mut by_location = BTreeMap::new();
+
+    for handle in live_subgraphs {
+        let subgraph = handle.borrow();
+        for base_pin in &subgraph.base_pins {
+            let base_pin = base_pin.borrow();
+            let connection = base_pin.connection.snapshot();
+            if connection.connection_type == ReducedProjectConnectionType::None {
+                continue;
+            }
+
+            by_pin.insert(base_pin.key.clone(), connection.clone());
+            by_location
+                .entry(ReducedProjectPinIdentityKey {
+                    sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
+                    symbol_uuid: base_pin.key.symbol_uuid.clone(),
+                    at: base_pin.key.at,
+                })
+                .or_insert(connection);
+        }
+    }
+
+    (by_pin, by_location)
+}
+
 // Upstream parity: reduced local analogue for the item-owned `SCH_CONNECTION::Clone()` refresh
 // KiCad performs after a subgraph's chosen connection changes. This still uses reduced live
 // wrappers instead of shared item pointers, but it keeps label/sheet-pin/hier-port connection
@@ -5455,7 +5490,14 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
 // handle subset per recursive visit and requeue through dirty ownership directly. Remaining
 // divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology
 // behind those handles.
+#[cfg_attr(not(test), allow(dead_code))]
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
+    let _ = refresh_reduced_live_graph_propagation_with_handles(reduced_subgraphs);
+}
+
+fn refresh_reduced_live_graph_propagation_with_handles(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) -> Vec<LiveReducedSubgraphHandle> {
     let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
     run_reduced_live_graph_roots_on_handles(&live_subgraphs, false);
     run_reduced_live_graph_roots_on_handles(&live_subgraphs, true);
@@ -5467,6 +5509,7 @@ fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjec
     refresh_reduced_live_bus_link_members_on_handles_for_indexes(&live_subgraphs, &all_indexes);
     refresh_reduced_live_post_propagation_item_connections_on_handles(&live_subgraphs);
     apply_live_reduced_driver_connections_from_handles(reduced_subgraphs, &live_subgraphs);
+    live_subgraphs
 }
 
 // Upstream parity: reduced local analogue for the post-propagation item-connection update KiCad
@@ -7369,10 +7412,13 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
-    refresh_reduced_live_graph_propagation(&mut reduced_subgraphs);
+    let live_subgraphs =
+        refresh_reduced_live_graph_propagation_with_handles(&mut reduced_subgraphs);
     attach_reduced_connected_bus_items(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
+    let (pin_driver_connections, pin_driver_connections_by_location) =
+        collect_reduced_project_pin_driver_connections_from_live_handles(&live_subgraphs);
 
     ReducedProjectNetGraph {
         subgraphs: reduced_subgraphs,
@@ -7380,6 +7426,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraphs_by_sheet_and_name,
         pin_subgraph_identities,
         pin_subgraph_identities_by_location,
+        pin_driver_connections,
+        pin_driver_connections_by_location,
         point_subgraph_identities,
         label_subgraph_identities,
         no_connect_subgraph_identities,
@@ -8181,8 +8229,9 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
 
 // Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
-// Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
-// driver connection owner for pin text vars instead of keeping a duplicate short-name cache.
+// Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
+// graph-owned per-pin driver connections projected from the live base-pin owners instead of always
+// collapsing symbol-pin driver-name queries to the chosen whole-subgraph driver connection.
 // Remaining divergence is fuller live connection-object caching and item ownership.
 pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
@@ -8191,12 +8240,28 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     at: [f64; 2],
     pin_name: Option<&str>,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name)
-        .and_then(|subgraph| {
-            subgraph
-                .driver_connection
-                .as_ref()
-                .map(|connection| connection.local_name.clone())
+    pin_name
+        .and_then(|pin_name| {
+            graph
+                .pin_driver_connections
+                .get(&reduced_project_base_pin_key(
+                    sheet_path, symbol, at, pin_name,
+                ))
+        })
+        .or_else(|| {
+            graph
+                .pin_driver_connections_by_location
+                .get(&reduced_project_pin_identity_key(sheet_path, symbol, at))
+        })
+        .map(|connection| connection.local_name.clone())
+        .or_else(|| {
+            resolve_reduced_project_subgraph_for_symbol_pin(graph, sheet_path, symbol, at, pin_name)
+                .and_then(|subgraph| {
+                    subgraph
+                        .driver_connection
+                        .as_ref()
+                        .map(|connection| connection.local_name.clone())
+                })
         })
 }
 
@@ -11155,6 +11220,88 @@ mod tests {
 
         assert_eq!(gnd_pin.name, "VCC");
         assert_eq!(agnd_pin.name, "VCC");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_driver_name_for_power_pin_uses_pin_owned_connection() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_power_pin_driver_name_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:VCC"
+      (power)
+      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "VCC" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "VCC_1_1"
+        (pin power_in line (at 0 0 180) (length 2.54)
+          (name "VCC" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "power:VCC")
+    (uuid "73050000-0000-0000-0000-000000000301")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "VCC" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy -10 0)))
+  (global_label "SIG" (shape input) (at -10 0 0) (effects (font (size 1 1)))))"##,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("power symbol");
+
+        let driver_name = crate::connectivity::resolve_reduced_project_driver_name_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [0.0, 0.0],
+            Some("VCC"),
+        )
+        .expect("driver name");
+        let net_name = crate::connectivity::resolve_reduced_project_net_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [0.0, 0.0],
+            Some("VCC"),
+        )
+        .expect("net identity");
+
+        assert_eq!(driver_name, "VCC");
+        assert_eq!(net_name.name, "SIG");
 
         let _ = fs::remove_file(path);
     }
