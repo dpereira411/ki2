@@ -907,6 +907,9 @@ Current status:
         lookup now ignores those auto-generated pin-owned names when the graph has a better chosen
         driver, so connected labeled nets do not regress while per-pin live owners stop starting
         blank
+      - live base-pin owners now also keep immutable pin identity separately from the shared live
+        connection owner instead of shadowing a second copied reduced pin connection inside the
+        same live carrier
       - the remaining pin gap is now the richer per-pin update/selection logic on those live pin
         owners for multi-pin power-pin/base-pin branches, not missing lookup identity or missing
         graph-owned per-pin storage

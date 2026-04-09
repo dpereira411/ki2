@@ -2120,8 +2120,17 @@ struct LiveReducedHierPortLink {
 type LiveReducedHierPortLinkHandle = Rc<RefCell<LiveReducedHierPortLink>>;
 
 #[derive(Clone, Debug)]
+struct LiveReducedBasePinPayload {
+    key: ReducedNetBasePinKey,
+}
+
+#[derive(Clone, Debug)]
+// Upstream parity: reduced local live pin-item payload under the shared graph. This still keeps a
+// reduced projected pin payload instead of a live `SCH_PIN*`, but it now separates immutable pin
+// identity/type data from the shared live connection owner so the active live pin carrier stops
+// shadowing a second copied reduced connection beside the real live connection handle.
 struct LiveReducedBasePin {
-    pin: ReducedProjectBasePin,
+    pin: LiveReducedBasePinPayload,
     connection: LiveReducedConnection,
     driver: Option<LiveProjectStrongDriverHandle>,
 }
@@ -2956,8 +2965,10 @@ fn build_live_reduced_subgraphs(
                 .cloned()
                 .map(|pin| {
                     Rc::new(RefCell::new(LiveReducedBasePin {
+                        pin: LiveReducedBasePinPayload {
+                            key: pin.key.clone(),
+                        },
                         connection: LiveReducedConnection::new(pin.connection.clone()),
-                        pin,
                         driver: None,
                     }))
                 })
