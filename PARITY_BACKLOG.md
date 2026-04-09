@@ -1032,6 +1032,13 @@ Current status:
       - live base-pin build now seeds that direct driver handle from the reduced per-pin
         `driver_connection` owner itself instead of collapsing it back onto the item connection
         during handle construction
+      - symbol-pin driver attachment now preserves that pre-seeded pin-driver owner instead of
+        re-cloning a temporary floating driver connection into the base-pin owner during
+        attachment
+      - chosen-driver attachment now also splits its non-identity fallback by owner kind:
+        symbol-pin drivers match against the attached live pin-driver owner, while label/sheet-pin/
+        hier-port branches still use the reduced driver snapshot because their item-owned
+        connections are refreshed later by `UpdateItemConnections()`
       - active base-pin item connections now also live on direct shared live connection handles,
         so the pin owner no longer carries reduced wrapper state for either of its live pin
         connections

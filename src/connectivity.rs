@@ -2380,20 +2380,16 @@ impl LiveReducedBasePin {
 
     // Upstream parity: local live base-pin-owner analogue for exercised symbol-pin/power-pin
     // strong-driver binding. This still uses the reduced live base-pin owner instead of a fuller
-    // live `SCH_PIN`, but the base-pin owner now owns the driver attachment and pin-owned
-    // connection seeding side effect instead of leaving that branch in the surrounding builder.
+    // live `SCH_PIN`, but the base-pin owner now owns the driver attachment itself and keeps the
+    // pre-seeded pin-driver connection owner instead of re-cloning reduced driver connection state
+    // through the surrounding builder.
     fn attach_strong_driver(
         &mut self,
         owner: &LiveReducedBasePinHandle,
         driver: &LiveProjectStrongDriverHandle,
-        floating_connection: &LiveProjectConnectionHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
     ) -> LiveProjectStrongDriverOwner {
-        clone_live_connection_owner_into_live_connection_owner(
-            &mut self.driver_connection.borrow_mut(),
-            &floating_connection.borrow(),
-        );
         self.driver = Some(driver.clone());
         LiveProjectStrongDriverOwner::SymbolPin {
             owner: Rc::downgrade(owner),
@@ -2869,7 +2865,11 @@ impl LiveReducedSubgraph {
     // the shared subgraph owner during driver resolution. This still seeds from reduced projected
     // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
     // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
-    // that branch open-coded in the surrounding builder.
+    // that branch open-coded in the surrounding builder. The non-identity fallback still uses the
+    // reduced strong-driver snapshot for text-item branches whose item-owned connection may not yet
+    // equal the chosen net at attachment time, but symbol-pin drivers now use the attached live
+    // pin-driver owner directly so pre-seeded per-pin driver state is not collapsed back through
+    // the reduced snapshot.
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
@@ -2877,9 +2877,20 @@ impl LiveReducedSubgraph {
         chosen_identity: Option<&ReducedProjectDriverIdentity>,
         chosen_connection: &ReducedProjectConnection,
     ) {
+        let chosen_live_connection = LiveProjectConnection::from(chosen_connection.clone());
         let is_chosen_driver = chosen_identity
             .map(|identity| driver.borrow().identity().as_ref() == Some(identity))
-            .unwrap_or_else(|| reduced_driver.connection == *chosen_connection);
+            .unwrap_or_else(|| {
+                if matches!(
+                    driver.borrow().owner,
+                    LiveProjectStrongDriverOwner::SymbolPin { .. }
+                ) {
+                    let driver_connection = driver.borrow().connection_handle();
+                    *driver_connection.borrow() == chosen_live_connection
+                } else {
+                    reduced_driver.connection == *chosen_connection
+                }
+            });
 
         if is_chosen_driver {
             self.chosen_driver = Some(driver.clone());
@@ -2976,7 +2987,6 @@ impl LiveReducedSubgraph {
                     base_pin.borrow_mut().attach_strong_driver(
                         base_pin,
                         driver,
-                        floating_connection,
                         driver_kind,
                         priority,
                     )
@@ -13528,6 +13538,208 @@ mod tests {
         };
         assert_eq!(owner.borrow().driver_connection.borrow().name, "RENAMED");
         assert_eq!(owner.borrow().connection.borrow().name, "PWR");
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_preserve_seeded_symbol_pin_driver_owner() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "PWR".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: Some(ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            }),
+            chosen_driver_identity: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::PowerPin,
+                priority: 6,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "FLOATING".to_string(),
+                    local_name: "FLOATING".to_string(),
+                    full_local_name: "FLOATING".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    pin_number: Some("1".to_string()),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![super::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                key: super::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    name: Some("1".to_string()),
+                    number: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("power_in".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "ITEM".to_string(),
+                    local_name: "ITEM".to_string(),
+                    full_local_name: "ITEM".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "SEEDED".to_string(),
+                    local_name: "SEEDED".to_string(),
+                    full_local_name: "SEEDED".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+        let owner = match subgraph.drivers[0].borrow().owner.clone() {
+            super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().expect("symbol pin owner")
+            }
+            _ => panic!("expected symbol pin strong-driver owner"),
+        };
+
+        assert_eq!(owner.borrow().connection.borrow().name, "ITEM");
+        assert_eq!(owner.borrow().driver_connection.borrow().name, "SEEDED");
+        assert_eq!(
+            subgraph.drivers[0]
+                .borrow()
+                .connection_handle()
+                .borrow()
+                .name,
+            "SEEDED"
+        );
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_choose_driver_from_attached_owner() {
+        let chosen = ReducedProjectConnection {
+            net_code: 1,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "SEEDED".to_string(),
+            local_name: "SEEDED".to_string(),
+            full_local_name: "SEEDED".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "SEEDED".to_string(),
+            resolved_connection: chosen.clone(),
+            driver_connection: Some(chosen.clone()),
+            chosen_driver_identity: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::PowerPin,
+                priority: 6,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "FLOATING".to_string(),
+                    local_name: "FLOATING".to_string(),
+                    full_local_name: "FLOATING".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    pin_number: Some("1".to_string()),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![super::ReducedProjectBasePin {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                key: super::ReducedNetBasePinKey {
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    name: Some("1".to_string()),
+                    number: Some("1".to_string()),
+                },
+                number: Some("1".to_string()),
+                electrical_type: Some("power_in".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "ITEM".to_string(),
+                    local_name: "ITEM".to_string(),
+                    full_local_name: "ITEM".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: chosen.clone(),
+            }],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+
+        assert!(subgraph.chosen_driver.is_some());
+        assert_eq!(subgraph.driver_connection.borrow().name, "SEEDED");
     }
 
     #[test]
