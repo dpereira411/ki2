@@ -747,6 +747,21 @@ fn unresolved_variable_diagnostic(path: &std::path::Path, message: String) -> Di
     }
 }
 
+fn label_property_is_intersheet_refs(property: &Property) -> bool {
+    if property.kind == PropertyKind::GlobalLabelIntersheetRefs {
+        return true;
+    }
+
+    let normalized = property
+        .key
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(|ch| ch.to_lowercase())
+        .collect::<String>();
+
+    matches!(normalized.as_str(), "intersheetreferences" | "intersheetrefs")
+}
+
 fn child_sheet_path_for_sheet<'a>(
     project: &'a SchematicProject,
     parent_path: &crate::loader::LoadedSheetPath,
@@ -1123,7 +1138,7 @@ pub fn check_unresolved_text_variables(project: &SchematicProject) -> Vec<Diagno
                 }
                 SchItem::Label(label) => {
                     for property in &label.properties {
-                        if !property.visible {
+                        if !property.visible || label_property_is_intersheet_refs(property) {
                             continue;
                         }
                         let shown = shown_label_property_text(project, sheet_path, label, property);

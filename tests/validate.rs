@@ -6152,6 +6152,23 @@ fn erc_ignores_hidden_intersheet_ref_label_properties_in_label_fixture() {
 }
 
 #[test]
+fn erc_ignores_visible_intersheet_ref_label_properties_in_issue7203_fixture() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue7203.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-unresolved-variable"),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
 fn erc_reports_hidden_unconnected_pins_in_issue6588_fixture() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue6588.kicad_sch");
