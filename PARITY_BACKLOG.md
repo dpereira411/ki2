@@ -931,6 +931,9 @@ Current status:
         connection instead of only covering the self-driven single-pin symbol branch, while
         attached strong-driver pins still keep their own pin-owned connection until the fuller
         live pin object exists
+      - build-time base-pin setup now keeps seeded per-pin strong-driver identity intact, while the
+        later live post-propagation refresh can widen attached strong-driver base pins onto the
+        chosen net identity without losing their explicit pin-owned local driver text
       - non-driver base-pin owners now also adopt the chosen driver's local name when their current
         pin-owned local name is empty or auto-generated, so ordinary pins stop staying frozen on
         `GetDefaultNetName()` seeds while attached power-pin owners keep their explicit pin-owned
@@ -959,13 +962,14 @@ Current status:
       4. widen the new live bus-entry and item-side owners into fuller live item/connection
          pointer ownership instead of collapsing them back to reduced wrappers and subgraph indexes
          at projection time
-      5. remove the remaining reduced search/rematch adapters around the new live member payload
-         so propagation and link refresh stop rebuilding `ReducedBusMember` keys on the active path
       5. replace the current reduced live subgraph handle payload with a fuller local
          `CONNECTION_SUBGRAPH` analogue so topology, dirty state, same-name recache, and attached
          live item owners stay on one shared object graph instead of reduced wrapper structs
       6. only after that, revisit remaining item/connection pointer ownership and connected-bus-item
          promotion
+    - active recursive bus propagation no longer rebuilds fresh live bus-link wrappers or snapshots
+      source bus members during rematch/clone; the remaining bus-member boundary is now projection
+      and compatibility code, not the active handle path
     - remaining bus-entry and parent-neighbor exactness now depends on that live-ish connection
       object behavior, not another local schematic scan or another point-list cleanup
   - architectural direction from this point:
