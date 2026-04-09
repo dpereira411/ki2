@@ -167,6 +167,23 @@ fn reduced_pin_type_weight(pin_type: ReducedPinType) -> usize {
     }
 }
 
+fn reduced_pin_type_text(pin_type: ReducedPinType) -> &'static str {
+    match pin_type {
+        ReducedPinType::Input => "Input",
+        ReducedPinType::Output => "Output",
+        ReducedPinType::Bidirectional => "Bidirectional",
+        ReducedPinType::TriState => "Tri-state",
+        ReducedPinType::Passive => "Passive",
+        ReducedPinType::Free => "Free",
+        ReducedPinType::Unspecified => "Unspecified",
+        ReducedPinType::PowerIn => "Power input",
+        ReducedPinType::PowerOut => "Power output",
+        ReducedPinType::OpenCollector => "Open collector",
+        ReducedPinType::OpenEmitter => "Open emitter",
+        ReducedPinType::NoConnect => "Unconnected",
+    }
+}
+
 fn reduced_str_num_cmp_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
 
@@ -2779,9 +2796,10 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
 // override slice on top of the upstream default matrix instead of hard-coding only the defaults,
 // reads exercised per-pin ERC context from shared graph-owned pin payload instead of re-walking
 // symbols at report time, prefers visible non-power pins for the reduced `needsDriver` report
-// target, and skips same-symbol stacked pins before pin-map conflict checks. Remaining divergence
-// is richer settings, multi-marker emission, and the fuller live graph ownership behind the
-// reduced carrier.
+// target, skips same-symbol stacked pins before pin-map conflict checks, and now reports the
+// conflicting pin-type pair like upstream instead of dropping that branch detail into a generic
+// point-only message. Remaining divergence is richer settings, multi-marker emission, and the
+// fuller live graph ownership behind the reduced carrier.
 pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2862,7 +2880,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
             }
 
             let pin = &pins[pin_index];
-            let mut nearest_conflict: Option<(PinConflict, bool, f64)> = None;
+            let mut nearest_conflict: Option<(PinConflict, usize, bool, f64)> = None;
 
             mismatches.retain(|mismatch| {
                 let other_index = if mismatch.lhs == pin_index {
@@ -2884,20 +2902,22 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                 };
 
                 match &nearest_conflict {
-                    Some((_, best_same_path, _)) if *best_same_path && !same_path => {}
-                    Some((_, best_same_path, best_distance))
+                    Some((_, _, best_same_path, _)) if *best_same_path && !same_path => {}
+                    Some((_, _, best_same_path, best_distance))
                         if *best_same_path == same_path && *best_distance <= distance => {}
                     _ => {
-                        nearest_conflict = Some((mismatch.conflict, same_path, distance));
+                        nearest_conflict =
+                            Some((mismatch.conflict, other_index, same_path, distance));
                     }
                 }
 
                 false
             });
 
-            let Some((conflict, _, _)) = nearest_conflict else {
+            let Some((conflict, other_index, _, _)) = nearest_conflict else {
                 continue;
             };
+            let other = &pins[other_index];
 
             diagnostics.push(Diagnostic {
                 severity: match conflict {
@@ -2911,7 +2931,11 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
                     PinConflict::Ok => continue,
                 },
                 kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!("Conflicting pins connected at {}, {}", pin.at[0], pin.at[1]),
+                message: format!(
+                    "Pins of type {} and {} are connected",
+                    reduced_pin_type_text(pin.pin_type),
+                    reduced_pin_type_text(other.pin_type)
+                ),
                 path: Some(pin.path.clone()),
                 span: None,
                 line: None,

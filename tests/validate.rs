@@ -5978,7 +5978,10 @@ fn erc_reports_conflicting_pin_types_on_same_net() {
         .collect::<Vec<_>>();
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].message, "Conflicting pins connected at 0, 0");
+    assert_eq!(
+        diagnostics[0].message,
+        "Pins of type Output and Output are connected"
+    );
 
     let _ = fs::remove_file(path);
 }
