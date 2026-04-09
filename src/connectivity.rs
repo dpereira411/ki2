@@ -1279,50 +1279,7 @@ fn clone_live_bus_member_into_live_connection_owner(
     source: &LiveProjectBusMember,
     sheet_instance_path: &str,
 ) {
-    let existing_local_name = target.local_name.clone();
-    let existing_members = target.members.clone();
-
-    target.net_code = source.net_code;
-    target.connection_type = match source.kind {
-        ReducedBusMemberKind::Net => ReducedProjectConnectionType::Net,
-        ReducedBusMemberKind::Bus => ReducedProjectConnectionType::Bus,
-    };
-    target.name = source.full_local_name.clone();
-    if existing_local_name.is_empty() {
-        target.local_name = source.local_name.clone();
-    }
-    target.full_local_name = source.full_local_name.clone();
-    target.sheet_instance_path = sheet_instance_path.to_string();
-
-    if matches!(
-        target.connection_type,
-        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-    ) && matches!(source.kind, ReducedBusMemberKind::Bus)
-    {
-        if existing_members.is_empty() {
-            target.members = source.members.clone();
-        } else {
-            target.members = existing_members;
-
-            let clone_limit = target.members.len().min(source.members.len());
-            for index in 0..clone_limit {
-                clone_live_bus_member_handle_into_live_bus_member_handle(
-                    &target.members[index],
-                    &source.members[index],
-                );
-            }
-
-            if target.members.len() > source.members.len() {
-                target.members.truncate(source.members.len());
-            } else if target.members.len() < source.members.len() {
-                target
-                    .members
-                    .extend(source.members[target.members.len()..].iter().cloned());
-            }
-        }
-    } else {
-        target.members = source.members.clone();
-    }
+    target.clone_from_live_bus_member(source, sheet_instance_path);
 }
 
 // Upstream parity: reduced local analogue for `assignNewNetCode()` / `assignNetCodesToBus()`.
@@ -1659,6 +1616,172 @@ impl From<ReducedProjectConnection> for LiveProjectConnection {
 }
 
 impl LiveProjectConnection {
+    // Upstream parity: local live-owner bridge toward cloning one propagated reduced connection
+    // into the shared live graph owner. This is still fed by a reduced compatibility branch, but
+    // it lets the remaining live-subgraph fallback path mutate the existing connection owner
+    // instead of swapping in a freshly rebuilt connection value.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn clone_from_reduced_connection(&mut self, source: &ReducedProjectConnection) {
+        let existing_local_name = self.local_name.clone();
+        let existing_members = self.members.clone();
+
+        self.net_code = source.net_code;
+        self.connection_type = source.connection_type;
+        self.name = source.name.clone();
+        if existing_local_name.is_empty() {
+            self.local_name = source.local_name.clone();
+        }
+        self.full_local_name = source.full_local_name.clone();
+        self.sheet_instance_path = source.sheet_instance_path.clone();
+
+        if matches!(
+            self.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) && matches!(
+            source.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) {
+            if existing_members.is_empty() {
+                self.members = reduced_bus_members_into_live_handles(source.members.clone());
+            } else {
+                self.members = existing_members;
+
+                let clone_limit = self.members.len().min(source.members.len());
+                for index in 0..clone_limit {
+                    clone_reduced_bus_member_into_live_bus_member(
+                        &mut self.members[index].borrow_mut(),
+                        &source.members[index],
+                    );
+                }
+
+                if self.members.len() > source.members.len() {
+                    self.members.truncate(source.members.len());
+                } else if self.members.len() < source.members.len() {
+                    self.members.extend(
+                        source.members[self.members.len()..]
+                            .iter()
+                            .cloned()
+                            .map(|member| Rc::new(RefCell::new(member.into()))),
+                    );
+                }
+            }
+        } else {
+            self.members = reduced_bus_members_into_live_handles(source.members.clone());
+        }
+    }
+
+    // Upstream parity: local live-owner bridge toward `SCH_CONNECTION::Clone()` on the shared live
+    // graph. This still mutates a reduced local connection carrier instead of a full live
+    // `SCH_CONNECTION`, but the active graph now routes live-to-live connection cloning through the
+    // connection owner itself instead of open-coding field updates at each call site.
+    fn clone_from_live_connection(&mut self, source: &LiveProjectConnection) {
+        let existing_local_name = self.local_name.clone();
+        let existing_members = self.members.clone();
+
+        self.net_code = source.net_code;
+        self.connection_type = source.connection_type;
+        self.name = source.name.clone();
+        if existing_local_name.is_empty() {
+            self.local_name = source.local_name.clone();
+        }
+        self.full_local_name = source.full_local_name.clone();
+        self.sheet_instance_path = source.sheet_instance_path.clone();
+
+        if matches!(
+            self.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) && matches!(
+            source.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) {
+            if existing_members.is_empty() {
+                self.members = source.members.clone();
+            } else {
+                self.members = existing_members;
+
+                let clone_limit = self.members.len().min(source.members.len());
+                for index in 0..clone_limit {
+                    clone_live_bus_member_handle_into_live_bus_member_handle(
+                        &self.members[index],
+                        &source.members[index],
+                    );
+                }
+
+                if self.members.len() > source.members.len() {
+                    self.members.truncate(source.members.len());
+                } else if self.members.len() < source.members.len() {
+                    self.members
+                        .extend(source.members[self.members.len()..].iter().cloned());
+                }
+            }
+        } else {
+            self.members = source.members.clone();
+        }
+    }
+
+    // Upstream parity: local live-owner bridge toward cloning one propagated bus member into an
+    // attached `SCH_CONNECTION`. This keeps the exercised bus-member-to-connection mutation on the
+    // connection owner instead of open-coding it at each propagation site.
+    fn clone_from_live_bus_member(
+        &mut self,
+        source: &LiveProjectBusMember,
+        sheet_instance_path: &str,
+    ) {
+        let existing_local_name = self.local_name.clone();
+        let existing_members = self.members.clone();
+
+        self.net_code = source.net_code;
+        self.connection_type = match source.kind {
+            ReducedBusMemberKind::Net => ReducedProjectConnectionType::Net,
+            ReducedBusMemberKind::Bus => ReducedProjectConnectionType::Bus,
+        };
+        self.name = source.full_local_name.clone();
+        if existing_local_name.is_empty() {
+            self.local_name = source.local_name.clone();
+        }
+        self.full_local_name = source.full_local_name.clone();
+        self.sheet_instance_path = sheet_instance_path.to_string();
+
+        if matches!(
+            self.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) && matches!(source.kind, ReducedBusMemberKind::Bus)
+        {
+            if existing_members.is_empty() {
+                self.members = source.members.clone();
+            } else {
+                self.members = existing_members;
+
+                let clone_limit = self.members.len().min(source.members.len());
+                for index in 0..clone_limit {
+                    clone_live_bus_member_handle_into_live_bus_member_handle(
+                        &self.members[index],
+                        &source.members[index],
+                    );
+                }
+
+                if self.members.len() > source.members.len() {
+                    self.members.truncate(source.members.len());
+                } else if self.members.len() < source.members.len() {
+                    self.members
+                        .extend(source.members[self.members.len()..].iter().cloned());
+                }
+            }
+        } else {
+            self.members = source.members.clone();
+        }
+    }
+
+    // Upstream parity: local live-owner bridge toward the exercised
+    // `CONNECTION_SUBGRAPH::UpdateItemConnections()` no-connect rename branch. This keeps the
+    // `Net-(` -> `unconnected-(` rename on the shared live connection owner instead of mutating
+    // the three name fields separately at each call site.
+    fn force_no_connect_name(&mut self) {
+        self.name = reduced_force_no_connect_net_name(&self.name);
+        self.local_name = reduced_force_no_connect_net_name(&self.local_name);
+        self.full_local_name = reduced_force_no_connect_net_name(&self.full_local_name);
+    }
+
     fn snapshot(&self) -> ReducedProjectConnection {
         ReducedProjectConnection {
             net_code: self.net_code,
@@ -1932,101 +2055,14 @@ fn clone_reduced_connection_into_live_connection_owner(
     target: &mut LiveProjectConnection,
     source: &ReducedProjectConnection,
 ) {
-    let existing_local_name = target.local_name.clone();
-    let existing_members = target.members.clone();
-
-    target.net_code = source.net_code;
-    target.connection_type = source.connection_type;
-    target.name = source.name.clone();
-    if existing_local_name.is_empty() {
-        target.local_name = source.local_name.clone();
-    }
-    target.full_local_name = source.full_local_name.clone();
-    target.sheet_instance_path = source.sheet_instance_path.clone();
-
-    if matches!(
-        target.connection_type,
-        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-    ) && matches!(
-        source.connection_type,
-        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-    ) {
-        if existing_members.is_empty() {
-            target.members = reduced_bus_members_into_live_handles(source.members.clone());
-        } else {
-            target.members = existing_members;
-
-            let clone_limit = target.members.len().min(source.members.len());
-            for index in 0..clone_limit {
-                clone_reduced_bus_member_into_live_bus_member(
-                    &mut target.members[index].borrow_mut(),
-                    &source.members[index],
-                );
-            }
-
-            if target.members.len() > source.members.len() {
-                target.members.truncate(source.members.len());
-            } else if target.members.len() < source.members.len() {
-                target.members.extend(
-                    source.members[target.members.len()..]
-                        .iter()
-                        .cloned()
-                        .map(|member| Rc::new(RefCell::new(member.into()))),
-                );
-            }
-        }
-    } else {
-        target.members = reduced_bus_members_into_live_handles(source.members.clone());
-    }
+    target.clone_from_reduced_connection(source);
 }
 
 fn clone_live_connection_owner_into_live_connection_owner(
     target: &mut LiveProjectConnection,
     source: &LiveProjectConnection,
 ) {
-    let existing_local_name = target.local_name.clone();
-    let existing_members = target.members.clone();
-
-    target.net_code = source.net_code;
-    target.connection_type = source.connection_type;
-    target.name = source.name.clone();
-    if existing_local_name.is_empty() {
-        target.local_name = source.local_name.clone();
-    }
-    target.full_local_name = source.full_local_name.clone();
-    target.sheet_instance_path = source.sheet_instance_path.clone();
-
-    if matches!(
-        target.connection_type,
-        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-    ) && matches!(
-        source.connection_type,
-        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-    ) {
-        if existing_members.is_empty() {
-            target.members = source.members.clone();
-        } else {
-            target.members = existing_members;
-
-            let clone_limit = target.members.len().min(source.members.len());
-            for index in 0..clone_limit {
-                clone_live_bus_member_handle_into_live_bus_member_handle(
-                    &target.members[index],
-                    &source.members[index],
-                );
-            }
-
-            if target.members.len() > source.members.len() {
-                target.members.truncate(source.members.len());
-            } else if target.members.len() < source.members.len() {
-                target
-                    .members
-                    .extend(source.members[target.members.len()..].iter().cloned());
-            }
-        }
-    } else {
-        target.members = source.members.clone();
-    }
+    target.clone_from_live_connection(source);
 }
 
 // Upstream parity: reduced local analogue for the per-pin `SCH_CONNECTION::Clone()` behavior the
@@ -5799,12 +5835,10 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
                 && subgraph.driver_connection.borrow().name.contains("Net-(")
         } {
             let subgraph = handle.borrow();
-            let mut connection = subgraph.driver_connection.borrow_mut();
-            connection.name = reduced_force_no_connect_net_name(&connection.name);
-            connection.local_name = reduced_force_no_connect_net_name(&connection.local_name);
-            connection.full_local_name =
-                reduced_force_no_connect_net_name(&connection.full_local_name);
-            drop(connection);
+            subgraph
+                .driver_connection
+                .borrow_mut()
+                .force_no_connect_name();
             drop(subgraph);
             sync_live_reduced_item_connections_from_driver_handle(handle);
         }
@@ -5998,12 +6032,10 @@ fn refresh_reduced_live_post_propagation_item_connections_on_live_subgraphs(
                 .name
                 .contains("Net-(")
         {
-            let mut connection = live_subgraphs[index].driver_connection.borrow_mut();
-            connection.name = reduced_force_no_connect_net_name(&connection.name);
-            connection.local_name = reduced_force_no_connect_net_name(&connection.local_name);
-            connection.full_local_name =
-                reduced_force_no_connect_net_name(&connection.full_local_name);
-            drop(connection);
+            live_subgraphs[index]
+                .driver_connection
+                .borrow_mut()
+                .force_no_connect_name();
             sync_live_reduced_item_connections_from_driver(&mut live_subgraphs[index]);
         }
 
