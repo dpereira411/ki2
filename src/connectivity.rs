@@ -4139,12 +4139,10 @@ fn propagate_reduced_live_hierarchy_chain_on_handles(
 
     for handle in visited {
         let mut subgraph = handle.borrow_mut();
-        let changed = subgraph
-            .driver_connection
-            .borrow()
-            .ne(&chosen_connection.borrow());
+        let current_connection = subgraph.driver_connection.snapshot();
         subgraph.driver_connection.clone_from(&chosen_connection);
-        subgraph.dirty = changed;
+        let refreshed_connection = subgraph.driver_connection.snapshot();
+        subgraph.dirty = refreshed_connection != current_connection;
     }
 }
 
@@ -4283,21 +4281,14 @@ fn propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_compon
     component: &[LiveReducedSubgraphHandle],
     force: bool,
 ) {
+    // Upstream parity: local live-handle analogue for the hierarchy-chain propagation branch
+    // inside `propagateToNeighbors()`. This now consumes the recursive walk's explicit dirty
+    // subset instead of re-reading dirty state inside the helper, while still diverging from
+    // upstream's fuller `CONNECTION_SUBGRAPH` object graph and item-pointer topology.
     for handle in component {
-        if !handle.borrow().dirty {
-            continue;
-        }
-
         let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
 
         if !has_hierarchy_links {
-            let is_bus = matches!(
-                handle.borrow().driver_connection.borrow().connection_type,
-                ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-            );
-            if !is_bus {
-                handle.borrow_mut().dirty = false;
-            }
             continue;
         }
 
@@ -4312,13 +4303,10 @@ fn refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
 ) {
     // Upstream parity: local live-handle analogue for the bus-neighbor driver/member propagation
     // KiCad runs through connected `CONNECTION_SUBGRAPH` neighbors. This still keeps reduced
-    // member snapshots, but active traversal now matches and mutates through attached live
-    // parent/neighbor handles and narrow live-owner reads instead of reduced subgraph indexes or
-    // whole live subgraph clones.
+    // member snapshots, but active traversal now consumes the recursive walk's explicit dirty
+    // subset and matches/mutates through attached live parent/neighbor handles plus narrow
+    // live-owner reads instead of reduced subgraph indexes or whole live subgraph clones.
     for parent_handle in component {
-        if !parent_handle.borrow().dirty {
-            continue;
-        }
         let is_bus = matches!(
             parent_handle
                 .borrow()
@@ -4488,12 +4476,10 @@ fn refresh_reduced_live_bus_parent_members_on_handles_for_component(
 ) {
     // Upstream parity: local live-handle analogue for refreshing parent bus members from a dirty
     // child net. This still stores reduced bus members on the live subgraph owner, but it now
-    // follows the attached live parent handle and shared live connection owner instead of
-    // recovering the parent through copied source indexes or whole live subgraph clones first.
+    // consumes the recursive walk's explicit dirty child subset and follows the attached live
+    // parent handle plus shared live connection owner instead of recovering the parent through
+    // copied source indexes or whole live subgraph clones first.
     for child_handle in component {
-        if !child_handle.borrow().dirty {
-            continue;
-        }
         let child_connection = child_handle.borrow().driver_connection.clone();
         if child_connection.borrow().connection_type != ReducedProjectConnectionType::Net {
             continue;
@@ -4917,9 +4903,10 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
 // graph build. This still runs on reduced live carriers instead of the final local
 // `CONNECTION_SUBGRAPH` analogue, but it moves the active recursion, dirty-state, and stale-member
 // replay onto shared subgraph handles rather than value-owned subgraphs. This is materially
-// closer to upstream now that the root dirty state is consumed before each pass and any in-pass
-// mutation can immediately requeue the same live subgraph for another recursive visit. Remaining
-// divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology.
+// closer to upstream now that the recursive walk consumes one explicit dirty-handle subset before
+// each pass and any in-pass mutation can immediately requeue the same live subgraph for another
+// recursive visit without a whole-subgraph compatibility compare. Remaining divergence is the
+// still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology.
 fn propagate_reduced_live_graph_neighbors_on_handles(
     start: &LiveReducedSubgraphHandle,
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -4931,7 +4918,6 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
     if !start.borrow().dirty || !visiting.insert(start_id) {
         return;
     }
-    let start_before = start.borrow().clone();
 
     if !force {
         let promoted = refresh_reduced_live_global_secondary_driver_promotions_for_handle(
@@ -4952,28 +4938,30 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
 
     let active =
         collect_live_reduced_propagation_component_handles_from_handles(start, live_subgraphs);
+    let dirty_active = active
+        .iter()
+        .filter(|handle| handle.borrow().dirty)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for handle in &dirty_active {
+        handle.borrow_mut().dirty = false;
+    }
 
     propagate_reduced_hierarchy_driver_chains_on_live_subgraph_handles_for_component(
         live_subgraphs,
-        &active,
+        &dirty_active,
         force,
     );
     refresh_reduced_live_bus_neighbor_drivers_on_handles_for_component(
         live_subgraphs,
-        &active,
+        &dirty_active,
         stale_members,
     );
-    refresh_reduced_live_bus_parent_members_on_handles_for_component(live_subgraphs, &active);
+    refresh_reduced_live_bus_parent_members_on_handles_for_component(live_subgraphs, &dirty_active);
     replay_reduced_live_stale_bus_members_on_handles_for_component(&active, stale_members);
     refresh_reduced_live_bus_link_members_on_handles_for_component(live_subgraphs, &active);
 
-    let start_changed = {
-        let start_after = start.borrow().clone();
-        let mut start_before_without_dirty = start_before;
-        start_before_without_dirty.dirty = start_after.dirty;
-        start_after != start_before_without_dirty
-    };
-    start.borrow_mut().dirty = false;
     let recurse_targets = live_subgraphs
         .iter()
         .filter(|handle| !Rc::ptr_eq(handle, start) && handle.borrow().dirty)
@@ -4991,8 +4979,7 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
         );
     }
 
-    if start_changed {
-        start.borrow_mut().dirty = true;
+    if start.borrow().dirty {
         propagate_reduced_live_graph_neighbors_on_handles(
             start,
             live_subgraphs,
@@ -5007,11 +4994,10 @@ fn propagate_reduced_live_graph_neighbors_on_handles(
 // graph build. This now follows KiCad's two-pass caller shape more closely by recursively
 // traversing dirty live subgraphs with a shared stale-member bag per root before running the
 // post-propagation multi-parent rename and item-update steps. This active graph-build path now
-// runs on shared live subgraph handles. Hierarchy and link updates now mark dirty on the owning
-// live handles directly, but this walk still keeps a whole-subgraph compatibility compare to
-// detect remaining in-pass mutations that have not moved fully onto explicit dirty ownership yet.
-// Remaining divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer
-// topology behind those handles.
+// runs on shared live subgraph handles. Hierarchy and link updates now consume one explicit dirty
+// handle subset per recursive visit and requeue through dirty ownership directly. Remaining
+// divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology
+// behind those handles.
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let live_subgraphs = build_live_reduced_subgraph_handles(reduced_subgraphs);
     run_reduced_live_graph_roots_on_handles(&live_subgraphs, false);

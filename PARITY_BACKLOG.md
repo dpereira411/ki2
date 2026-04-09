@@ -789,9 +789,9 @@ Current status:
       - the remaining live driver-owner gap is the fuller shared driver-item object graph, not
         exercised label/sheet-pin/symbol-pin owner lookup or active driver-metadata reads
       - exercised hierarchy-chain driver replacement and exercised bus-link rematch now also mark
-        the owning live subgraph dirty at the mutation site; the recursive walk still keeps one
-        whole-subgraph compatibility compare for any remaining in-pass mutations that have not yet
-        moved fully onto explicit dirty ownership
+        the owning live subgraph dirty at the mutation site, and the recursive walk now consumes
+        an explicit dirty-handle subset per visit instead of falling back to a whole-subgraph
+        compatibility compare
     - concrete next unblock path:
       1. replace the reduced wrapper connections inside the recursive walk with a live local
          `SCH_CONNECTION` analogue that items and subgraphs can share by identity
