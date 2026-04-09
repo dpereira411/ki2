@@ -1836,16 +1836,12 @@ fn clone_reduced_connection_into_live_connection_owner(
 fn clone_live_connection_owner_into_live_base_pin_connection_owner(
     target: &mut LiveProjectConnection,
     source: &LiveProjectConnection,
-    preserve_local_name: bool,
+    preserved_local_name: Option<&str>,
 ) {
-    let existing_local_name = target.local_name.clone();
-
     clone_live_connection_owner_into_live_connection_owner(target, source);
 
-    if preserve_local_name {
-        target.local_name = existing_local_name;
-    } else {
-        target.local_name = source.local_name.clone();
+    if let Some(local_name) = preserved_local_name {
+        target.local_name = local_name.to_string();
     }
 }
 
@@ -1907,7 +1903,7 @@ struct LiveReducedBasePin {
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
-    preserve_local_name_on_refresh: bool,
+    preserved_local_name: Option<String>,
     parent_subgraph_handle: Weak<RefCell<LiveReducedSubgraph>>,
 }
 
@@ -2117,12 +2113,12 @@ impl LiveReducedHierPortLink {
 impl LiveReducedBasePin {
     // Upstream parity: local pin-owner analogue for the exercised pin branch of
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still updates a reduced live base-pin
-    // owner instead of a real `SCH_PIN`, but the owner now decides whether to preserve pin-local
-    // text, skip the chosen driver, and adopt the chosen live connection. Attached strong-driver
-    // pins now widen their dedicated pin-driver connection owner onto that same chosen net
-    // identity while preserving explicit pin-owned local driver text through owner state instead
-    // of a clone-time string heuristic, so active symbol-pin driver reads stop staying on
-    // pre-propagation setup snapshots after graph updates.
+    // owner instead of a real `SCH_PIN`, but the owner now decides whether to preserve explicit
+    // pin-local text, skip the chosen driver, and adopt the chosen live connection. Attached
+    // strong-driver pins now widen their dedicated pin-driver connection owner onto that same
+    // chosen net identity while preserving explicit pin-owned local driver text through owner
+    // state instead of a clone-time string heuristic, so active symbol-pin driver reads stop
+    // staying on pre-propagation setup snapshots after graph updates.
     fn refresh_from_driver_connection(
         &mut self,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
@@ -2151,14 +2147,14 @@ impl LiveReducedBasePin {
         clone_live_connection_owner_into_live_base_pin_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
-            self.preserve_local_name_on_refresh,
+            self.preserved_local_name.as_deref(),
         );
 
         if refresh_attached_strong_driver_pins && self.driver.is_some() {
             clone_live_connection_owner_into_live_base_pin_connection_owner(
                 &mut self.driver_connection.borrow_mut(),
                 &driver_connection.borrow(),
-                self.preserve_local_name_on_refresh,
+                self.preserved_local_name.as_deref(),
             );
         }
     }
@@ -2176,7 +2172,7 @@ impl LiveReducedBasePin {
         clone_live_connection_owner_into_live_base_pin_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
-            false,
+            None,
         );
     }
 
@@ -2194,7 +2190,7 @@ impl LiveReducedBasePin {
     // strong-driver binding. This still uses the reduced live base-pin owner instead of a fuller
     // live `SCH_PIN`, but the base-pin owner now owns the driver attachment itself, keeps the
     // pre-seeded pin-driver connection owner, and marks explicit pin-local text preservation on
-    // the owner instead of re-deriving it from connection strings during later refresh.
+    // the owner itself instead of re-deriving it from connection strings during later refresh.
     fn attach_strong_driver(
         &mut self,
         owner: &LiveReducedBasePinHandle,
@@ -2203,7 +2199,7 @@ impl LiveReducedBasePin {
         priority: i32,
     ) -> LiveProjectStrongDriverOwner {
         self.driver = Some(driver.clone());
-        self.preserve_local_name_on_refresh = true;
+        self.preserved_local_name = Some(self.driver_connection.borrow().local_name.clone());
         LiveProjectStrongDriverOwner::SymbolPin {
             owner: Rc::downgrade(owner),
             kind,
@@ -4020,7 +4016,7 @@ fn live_base_pin_handle_snapshot(base_pin: &LiveReducedBasePinHandle) -> Reduced
         electrical_type: base_pin.pin.electrical_type.clone(),
         connection: base_pin.connection.borrow().snapshot(),
         driver_connection: base_pin.driver_connection.borrow().snapshot(),
-        preserve_local_name_on_refresh: base_pin.preserve_local_name_on_refresh,
+        preserve_local_name_on_refresh: base_pin.preserved_local_name.is_some(),
     }
 }
 
@@ -4248,7 +4244,9 @@ fn build_live_reduced_subgraph_handles(
                                 pin.driver_connection.clone().into(),
                             )),
                             driver: None,
-                            preserve_local_name_on_refresh: pin.preserve_local_name_on_refresh,
+                            preserved_local_name: pin
+                                .preserve_local_name_on_refresh
+                                .then(|| pin.driver_connection.local_name.clone()),
                             parent_subgraph_handle: Weak::new(),
                         }))
                     })
