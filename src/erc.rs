@@ -2187,6 +2187,13 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             if label.kind == LabelKind::Directive {
                 continue;
             }
+            if matches!(
+                label.connection.connection_type,
+                crate::connectivity::ReducedProjectConnectionType::Bus
+                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
+            ) {
+                continue;
+            }
 
             let dangling = dangling_labels
                 .get(&(
@@ -2302,6 +2309,13 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
         };
 
         for wire_item in &subgraph.wire_items {
+            let connected_bus_subgraph = if wire_item.is_bus_entry {
+                crate::connectivity::reduced_project_connected_bus_subgraph_for_wire_item(
+                    &graph, subgraph, wire_item,
+                )
+            } else {
+                None
+            };
             for endpoint in [wire_item.start, wire_item.end] {
                 let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
                 let endpoint_matches = |point: crate::connectivity::PointKey| {
@@ -2318,6 +2332,12 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                         .bus_items
                         .iter()
                         .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
+                    || connected_bus_subgraph.is_some_and(|bus_subgraph| {
+                        bus_subgraph
+                            .bus_items
+                            .iter()
+                            .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
+                    })
                     || subgraph
                         .label_links
                         .iter()

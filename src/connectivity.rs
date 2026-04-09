@@ -622,6 +622,69 @@ pub(crate) struct ReducedProjectGraphInputs<'a> {
     pub(crate) current_variant: Option<&'a str>,
 }
 
+fn point_key_matches(key: PointKey, at: [f64; 2]) -> bool {
+    points_equal([f64::from_bits(key.0), f64::from_bits(key.1)], at)
+}
+
+fn point_key_set_contains(points: &BTreeSet<PointKey>, at: [f64; 2]) -> bool {
+    points.iter().copied().any(|key| point_key_matches(key, at))
+}
+
+fn bus_entry_preferred_wire_endpoint(
+    point_snapshot: &BTreeMap<PointKey, ConnectionPointSnapshot>,
+    entry: &crate::model::BusEntry,
+) -> [f64; 2] {
+    let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
+    let endpoint_members = |at| {
+        point_snapshot
+            .values()
+            .find(|point| points_equal(point.at, at))
+            .map(|point| point.members.as_slice())
+            .unwrap_or(&[])
+    };
+    let has_wire = |at| {
+        endpoint_members(at)
+            .iter()
+            .any(|member| member.kind == ConnectionMemberKind::Wire)
+    };
+    let has_non_bus_owner = |at| {
+        endpoint_members(at).iter().any(|member| {
+            matches!(
+                member.kind,
+                ConnectionMemberKind::Wire
+                    | ConnectionMemberKind::SymbolPin
+                    | ConnectionMemberKind::SheetPin
+                    | ConnectionMemberKind::Label
+                    | ConnectionMemberKind::NoConnectMarker
+            )
+        })
+    };
+
+    match (has_wire(entry.at), has_wire(end)) {
+        (true, false) => entry.at,
+        (false, true) => end,
+        _ => match (has_non_bus_owner(entry.at), has_non_bus_owner(end)) {
+            (true, false) => entry.at,
+            (false, true) => end,
+            _ => entry.at,
+        },
+    }
+}
+
+fn reduced_graph_connection_component_at(
+    schematic: &Schematic,
+    at: [f64; 2],
+) -> Option<ConnectionComponent> {
+    collect_reduced_graph_connection_components(schematic)
+        .into_iter()
+        .find(|component| {
+            component
+                .members
+                .iter()
+                .any(|member| points_equal(member.at, at))
+        })
+}
+
 fn connection_component_at(schematic: &Schematic, at: [f64; 2]) -> Option<ConnectionComponent> {
     collect_connection_components(schematic)
         .into_iter()
@@ -5540,6 +5603,17 @@ impl DisjointSet {
 // duplicate pin numbers marked as jumpers and explicit `jumper_pin_groups` are unioned before
 // component extraction instead of being left to later ERC-only special cases.
 pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<ConnectionComponent> {
+    collect_connection_components_with_options(schematic, true)
+}
+
+fn collect_reduced_graph_connection_components(schematic: &Schematic) -> Vec<ConnectionComponent> {
+    collect_connection_components_with_options(schematic, false)
+}
+
+fn collect_connection_components_with_options(
+    schematic: &Schematic,
+    include_bus_entry_segments: bool,
+) -> Vec<ConnectionComponent> {
     let point_snapshot = collect_connection_points(schematic);
     let points = point_snapshot.into_values().collect::<Vec<_>>();
     let mut segments = collect_wire_segments(schematic);
@@ -5562,10 +5636,32 @@ pub(crate) fn collect_connection_components(schematic: &Schematic) -> Vec<Connec
             .flatten(),
     );
     segments.extend(schematic.screen.items.iter().filter_map(|item| match item {
-        SchItem::BusEntry(entry) => Some([
-            entry.at,
-            [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]],
-        ]),
+        SchItem::BusEntry(entry) => {
+            let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
+            let start_members = points
+                .iter()
+                .find(|point| points_equal(point.at, entry.at))
+                .map(|point| &point.members);
+            let end_members = points
+                .iter()
+                .find(|point| points_equal(point.at, end))
+                .map(|point| &point.members);
+            let start_has_bus = start_members
+                .into_iter()
+                .flatten()
+                .any(|member| member.kind == ConnectionMemberKind::Bus);
+            let end_has_member_connection_owner = end_members.into_iter().flatten().any(|member| {
+                matches!(
+                    member.kind,
+                    ConnectionMemberKind::Wire
+                        | ConnectionMemberKind::SymbolPin
+                        | ConnectionMemberKind::SheetPin
+                        | ConnectionMemberKind::NoConnectMarker
+                )
+            });
+            (include_bus_entry_segments || !(start_has_bus && end_has_member_connection_owner))
+                .then_some([entry.at, end])
+        }
         _ => None,
     }));
     let junctions = schematic
@@ -5699,7 +5795,7 @@ where
     let mut net_map = BTreeMap::<String, Vec<ReducedNetSubgraph>>::new();
     let mut net_name_order = Vec::<String>::new();
 
-    for component in collect_connection_components(schematic) {
+    for component in collect_reduced_graph_connection_components(schematic) {
         let Some(net_name) = resolve_net_name(component.anchor).filter(|name| !name.is_empty())
         else {
             continue;
@@ -5994,7 +6090,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     ..
                 } = subgraph;
 
-                let connected_component = connection_component_at(
+                let connected_component = reduced_graph_connection_component_at(
                     schematic,
                     [f64::from_bits(points[0].0), f64::from_bits(points[0].1)],
                 )
@@ -6234,7 +6330,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             }
         }
 
-        for connected_component in collect_connection_components(schematic) {
+        for connected_component in collect_reduced_graph_connection_components(schematic) {
             let net_name = resolve_point_connectivity_text_var(
                 inputs.schematics,
                 inputs.sheet_paths,
@@ -6947,6 +7043,17 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
         .point_subgraph_identities
         .get(&reduced_project_point_identity_key(sheet_path, at))
         .and_then(|index| graph.subgraphs.get(*index))
+        .or_else(|| {
+            graph
+                .point_subgraph_identities
+                .iter()
+                .find_map(|(key, index)| {
+                    (key.sheet_instance_path == sheet_path.instance_path
+                        && point_key_matches(key.at, at))
+                    .then(|| graph.subgraphs.get(*index))
+                    .flatten()
+                })
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -6966,6 +7073,18 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
         .label_subgraph_identities
         .get(&reduced_project_label_identity_key(sheet_path, label))
         .and_then(|index| graph.subgraphs.get(*index))
+        .or_else(|| {
+            graph
+                .label_subgraph_identities
+                .iter()
+                .find_map(|(key, index)| {
+                    (key.sheet_instance_path == sheet_path.instance_path
+                        && key.kind == reduced_label_kind_sort_key(label.kind)
+                        && point_key_matches(key.at, label.at))
+                    .then(|| graph.subgraphs.get(*index))
+                    .flatten()
+                })
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -6984,6 +7103,17 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
         .no_connect_subgraph_identities
         .get(&reduced_project_no_connect_identity_key(sheet_path, at))
         .and_then(|index| graph.subgraphs.get(*index))
+        .or_else(|| {
+            graph
+                .no_connect_subgraph_identities
+                .iter()
+                .find_map(|(key, index)| {
+                    (key.sheet_instance_path == sheet_path.instance_path
+                        && point_key_matches(key.at, at))
+                    .then(|| graph.subgraphs.get(*index))
+                    .flatten()
+                })
+        })
 }
 
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
@@ -7284,6 +7414,7 @@ fn collect_reduced_subgraph_local_membership(
         .iter()
         .map(|member| point_key(member.at))
         .collect::<BTreeSet<_>>();
+    let point_snapshot = collect_connection_points(schematic);
     let mut bus_items = schematic
         .screen
         .items
@@ -7292,8 +7423,8 @@ fn collect_reduced_subgraph_local_membership(
             SchItem::Bus(line) => {
                 let start = line.points.first().copied()?;
                 let end = line.points.last().copied()?;
-                (component_points.contains(&point_key(start))
-                    || component_points.contains(&point_key(end)))
+                (point_key_set_contains(&component_points, start)
+                    || point_key_set_contains(&component_points, end))
                 .then_some(ReducedSubgraphWireItem {
                     start: point_key(start),
                     end: point_key(end),
@@ -7322,8 +7453,8 @@ fn collect_reduced_subgraph_local_membership(
             SchItem::Wire(line) => {
                 let start = line.points.first().copied()?;
                 let end = line.points.last().copied()?;
-                (component_points.contains(&point_key(start))
-                    || component_points.contains(&point_key(end)))
+                (point_key_set_contains(&component_points, start)
+                    || point_key_set_contains(&component_points, end))
                 .then_some(ReducedSubgraphWireItem {
                     start: point_key(start),
                     end: point_key(end),
@@ -7331,15 +7462,15 @@ fn collect_reduced_subgraph_local_membership(
                 })
             }
             SchItem::BusEntry(entry) => {
-                let start = entry.at;
+                let wire_side = bus_entry_preferred_wire_endpoint(&point_snapshot, entry);
                 let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
-                (component_points.contains(&point_key(start))
-                    || component_points.contains(&point_key(end)))
-                .then_some(ReducedSubgraphWireItem {
-                    start: point_key(start),
-                    end: point_key(end),
-                    is_bus_entry: true,
-                })
+                point_key_set_contains(&component_points, wire_side).then_some(
+                    ReducedSubgraphWireItem {
+                        start: point_key(entry.at),
+                        end: point_key(end),
+                        is_bus_entry: true,
+                    },
+                )
             }
             _ => None,
         })
@@ -7599,6 +7730,35 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
                     sheet_path, symbol, at, pin_number,
                 ))
                 .and_then(|index| graph.subgraphs.get(*index))
+        })
+        .or_else(|| {
+            pin_name.and_then(|pin_name| {
+                graph
+                    .pin_subgraph_identities
+                    .iter()
+                    .find_map(|(key, index)| {
+                        (key.sheet_instance_path == sheet_path.instance_path
+                            && key.symbol_uuid == symbol.uuid
+                            && key.name.as_deref() == Some(pin_name)
+                            && key.number.as_deref() == pin_number
+                            && point_key_matches(key.at, at))
+                        .then(|| graph.subgraphs.get(*index))
+                        .flatten()
+                    })
+            })
+        })
+        .or_else(|| {
+            graph
+                .pin_subgraph_identities_by_location
+                .iter()
+                .find_map(|(key, index)| {
+                    (key.sheet_instance_path == sheet_path.instance_path
+                        && key.symbol_uuid == symbol.uuid
+                        && key.number.as_deref() == pin_number
+                        && point_key_matches(key.at, at))
+                    .then(|| graph.subgraphs.get(*index))
+                    .flatten()
+                })
         })
 }
 

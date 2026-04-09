@@ -6139,6 +6139,30 @@ fn erc_ignores_false_bus_entry_and_no_connect_warnings_in_issue12814_usage_fixtu
         1,
         "{diagnostics:#?}"
     );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+            .count(),
+        3,
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-driven")
+            .count(),
+        3,
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-power-pin-not-driven")
+            .count(),
+        1,
+        "{diagnostics:#?}"
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "erc-pin-not-connected"
             && diagnostic.message
@@ -6159,6 +6183,42 @@ fn erc_ignores_false_bus_entry_warnings_in_issue12814_drive_fixture() {
         diagnostics
             .iter()
             .all(|diagnostic| diagnostic.code != "erc-unconnected-wire-endpoint"),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-label-single-pin")
+            .count(),
+        2,
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-driven")
+            .count(),
+        1,
+        "{diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-pin-not-connected")
+            .count(),
+        1,
+        "{diagnostics:#?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-driver-conflict"),
+        "{diagnostics:#?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-pin-to-pin-error"),
         "{diagnostics:#?}"
     );
 }
