@@ -9897,6 +9897,133 @@ pub(crate) fn reduced_project_wire_endpoint_has_graph_owner(
         || reduced_same_sheet_named_neighbor_endpoint_has_owner(graph, subgraph, endpoint)
 }
 
+fn live_reduced_subgraph_endpoint_has_owner(
+    subgraph: &LiveReducedSubgraph,
+    endpoint: PointKey,
+) -> bool {
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+    let endpoint_matches = |point: PointKey| point_key_matches(point, endpoint_at);
+
+    subgraph
+        .base_pins
+        .iter()
+        .any(|base_pin| endpoint_matches(base_pin.borrow().pin.key.at))
+        || subgraph.bus_items.iter().any(|item| {
+            let item = item.borrow();
+            endpoint_matches(item.start) || endpoint_matches(item.end)
+        })
+        || subgraph
+            .label_links
+            .iter()
+            .any(|label| endpoint_matches(label.borrow().at))
+        || subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|pin| endpoint_matches(pin.borrow().at))
+        || subgraph
+            .hier_ports
+            .iter()
+            .any(|port| endpoint_matches(port.borrow().at))
+        || subgraph
+            .no_connect_points
+            .iter()
+            .map(|point| point.at)
+            .any(endpoint_matches)
+}
+
+fn live_reduced_wire_item_endpoint_has_connected_bus_owner(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    wire_item: &LiveReducedSubgraphWireItem,
+    endpoint: PointKey,
+) -> bool {
+    if !wire_item.is_bus_entry {
+        return false;
+    }
+
+    let bus_side = if wire_item.start_is_wire_side {
+        wire_item.end
+    } else {
+        wire_item.start
+    };
+
+    if endpoint != bus_side {
+        return false;
+    }
+
+    let Some(connected_bus_connection) = wire_item.connected_bus_connection_handle.as_ref() else {
+        return false;
+    };
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+
+    live_subgraphs
+        .iter()
+        .find(|candidate| {
+            Rc::ptr_eq(
+                &candidate.borrow().driver_connection,
+                connected_bus_connection,
+            )
+        })
+        .is_some_and(|bus_subgraph| {
+            bus_subgraph.borrow().bus_items.iter().any(|item| {
+                let item = item.borrow();
+                point_on_wire_segment(
+                    endpoint_at,
+                    [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                    [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                )
+            })
+        })
+}
+
+fn live_same_sheet_named_neighbor_endpoint_has_owner(
+    graph: &ReducedProjectNetGraph,
+    subgraph_handle: &LiveReducedSubgraphHandle,
+    endpoint: PointKey,
+) -> bool {
+    let subgraph = subgraph_handle.borrow();
+    let name = subgraph.driver_connection.borrow().name.clone();
+    if name.is_empty() {
+        return false;
+    }
+    let sheet_instance_path = subgraph.sheet_instance_path.clone();
+    drop(subgraph);
+
+    graph
+        .live_subgraphs
+        .iter()
+        .filter(|neighbor| !Rc::ptr_eq(neighbor, subgraph_handle))
+        .any(|neighbor| {
+            let neighbor = neighbor.borrow();
+            neighbor.sheet_instance_path == sheet_instance_path
+                && neighbor.driver_connection.borrow().name == name
+                && live_reduced_subgraph_endpoint_has_owner(&neighbor, endpoint)
+        })
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints endpoint-owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still checks reduced live item payload and same-name live neighbors instead of final
+// `CONNECTION_SUBGRAPH` item owners
+// local_only_reason: moves endpoint ownership traversal onto the active live subgraph owner while
+// final `SCH_LINE` item ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_LINE` owner graph
+// remove_when: ERC can query final live wire endpoint owner state directly from graph item links
+fn live_reduced_wire_endpoint_has_graph_owner(
+    graph: &ReducedProjectNetGraph,
+    subgraph_handle: &LiveReducedSubgraphHandle,
+    wire_item: &LiveReducedSubgraphWireItem,
+    endpoint: PointKey,
+) -> bool {
+    live_reduced_subgraph_endpoint_has_owner(&subgraph_handle.borrow(), endpoint)
+        || live_reduced_wire_item_endpoint_has_connected_bus_owner(
+            &graph.live_subgraphs,
+            wire_item,
+            endpoint,
+        )
+        || live_same_sheet_named_neighbor_endpoint_has_owner(graph, subgraph_handle, endpoint)
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts non-bus-owner branch or none
 // parity_status: partial
@@ -10687,6 +10814,61 @@ pub(crate) fn reduced_project_subgraph_dangling_wire_endpoints(
     endpoints
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints endpoint dangling branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still derives dangling state from reduced live endpoint ownership rather than final
+// `SCH_LINE::IsStartDangling()` / `SCH_BUS_WIRE_ENTRY::IsStartDangling()` flags
+// local_only_reason: moves endpoint ownership and same-endpoint wire counting onto the active live
+// subgraph owner while final line/bus-entry items are still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / line and bus-entry owner graph
+// remove_when: ERC can query final live dangling endpoint state directly from graph item links
+fn live_reduced_subgraph_dangling_wire_endpoints(
+    graph: &ReducedProjectNetGraph,
+    subgraph_handle: &LiveReducedSubgraphHandle,
+) -> Vec<ReducedProjectDanglingWireEndpoint> {
+    let mut endpoints = Vec::new();
+    let subgraph = subgraph_handle.borrow();
+
+    for wire_item in &subgraph.wire_items {
+        let wire_item = wire_item.borrow();
+        for endpoint in [wire_item.start, wire_item.end] {
+            let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+            let endpoint_matches = |point: PointKey| {
+                points_equal(
+                    endpoint_at,
+                    [f64::from_bits(point.0), f64::from_bits(point.1)],
+                )
+            };
+            let endpoint_has_owner = live_reduced_wire_endpoint_has_graph_owner(
+                graph,
+                subgraph_handle,
+                &wire_item,
+                endpoint,
+            );
+            let endpoint_wire_count = subgraph
+                .wire_items
+                .iter()
+                .filter(|other| {
+                    let other = other.borrow();
+                    endpoint_matches(other.start) || endpoint_matches(other.end)
+                })
+                .count();
+
+            if endpoint_has_owner || endpoint_wire_count > 1 {
+                continue;
+            }
+
+            endpoints.push(ReducedProjectDanglingWireEndpoint {
+                is_bus_entry: wire_item.is_bus_entry,
+                diagnostic_path: wire_item.schematic_path.clone(),
+            });
+        }
+    }
+
+    endpoints
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: ERC_TESTER::TestLabelMultipleWires label overlap branch or none
 // parity_status: partial
@@ -11410,10 +11592,10 @@ pub(crate) fn reduced_project_no_connect_events(
 // upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints `RunERC()` slice or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still emits reduced dangling-endpoint events instead of live `SCH_LINE` / bus-entry
-// marker owners
-// local_only_reason: keeps dangling-endpoint event collection on the shared graph owner instead of
-// duplicating `RunERC()` subgraph walks inside ERC
+// divergence: still emits reduced diagnostic events and falls back for hand-built reduced test
+// graphs, but production endpoint checks now read the active live subgraph owner
+// local_only_reason: keeps dangling-endpoint event collection on the shared graph owner and starts
+// retiring projected reduced endpoint-owner checks from ERC-facing paths
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / line and bus-entry owner graph
 // remove_when: ERC can consume live dangling-endpoint events directly from graph item links
 pub(crate) fn reduced_project_dangling_wire_endpoint_events(
@@ -11421,10 +11603,18 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
 ) -> Vec<ReducedProjectDanglingWireEndpoint> {
     let mut endpoints = Vec::new();
 
-    for subgraph in reduced_project_run_erc_subgraphs(graph) {
-        endpoints.extend(reduced_project_subgraph_dangling_wire_endpoints(
-            graph, &subgraph,
-        ));
+    if !graph.live_subgraphs.is_empty() {
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            endpoints.extend(live_reduced_subgraph_dangling_wire_endpoints(
+                graph, &subgraph,
+            ));
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraphs(graph) {
+            endpoints.extend(reduced_project_subgraph_dangling_wire_endpoints(
+                graph, &subgraph,
+            ));
+        }
     }
 
     endpoints
