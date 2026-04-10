@@ -1230,8 +1230,10 @@ fn clone_live_bus_member_into_live_connection_owner(
 // This is not a 1:1 live `SCH_CONNECTION` mutation because the Rust tree still assigns onto
 // reduced snapshot connections after propagation settles, but it moves netcode ownership onto the
 // shared reduced connection objects and their non-bus bus members instead of keeping it only on
-// detached whole-net entries. Remaining divergence is the still-missing in-place live clone/update
-// timing on real connection objects during propagation.
+// detached whole-net entries. Bus members are walked in KiCad's queue order rather than recursive
+// depth-first order so first-seen net-code assignment matches `assignNetCodesToBus()`. Remaining
+// divergence is the still-missing in-place live clone/update timing on real connection objects
+// during propagation.
 fn assign_reduced_connection_net_codes(
     connection: &mut ReducedProjectConnection,
     net_codes: &mut BTreeMap<String, usize>,
@@ -1252,14 +1254,38 @@ fn assign_reduced_bus_member_net_codes(
     members: &mut [ReducedBusMember],
     net_codes: &mut BTreeMap<String, usize>,
 ) {
-    for member in members {
+    fn member_at_path_mut<'a>(
+        members: &'a mut [ReducedBusMember],
+        path: &[usize],
+    ) -> Option<&'a mut ReducedBusMember> {
+        let (index, rest) = path.split_first()?;
+        let member = members.get_mut(*index)?;
+
+        if rest.is_empty() {
+            Some(member)
+        } else {
+            member_at_path_mut(&mut member.members, rest)
+        }
+    }
+
+    let mut queue = (0..members.len()).map(|index| vec![index]).collect::<Vec<_>>();
+    let mut cursor = 0;
+
+    while cursor < queue.len() {
+        let path = queue[cursor].clone();
+        cursor += 1;
+        let Some(member) = member_at_path_mut(members, &path) else {
+            continue;
+        };
+
         if member.kind == ReducedBusMemberKind::Bus {
             member.net_code = 0;
-            assign_reduced_bus_member_net_codes(&mut member.members, net_codes);
-            continue;
-        }
-
-        if !member.full_local_name.is_empty() {
+            for index in 0..member.members.len() {
+                let mut child_path = path.clone();
+                child_path.push(index);
+                queue.push(child_path);
+            }
+        } else if !member.full_local_name.is_empty() {
             let next_code = net_codes.len() + 1;
             member.net_code = *net_codes
                 .entry(member.full_local_name.clone())
@@ -11450,6 +11476,54 @@ mod tests {
         assert_eq!(bus_subgraph.resolved_connection.members[1].net_code, 3);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_member_net_codes_follow_assign_net_codes_queue_order() {
+        let mut connection = ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::BusGroup,
+            name: "GROUP".to_string(),
+            local_name: "GROUP".to_string(),
+            full_local_name: "GROUP".to_string(),
+            sheet_instance_path: String::new(),
+            members: vec![
+                ReducedBusMember {
+                    net_code: 0,
+                    name: "A[0]".to_string(),
+                    local_name: "A".to_string(),
+                    full_local_name: "A[0]".to_string(),
+                    vector_index: None,
+                    kind: ReducedBusMemberKind::Bus,
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "A0".to_string(),
+                        local_name: "A0".to_string(),
+                        full_local_name: "A0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                ReducedBusMember {
+                    net_code: 0,
+                    name: "B".to_string(),
+                    local_name: "B".to_string(),
+                    full_local_name: "B".to_string(),
+                    vector_index: None,
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                },
+            ],
+        };
+        let mut net_codes = BTreeMap::new();
+
+        super::assign_reduced_connection_net_codes(&mut connection, &mut net_codes);
+
+        assert_eq!(connection.net_code, 1);
+        assert_eq!(connection.members[0].net_code, 0);
+        assert_eq!(connection.members[1].net_code, 2);
+        assert_eq!(connection.members[0].members[0].net_code, 3);
     }
 
     #[test]
