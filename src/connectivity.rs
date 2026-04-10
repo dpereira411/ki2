@@ -11575,8 +11575,8 @@ fn live_reduced_project_no_connect_marker_outcomes(
 // upstream: CONNECTION_GRAPH::ercCheckNoConnects pin-without-no-connect branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still classifies reduced subgraphs and reduced stacked-pin identity instead of live
-// `CONNECTION_SUBGRAPH::m_items`, `GetDriverPriority`, and live pin connected-item walks
+// divergence: still falls back to reduced snapshots for hand-built test graphs, but production
+// candidate selection now reads the active live subgraph owner instead of projected subgraphs
 // local_only_reason: keeps pin-not-connected candidate selection on the shared graph owner instead
 // of duplicating reduced subgraph scans inside ERC
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / pin owner graph
@@ -11585,6 +11585,10 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
     graph: &ReducedProjectNetGraph,
     label_name_caches: &ReducedProjectLabelNameCaches,
 ) -> Vec<ReducedProjectPinNotConnectedCandidate> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_pin_not_connected_candidates(graph, label_name_caches);
+    }
+
     let mut candidates = Vec::new();
 
     for subgraph in reduced_project_subgraphs(graph) {
@@ -11659,6 +11663,113 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
                         && neighbor.subgraph_code != subgraph.subgraph_code
                         && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
                 });
+
+        if same_name_has_no_connect_sibling {
+            continue;
+        }
+
+        if !has_other_connections
+            && pin.electrical_type.as_deref() != Some("no_connect")
+            && pin.electrical_type.as_deref() != Some("not_connected")
+        {
+            candidates.push(ReducedProjectPinNotConnectedCandidate {
+                pin_schematic_path: pin.schematic_path.clone(),
+            });
+        }
+    }
+
+    candidates
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects pin-without-no-connect branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still classifies reduced live pin payload instead of final
+// `CONNECTION_SUBGRAPH::m_items`, `GetDriverPriority`, and live pin connected-item walks
+// local_only_reason: moves the exercised pin-not-connected candidate branch onto the active live
+// subgraph owner while final `SCH_PIN` item ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / pin owner graph
+// remove_when: ERC can query final live pin-not-connected candidates directly from graph item links
+fn live_reduced_project_pin_not_connected_candidates(
+    graph: &ReducedProjectNetGraph,
+    label_name_caches: &ReducedProjectLabelNameCaches,
+) -> Vec<ReducedProjectPinNotConnectedCandidate> {
+    let mut candidates = Vec::new();
+
+    for subgraph_handle in &graph.live_subgraphs {
+        let subgraph = subgraph_handle.borrow();
+
+        if subgraph.has_no_connect
+            || !subgraph.no_connect_points.is_empty()
+            || subgraph.base_pins.is_empty()
+        {
+            continue;
+        }
+
+        let mut has_other_connections = !subgraph.label_links.is_empty()
+            || !subgraph.hier_sheet_pins.is_empty()
+            || !subgraph.hier_ports.is_empty()
+            || subgraph
+                .drivers
+                .iter()
+                .any(|driver| driver.borrow().kind() == ReducedProjectDriverKind::PowerPin);
+        let pins = live_base_pin_handles_to_snapshots(&subgraph.base_pins)
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        if pins.is_empty() {
+            continue;
+        }
+
+        if !has_other_connections && pins.len() > 1 {
+            for test_pin in pins.iter().skip(1) {
+                let shares_symbol_point = test_pin.key.symbol_uuid == pins[0].key.symbol_uuid
+                    && test_pin.key.at == pins[0].key.at;
+                if test_pin.key != pins[0].key && !shares_symbol_point {
+                    has_other_connections = true;
+                    break;
+                }
+            }
+        }
+
+        let mut pin = &pins[0];
+
+        for test_pin in &pins {
+            if test_pin.electrical_type.as_deref() == Some("power_in") && !test_pin.is_power_symbol
+            {
+                pin = test_pin;
+                break;
+            }
+        }
+
+        if !has_other_connections && !pin.is_power_symbol {
+            if label_name_caches
+                .global_names
+                .contains(&pin.connection.name)
+                || label_name_caches.local_names_by_sheet.contains(&(
+                    subgraph.sheet_instance_path.clone(),
+                    pin.connection.local_name.clone(),
+                ))
+            {
+                has_other_connections = true;
+            }
+        }
+
+        let driver_name = subgraph.driver_connection.borrow().name.clone();
+        let same_name_has_no_connect_sibling = (driver_name.starts_with("Net-(")
+            || driver_name.starts_with("unconnected-("))
+            && graph.live_subgraphs.iter().any(|neighbor_handle| {
+                if Rc::ptr_eq(neighbor_handle, subgraph_handle) {
+                    return false;
+                }
+
+                let neighbor = neighbor_handle.borrow();
+                neighbor.sheet_instance_path == subgraph.sheet_instance_path
+                    && neighbor.driver_connection.borrow().name == driver_name
+                    && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
+            });
 
         if same_name_has_no_connect_sibling {
             continue;
@@ -13268,19 +13379,21 @@ mod tests {
     use super::{
         LiveProjectBusMember, LiveProjectConnection, LiveReducedSubgraph,
         LiveReducedSubgraphHandle, PointKey, ReducedBusMember, ReducedBusMemberKind,
-        ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
-        ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
-        ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
-        ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
+        ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink, ReducedNetBasePinKey,
+        ReducedNoConnectPoint, ReducedProjectBasePin, ReducedProjectBusNeighborLink,
+        ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectDriverKind,
+        ReducedProjectLabelNameCaches, ReducedProjectNetGraph, ReducedProjectStrongDriver,
+        ReducedProjectSubgraphEntry, ReducedSubgraphWireItem,
+        apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
         clone_reduced_connection_into_live_connection_owner,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
-        recache_live_reduced_subgraph_name_from_handles,
+        rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name_from_handles,
         recache_live_reduced_subgraph_name_handle_cache_from_handles, reduced_bus_member_objects,
-        refresh_reduced_live_graph_propagation, resolve_reduced_net_name_at,
-        resolve_reduced_project_driver_name_for_label, resolve_reduced_project_net_at,
-        resolve_reduced_project_net_for_label, resolve_reduced_project_subgraph_at,
-        resolve_reduced_project_subgraph_for_label,
+        reduced_project_pin_not_connected_candidates, refresh_reduced_live_graph_propagation,
+        resolve_reduced_net_name_at, resolve_reduced_project_driver_name_for_label,
+        resolve_reduced_project_net_at, resolve_reduced_project_net_for_label,
+        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
         resolve_reduced_project_subgraph_for_sheet_pin,
         resolve_reduced_project_subgraph_for_symbol_pin,
@@ -13290,7 +13403,7 @@ mod tests {
     use crate::model::{LabelKind, SchItem};
     use crate::parser::parse_schematic_file;
     use std::cell::RefCell;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::env;
     use std::fs;
     use std::rc::{Rc, Weak};
@@ -13386,6 +13499,115 @@ mod tests {
             connection,
             identity: None,
         }
+    }
+
+    fn test_base_pin(
+        sheet_instance_path: &str,
+        symbol_uuid: &str,
+        at: PointKey,
+        number: &str,
+        electrical_type: &str,
+        connection: ReducedProjectConnection,
+    ) -> ReducedProjectBasePin {
+        ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: sheet_instance_path.to_string(),
+                symbol_uuid: Some(symbol_uuid.to_string()),
+                at,
+                name: Some(number.to_string()),
+                number: Some(number.to_string()),
+            },
+            reference: None,
+            number: Some(number.to_string()),
+            electrical_type: Some(electrical_type.to_string()),
+            visible: true,
+            is_power_symbol: false,
+            driver_connection: connection.clone(),
+            connection,
+            preserve_local_name_on_refresh: false,
+        }
+    }
+
+    fn test_graph_with_live_subgraphs(
+        mut subgraphs: Vec<ReducedProjectSubgraphEntry>,
+    ) -> ReducedProjectNetGraph {
+        let live_subgraphs = build_live_reduced_subgraph_handles(&subgraphs);
+        let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
+            rebuild_reduced_project_graph_name_caches(&mut subgraphs);
+
+        ReducedProjectNetGraph {
+            subgraphs,
+            live_subgraphs,
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name,
+            subgraphs_by_sheet_and_name,
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn live_pin_not_connected_candidates_read_live_pin_owner() {
+        let connection = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "");
+        let mut subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection,
+        ));
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        let label_name_caches = ReducedProjectLabelNameCaches {
+            global_names: BTreeSet::new(),
+            local_names_by_sheet: BTreeSet::new(),
+        };
+
+        let candidates = reduced_project_pin_not_connected_candidates(&graph, &label_name_caches);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].pin_schematic_path,
+            std::path::PathBuf::from("root.kicad_sch")
+        );
+    }
+
+    #[test]
+    fn live_pin_not_connected_candidates_honor_same_name_no_connect_sibling() {
+        let connection = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "");
+        let mut pin_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        pin_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection.clone(),
+        ));
+
+        let mut nc_subgraph = test_net_subgraph(2, connection, Vec::new(), "");
+        nc_subgraph.has_no_connect = true;
+        nc_subgraph.no_connect_points.push(ReducedNoConnectPoint {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(30, 40),
+        });
+        let graph = test_graph_with_live_subgraphs(vec![pin_subgraph, nc_subgraph]);
+        let label_name_caches = ReducedProjectLabelNameCaches {
+            global_names: BTreeSet::new(),
+            local_names_by_sheet: BTreeSet::new(),
+        };
+
+        let candidates = reduced_project_pin_not_connected_candidates(&graph, &label_name_caches);
+
+        assert!(candidates.is_empty());
     }
 
     #[test]
