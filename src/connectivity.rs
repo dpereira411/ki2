@@ -5392,11 +5392,28 @@ fn live_subgraph_strong_driver_count(subgraph: &LiveReducedSubgraph) -> usize {
 }
 
 fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
-    live_reduced_subgraph_driver_priority(subgraph) < reduced_global_power_pin_driver_priority()
+    live_reduced_subgraph_highest_driver_priority(subgraph)
+        < reduced_global_power_pin_driver_priority()
 }
 
 fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
     subgraph.base_pins.len()
+}
+
+fn live_reduced_subgraph_highest_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
+    subgraph
+        .drivers
+        .iter()
+        .map(|driver| driver.borrow().priority())
+        .max()
+        .or_else(|| {
+            (!matches!(
+                subgraph.driver_connection.borrow().connection_type,
+                ReducedProjectConnectionType::None
+            ))
+            .then_some(reduced_pin_driver_priority())
+        })
+        .unwrap_or(0)
 }
 
 fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
@@ -24394,7 +24411,7 @@ mod tests {
     }
 
     #[test]
-    fn live_reduced_subgraph_driver_priority_uses_chosen_driver() {
+    fn live_reduced_subgraph_driver_priority_uses_chosen_driver_but_global_presence_stays_global() {
         let mut graph = vec![test_net_subgraph(
             1,
             test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
@@ -24423,7 +24440,55 @@ mod tests {
             super::live_reduced_subgraph_driver_priority(&subgraph),
             super::reduced_local_label_driver_priority()
         );
-        assert!(super::live_subgraph_has_local_driver(&subgraph));
+        assert!(!super::live_subgraph_has_local_driver(&subgraph));
+    }
+
+    #[test]
+    fn reduced_live_secondary_promotion_considers_global_secondary_start_as_global() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LOCAL", "LOCAL", "/LOCAL", "/same"),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: super::reduced_global_power_pin_driver_priority(),
+                        connection: test_net_connection("VCC", "VCC", "VCC", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/LOCAL", "LOCAL", "/LOCAL", "/same"),
+                        identity: None,
+                    },
+                ],
+                "/same",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("VCC", "VCC", "VCC", "/other"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("VCC", "VCC", "VCC", "/other"),
+                    identity: None,
+                }],
+                "/other",
+            ),
+        ];
+        graph[0].chosen_driver_index = Some(1);
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
+        let promoted = LiveReducedSubgraph::refresh_global_secondary_driver_promotions(
+            &live_subgraphs[0],
+            &global_subgraphs,
+        );
+
+        assert_eq!(promoted.len(), 1);
+        assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
     }
 
     #[test]
