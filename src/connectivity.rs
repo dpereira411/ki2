@@ -8609,6 +8609,26 @@ fn symbol_reference_text(symbol: &Symbol) -> Option<String> {
         .map(|property| property.value.clone())
 }
 
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority SCH_PIN_T non-power exclusion branch
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: checks the reduced local-lib symbol reference field instead of live SCH_SYMBOL
+// local_only_reason: current connectivity still projects pins from reduced symbol/lib-symbol data
+// replaced_by: fuller live SCH_PIN/SCH_SYMBOL driver item owner
+// remove_when: driver priority reads directly from live KiCad-shaped item owners
+fn reduced_symbol_lib_reference_starts_with_hash(symbol: &Symbol) -> bool {
+    symbol
+        .lib_symbol
+        .as_ref()
+        .and_then(|lib_symbol| {
+            lib_symbol
+                .properties
+                .iter()
+                .find(|property| property.kind == crate::model::PropertyKind::SymbolReference)
+        })
+        .is_some_and(|property| property.value.starts_with('#'))
+}
+
 // Upstream parity: reduced local analogue for the per-pin `SCH_CONNECTION` seeding KiCad performs
 // in `updateSymbolConnectivity()` / `updatePinConnectivity()` before `ResolveDrivers()`. This is
 // still reduced projected pin state rather than a live `SCH_PIN`, but it now gives every base-pin
@@ -8866,8 +8886,9 @@ fn build_pending_reduced_subgraph_driver_connection(
 // also mirrors KiCad's strong-driver cleanup by dropping weak sheet-pin/default-pin drivers once a
 // hierarchical-label-or-stronger driver exists. Ordinary symbol pins now participate as weak
 // `SCH_PIN_T` drivers before that cleanup instead of existing only as a priority fallback on the
-// reduced subgraph. Remaining divergence is the still-missing live connection object plus fuller
-// power/bus-parent driver ownership.
+// reduced subgraph, and ordinary pins whose library-symbol reference starts with `#` now rank as
+// `NONE` like upstream. Remaining divergence is the still-missing live connection object plus
+// fuller power/bus-parent driver ownership.
 fn collect_reduced_strong_drivers<FLabel, FSheet>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
@@ -9005,7 +9026,10 @@ where
                                 0,
                             ));
                         }
-                    } else if symbol.in_netlist && symbol.on_board {
+                    } else if symbol.in_netlist
+                        && symbol.on_board
+                        && !reduced_symbol_lib_reference_starts_with_hash(symbol)
+                    {
                         if let Some(text) =
                             reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
                         {
@@ -9096,6 +9120,7 @@ where
 //   pin number so stacked same-position pins stay distinct through reduced candidate ranking
 // - reduced power-pin drivers now prefer the projected pin shown name before the symbol value so
 //   multi-pin power symbols keep per-pin driver text through reduced ranking
+// - ordinary pins whose library-symbol reference starts with `#` are skipped like upstream
 // Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
 // driver ownership.
 fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
@@ -9192,6 +9217,10 @@ where
                                 })
                             })
                             .or_else(|| {
+                                if reduced_symbol_lib_reference_starts_with_hash(symbol) {
+                                    return None;
+                                }
+
                                 reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
                                     .map(|text| ReducedDriverNameCandidate {
                                         priority: reduced_pin_driver_priority(),
@@ -12099,6 +12128,77 @@ mod tests {
                 pin_number: Some("2".to_string()),
             })
         );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_resolve_drivers_skips_ordinary_pin_when_lib_reference_is_private() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_private_lib_ref_pin_driver_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:PrivateDriver"
+      (property "Reference" "#U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "PrivateDriver" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "PrivateDriver_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "device:PrivateDriver")
+    (uuid "73050000-0000-0000-0000-000000000621")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "PrivateDriver" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0))))"##,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("symbol");
+        let component =
+            super::connection_component_for_symbol_pin(&schematic, symbol, [0.0, 0.0], Some("1"))
+                .expect("component");
+
+        let candidate = super::resolve_reduced_driver_name_candidate_on_component(
+            &schematic,
+            &component,
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        );
+        let drivers = super::collect_reduced_strong_drivers(
+            &schematic,
+            &path,
+            "",
+            &component,
+            "",
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        );
+
+        assert!(candidate.is_none());
+        assert!(drivers.is_empty());
 
         let _ = fs::remove_file(path);
     }
