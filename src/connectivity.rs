@@ -5129,7 +5129,9 @@ fn build_live_reduced_name_handle_caches_from_handles(
 
 // Upstream parity: local bridge for same-name recache on the shared live subgraph owner. This
 // still keys by reduced resolved names instead of full live `CONNECTION_SUBGRAPH` identity, but it
-// keeps recache/update tied to the shared active graph object graph.
+// keeps recache/update tied to the shared active graph object graph. Like KiCad's
+// `recacheSubgraphName()`, this updates only the exact old-name/new-name buckets; prefix-only
+// vector-bus aliases are initial lookup helpers, not maintained by this recache branch.
 #[cfg(test)]
 fn recache_live_reduced_subgraph_name_from_handles(
     live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -5142,13 +5144,6 @@ fn recache_live_reduced_subgraph_name_from_handles(
         indexes.retain(|index| *index != subgraph_index);
     }
 
-    if old_name.contains('[') {
-        let old_prefix_only = format!("{}[]", old_name.split('[').next().unwrap_or(""));
-        if let Some(indexes) = subgraphs_by_name.get_mut(&old_prefix_only) {
-            indexes.retain(|index| *index != subgraph_index);
-        }
-    }
-
     let sheet_path = live_subgraphs[subgraph_index]
         .borrow()
         .sheet_instance_path
@@ -5159,13 +5154,20 @@ fn recache_live_reduced_subgraph_name_from_handles(
     }
 
     let subgraph = live_subgraphs[subgraph_index].borrow();
-    subgraph.insert_into_index_name_caches(
-        subgraphs_by_name,
-        subgraphs_by_sheet_and_name,
-        subgraph_index,
-    );
+    let name = subgraph.cache_name();
+    subgraphs_by_name
+        .entry(name.clone())
+        .or_default()
+        .push(subgraph_index);
+    subgraphs_by_sheet_and_name
+        .entry((subgraph.sheet_instance_path.clone(), name))
+        .or_default()
+        .push(subgraph_index);
 }
 
+// Upstream parity: local bridge for handle-cache recache on the shared live subgraph owner. This
+// mirrors `CONNECTION_GRAPH::recacheSubgraphName()` exact-bucket behavior; it intentionally does
+// not update prefix-only vector-bus aliases after a rename.
 fn recache_live_reduced_subgraph_name_handle_cache_from_handles(
     subgraphs_by_name: &mut BTreeMap<String, Vec<LiveReducedSubgraphHandle>>,
     subgraphs_by_sheet_and_name: &mut BTreeMap<(String, String), Vec<LiveReducedSubgraphHandle>>,
@@ -5176,24 +5178,21 @@ fn recache_live_reduced_subgraph_name_handle_cache_from_handles(
         handles.retain(|handle| !Rc::ptr_eq(handle, subgraph_handle));
     }
 
-    if old_name.contains('[') {
-        let old_prefix_only = format!("{}[]", old_name.split('[').next().unwrap_or(""));
-        if let Some(handles) = subgraphs_by_name.get_mut(&old_prefix_only) {
-            handles.retain(|handle| !Rc::ptr_eq(handle, subgraph_handle));
-        }
-    }
-
     let subgraph = subgraph_handle.borrow();
     let sheet_key = (subgraph.sheet_instance_path.clone(), old_name.to_string());
     if let Some(handles) = subgraphs_by_sheet_and_name.get_mut(&sheet_key) {
         handles.retain(|handle| !Rc::ptr_eq(handle, subgraph_handle));
     }
 
-    subgraph.insert_into_handle_name_caches(
-        subgraphs_by_name,
-        subgraphs_by_sheet_and_name,
-        subgraph_handle,
-    );
+    let name = subgraph.cache_name();
+    subgraphs_by_name
+        .entry(name.clone())
+        .or_default()
+        .push(subgraph_handle.clone());
+    subgraphs_by_sheet_and_name
+        .entry((subgraph.sheet_instance_path.clone(), name))
+        .or_default()
+        .push(subgraph_handle.clone());
 }
 
 #[allow(dead_code)]
@@ -13467,6 +13466,142 @@ mod tests {
                 .flatten()
                 .any(|handle| Rc::ptr_eq(handle, &handles[0]))
         );
+    }
+
+    #[test]
+    fn recache_live_reduced_subgraph_name_keeps_prefix_aliases_stale() {
+        let live_subgraphs = vec![LiveReducedSubgraph {
+            source_index: 0,
+            driver_connection: Rc::new(RefCell::new(
+                ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/A[0]".to_string(),
+                    local_name: "A0".to_string(),
+                    full_local_name: "/A[0]".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }
+                .into(),
+            )),
+            drivers: Vec::new(),
+            chosen_driver: None,
+            sheet_instance_path: String::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            bus_parent_handles: Vec::new(),
+            base_pins: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+            hier_parent_handle: None,
+            hier_child_handles: Vec::new(),
+            label_links: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            dirty: true,
+        }];
+
+        let handles = live_subgraphs
+            .into_iter()
+            .map(|subgraph| Rc::new(RefCell::new(subgraph)))
+            .collect::<Vec<_>>();
+        let (mut by_name, mut by_sheet_and_name) =
+            build_live_reduced_name_caches_from_handles(&handles);
+
+        {
+            let subgraph = handles[0].borrow();
+            let mut connection = subgraph.driver_connection.borrow_mut();
+            connection.name = "/B[0]".to_string();
+            connection.local_name = "B0".to_string();
+            connection.full_local_name = "/B[0]".to_string();
+        }
+
+        recache_live_reduced_subgraph_name_from_handles(
+            &handles,
+            &mut by_name,
+            &mut by_sheet_and_name,
+            0,
+            "/A[0]",
+        );
+
+        assert_eq!(by_name.get("/A[0]"), Some(&Vec::new()));
+        assert_eq!(by_name.get("/A[]"), Some(&vec![0]));
+        assert_eq!(by_name.get("/B[0]"), Some(&vec![0]));
+        assert!(!by_name.contains_key("/B[]"));
+    }
+
+    #[test]
+    fn recache_live_reduced_subgraph_name_handle_cache_keeps_prefix_aliases_stale() {
+        let live_subgraph = Rc::new(RefCell::new(LiveReducedSubgraph {
+            source_index: 0,
+            driver_connection: Rc::new(RefCell::new(
+                ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/A[0]".to_string(),
+                    local_name: "A0".to_string(),
+                    full_local_name: "/A[0]".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                }
+                .into(),
+            )),
+            drivers: Vec::new(),
+            chosen_driver: None,
+            sheet_instance_path: String::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            bus_parent_handles: Vec::new(),
+            base_pins: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+            hier_parent_handle: None,
+            hier_child_handles: Vec::new(),
+            label_links: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            dirty: true,
+        }));
+        let handles = vec![live_subgraph.clone()];
+        let (mut by_name, mut by_sheet_and_name) =
+            super::build_live_reduced_name_handle_caches_from_handles(&handles);
+
+        {
+            let subgraph = live_subgraph.borrow();
+            let mut connection = subgraph.driver_connection.borrow_mut();
+            connection.name = "/B[0]".to_string();
+            connection.local_name = "B0".to_string();
+            connection.full_local_name = "/B[0]".to_string();
+        }
+
+        recache_live_reduced_subgraph_name_handle_cache_from_handles(
+            &mut by_name,
+            &mut by_sheet_and_name,
+            &live_subgraph,
+            "/A[0]",
+        );
+
+        assert!(
+            by_name
+                .get("/A[]")
+                .into_iter()
+                .flatten()
+                .any(|handle| Rc::ptr_eq(handle, &live_subgraph))
+        );
+        assert!(
+            by_name
+                .get("/B[0]")
+                .into_iter()
+                .flatten()
+                .any(|handle| Rc::ptr_eq(handle, &live_subgraph))
+        );
+        assert!(!by_name.contains_key("/B[]"));
     }
 
     #[test]
