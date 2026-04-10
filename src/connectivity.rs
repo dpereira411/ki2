@@ -185,6 +185,7 @@ pub(crate) struct ReducedLabelLink {
     pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) at: PointKey,
     pub(crate) kind: LabelKind,
+    pub(crate) dangling: bool,
     pub(crate) connection: ReducedProjectConnection,
 }
 
@@ -2715,6 +2716,7 @@ struct LiveReducedLabelLink {
     schematic_path: std::path::PathBuf,
     at: PointKey,
     kind: LabelKind,
+    dangling: bool,
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
@@ -5474,6 +5476,7 @@ fn build_live_reduced_subgraph_handles(
                             schematic_path: link.schematic_path.clone(),
                             at: link.at,
                             kind: link.kind,
+                            dangling: link.dangling,
                             connection: Rc::new(RefCell::new(link.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(
                                 link.connection.clone().into(),
@@ -8764,6 +8767,11 @@ fn collect_reduced_subgraph_local_membership(
                         schematic_path: schematic.path.clone(),
                         at: point_key(label.at),
                         kind: label.kind,
+                        dangling: label_is_dangling_on_component(
+                            schematic,
+                            connected_component,
+                            label.at,
+                        ),
                         connection: build_reduced_project_connection(
                             schematic,
                             sheet_path.instance_path.clone(),
@@ -11948,6 +11956,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
@@ -12558,6 +12567,7 @@ mod tests {
                         schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                         at: PointKey(0, 0),
                         kind: LabelKind::Global,
+                        dangling: false,
                         connection: test_net_connection(
                             "label-net",
                             "LABEL_LOCAL",
@@ -15499,6 +15509,41 @@ mod tests {
     }
 
     #[test]
+    fn reduced_project_label_links_carry_dangling_state() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_label_link_dangling_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (label "L" (at 0 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let link = graph
+            .subgraphs
+            .iter()
+            .flat_map(|subgraph| subgraph.label_links.iter())
+            .find(|label| label.kind == LabelKind::Local)
+            .expect("local label link");
+
+        assert!(link.dangling);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn reduced_dangling_directive_label_points_filter_directives() {
         let path = env::temp_dir().join(format!(
             "ki2_connectivity_dangling_directive_labels_{}.kicad_sch",
@@ -17005,6 +17050,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(5, 6),
                 kind: LabelKind::Global,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -17138,6 +17184,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(5, 6),
                 kind: LabelKind::Global,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -17813,6 +17860,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(5, 6),
                 kind: LabelKind::Global,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -21167,6 +21215,7 @@ mod tests {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
                     kind: LabelKind::Local,
+                    dangling: false,
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -22863,6 +22912,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Global,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23015,6 +23065,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Global,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23157,6 +23208,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Global,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23659,6 +23711,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 3,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23751,6 +23804,7 @@ mod tests {
                 schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
+                dangling: false,
                 connection: ReducedProjectConnection {
                     net_code: 9,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -24079,6 +24133,7 @@ impl PartialEq for LiveReducedLabelLink {
             &self.schematic_path,
             self.at,
             self.kind,
+            self.dangling,
             &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
@@ -24087,6 +24142,7 @@ impl PartialEq for LiveReducedLabelLink {
             &other.schematic_path,
             other.at,
             other.kind,
+            other.dangling,
             &other.shown_text_local_name,
             other.connection.borrow().snapshot(),
             other.driver_connection.borrow().snapshot(),

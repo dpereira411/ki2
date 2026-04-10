@@ -596,19 +596,6 @@ fn dedup_reused_screen_erc_pins(pins: &mut Vec<ReducedErcPinContext>) {
     *pins = deduped;
 }
 
-// Upstream parity: local helper for deterministic reduced label lookup keys. KiCad keeps live
-// `SCH_TEXT*` identity inside `CONNECTION_SUBGRAPH`, so it does not need this enum-to-key helper.
-// The reduced Rust ERC path still keys dangling-label facts by cloned `(sheet, point, kind)`
-// tuples, and this keeps that carrier stable without broadening `LabelKind` itself.
-fn reduced_label_kind_key(kind: LabelKind) -> u8 {
-    match kind {
-        LabelKind::Local => 0,
-        LabelKind::Global => 1,
-        LabelKind::Hierarchical => 2,
-        LabelKind::Directive => 3,
-    }
-}
-
 fn parse_alphanumeric_pin_token(token: &str) -> (String, Option<i64>) {
     let split_at = token
         .char_indices()
@@ -2099,27 +2086,8 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     }
 
     let mut diagnostics = Vec::new();
-    let mut dangling_labels = BTreeMap::<(String, crate::connectivity::PointKey, u8), bool>::new();
     let graph = project.reduced_project_net_graph(false);
     let mut label_subgraphs = Vec::new();
-
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for component in collect_reduced_label_component_snapshots(schematic) {
-            for label in component.labels {
-                dangling_labels.insert(
-                    (
-                        sheet_path.instance_path.clone(),
-                        crate::connectivity::PointKey(label.at[0].to_bits(), label.at[1].to_bits()),
-                        reduced_label_kind_key(label.kind),
-                    ),
-                    label.dangling,
-                );
-            }
-        }
-    }
 
     for subgraph in graph_run_erc_subgraphs(&graph) {
         if subgraph.label_links.is_empty() {
@@ -2219,17 +2187,9 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            let dangling = dangling_labels
-                .get(&(
-                    sheet_instance_path.clone(),
-                    label.at,
-                    reduced_label_kind_key(label.kind),
-                ))
-                .copied()
-                .unwrap_or(false);
             let graph_has_pins = all_pins > 0;
 
-            if (dangling && !graph_has_pins)
+            if (label.dangling && !graph_has_pins)
                 || (label.kind == LabelKind::Local
                     && local_pins == 0
                     && all_pins > 1
