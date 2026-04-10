@@ -3894,7 +3894,7 @@ impl LiveReducedSubgraph {
             };
             let candidate_drivers = {
                 let candidate = candidate_handle.borrow();
-                if candidate.drivers.len() < 2 {
+                if live_subgraph_strong_driver_count(&candidate) < 2 {
                     continue;
                 }
                 candidate.drivers.clone()
