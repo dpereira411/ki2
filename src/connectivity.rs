@@ -3512,6 +3512,7 @@ struct LiveReducedSubgraph {
     drivers: Vec<LiveProjectStrongDriverHandle>,
     chosen_driver: Option<LiveProjectStrongDriverHandle>,
     sheet_instance_path: String,
+    has_no_connect: bool,
     bus_neighbor_links: Vec<LiveReducedSubgraphLinkHandle>,
     bus_parent_links: Vec<LiveReducedSubgraphLinkHandle>,
     #[cfg(test)]
@@ -5254,6 +5255,7 @@ impl PartialEq for LiveReducedSubgraph {
             && live_strong_driver_handles_to_snapshots(&self.drivers)
                 == live_strong_driver_handles_to_snapshots(&other.drivers)
             && self.sheet_instance_path == other.sheet_instance_path
+            && self.has_no_connect == other.has_no_connect
             && self.bus_neighbor_links == other.bus_neighbor_links
             && self.bus_parent_links == other.bus_parent_links
             && live_reduced_subgraph_extra_projection_eq(self, other)
@@ -5443,6 +5445,7 @@ fn build_live_reduced_subgraph_handles(
                 drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
                 chosen_driver: None,
                 sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                has_no_connect: subgraph.has_no_connect,
                 bus_neighbor_links: subgraph
                     .bus_neighbor_links
                     .iter()
@@ -11346,6 +11349,10 @@ pub(crate) fn reduced_project_bus_to_net_conflicts(
 pub(crate) fn reduced_project_no_connect_marker_outcomes(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectNoConnectMarkerOutcome> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_no_connect_marker_outcomes(graph);
+    }
+
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
     let mut seen_driver_identities = BTreeSet::new();
@@ -11423,6 +11430,127 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                         .len();
                     (unique_pin_count, unique_label_count)
                 };
+
+            if unique_pin_count <= 1 {
+                if unique_pin_count == 0 && unique_label_count == 0 {
+                    outcomes.push(ReducedProjectNoConnectMarkerOutcome::Dangling {
+                        diagnostic_path: no_connect_point.schematic_path.clone(),
+                    });
+                }
+
+                continue;
+            }
+
+            outcomes.push(ReducedProjectNoConnectMarkerOutcome::Connected {
+                diagnostic_path: no_connect_point.schematic_path.clone(),
+            });
+        }
+    }
+
+    outcomes
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects explicit no-connect branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still evaluates reduced live no-connect points and same-name live subgraph handles
+// instead of final `m_no_connect` plus `m_net_name_to_subgraphs_map` item owners
+// local_only_reason: moves explicit no-connect marker classification onto the active live subgraph
+// owner while final no-connect item ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / no-connect item owner graph
+// remove_when: ERC can query final live no-connect marker outcomes directly from graph item links
+fn live_reduced_project_no_connect_marker_outcomes(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectNoConnectMarkerOutcome> {
+    let mut outcomes = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut seen_driver_identities = BTreeSet::new();
+
+    for subgraph_handle in live_reduced_project_run_erc_subgraph_handles(graph)
+        .into_iter()
+        .filter(|subgraph| !subgraph.borrow().no_connect_points.is_empty())
+    {
+        let subgraph_id = live_subgraph_handle_id(&subgraph_handle);
+        let subgraph = subgraph_handle.borrow();
+
+        for no_connect_point in &subgraph.no_connect_points {
+            if live_reduced_subgraph_driver_identity(&subgraph)
+                .is_some_and(|identity| !seen_driver_identities.insert(identity))
+            {
+                continue;
+            }
+
+            if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph_id)) {
+                continue;
+            }
+
+            let local_unique_pins = live_base_pin_handles_to_snapshots(&subgraph.base_pins)
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let local_unique_labels = subgraph
+                .label_links
+                .iter()
+                .map(|label| (subgraph.sheet_instance_path.clone(), label.borrow().at))
+                .collect::<BTreeSet<_>>();
+            let has_sheet_pin = subgraph
+                .hier_sheet_pins
+                .iter()
+                .any(|pin| pin.borrow().at == no_connect_point.at);
+            let has_hierarchical_label = subgraph
+                .hier_ports
+                .iter()
+                .any(|label| label.borrow().at == no_connect_point.at);
+            let has_nc_pin = subgraph.base_pins.iter().any(|base_pin| {
+                let base_pin = base_pin.borrow();
+                base_pin.pin.electrical_type.as_deref() == Some("no_connect")
+                    && base_pin.pin.key.at == no_connect_point.at
+            });
+
+            if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
+                || (has_nc_pin && local_unique_pins.len() <= 1)
+            {
+                continue;
+            }
+
+            let driver_name = subgraph.driver_connection.borrow().name.clone();
+            let (unique_pin_count, unique_label_count) = if driver_name.is_empty() {
+                (local_unique_pins.len(), local_unique_labels.len())
+            } else {
+                let neighbors = graph
+                    .live_subgraphs
+                    .iter()
+                    .filter(|neighbor| {
+                        let neighbor = neighbor.borrow();
+                        neighbor.sheet_instance_path == subgraph.sheet_instance_path
+                            && neighbor.driver_connection.borrow().name == driver_name
+                    })
+                    .collect::<Vec<_>>();
+                let unique_pin_count = neighbors
+                    .iter()
+                    .flat_map(|neighbor| {
+                        neighbor
+                            .borrow()
+                            .base_pins
+                            .iter()
+                            .map(|base_pin| base_pin.borrow().pin.key.clone())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<BTreeSet<ReducedNetBasePinKey>>()
+                    .len();
+                let unique_label_count = neighbors
+                    .iter()
+                    .flat_map(|neighbor| {
+                        let neighbor = neighbor.borrow();
+                        neighbor
+                            .label_links
+                            .iter()
+                            .map(|label| (neighbor.sheet_instance_path.clone(), label.borrow().at))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<BTreeSet<_>>()
+                    .len();
+                (unique_pin_count, unique_label_count)
+            };
 
             if unique_pin_count <= 1 {
                 if unique_pin_count == 0 && unique_label_count == 0 {
@@ -18694,6 +18822,7 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
+                has_no_connect: false,
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -18728,6 +18857,7 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
+                has_no_connect: false,
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -18797,6 +18927,7 @@ mod tests {
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
+            has_no_connect: false,
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -18876,6 +19007,7 @@ mod tests {
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
+            has_no_connect: false,
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -18942,6 +19074,7 @@ mod tests {
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
+            has_no_connect: false,
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -21075,6 +21208,7 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
+                has_no_connect: false,
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -21117,6 +21251,7 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
+                has_no_connect: false,
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
