@@ -6637,7 +6637,7 @@ fn collect_connection_components_with_options(
     include_bus_entry_segments: bool,
 ) -> Vec<ConnectionComponent> {
     let point_snapshot = collect_connection_points(schematic);
-    let points = point_snapshot.into_values().collect::<Vec<_>>();
+    let points = point_snapshot.values().cloned().collect::<Vec<_>>();
     let mut segments = collect_wire_segments(schematic);
     segments.extend(
         schematic
@@ -6659,29 +6659,36 @@ fn collect_connection_components_with_options(
     );
     segments.extend(schematic.screen.items.iter().filter_map(|item| match item {
         SchItem::BusEntry(entry) => {
+            let endpoint_members = |at| {
+                points
+                    .iter()
+                    .find(|point| points_equal(point.at, at))
+                    .map(|point| point.members.as_slice())
+                    .unwrap_or(&[])
+            };
             let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
-            let start_members = points
+            let wire_side = bus_entry_preferred_wire_endpoint(&point_snapshot, entry);
+            let bus_side = if points_equal(wire_side, entry.at) {
+                end
+            } else {
+                entry.at
+            };
+            let bus_side_has_bus = endpoint_members(bus_side)
                 .iter()
-                .find(|point| points_equal(point.at, entry.at))
-                .map(|point| &point.members);
-            let end_members = points
-                .iter()
-                .find(|point| points_equal(point.at, end))
-                .map(|point| &point.members);
-            let start_has_bus = start_members
-                .into_iter()
-                .flatten()
                 .any(|member| member.kind == ConnectionMemberKind::Bus);
-            let end_has_member_connection_owner = end_members.into_iter().flatten().any(|member| {
-                matches!(
-                    member.kind,
-                    ConnectionMemberKind::Wire
-                        | ConnectionMemberKind::SymbolPin
-                        | ConnectionMemberKind::SheetPin
-                        | ConnectionMemberKind::NoConnectMarker
-                )
-            });
-            (include_bus_entry_segments || !(start_has_bus && end_has_member_connection_owner))
+            let wire_side_has_member_connection_owner =
+                endpoint_members(wire_side).iter().any(|member| {
+                    matches!(
+                        member.kind,
+                        ConnectionMemberKind::Wire
+                            | ConnectionMemberKind::SymbolPin
+                            | ConnectionMemberKind::SheetPin
+                            | ConnectionMemberKind::Label
+                            | ConnectionMemberKind::NoConnectMarker
+                    )
+                });
+            (include_bus_entry_segments
+                || !(bus_side_has_bus && wire_side_has_member_connection_owner))
                 .then_some([entry.at, end])
         }
         _ => None,
@@ -13963,6 +13970,56 @@ mod tests {
         assert!(point.members.iter().any(|member| {
             member.kind == super::ConnectionMemberKind::SymbolPin
                 && member.pin_number.as_deref() == Some("2")
+        }));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_connection_components_keep_reversed_bus_entries_out_of_bus_component() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_reversed_bus_entry_components_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 0) (xy 0 0)))
+  (label "ADDR9" (at -5 0 0) (effects (font (size 1 1))))
+  (bus (pts (xy 5 5) (xy 15 5)))
+  (global_label "DATA[0..7]" (shape input) (at 15 5 0) (effects (font (size 1 1))))
+  (bus_entry (at 0 0) (size 5 5)))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let components = super::collect_connection_components_with_options(&schematic, false);
+
+        assert_eq!(components.len(), 2, "{components:#?}");
+        assert!(components.iter().any(|component| {
+            component.members.iter().any(|member| {
+                member.kind == super::ConnectionMemberKind::Bus
+                    && crate::loader::points_equal(member.at, [5.0, 5.0])
+            }) && component.members.iter().any(|member| {
+                member.kind == super::ConnectionMemberKind::Label
+                    && crate::loader::points_equal(member.at, [15.0, 5.0])
+            })
+        }));
+        assert!(components.iter().any(|component| {
+            component.members.iter().any(|member| {
+                member.kind == super::ConnectionMemberKind::Wire
+                    && crate::loader::points_equal(member.at, [0.0, 0.0])
+            }) && component.members.iter().any(|member| {
+                member.kind == super::ConnectionMemberKind::Label
+                    && crate::loader::points_equal(member.at, [-5.0, 0.0])
+            })
         }));
 
         let _ = fs::remove_file(&path);
