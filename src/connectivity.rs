@@ -1462,6 +1462,38 @@ impl LiveProjectBusMember {
         self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
     }
 
+    // upstream: CONNECTION_GRAPH::matchBusMember group-bus non-vector member branch
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: compares reduced live bus-member payloads instead of full SCH_CONNECTIONs
+    // local_only_reason: current live graph stores reduced bus-member owners
+    // replaced_by: full SCH_CONNECTION member tree owned by the live graph
+    // remove_when: live bus member matching runs directly on SCH_CONNECTION analogues
+    fn matches_group_member(&self, search: &LiveProjectBusMember) -> bool {
+        self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
+    }
+
+    // upstream: CONNECTION_GRAPH::matchBusMember group-bus nested-vector branch
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: direct nested-vector scan on reduced live bus-member payloads
+    // local_only_reason: current live graph stores reduced bus-member owners
+    // replaced_by: full SCH_CONNECTION member tree owned by the live graph
+    // remove_when: live bus member matching runs directly on SCH_CONNECTION analogues
+    fn find_group_vector_member_live(
+        &self,
+        search: &LiveProjectBusMember,
+    ) -> Option<LiveProjectBusMemberHandle> {
+        for member in &self.members {
+            let member_ref = member.borrow();
+            if member_ref.matches_group_member(search) {
+                return Some(member.clone());
+            }
+        }
+
+        None
+    }
+
     fn find_descendant_live(
         &self,
         search: &LiveProjectBusMember,
@@ -1734,12 +1766,22 @@ impl LiveProjectConnection {
     ) -> Option<LiveProjectBusMemberHandle> {
         for member in &self.members {
             let member_ref = member.borrow();
-            if member_ref.matches_live_member(search) {
+            let matches = if self.connection_type == ReducedProjectConnectionType::BusGroup {
+                member_ref.matches_group_member(search)
+            } else {
+                member_ref.matches_live_member(search)
+            };
+            if matches {
                 return Some(member.clone());
             }
 
             if member_ref.kind == ReducedBusMemberKind::Bus {
-                if let Some(found) = member_ref.find_descendant_live(search) {
+                let found = if self.connection_type == ReducedProjectConnectionType::BusGroup {
+                    member_ref.find_group_vector_member_live(search)
+                } else {
+                    member_ref.find_descendant_live(search)
+                };
+                if let Some(found) = found {
                     return Some(found);
                 }
             }
@@ -1776,13 +1818,23 @@ impl LiveProjectConnection {
     ) -> Option<LiveProjectBusMemberHandle> {
         for member in &self.members {
             let member_ref = member.borrow();
-            if member_ref.matches_live_member(search) {
+            let matches = if self.connection_type == ReducedProjectConnectionType::BusGroup {
+                member_ref.matches_group_member(search)
+            } else {
+                member_ref.matches_live_member(search)
+            };
+            if matches {
                 return Some(member.clone());
             }
 
             if member_ref.kind == ReducedBusMemberKind::Bus {
                 drop(member_ref);
-                if let Some(found) = member.borrow_mut().find_descendant_mut_live(search) {
+                let found = if self.connection_type == ReducedProjectConnectionType::BusGroup {
+                    member.borrow().find_group_vector_member_live(search)
+                } else {
+                    member.borrow_mut().find_descendant_mut_live(search)
+                };
+                if let Some(found) = found {
                     return Some(found);
                 }
             }
@@ -9397,8 +9449,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveReducedSubgraph, LiveReducedSubgraphHandle, PointKey, ReducedBusMember,
-        ReducedBusMemberKind, ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
+        LiveProjectBusMember, LiveProjectConnection, LiveReducedSubgraph,
+        LiveReducedSubgraphHandle, PointKey, ReducedBusMember, ReducedBusMemberKind,
+        ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink,
         ReducedProjectBusNeighborLink, ReducedProjectConnection, ReducedProjectConnectionType,
         ReducedProjectDriverKind, ReducedProjectStrongDriver, ReducedProjectSubgraphEntry,
         ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
@@ -15574,6 +15627,69 @@ mod tests {
         );
         assert_eq!(stale_members.len(), 1);
         assert_eq!(stale_members[0].borrow().full_local_name, "/PWR");
+    }
+
+    #[test]
+    fn live_group_bus_member_match_uses_local_name_inside_nested_vectors() {
+        let group = LiveProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::BusGroup,
+            name: "GROUP{A[0], B[0]}".to_string(),
+            local_name: "GROUP".to_string(),
+            full_local_name: "/GROUP".to_string(),
+            sheet_instance_path: String::new(),
+            members: vec![
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A[0]".to_string(),
+                    local_name: "A".to_string(),
+                    full_local_name: "/A".to_string(),
+                    vector_index: None,
+                    kind: ReducedBusMemberKind::Bus,
+                    members: vec![Rc::new(RefCell::new(LiveProjectBusMember {
+                        net_code: 0,
+                        name: "A0".to_string(),
+                        local_name: "A0".to_string(),
+                        full_local_name: "/A0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }))],
+                })),
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "B[0]".to_string(),
+                    local_name: "B".to_string(),
+                    full_local_name: "/B".to_string(),
+                    vector_index: None,
+                    kind: ReducedBusMemberKind::Bus,
+                    members: vec![Rc::new(RefCell::new(LiveProjectBusMember {
+                        net_code: 0,
+                        name: "B0".to_string(),
+                        local_name: "B0".to_string(),
+                        full_local_name: "/B0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }))],
+                })),
+            ],
+        };
+        let search = LiveProjectBusMember {
+            net_code: 0,
+            name: "B0".to_string(),
+            local_name: "B0".to_string(),
+            full_local_name: "/B0".to_string(),
+            vector_index: Some(0),
+            kind: ReducedBusMemberKind::Net,
+            members: Vec::new(),
+        };
+
+        let matched = group
+            .find_member_live(&search)
+            .expect("group member should match by local name");
+
+        assert_eq!(matched.borrow().local_name, "B0");
     }
 
     #[test]
