@@ -292,6 +292,175 @@ fn reduced_project_subgraph_has_process_strong_driver(
         .is_some_and(|same_sheet| same_sheet.iter().any(|index| *index != subgraph_index))
 }
 
+// Upstream parity: reduced cache rebuild for the name maps `processSubGraphs()` consults while it
+// mutates weak duplicate names. This is transitional because the final owner should update the live
+// `CONNECTION_GRAPH` maps through `recacheSubgraphName()`.
+fn reduced_project_rebuild_process_name_indexes(
+    subgraphs: &[ReducedProjectSubgraphEntry],
+) -> (
+    BTreeMap<String, Vec<usize>>,
+    BTreeMap<(String, String), Vec<usize>>,
+) {
+    let mut subgraphs_by_name = BTreeMap::<String, Vec<usize>>::new();
+    let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
+
+    for (index, subgraph) in subgraphs.iter().enumerate() {
+        let owner_name = subgraph.driver_connection.name.clone();
+        subgraphs_by_name
+            .entry(owner_name.clone())
+            .or_default()
+            .push(index);
+
+        if owner_name.contains('[') {
+            let prefix_only = format!("{}[]", owner_name.split('[').next().unwrap_or(""));
+            subgraphs_by_name
+                .entry(prefix_only)
+                .or_default()
+                .push(index);
+        }
+
+        subgraphs_by_sheet_and_name
+            .entry((subgraph.sheet_instance_path.clone(), owner_name))
+            .or_default()
+            .push(index);
+    }
+
+    (subgraphs_by_name, subgraphs_by_sheet_and_name)
+}
+
+// Upstream parity: reduced helper for `processSubGraphs()` weak-name suffix generation. This is a
+// reduced stand-in for `create_new_name()` until the local graph owns mutable `SCH_CONNECTION`
+// objects with real `SetSuffix()` / `ConfigureFromLabel()` behavior.
+fn reduced_project_weak_conflict_new_name(
+    connection: &ReducedProjectConnection,
+    suffix: usize,
+) -> String {
+    if connection.connection_type == ReducedProjectConnectionType::BusGroup {
+        let prefix = connection
+            .local_name
+            .split_once('{')
+            .map(|(prefix, _)| prefix)
+            .filter(|prefix| !prefix.is_empty())
+            .unwrap_or("BUS");
+        let old_name = connection
+            .name
+            .split_once('{')
+            .map(|(_, inner)| inner)
+            .unwrap_or(connection.name.as_str());
+
+        return format!("{prefix}_{suffix}{{{old_name}");
+    }
+
+    format!("{}_{suffix}", connection.name)
+}
+
+// Upstream parity: reduced helper for applying the weak-name suffix mutation that upstream applies
+// to `SCH_CONNECTION`. This remains partial because reduced connections store projected name fields
+// instead of one authoritative live connection object.
+fn reduced_project_apply_weak_conflict_name(
+    connection: &mut ReducedProjectConnection,
+    new_name: String,
+) {
+    if connection.connection_type == ReducedProjectConnectionType::BusGroup {
+        connection.name = new_name.clone();
+        connection.local_name = reduced_short_net_name(&new_name);
+        connection.full_local_name = new_name;
+        return;
+    }
+
+    let suffix = new_name
+        .strip_prefix(&connection.name)
+        .unwrap_or_default()
+        .to_string();
+    connection.name = new_name.clone();
+    connection.local_name.push_str(&suffix);
+    connection.full_local_name = if connection.full_local_name.is_empty() {
+        new_name
+    } else {
+        format!("{}{}", connection.full_local_name, suffix)
+    };
+}
+
+// Upstream parity: reduced local analogue for the weak-driver duplicate rename branch in
+// `CONNECTION_GRAPH::processSubGraphs()`. This mutates the reduced `driver_connection` before
+// hierarchy/bus-neighbor construction so weak duplicate default names cannot merge like strong
+// labels. Remaining divergence is that suffix application is modeled on reduced connection names
+// rather than `SCH_CONNECTION::SetSuffix()` / `ConfigureFromLabel()` on a live object.
+fn reduced_project_rename_weak_conflict_subgraphs(
+    subgraphs: &mut [ReducedProjectSubgraphEntry],
+    subgraphs_by_name: &mut BTreeMap<String, Vec<usize>>,
+    subgraphs_by_sheet_and_name: &mut BTreeMap<(String, String), Vec<usize>>,
+) {
+    for index in 0..subgraphs.len() {
+        if subgraphs[index]
+            .drivers
+            .iter()
+            .any(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+        {
+            continue;
+        }
+
+        let name = subgraphs[index].driver_connection.name.clone();
+        if name.is_empty() {
+            continue;
+        }
+
+        let mut conflict_key = name.clone();
+        let mut conflict_count = subgraphs_by_name
+            .get(&conflict_key)
+            .map(|indexes| indexes.len())
+            .unwrap_or_default();
+
+        if conflict_count <= 1
+            && subgraphs[index].driver_connection.connection_type
+                == ReducedProjectConnectionType::Bus
+        {
+            let prefix_only = format!("{}[]", name.split('[').next().unwrap_or(""));
+
+            if let Some(indexes) = subgraphs_by_name.get(&prefix_only) {
+                conflict_key = prefix_only;
+                conflict_count = indexes.len();
+            }
+        }
+
+        if conflict_count <= 1 {
+            continue;
+        }
+
+        let mut suffix = 1;
+        let new_name = loop {
+            let candidate =
+                reduced_project_weak_conflict_new_name(&subgraphs[index].driver_connection, suffix);
+            suffix += 1;
+
+            if !subgraphs_by_name.contains_key(&candidate) {
+                break candidate;
+            }
+        };
+
+        if let Some(indexes) = subgraphs_by_name.get_mut(&conflict_key) {
+            indexes.retain(|candidate| *candidate != index);
+        }
+        if conflict_key != name
+            && let Some(indexes) = subgraphs_by_name.get_mut(&name)
+        {
+            indexes.retain(|candidate| *candidate != index);
+        }
+
+        reduced_project_apply_weak_conflict_name(
+            &mut subgraphs[index].driver_connection,
+            new_name.clone(),
+        );
+        subgraphs[index].sync_boundary_state_from_driver_owner();
+        subgraphs_by_name.entry(new_name).or_default().push(index);
+    }
+
+    let (rebuilt_by_name, rebuilt_by_sheet_and_name) =
+        reduced_project_rebuild_process_name_indexes(subgraphs);
+    *subgraphs_by_name = rebuilt_by_name;
+    *subgraphs_by_sheet_and_name = rebuilt_by_sheet_and_name;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ReducedProjectDriverIdentity {
     Label {
@@ -7028,6 +7197,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         }
         reduced_subgraphs.push(subgraph);
     }
+
+    reduced_project_rename_weak_conflict_subgraphs(
+        &mut reduced_subgraphs,
+        &mut subgraphs_by_name,
+        &mut subgraphs_by_sheet_and_name,
+    );
 
     let subgraphs_by_sheet = reduced_subgraphs.iter().enumerate().fold(
         BTreeMap::<String, Vec<usize>>::new(),
@@ -20529,6 +20704,50 @@ mod tests {
             &conflicting_sheet_pin_map,
             2
         ));
+    }
+
+    #[test]
+    fn reduced_process_subgraphs_renames_weak_duplicate_driver_names() {
+        let pin_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Pin,
+            priority: super::reduced_pin_driver_priority(),
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            identity: None,
+        };
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![pin_driver.clone()],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![pin_driver],
+                "",
+            ),
+        ];
+        let (mut by_name, mut by_sheet_and_name) =
+            super::reduced_project_rebuild_process_name_indexes(&subgraphs);
+
+        super::reduced_project_rename_weak_conflict_subgraphs(
+            &mut subgraphs,
+            &mut by_name,
+            &mut by_sheet_and_name,
+        );
+
+        assert_eq!(subgraphs[0].driver_connection.name, "/SIG_1");
+        assert_eq!(subgraphs[0].driver_connection.local_name, "SIG_1");
+        assert_eq!(subgraphs[0].driver_connection.full_local_name, "/SIG_1");
+        assert_eq!(subgraphs[0].name, "/SIG_1");
+        assert_eq!(subgraphs[1].driver_connection.name, "/SIG");
+        assert_eq!(by_name.get("/SIG_1"), Some(&vec![0]));
+        assert_eq!(by_name.get("/SIG"), Some(&vec![1]));
+        assert_eq!(
+            by_sheet_and_name.get(&("".to_string(), "/SIG_1".to_string())),
+            Some(&vec![0])
+        );
     }
 }
 impl PartialEq for LiveReducedLabelLink {
