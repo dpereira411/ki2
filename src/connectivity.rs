@@ -10250,6 +10250,83 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
     })
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts label/port member comparison branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still compares reduced live bus-member names instead of final `SCH_CONNECTION`
+// member pointers
+// local_only_reason: moves exercised bus-to-bus member comparison onto the active live subgraph
+// owner while the final `SCH_CONNECTION` member tree is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` owner graph
+// remove_when: ERC can query final live bus-to-bus conflict state directly from graph item links
+fn live_reduced_subgraph_bus_to_bus_conflict(
+    handle: &LiveReducedSubgraphHandle,
+) -> Option<ReducedProjectBusToBusConflict> {
+    let subgraph = handle.borrow();
+
+    let label_members = subgraph.label_links.iter().find_map(|label| {
+        let label = label.borrow();
+        let connection = label.connection.borrow();
+        reduced_connection_is_bus(connection.connection_type).then(|| {
+            connection
+                .members
+                .iter()
+                .map(live_bus_member_handle_snapshot)
+                .map(|member| member.name)
+                .collect::<Vec<_>>()
+        })
+    })?;
+
+    let port_members = subgraph
+        .hier_sheet_pins
+        .iter()
+        .filter_map(|pin| {
+            let pin = pin.borrow();
+            let connection = pin.connection.borrow();
+            reduced_connection_is_bus(connection.connection_type).then(|| {
+                connection
+                    .members
+                    .iter()
+                    .map(live_bus_member_handle_snapshot)
+                    .map(|member| member.name)
+                    .collect::<Vec<_>>()
+            })
+        })
+        .chain(subgraph.hier_ports.iter().filter_map(|port| {
+            let port = port.borrow();
+            let connection = port.connection.borrow();
+            reduced_connection_is_bus(connection.connection_type).then(|| {
+                connection
+                    .members
+                    .iter()
+                    .map(live_bus_member_handle_snapshot)
+                    .map(|member| member.name)
+                    .collect::<Vec<_>>()
+            })
+        }))
+        .next()?;
+
+    let mut diagnostic_path = None::<std::path::PathBuf>;
+    let label_at = subgraph.label_links.iter().find_map(|label| {
+        let label = label.borrow();
+        (reduced_connection_is_bus(label.connection.borrow().connection_type)
+            && matches!(label.kind, LabelKind::Local | LabelKind::Global))
+        .then(|| {
+            diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
+            [f64::from_bits(label.at.0), f64::from_bits(label.at.1)]
+        })
+    })?;
+
+    let has_match = label_members
+        .iter()
+        .any(|member| port_members.iter().any(|test| test == member));
+
+    (!has_match).then_some(ReducedProjectBusToBusConflict {
+        label_at,
+        diagnostic_path,
+    })
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts bus-entry candidate setup branch or none
 // parity_status: partial
@@ -11273,15 +11350,22 @@ pub(crate) fn reduced_project_floating_wire_events(
 // upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts `RunERC()` slice or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still emits reduced bus-to-bus conflict events instead of live `CONNECTION_SUBGRAPH`
-// item-attached marker owners
-// local_only_reason: keeps bus-to-bus conflict event collection on the shared graph owner instead
-// of duplicating `RunERC()` subgraph walks inside ERC
+// divergence: still emits reduced diagnostic events and falls back for hand-built reduced test
+// graphs, but production comparison now reads the active live subgraph owner
+// local_only_reason: keeps bus-to-bus conflict event collection on the shared graph owner and
+// starts retiring projected reduced snapshot comparison from ERC-facing paths
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
 // remove_when: ERC can consume live bus-to-bus conflict events directly from graph item links
 pub(crate) fn reduced_project_bus_to_bus_conflicts(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectBusToBusConflict> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_run_erc_subgraph_handles(graph)
+            .into_iter()
+            .filter_map(|subgraph| live_reduced_subgraph_bus_to_bus_conflict(&subgraph))
+            .collect();
+    }
+
     reduced_project_run_erc_subgraphs(graph)
         .into_iter()
         .filter_map(|subgraph| reduced_project_subgraph_bus_to_bus_conflict(&subgraph))
