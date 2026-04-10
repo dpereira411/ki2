@@ -269,10 +269,8 @@ fn reduced_project_subgraph_has_process_strong_driver(
         return true;
     }
 
-    let chosen_driver = subgraph
-        .chosen_driver_index
-        .and_then(|index| subgraph.drivers.get(index))
-        .or_else(|| subgraph.drivers.first());
+    let chosen_driver =
+        reduced_project_chosen_driver_index(subgraph).and_then(|index| subgraph.drivers.get(index));
 
     if !matches!(
         chosen_driver.map(|driver| driver.kind),
@@ -326,6 +324,16 @@ fn reduced_project_rebuild_process_name_indexes(
     }
 
     (subgraphs_by_name, subgraphs_by_sheet_and_name)
+}
+
+// Upstream parity: reduced analogue for `CONNECTION_SUBGRAPH::m_driver` identity in
+// `processSubGraphs()` secondary-driver loops. The reduced graph normally stores this explicitly,
+// but unresolved transitional carriers still follow the graph-build invariant that the first strong
+// driver is chosen until a fuller live `CONNECTION_SUBGRAPH` owns the pointer directly.
+fn reduced_project_chosen_driver_index(subgraph: &ReducedProjectSubgraphEntry) -> Option<usize> {
+    subgraph
+        .chosen_driver_index
+        .or_else(|| (!subgraph.drivers.is_empty()).then_some(0))
 }
 
 // Upstream parity: reduced helper for `processSubGraphs()` weak-name suffix generation. This is a
@@ -542,8 +550,9 @@ fn reduced_project_absorb_candidate_matches_name(
         return false;
     }
 
+    let chosen_driver_index = reduced_project_chosen_driver_index(candidate);
     candidate.drivers.iter().enumerate().any(|(index, driver)| {
-        Some(index) != candidate.chosen_driver_index
+        Some(index) != chosen_driver_index
             && matches!(
                 driver.kind,
                 ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
@@ -569,7 +578,7 @@ fn reduced_project_absorb_push_secondary_test_names(
     let parent_type = subgraph.driver_connection.connection_type;
 
     for (index, driver) in subgraph.drivers.iter().enumerate() {
-        if Some(index) == subgraph.chosen_driver_index
+        if Some(index) == reduced_project_chosen_driver_index(subgraph)
             || driver.connection.connection_type != parent_type
             || driver.kind != ReducedProjectDriverKind::Label
             || reduced_project_driver_match_name(
@@ -11854,6 +11863,36 @@ mod tests {
                 .iter()
                 .any(|driver| driver.connection.name == "/PWR")
         );
+    }
+
+    #[test]
+    fn reduced_absorb_secondary_matching_skips_implicit_chosen_driver() {
+        let candidate = test_net_subgraph(
+            1,
+            test_net_connection("/RESOLVED", "RESOLVED", "/RESOLVED", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALIAS", "ALIAS", "/ALIAS", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/OTHER", "OTHER", "/OTHER", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        assert!(!super::reduced_project_absorb_candidate_matches_name(
+            &candidate, "/ALIAS"
+        ));
+        assert!(super::reduced_project_absorb_candidate_matches_name(
+            &candidate, "/OTHER"
+        ));
     }
 
     #[test]
