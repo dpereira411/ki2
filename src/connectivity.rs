@@ -12178,8 +12178,7 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
             && collect_reduced_project_subgraphs_by_name(graph, &subgraph.driver_connection.name)
                 .iter()
                 .any(|neighbor| {
-                    neighbor.sheet_instance_path == subgraph.sheet_instance_path
-                        && neighbor.subgraph_code != subgraph.subgraph_code
+                    neighbor.subgraph_code != subgraph.subgraph_code
                         && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
                 });
 
@@ -12285,8 +12284,7 @@ fn live_reduced_project_pin_not_connected_candidates(
                 }
 
                 let neighbor = neighbor_handle.borrow();
-                neighbor.sheet_instance_path == subgraph.sheet_instance_path
-                    && neighbor.driver_connection.borrow().name == driver_name
+                neighbor.driver_connection.borrow().name == driver_name
                     && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
             });
 
@@ -14117,6 +14115,91 @@ mod tests {
         nc_subgraph.has_no_connect = true;
         nc_subgraph.no_connect_points.push(ReducedNoConnectPoint {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(30, 40),
+        });
+        let graph = test_graph_with_live_subgraphs(vec![pin_subgraph, nc_subgraph]);
+        let label_name_caches = ReducedProjectLabelNameCaches {
+            global_names: BTreeSet::new(),
+            local_names_by_sheet: BTreeSet::new(),
+        };
+
+        let candidates = reduced_project_pin_not_connected_candidates(&graph, &label_name_caches);
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn reduced_pin_not_connected_candidates_honor_cross_sheet_no_connect_sibling() {
+        let connection_a = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "/a");
+        let connection_b = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "/b");
+        let mut pin_subgraph = test_net_subgraph(1, connection_a.clone(), Vec::new(), "/a");
+        pin_subgraph.base_pins.push(test_base_pin(
+            "/a",
+            "sym",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection_a,
+        ));
+
+        let mut nc_subgraph = test_net_subgraph(2, connection_b, Vec::new(), "/b");
+        nc_subgraph.has_no_connect = true;
+        nc_subgraph.no_connect_points.push(ReducedNoConnectPoint {
+            schematic_path: std::path::PathBuf::from("other.kicad_sch"),
+            at: PointKey(30, 40),
+        });
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![pin_subgraph, nc_subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("unconnected-(R1-Pad1)".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([
+                (
+                    ("/a".to_string(), "unconnected-(R1-Pad1)".to_string()),
+                    vec![0],
+                ),
+                (
+                    ("/b".to_string(), "unconnected-(R1-Pad1)".to_string()),
+                    vec![1],
+                ),
+            ]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+        let label_name_caches = ReducedProjectLabelNameCaches {
+            global_names: BTreeSet::new(),
+            local_names_by_sheet: BTreeSet::new(),
+        };
+
+        let candidates = reduced_project_pin_not_connected_candidates(&graph, &label_name_caches);
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn live_pin_not_connected_candidates_honor_cross_sheet_no_connect_sibling() {
+        let connection_a = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "/a");
+        let connection_b = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "/b");
+        let mut pin_subgraph = test_net_subgraph(1, connection_a.clone(), Vec::new(), "/a");
+        pin_subgraph.base_pins.push(test_base_pin(
+            "/a",
+            "sym",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection_a,
+        ));
+
+        let mut nc_subgraph = test_net_subgraph(2, connection_b, Vec::new(), "/b");
+        nc_subgraph.has_no_connect = true;
+        nc_subgraph.no_connect_points.push(ReducedNoConnectPoint {
+            schematic_path: std::path::PathBuf::from("other.kicad_sch"),
             at: PointKey(30, 40),
         });
         let graph = test_graph_with_live_subgraphs(vec![pin_subgraph, nc_subgraph]);
