@@ -1152,6 +1152,7 @@ struct ReducedProjectSheetPinIdentityKey {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedSubgraphWireItem {
+    pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) start: PointKey,
     pub(crate) end: PointKey,
     pub(crate) is_bus_entry: bool,
@@ -3289,6 +3290,7 @@ impl Ord for LiveReducedBasePin {
 
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraphWireItem {
+    schematic_path: std::path::PathBuf,
     start: PointKey,
     end: PointKey,
     is_bus_entry: bool,
@@ -3374,6 +3376,7 @@ impl LiveReducedSubgraphWireItem {
 impl PartialEq for LiveReducedSubgraphWireItem {
     fn eq(&self, other: &Self) -> bool {
         self.start == other.start
+            && self.schematic_path == other.schematic_path
             && self.end == other.end
             && self.is_bus_entry == other.is_bus_entry
             && self.start_is_wire_side == other.start_is_wire_side
@@ -5541,6 +5544,7 @@ fn build_live_reduced_subgraph_handles(
                     .cloned()
                     .map(|item| {
                         Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
+                            schematic_path: item.schematic_path.clone(),
                             start: item.start,
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
@@ -5558,6 +5562,7 @@ fn build_live_reduced_subgraph_handles(
                     .cloned()
                     .map(|item| {
                         Rc::new(RefCell::new(LiveReducedSubgraphWireItem {
+                            schematic_path: item.schematic_path.clone(),
                             start: item.start,
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
@@ -8889,6 +8894,7 @@ fn collect_reduced_subgraph_local_membership(
                 (point_key_set_contains(&component_points, start)
                     || point_key_set_contains(&component_points, end))
                 .then_some(ReducedSubgraphWireItem {
+                    schematic_path: schematic.path.clone(),
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: false,
@@ -8921,6 +8927,7 @@ fn collect_reduced_subgraph_local_membership(
                 (point_key_set_contains(&component_points, start)
                     || point_key_set_contains(&component_points, end))
                 .then_some(ReducedSubgraphWireItem {
+                    schematic_path: schematic.path.clone(),
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: false,
@@ -8939,6 +8946,7 @@ fn collect_reduced_subgraph_local_membership(
                 };
                 point_key_set_contains(&component_points, wire_side).then_some(
                     ReducedSubgraphWireItem {
+                        schematic_path: schematic.path.clone(),
                         start: point_key(wire_side),
                         end: point_key(bus_side),
                         is_bus_entry: true,
@@ -11351,6 +11359,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
@@ -11402,6 +11411,7 @@ mod tests {
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(5, 5),
                     is_bus_entry: true,
@@ -11492,6 +11502,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
@@ -11590,6 +11601,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey((-5.0f64).to_bits(), 0.0f64.to_bits()),
                     end: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     is_bus_entry: false,
@@ -11630,6 +11642,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     end: PointKey(10.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
@@ -11665,6 +11678,7 @@ mod tests {
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     end: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: true,
@@ -11724,6 +11738,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey((-10.0f64).to_bits(), 5.0f64.to_bits()),
                     end: PointKey((-5.0f64).to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
@@ -11770,6 +11785,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     end: PointKey(10.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
@@ -11805,6 +11821,7 @@ mod tests {
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     end: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: true,
@@ -12166,6 +12183,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
@@ -12217,6 +12235,7 @@ mod tests {
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(5, 0),
                     end: PointKey(6, 1),
                     is_bus_entry: true,
@@ -12350,6 +12369,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey((-5.0f64).to_bits(), 0.0f64.to_bits()),
                     end: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     is_bus_entry: false,
@@ -12390,6 +12410,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     end: PointKey(10.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
@@ -12425,6 +12446,7 @@ mod tests {
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     end: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: true,
@@ -16833,6 +16855,7 @@ mod tests {
             hier_parent_index: None,
             hier_child_indexes: Vec::new(),
             bus_items: vec![ReducedSubgraphWireItem {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 start: PointKey(0, 0),
                 end: PointKey(10, 0),
                 is_bus_entry: false,
@@ -16840,6 +16863,7 @@ mod tests {
                 connected_bus_subgraph_index: None,
             }],
             wire_items: vec![ReducedSubgraphWireItem {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                 start: PointKey(0, 0),
                 end: PointKey(5, 5),
                 is_bus_entry: true,
@@ -18252,6 +18276,7 @@ mod tests {
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
@@ -18592,6 +18617,7 @@ mod tests {
                 hier_parent_index: None,
                 hier_child_indexes: Vec::new(),
                 bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
@@ -22820,6 +22846,7 @@ mod tests {
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,

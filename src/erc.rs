@@ -2241,14 +2241,6 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-        else {
-            continue;
-        };
-
         for wire_item in &subgraph.wire_items {
             for endpoint in [wire_item.start, wire_item.end] {
                 let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
@@ -2339,7 +2331,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     } else {
                         "Unconnected wire endpoint".to_string()
                     },
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: Some(wire_item.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
@@ -2375,20 +2367,15 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
         {
             continue;
         }
-
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-        else {
-            continue;
-        };
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
             code: "erc-wire-dangling",
             kind: crate::diagnostic::DiagnosticKind::Validation,
             message: "Wires not connected to anything".to_string(),
-            path: Some(sheet_path.schematic_path.clone()),
+            path: subgraph
+                .wire_items
+                .first()
+                .map(|item| item.schematic_path.clone()),
             span: None,
             line: None,
             column: None,
