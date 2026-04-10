@@ -554,6 +554,45 @@ fn reduced_erc_pins_are_stacked(lhs: &ReducedErcPinContext, rhs: &ReducedErcPinC
         && lhs.at[1].to_bits() == rhs.at[1].to_bits()
 }
 
+// Upstream parity: reduced local analogue for the reused-screen power-symbol de-dup KiCad gets
+// from live screen-owned pin identity during `ERC_TESTER::TestPinToPin()`. This is not a 1:1 live
+// item pointer key because the Rust tree still projects through reduced pin context, but it now
+// lets pin-to-pin checks collapse repeated power-symbol outputs that refer back to the same
+// schematic pin owner instead of reporting one `Power output` conflict per reused instance on a
+// merged project net. Remaining divergence is fuller live marker attachment and the still-missing
+// `SCH_PIN` owner.
+fn dedup_reused_screen_erc_pins(pins: &mut Vec<ReducedErcPinContext>) {
+    let mut seen_reused_identities = BTreeSet::new();
+    let mut deduped = Vec::with_capacity(pins.len());
+
+    for pin in pins.drain(..).rev() {
+        if !pin.is_power_symbol || pin.pin_type != ReducedPinType::PowerOut {
+            deduped.push(pin);
+            continue;
+        }
+
+        let Some(symbol_uuid) = pin.symbol_uuid.clone() else {
+            deduped.push(pin);
+            continue;
+        };
+
+        let reused_identity = (
+            pin.path.clone(),
+            symbol_uuid,
+            pin.pin_number.clone(),
+            pin.at[0].to_bits(),
+            pin.at[1].to_bits(),
+        );
+
+        if seen_reused_identities.insert(reused_identity) {
+            deduped.push(pin);
+        }
+    }
+
+    deduped.reverse();
+    *pins = deduped;
+}
+
 // Upstream parity: local helper for deterministic reduced label lookup keys. KiCad keeps live
 // `SCH_TEXT*` identity inside `CONNECTION_SUBGRAPH`, so it does not need this enum-to-key helper.
 // The reduced Rust ERC path still keys dangling-label facts by cloned `(sheet, point, kind)`
@@ -3052,6 +3091,7 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
             }
             ordering
         });
+        dedup_reused_screen_erc_pins(&mut pins);
 
         let is_power_net = pins
             .iter()
@@ -4033,7 +4073,12 @@ pub fn check_field_name_whitespace(project: &SchematicProject) -> Vec<Diagnostic
 
 #[cfg(test)]
 mod tests {
-    use super::{ReducedErcPinContext, ReducedPinType, reduced_preferred_missing_driver_pin};
+    use super::{
+        ReducedErcPinContext, ReducedPinType, dedup_reused_screen_erc_pins,
+        reduced_preferred_missing_driver_pin,
+    };
+    use crate::core::SchematicProject;
+    use crate::loader::load_schematic_tree;
     fn test_pin(
         reference: &str,
         pin_number: &str,
@@ -4133,5 +4178,75 @@ mod tests {
         };
 
         assert!(!super::reduced_erc_pins_are_stacked(&lhs, &rhs));
+    }
+
+    #[test]
+    fn reused_screen_pin_dedup_keeps_last_occurrence() {
+        let mut pins = vec![
+            ReducedErcPinContext {
+                at: [10.0, 20.0],
+                visible: true,
+                is_power_symbol: true,
+                path: std::path::PathBuf::from("shared_child.kicad_sch"),
+                sheet_instance_path: "/A".to_string(),
+                reference: "#FLG1".to_string(),
+                pin_number: "1".to_string(),
+                pin_name: Some("pwr".to_string()),
+                symbol_uuid: Some("shared-flag".to_string()),
+                pin_type: ReducedPinType::PowerOut,
+            },
+            ReducedErcPinContext {
+                at: [10.0, 20.0],
+                visible: true,
+                is_power_symbol: true,
+                path: std::path::PathBuf::from("shared_child.kicad_sch"),
+                sheet_instance_path: "/B".to_string(),
+                reference: "#FLG2".to_string(),
+                pin_number: "1".to_string(),
+                pin_name: Some("pwr".to_string()),
+                symbol_uuid: Some("shared-flag".to_string()),
+                pin_type: ReducedPinType::PowerOut,
+            },
+            ReducedErcPinContext {
+                at: [30.0, 40.0],
+                visible: true,
+                is_power_symbol: false,
+                path: std::path::PathBuf::from("shared_child.kicad_sch"),
+                sheet_instance_path: "/B".to_string(),
+                reference: "R2".to_string(),
+                pin_number: "2".to_string(),
+                pin_name: Some("2".to_string()),
+                symbol_uuid: Some("shared-r".to_string()),
+                pin_type: ReducedPinType::Passive,
+            },
+        ];
+
+        dedup_reused_screen_erc_pins(&mut pins);
+
+        assert_eq!(pins.len(), 2);
+        assert_eq!(pins[0].reference, "#FLG2");
+        assert_eq!(pins[1].reference, "R2");
+    }
+
+    #[test]
+    fn pin_to_pin_skips_reused_screen_power_output_conflicts_in_dynamic_power_fixture() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch",
+        );
+
+        if !path.exists() {
+            return;
+        }
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let diagnostics = super::check_pin_to_pin(&project);
+
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "erc-pin-to-pin"),
+            "{diagnostics:#?}"
+        );
     }
 }
