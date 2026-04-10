@@ -3547,6 +3547,8 @@ impl LiveReducedSubgraph {
             handle.borrow_mut().dirty = false;
         }
 
+        Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
+
         for handle in &dirty_active {
             let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
 
@@ -3556,7 +3558,6 @@ impl LiveReducedSubgraph {
 
             Self::propagate_hierarchy_chain(handle, live_subgraphs, force, stale_members);
         }
-        Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
         Self::refresh_bus_parent_members(live_subgraphs, &dirty_active);
         Self::replay_stale_bus_members(live_subgraphs, &active, stale_members);
 
@@ -4913,10 +4914,10 @@ fn refresh_reduced_live_post_propagation_item_connections_on_handles(
 // graph build. This now follows KiCad's two-pass caller shape more closely by recursively
 // traversing dirty live subgraphs with a shared stale-member bag per root before running the
 // post-propagation multi-parent rename and item-update steps. This active graph-build path now
-// runs on shared live subgraph handles. Hierarchy and link updates now consume one explicit dirty
-// handle subset per recursive visit and requeue through dirty ownership directly. Remaining
-// divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer topology
-// behind those handles.
+// runs on shared live subgraph handles. Hierarchy propagation consumes one explicit dirty-handle
+// subset per recursive visit, while bus-link rematching stays in the final post-propagation pass.
+// Remaining divergence is the still-missing fuller local `CONNECTION_SUBGRAPH` / item-pointer
+// topology behind those handles.
 #[cfg_attr(not(test), allow(dead_code))]
 fn refresh_reduced_live_graph_propagation(reduced_subgraphs: &mut [ReducedProjectSubgraphEntry]) {
     let _ = refresh_reduced_live_graph_propagation_with_handles(reduced_subgraphs);
