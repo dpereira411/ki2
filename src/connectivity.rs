@@ -523,7 +523,6 @@ fn reduced_project_absorb_candidate_matches_name(
                 driver.kind,
                 ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
             )
-            && driver.connection.connection_type == candidate.driver_connection.connection_type
             && reduced_project_driver_match_name(&driver.connection, name)
     })
 }
@@ -566,6 +565,16 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
 
         let parent_sheet = subgraphs[parent_index].sheet_instance_path.clone();
         let parent_name = subgraphs[parent_index].driver_connection.name.clone();
+        let mut parent_test_names = vec![parent_name.clone()];
+        if matches!(
+            parent_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) {
+            for member in reduced_bus_member_leaf_objects(&subgraphs[parent_index].bus_members) {
+                push_unique(&mut parent_test_names, member.full_local_name);
+                push_unique(&mut parent_test_names, member.name);
+            }
+        }
         if parent_type == ReducedProjectConnectionType::Net
             && subgraphs.iter().any(|candidate| {
                 candidate.sheet_instance_path == parent_sheet
@@ -585,10 +594,12 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             if absorbed[candidate_index]
                 || subgraphs[candidate_index].sheet_instance_path != parent_sheet
                 || subgraphs[candidate_index].driver_connection.connection_type != parent_type
-                || !reduced_project_absorb_candidate_matches_name(
-                    &subgraphs[candidate_index],
-                    &parent_name,
-                )
+                || !parent_test_names.iter().any(|test_name| {
+                    reduced_project_absorb_candidate_matches_name(
+                        &subgraphs[candidate_index],
+                        test_name,
+                    )
+                })
                 || subgraphs[candidate_index]
                     .bus_items
                     .iter()
@@ -11689,6 +11700,60 @@ mod tests {
             1
         );
         assert!(super::collect_reduced_project_subgraphs_by_name(&graph, "PWR").is_empty());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_absorb_uses_parent_bus_member_secondary_driver_names() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_secondary_absorb_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000204")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (label "DATA[0..0]" (at 10 0 0) (effects (font (size 1 1))))
+  (bus (pts (xy 0 20) (xy 20 20)))
+  (label "ALT[0..0]" (at 0 20 0) (effects (font (size 1 1))))
+  (label "DATA0" (at 20 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let parent_bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("parent bus subgraph");
+        let candidate_bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [20.0, 20.0])
+            .expect("candidate bus subgraph");
+
+        assert_eq!(parent_bus.subgraph_code, candidate_bus.subgraph_code);
+        assert_eq!(
+            parent_bus.driver_connection.connection_type,
+            ReducedProjectConnectionType::Bus
+        );
+        assert!(
+            parent_bus
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.local_name == "DATA0")
+        );
 
         let _ = fs::remove_file(path);
     }
