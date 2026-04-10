@@ -4775,7 +4775,7 @@ impl LiveReducedSubgraph {
                 clone_live_bus_member_into_live_connection_owner(
                     &mut neighbor_handle.borrow().driver_connection.borrow_mut(),
                     &parent_member.borrow(),
-                    &neighbor_sheet_instance_path,
+                    &parent_sheet_instance_path,
                 );
                 neighbor_handle.borrow_mut().dirty = true;
                 recurse_targets.push((neighbor_handle, parent_member));
@@ -26571,6 +26571,69 @@ mod tests {
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIGB");
+        assert_eq!(recurse_targets.len(), 1);
+        assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_preserve_first_same_parent_member_update() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![
+                        test_bus_member("SIGA", "SIGA", "/SIGA"),
+                        test_bus_member("SIGB", "SIGB", "/SIGB"),
+                    ],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/child/OLD", "OLD", "/child/OLD", "/child"),
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIGA", "SIGA", "/SIGA"),
+                subgraph_index: 1,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIGB", "SIGB", "/SIGB"),
+                subgraph_index: 1,
+            },
+        ];
+        graph[1].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIGA", "SIGA", "/SIGA"),
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIGB", "SIGB", "/SIGB"),
+                subgraph_index: 0,
+            },
+        ];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        let recurse_targets = LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIGA");
+        assert_eq!(graph[1].driver_connection.sheet_instance_path, "");
         assert_eq!(recurse_targets.len(), 1);
         assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
     }
