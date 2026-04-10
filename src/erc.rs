@@ -6,7 +6,8 @@ use crate::connectivity::{
     reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
-    reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
+    reduced_project_subgraph_has_no_connect_via_parent_chain,
+    reduced_project_subgraph_has_non_bus_entry_owner, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
     reduced_project_symbol_pin_net_name, reduced_project_wire_endpoint_has_graph_owner,
 };
@@ -2501,22 +2502,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let Some(bus_entry) = subgraph.wire_items.iter().find(|item| item.is_bus_entry) else {
             continue;
         };
-        let has_non_bus_entry_owner = subgraph.wire_items.iter().any(|item| !item.is_bus_entry)
-            || !subgraph.base_pins.is_empty()
-            || !subgraph.no_connect_points.is_empty()
-            || subgraph.label_links.iter().any(|label| {
-                label.connection.connection_type
-                    == crate::connectivity::ReducedProjectConnectionType::Net
-            })
-            || subgraph.hier_sheet_pins.iter().any(|pin| {
-                pin.connection.connection_type
-                    == crate::connectivity::ReducedProjectConnectionType::Net
-            })
-            || subgraph.hier_ports.iter().any(|port| {
-                port.connection.connection_type
-                    == crate::connectivity::ReducedProjectConnectionType::Net
-            });
-        if !has_non_bus_entry_owner {
+        if !reduced_project_subgraph_has_non_bus_entry_owner(&subgraph) {
             continue;
         }
         let entry_at = if bus_entry.start_is_wire_side {

@@ -9827,6 +9827,36 @@ pub(crate) fn reduced_project_wire_endpoint_has_graph_owner(
         || reduced_same_sheet_named_neighbor_endpoint_has_owner(graph, subgraph, endpoint)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts non-bus-owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still checks reduced subgraph item payload instead of live `CONNECTION_SUBGRAPH`
+// item owners
+// local_only_reason: keeps bus-entry non-bus owner classification on the shared graph owner
+// instead of duplicating reduced member scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / bus-entry owner graph
+// remove_when: ERC can query live bus-entry owner state directly from graph item links
+pub(crate) fn reduced_project_subgraph_has_non_bus_entry_owner(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> bool {
+    subgraph.wire_items.iter().any(|item| !item.is_bus_entry)
+        || !subgraph.base_pins.is_empty()
+        || !subgraph.no_connect_points.is_empty()
+        || subgraph
+            .label_links
+            .iter()
+            .any(|label| label.connection.connection_type == ReducedProjectConnectionType::Net)
+        || subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|pin| pin.connection.connection_type == ReducedProjectConnectionType::Net)
+        || subgraph
+            .hier_ports
+            .iter()
+            .any(|port| port.connection.connection_type == ReducedProjectConnectionType::Net)
+}
+
 fn assign_reduced_connected_bus_subgraph_indexes(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
