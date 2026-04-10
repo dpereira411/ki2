@@ -500,6 +500,25 @@ fn append_unique<T: PartialEq>(target: &mut Vec<T>, values: Vec<T>) {
     }
 }
 
+fn reduced_project_absorbed_driver_cmp(
+    lhs: &ReducedProjectStrongDriver,
+    rhs: &ReducedProjectStrongDriver,
+) -> Ordering {
+    let lhs_name = reduced_project_strong_driver_name(lhs);
+    let rhs_name = reduced_project_strong_driver_name(rhs);
+    let lhs_low_quality_name = lhs_name.contains("-Pad");
+    let rhs_low_quality_name = rhs_name.contains("-Pad");
+
+    lhs.priority
+        .cmp(&rhs.priority)
+        .then_with(|| rhs_low_quality_name.cmp(&lhs_low_quality_name))
+        .then_with(|| rhs_name.cmp(lhs_name))
+        .then_with(|| {
+            reduced_project_strong_driver_full_name(rhs)
+                .cmp(reduced_project_strong_driver_full_name(lhs))
+        })
+}
+
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs invalidated-subgraph ResolveDrivers tail
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -525,10 +544,7 @@ fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraph
             .iter()
             .enumerate()
             .max_by(|(_lhs_index, lhs), (_rhs_index, rhs)| {
-                lhs.priority.cmp(&rhs.priority).then_with(|| {
-                    reduced_project_strong_driver_full_name(rhs)
-                        .cmp(reduced_project_strong_driver_full_name(lhs))
-                })
+                reduced_project_absorbed_driver_cmp(lhs, rhs)
             })
     else {
         subgraph.chosen_driver_index = None;
@@ -16792,6 +16808,39 @@ mod tests {
         assert_eq!(subgraph.drivers.len(), 1);
         assert_eq!(subgraph.drivers[0].kind, ReducedProjectDriverKind::Label);
         assert_eq!(subgraph.driver_connection.name, "/SIG");
+    }
+
+    #[test]
+    fn reduced_absorb_resolve_prefers_non_pad_name_for_equal_weak_drivers() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("Net-(U1-Pad1)", "Net-(U1-Pad1)", "Net-(U1-Pad1)", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Pin,
+                    priority: super::reduced_pin_driver_priority(),
+                    connection: test_net_connection(
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "",
+                    ),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Pin,
+                    priority: super::reduced_pin_driver_priority(),
+                    connection: test_net_connection("/Z", "Z", "/Z", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        super::reduced_project_resolve_absorbed_driver(&mut subgraph);
+
+        assert_eq!(subgraph.driver_connection.local_name, "Z");
+        assert_eq!(subgraph.driver_connection.name, "/Z");
     }
 
     #[test]
