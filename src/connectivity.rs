@@ -473,6 +473,27 @@ fn append_unique<T: PartialEq>(target: &mut Vec<T>, values: Vec<T>) {
     }
 }
 
+fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraphEntry) {
+    let Some((index, driver)) =
+        subgraph
+            .drivers
+            .iter()
+            .enumerate()
+            .max_by(|(_lhs_index, lhs), (_rhs_index, rhs)| {
+                lhs.priority.cmp(&rhs.priority).then_with(|| {
+                    reduced_project_strong_driver_full_name(rhs)
+                        .cmp(reduced_project_strong_driver_full_name(lhs))
+                })
+            })
+    else {
+        return;
+    };
+
+    subgraph.chosen_driver_index = Some(index);
+    subgraph.driver_connection = driver.connection.clone();
+    subgraph.sync_boundary_state_from_driver_owner();
+}
+
 // Upstream parity: reduced local analogue for the same-sheet/same-type primary-driver slice of
 // `CONNECTION_SUBGRAPH::Absorb()` as called from `CONNECTION_GRAPH::processSubGraphs()`. This is
 // still partial because the Rust graph lacks `m_absorbed_by`, live item pointers, bus-entry
@@ -547,6 +568,7 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             if parent.class.is_empty() {
                 parent.class = candidate.class;
             }
+            reduced_project_resolve_absorbed_driver(parent);
             absorbed[candidate_index] = true;
         }
     }
@@ -11475,6 +11497,47 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_absorb_reresolves_driver_after_merge() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].drivers.len(), 2);
+        let chosen = subgraphs[0]
+            .chosen_driver_index
+            .and_then(|index| subgraphs[0].drivers.get(index))
+            .expect("chosen driver");
+        assert_eq!(
+            chosen.priority,
+            super::reduced_local_label_driver_priority()
+        );
     }
 
     #[test]
