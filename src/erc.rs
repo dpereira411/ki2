@@ -3133,6 +3133,26 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 // de-duplication through the shared reduced driver owner. Remaining divergence is fuller bus/power
 // subgraph coverage, driver-item identity, and exact marker attachment.
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
+    fn driver_identity_schematic_path(
+        driver: &crate::connectivity::ReducedProjectStrongDriver,
+    ) -> Option<std::path::PathBuf> {
+        match driver.identity.as_ref() {
+            Some(crate::connectivity::ReducedProjectDriverIdentity::Label {
+                schematic_path,
+                ..
+            })
+            | Some(crate::connectivity::ReducedProjectDriverIdentity::SheetPin {
+                schematic_path,
+                ..
+            })
+            | Some(crate::connectivity::ReducedProjectDriverIdentity::SymbolPin {
+                schematic_path,
+                ..
+            }) => Some(schematic_path.clone()),
+            None => None,
+        }
+    }
+
     let mut diagnostics = Vec::new();
 
     let graph = project.reduced_project_net_graph(false);
@@ -3154,11 +3174,8 @@ pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
             crate::connectivity::reduced_project_strong_driver_name(primary_driver).to_string();
         let secondary_name =
             crate::connectivity::reduced_project_strong_driver_name(secondary_driver).to_string();
-        let path = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-            .map(|sheet_path| sheet_path.schematic_path.clone())
+        let path = driver_identity_schematic_path(primary_driver)
+            .or_else(|| driver_identity_schematic_path(secondary_driver))
             .unwrap_or_else(|| project.root_path.clone());
 
         diagnostics.push(Diagnostic {
