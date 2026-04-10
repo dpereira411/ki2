@@ -10933,6 +10933,10 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
 pub(crate) fn reduced_project_label_connectivity_subgraphs(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectLabelConnectivitySubgraph> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_label_connectivity_subgraphs(graph);
+    }
+
     let mut label_subgraphs = Vec::new();
 
     for subgraph in reduced_project_run_erc_subgraphs(graph) {
@@ -10992,6 +10996,176 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             has_no_connect: aggregate_has_no_connect,
             has_local_hierarchy: aggregate_has_local_hierarchy,
             label_links: subgraph.label_links.clone(),
+        });
+    }
+
+    label_subgraphs
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckLabels local-hierarchy bus-parent branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still walks reduced live parent handles instead of final
+// `CONNECTION_SUBGRAPH` parent links
+// local_only_reason: moves the exercised local-hierarchy query onto the active live subgraph owner
+// while final subgraph parent ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query final live local-hierarchy state directly from subgraph owners
+fn live_reduced_subgraph_has_local_hierarchy_via_bus_parents(
+    subgraph_handle: &LiveReducedSubgraphHandle,
+) -> bool {
+    let subgraph = subgraph_handle.borrow();
+
+    subgraph.bus_parent_handles.iter().any(|parent| {
+        let Some(parent) = parent.upgrade() else {
+            return false;
+        };
+        let parent = parent.borrow();
+
+        parent.sheet_instance_path == subgraph.sheet_instance_path
+            && (!parent.hier_sheet_pins.is_empty() || !parent.hier_ports.is_empty())
+    })
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckLabels no-connect bus-parent chain branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still walks reduced live parent handles and no-connect flags instead of final
+// `CONNECTION_SUBGRAPH` hierarchy/parent ownership
+// local_only_reason: moves the exercised inherited no-connect query onto the active live subgraph
+// owner while final hierarchy and bus-parent ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query final inherited no-connect state directly from subgraph owners
+fn live_reduced_subgraph_has_no_connect_via_parent_chain(
+    subgraph_handle: &LiveReducedSubgraphHandle,
+) -> bool {
+    let mut pending = subgraph_handle
+        .borrow()
+        .bus_parent_handles
+        .iter()
+        .filter_map(Weak::upgrade)
+        .collect::<Vec<_>>();
+    let mut seen = BTreeSet::new();
+
+    while let Some(parent) = pending.pop() {
+        if !seen.insert(live_subgraph_handle_id(&parent)) {
+            continue;
+        }
+
+        if parent.borrow().has_no_connect {
+            return true;
+        }
+
+        let mut hier_parent_handle = parent
+            .borrow()
+            .hier_parent_handle
+            .as_ref()
+            .and_then(Weak::upgrade);
+
+        while let Some(hier_parent) = hier_parent_handle {
+            if !seen.insert(live_subgraph_handle_id(&hier_parent)) {
+                break;
+            }
+
+            if hier_parent.borrow().has_no_connect {
+                return true;
+            }
+
+            hier_parent_handle = hier_parent
+                .borrow()
+                .hier_parent_handle
+                .as_ref()
+                .and_then(Weak::upgrade);
+        }
+    }
+
+    false
+}
+
+fn live_reduced_label_link_snapshot(label: &LiveReducedLabelLink) -> ReducedLabelLink {
+    ReducedLabelLink {
+        schematic_path: label.schematic_path.clone(),
+        at: label.at,
+        kind: label.kind,
+        dangling: label.dangling,
+        non_endpoint_wire_segment_count: label.non_endpoint_wire_segment_count,
+        connection: label.connection.borrow().snapshot(),
+    }
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckLabels label-subgraph setup branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced summary records, but production summaries now read live
+// `CONNECTION_SUBGRAPH`-analogue owners for labels, pins, hierarchy, and no-connect state
+// local_only_reason: moves label subgraph pin/no-connect/local-hierarchy summary ownership onto the
+// active live graph owner while final marker-attached `SCH_TEXT` ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query final live label-connectivity summaries directly from graph links
+fn live_reduced_project_label_connectivity_subgraphs(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectLabelConnectivitySubgraph> {
+    let mut label_subgraphs = Vec::new();
+
+    for subgraph_handle in live_reduced_project_run_erc_subgraph_handles(graph) {
+        let subgraph = subgraph_handle.borrow();
+
+        if subgraph.label_links.is_empty() {
+            continue;
+        }
+
+        let pin_count = subgraph.base_pins.len();
+        let has_local_hierarchy = !subgraph.hier_sheet_pins.is_empty()
+            || !subgraph.hier_ports.is_empty()
+            || live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph_handle);
+        let has_no_connect = subgraph.has_no_connect
+            || live_reduced_subgraph_has_no_connect_via_parent_chain(&subgraph_handle);
+        let mut all_pins = pin_count;
+        let mut local_pins = pin_count;
+        let mut aggregate_has_no_connect = has_no_connect;
+        let mut aggregate_has_local_hierarchy = has_local_hierarchy;
+        let driver_name = subgraph.driver_connection.borrow().name.clone();
+
+        if !driver_name.is_empty() {
+            for neighbor_handle in &graph.live_subgraphs {
+                if Rc::ptr_eq(neighbor_handle, &subgraph_handle) {
+                    continue;
+                }
+
+                let neighbor = neighbor_handle.borrow();
+                if neighbor.driver_connection.borrow().name != driver_name {
+                    continue;
+                }
+
+                let neighbor_pin_count = neighbor.base_pins.len();
+                let neighbor_has_local_hierarchy =
+                    !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
+
+                all_pins += neighbor_pin_count;
+                aggregate_has_no_connect |= neighbor.has_no_connect;
+
+                if neighbor.sheet_instance_path == subgraph.sheet_instance_path {
+                    local_pins += neighbor_pin_count;
+                    aggregate_has_local_hierarchy |= neighbor_has_local_hierarchy;
+                }
+            }
+        }
+
+        label_subgraphs.push(ReducedProjectLabelConnectivitySubgraph {
+            diagnostic_path: subgraph
+                .label_links
+                .first()
+                .map(|label| label.borrow().schematic_path.clone())
+                .unwrap_or_default(),
+            all_pins,
+            local_pins,
+            has_no_connect: aggregate_has_no_connect,
+            has_local_hierarchy: aggregate_has_local_hierarchy,
+            label_links: subgraph
+                .label_links
+                .iter()
+                .map(|label| live_reduced_label_link_snapshot(&label.borrow()))
+                .collect(),
         });
     }
 
@@ -13390,10 +13564,11 @@ mod tests {
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name_from_handles,
         recache_live_reduced_subgraph_name_handle_cache_from_handles, reduced_bus_member_objects,
-        reduced_project_pin_not_connected_candidates, refresh_reduced_live_graph_propagation,
-        resolve_reduced_net_name_at, resolve_reduced_project_driver_name_for_label,
-        resolve_reduced_project_net_at, resolve_reduced_project_net_for_label,
-        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
+        reduced_project_label_connectivity_subgraphs, reduced_project_pin_not_connected_candidates,
+        refresh_reduced_live_graph_propagation, resolve_reduced_net_name_at,
+        resolve_reduced_project_driver_name_for_label, resolve_reduced_project_net_at,
+        resolve_reduced_project_net_for_label, resolve_reduced_project_subgraph_at,
+        resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
         resolve_reduced_project_subgraph_for_sheet_pin,
         resolve_reduced_project_subgraph_for_symbol_pin,
@@ -13608,6 +13783,77 @@ mod tests {
         let candidates = reduced_project_pin_not_connected_candidates(&graph, &label_name_caches);
 
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_aggregate_same_name_pin_counts() {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection.clone(),
+        });
+        label_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-a",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection.clone(),
+        ));
+
+        let mut same_name_subgraph = test_net_subgraph(2, connection.clone(), Vec::new(), "");
+        same_name_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-b",
+            PointKey(30, 40),
+            "1",
+            "input",
+            connection,
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, same_name_subgraph]);
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert_eq!(label_subgraphs[0].all_pins, 2);
+        assert_eq!(label_subgraphs[0].local_pins, 2);
+        assert_eq!(label_subgraphs[0].label_links.len(), 1);
+        assert_eq!(label_subgraphs[0].label_links[0].connection.name, "/SIG");
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_inherit_no_connect_from_bus_parent() {
+        let child_connection = test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child");
+        let mut label_subgraph =
+            test_net_subgraph(1, child_connection.clone(), Vec::new(), "/child");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: child_connection,
+        });
+        label_subgraph.bus_parent_indexes.push(1);
+
+        let mut parent_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            Vec::new(),
+            "",
+        );
+        parent_subgraph.has_no_connect = true;
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, parent_subgraph]);
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(label_subgraphs[0].has_no_connect);
     }
 
     #[test]
