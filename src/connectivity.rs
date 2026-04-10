@@ -746,6 +746,7 @@ pub(crate) enum ReducedProjectDriverIdentity {
     SheetPin {
         schematic_path: std::path::PathBuf,
         at: PointKey,
+        child_sheet_uuid: Option<String>,
     },
     SymbolPin {
         schematic_path: std::path::PathBuf,
@@ -890,6 +891,7 @@ impl LiveProjectStrongDriverOwner {
                 ReducedProjectDriverIdentity::SheetPin {
                     schematic_path: owner.schematic_path.clone(),
                     at: owner.at,
+                    child_sheet_uuid: owner.child_sheet_uuid.clone(),
                 }
             }),
             LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner.upgrade().map(|owner| {
@@ -3697,10 +3699,17 @@ impl LiveReducedSubgraph {
                         })
                 }
             }
-            Some(ReducedProjectDriverIdentity::SheetPin { at, .. }) => self
+            Some(ReducedProjectDriverIdentity::SheetPin {
+                at,
+                child_sheet_uuid,
+                ..
+            }) => self
                 .hier_sheet_pins
                 .iter()
-                .find(|pin| pin.borrow().at == at)
+                .find(|pin| {
+                    let pin = pin.borrow();
+                    pin.at == at && pin.child_sheet_uuid == child_sheet_uuid
+                })
                 .map(|pin| {
                     pin.borrow_mut().attach_strong_driver(
                         pin,
@@ -9908,6 +9917,7 @@ where
                             identity: Some(ReducedProjectDriverIdentity::SheetPin {
                                 schematic_path: schematic_path.to_path_buf(),
                                 at: point_key(pin.at),
+                                child_sheet_uuid: sheet.uuid.clone(),
                             }),
                         },
                         reduced_sheet_pin_driver_rank(pin.shape),
@@ -14425,6 +14435,7 @@ mod tests {
             Some(super::ReducedProjectDriverIdentity::SheetPin {
                 schematic_path: sheet_path.schematic_path.clone(),
                 at: super::point_key([0.0, 5.0]),
+                child_sheet_uuid: Some("73050000-0000-0000-0000-000000000511".to_string()),
             })
         );
 
@@ -15775,6 +15786,7 @@ mod tests {
                 identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(10, 20),
+                    child_sheet_uuid: Some("child".to_string()),
                 }),
             }],
             class: String::new(),
@@ -15846,12 +15858,122 @@ mod tests {
                     Some(super::ReducedProjectDriverIdentity::SheetPin {
                         schematic_path,
                         at: PointKey(10, 20),
+                        child_sheet_uuid,
                         ..
                     }) if schematic_path == std::path::PathBuf::from("root.kicad_sch")
+                        && child_sheet_uuid.as_deref() == Some("child")
                 ));
             }
             _ => panic!("expected sheet pin strong-driver owner"),
         }
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_match_sheet_pin_driver_by_child_sheet_uuid() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG_A".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG_A".to_string(),
+                local_name: "SIG_A".to_string(),
+                full_local_name: "/SIG_A".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG_A".to_string(),
+                local_name: "SIG_A".to_string(),
+                full_local_name: "/SIG_A".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            chosen_driver_index: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::SheetPin,
+                priority: 1,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG_A".to_string(),
+                    local_name: "SIG_A".to_string(),
+                    full_local_name: "/SIG_A".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(10, 20),
+                    child_sheet_uuid: Some("sheet-a".to_string()),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![
+                ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(10, 20),
+                    child_sheet_uuid: Some("sheet-b".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 2,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/SIG_B".to_string(),
+                        local_name: "SIG_B".to_string(),
+                        full_local_name: "/SIG_B".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                },
+                ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(10, 20),
+                    child_sheet_uuid: Some("sheet-a".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 1,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/SIG_A".to_string(),
+                        local_name: "SIG_A".to_string(),
+                        full_local_name: "/SIG_A".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                },
+            ],
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+
+        let owner = match &*subgraph.drivers[0].borrow() {
+            super::LiveProjectStrongDriverOwner::SheetPin { owner, .. } => {
+                owner.upgrade().expect("sheet pin owner")
+            }
+            _ => panic!("expected sheet pin strong-driver owner"),
+        };
+
+        assert!(Rc::ptr_eq(&owner, &subgraph.hier_sheet_pins[1]));
+        assert!(!Rc::ptr_eq(&owner, &subgraph.hier_sheet_pins[0]));
+        assert_eq!(owner.borrow().child_sheet_uuid.as_deref(), Some("sheet-a"));
     }
 
     #[test]
@@ -20646,6 +20768,7 @@ mod tests {
         let sheet_pin_identity = super::ReducedProjectDriverIdentity::SheetPin {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
             at: PointKey(10, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
         };
         let subgraph = ReducedProjectSubgraphEntry {
             subgraph_code: 1,
