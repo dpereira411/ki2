@@ -7086,6 +7086,33 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             } else if !driver_connection.name.is_empty() {
                 child_names.push(driver_connection.name.clone());
             }
+            if child
+                .drivers
+                .iter()
+                .filter(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+                .count()
+                > 1
+            {
+                for driver in &child.drivers {
+                    if !matches!(
+                        driver.kind,
+                        ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+                    ) {
+                        continue;
+                    }
+                    if driver.connection.connection_type != driver_connection.connection_type {
+                        continue;
+                    }
+                    if driver.connection.full_local_name == driver_connection.full_local_name {
+                        continue;
+                    }
+                    if !driver.connection.full_local_name.is_empty() {
+                        child_names.push(driver.connection.full_local_name.clone());
+                    } else if !driver.connection.name.is_empty() {
+                        child_names.push(driver.connection.name.clone());
+                    }
+                }
+            }
 
             for member in &member_leaves {
                 if child_names
@@ -12977,6 +13004,60 @@ mod tests {
         }));
         assert!(net.bus_parent_links.iter().any(|link| {
             link.member.full_local_name == "/DATA0" && link.subgraph_index == bus.subgraph_code - 1
+        }));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_bus_links_use_secondary_driver_names() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_secondary_driver_links_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000702")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (global_label "{PWR}" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 20) (xy 10 20)))
+  (global_label "AAA" (shape input) (at 0 20 0) (effects (font (size 1 1))))
+  (global_label "PWR" (shape input) (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("bus subgraph");
+        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+            .expect("net subgraph");
+
+        assert_eq!(net.driver_connection.full_local_name, "AAA");
+        assert!(bus.bus_neighbor_links.iter().any(|link| {
+            link.member.local_name == "PWR"
+                && link.member.full_local_name == "AAA"
+                && link.subgraph_index == net.subgraph_code - 1
+        }));
+        assert!(net.bus_parent_links.iter().any(|link| {
+            link.member.local_name == "PWR"
+                && link.member.full_local_name == "AAA"
+                && link.subgraph_index == bus.subgraph_code - 1
         }));
 
         let _ = fs::remove_file(path);
