@@ -1688,37 +1688,36 @@ pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestNoConnectPins()`. This is not a
 // 1:1 KiCad connectable-item walk because the Rust tree still lacks the full item connectivity API,
-// but it now uses graph-owned symbol-pin inventories and point ownership instead of a per-sheet
-// connection-point snapshot. Remaining divergence is fuller connectable-item coverage and marker
-// attachment beyond the exercised rule.
+// but it now uses graph-owned symbol-pin inventories, graph-owned point ownership, and
+// graph-carried sheet-instance identity instead of re-entering loaded sheet traversal just to
+// recover occurrence ownership. Remaining divergence is fuller connectable-item coverage and
+// marker attachment beyond the exercised rule.
 pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
     let mut seen = std::collections::BTreeSet::new();
 
-    for sheet_path in &project.sheet_paths {
-        for pin in collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
-            .into_iter()
-            .flat_map(|inventory| inventory.pins.iter())
+    for pin in reduced_project_symbol_pin_inventories(&graph)
+        .into_iter()
+        .flat_map(|inventory| inventory.pins.iter())
+    {
+        if pin.electrical_type.as_deref() != Some("no_connect")
+            || !reduced_project_no_connect_pin_has_connected_owner(&graph, pin)
+            || !seen.insert((pin.sheet_instance_path.clone(), pin.at))
         {
-            if pin.electrical_type.as_deref() != Some("no_connect")
-                || !reduced_project_no_connect_pin_has_connected_owner(&graph, pin)
-                || !seen.insert((sheet_path.instance_path.clone(), pin.at))
-            {
-                continue;
-            }
-
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-nc-pin-connected",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: "Pin with 'no connection' type is connected".to_string(),
-                path: Some(pin.schematic_path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
+            continue;
         }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-nc-pin-connected",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: "Pin with 'no connection' type is connected".to_string(),
+            path: Some(pin.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics

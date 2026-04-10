@@ -1112,6 +1112,7 @@ struct ReducedProjectSymbolIdentityKey {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectSymbolPin {
     pub(crate) schematic_path: std::path::PathBuf,
+    pub(crate) sheet_instance_path: String,
     pub(crate) at: PointKey,
     pub(crate) name: Option<String>,
     pub(crate) number: Option<String>,
@@ -8671,6 +8672,7 @@ fn build_reduced_project_symbol_pin_inventory(
                 .into_iter()
                 .map(|pin| ReducedProjectSymbolPin {
                     schematic_path: schematic.path.clone(),
+                    sheet_instance_path: sheet_path.instance_path.clone(),
                     at: point_key(pin.at),
                     name: pin.name.clone(),
                     number: pin.number.clone(),
