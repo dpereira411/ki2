@@ -3310,10 +3310,12 @@ impl LiveReducedSubgraph {
         live_subgraphs: &[LiveReducedSubgraphHandle],
         force: bool,
         stale_members: &mut Vec<LiveProjectBusMemberHandle>,
+        defer_dirty: bool,
     ) {
         let start_has_hier_ports = !start.borrow().hier_ports.is_empty();
         let start_has_hier_pins = !start.borrow().hier_sheet_pins.is_empty();
         if !force && start_has_hier_ports && start_has_hier_pins {
+            start.borrow_mut().dirty = defer_dirty;
             return;
         } else if !start_has_hier_ports && !start_has_hier_pins {
             start.borrow_mut().dirty = false;
@@ -3553,7 +3555,14 @@ impl LiveReducedSubgraph {
                 continue;
             }
 
-            Self::propagate_hierarchy_chain(handle, live_subgraphs, force, stale_members);
+            let defer_dirty = !(selected_clean_start && Rc::ptr_eq(handle, start));
+            Self::propagate_hierarchy_chain(
+                handle,
+                live_subgraphs,
+                force,
+                stale_members,
+                defer_dirty,
+            );
         }
         Self::refresh_bus_parent_members(live_subgraphs, &dirty_active);
         Self::replay_stale_bus_members(live_subgraphs, &active, stale_members);
@@ -3577,7 +3586,9 @@ impl LiveReducedSubgraph {
             );
         }
 
-        if start.borrow().dirty {
+        if start.borrow().dirty
+            && !(!force && live_subgraph_has_both_hierarchy_ports_and_pins_from_handle(start))
+        {
             Self::propagate_neighbors_from_selected_start(
                 start,
                 live_subgraphs,
@@ -4690,6 +4701,13 @@ fn live_subgraph_has_hierarchy_handles_from_handle(handle: &LiveReducedSubgraphH
         .and_then(Weak::upgrade)
         .is_some()
         || !subgraph.hier_child_handles.is_empty()
+}
+
+fn live_subgraph_has_both_hierarchy_ports_and_pins_from_handle(
+    handle: &LiveReducedSubgraphHandle,
+) -> bool {
+    let subgraph = handle.borrow();
+    !subgraph.hier_ports.is_empty() && !subgraph.hier_sheet_pins.is_empty()
 }
 
 fn reduced_project_bus_parent_indexes_from_live_subgraph(
@@ -17020,6 +17038,45 @@ mod tests {
 
         assert_eq!(promoted.len(), 1);
         assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
+    }
+
+    #[test]
+    fn reduced_live_hierarchy_deferral_keeps_dirty_for_forced_pass() {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut graph = vec![test_net_subgraph(1, connection.clone(), Vec::new(), "")];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child".to_string()),
+            connection: connection.clone(),
+        }];
+        graph[0].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 0),
+            connection,
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            false,
+            &mut stale_members,
+            true,
+        );
+
+        assert!(live_subgraphs[0].borrow().dirty);
+
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            true,
+            &mut stale_members,
+            true,
+        );
+
+        assert!(!live_subgraphs[0].borrow().dirty);
     }
 
     #[test]
