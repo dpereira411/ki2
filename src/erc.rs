@@ -1,11 +1,10 @@
 use crate::connectivity::{
     ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
-    collect_reduced_four_way_junction_points, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name,
+    collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_connected_wire_label_full_names_at, reduced_project_dangling_directive_label_links,
-    reduced_project_no_connect_pin_has_connected_owner, reduced_project_subgraph_by_index,
-    reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_project_four_way_junction_points, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
     reduced_project_wire_item_endpoint_has_connected_bus_owner,
     resolve_reduced_project_subgraph_for_no_connect,
     resolve_reduced_project_subgraph_for_sheet_pin,
@@ -1662,33 +1661,26 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestFourWayJunction()`. This is not a
 // 1:1 KiCad marker pass because the Rust tree still lacks `SCH_MARKER` / `ERC_ITEM` and the full
-// connection graph, but it now consumes graph-owned four-way points instead of inspecting
-// connection-point snapshots inside ERC. Remaining divergence is fuller connection-graph ownership
-// and broader item-class participation beyond the exercised ERC slice.
+// connection graph, but it now consumes project-graph-owned four-way points instead of inspecting
+// schematics inside ERC. Remaining divergence is fuller connection-graph ownership and broader
+// item-class participation beyond the exercised ERC slice.
 pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project
-            .schematics
-            .iter()
-            .find(|schematic| schematic.path == sheet_path.schematic_path)
-        else {
-            continue;
-        };
-
-        for point in collect_reduced_four_way_junction_points(schematic) {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-four-way-junction",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!("Four items connected at {}, {}", point[0], point[1]),
-                path: Some(schematic.path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+    for point in reduced_project_four_way_junction_points(&graph) {
+        let report_x = f64::from_bits(point.at.0);
+        let report_y = f64::from_bits(point.at.1);
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-four-way-junction",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!("Four items connected at {}, {}", report_x, report_y),
+            path: Some(point.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics

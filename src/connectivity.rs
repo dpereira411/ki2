@@ -195,6 +195,12 @@ pub(crate) struct ReducedDirectiveLabelLink {
     pub(crate) at: PointKey,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReducedFourWayJunctionPoint {
+    pub(crate) schematic_path: std::path::PathBuf,
+    pub(crate) at: PointKey,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedHierSheetPinLink {
     pub(crate) schematic_path: std::path::PathBuf,
@@ -1157,6 +1163,7 @@ pub(crate) struct ReducedSubgraphWireItem {
 pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
     dangling_directive_label_links: Vec<ReducedDirectiveLabelLink>,
+    four_way_junction_points: Vec<ReducedFourWayJunctionPoint>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
     subgraphs_by_sheet_and_name: BTreeMap<(String, String), Vec<usize>>,
     symbol_pins_by_symbol:
@@ -7130,6 +7137,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         (String, String, bool, ReducedNetNode, ReducedNetBasePinKey),
     >::new();
     let mut dangling_directive_label_links = Vec::new();
+    let mut four_way_junction_points = Vec::new();
     let mut nets = BTreeMap::<
         String,
         (
@@ -7162,6 +7170,14 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             continue;
         };
         let sheet_path_prefix = reduced_net_name_sheet_path_prefix(inputs.sheet_paths, sheet_path);
+        four_way_junction_points.extend(
+            collect_reduced_four_way_junction_points(schematic)
+                .into_iter()
+                .map(|at| ReducedFourWayJunctionPoint {
+                    schematic_path: schematic.path.clone(),
+                    at: point_key(at),
+                }),
+        );
         dangling_directive_label_links.extend(
             collect_reduced_dangling_directive_label_points(schematic)
                 .into_iter()
@@ -7972,10 +7988,12 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let symbol_pins_by_symbol =
         build_reduced_project_symbol_pin_inventory(&inputs, &pin_subgraph_identities_by_location);
     dangling_directive_label_links.sort_by_key(|link| (link.schematic_path.clone(), link.at));
+    four_way_junction_points.sort_by_key(|point| (point.schematic_path.clone(), point.at));
 
     ReducedProjectNetGraph {
         subgraphs: reduced_subgraphs,
         dangling_directive_label_links,
+        four_way_junction_points,
         subgraphs_by_name,
         subgraphs_by_sheet_and_name,
         symbol_pins_by_symbol,
@@ -8205,6 +8223,17 @@ pub(crate) fn reduced_project_dangling_directive_label_links(
     graph: &ReducedProjectNetGraph,
 ) -> &[ReducedDirectiveLabelLink] {
     &graph.dangling_directive_label_links
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the exercised four-way junction point slice consumed
+// by `ERC_TESTER::TestFourWayJunction()`. This is not a 1:1 marker owner because the Rust tree
+// still stores reduced point/path snapshots instead of live graph item intersections, but it keeps
+// four-way junction detection on the shared graph owner instead of making ERC rescan schematics.
+pub(crate) fn reduced_project_four_way_junction_points(
+    graph: &ReducedProjectNetGraph,
+) -> &[ReducedFourWayJunctionPoint] {
+    &graph.four_way_junction_points
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -12570,6 +12599,7 @@ mod tests {
     fn reduced_project_label_identity_can_differ_from_generic_point_identity() {
         let reduced = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
             subgraphs: vec![
                 ReducedProjectSubgraphEntry {
                     subgraph_code: 1,
@@ -12718,6 +12748,7 @@ mod tests {
     fn reduced_project_sheet_pin_identity_uses_child_sheet_uuid() {
         let reduced = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
             subgraphs: vec![
                 ReducedProjectSubgraphEntry {
                     subgraph_code: 1,
@@ -12848,6 +12879,7 @@ mod tests {
     fn shown_sheet_pin_text_prefers_sheet_pin_identity_over_generic_point_identity() {
         let reduced = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
             subgraphs: vec![
                 ReducedProjectSubgraphEntry {
                     subgraph_code: 1,
@@ -14390,6 +14422,7 @@ mod tests {
             .expect("symbol");
         let graph = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
             subgraphs: vec![super::ReducedProjectSubgraphEntry {
                 subgraph_code: 1,
                 code: 1,
@@ -14578,6 +14611,7 @@ mod tests {
         };
         let graph = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
             subgraphs: vec![super::ReducedProjectSubgraphEntry {
                 subgraph_code: 1,
                 code: 1,
@@ -15506,6 +15540,21 @@ mod tests {
         let points = super::collect_reduced_four_way_junction_points(&schematic);
 
         assert_eq!(points, vec![[0.0, 0.0]]);
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let graph_points = super::reduced_project_four_way_junction_points(&graph);
+
+        assert_eq!(graph_points.len(), 1);
+        assert_eq!(
+            graph_points[0].at,
+            PointKey(0.0f64.to_bits(), 0.0f64.to_bits())
+        );
+        assert_eq!(
+            graph_points[0].schematic_path.file_name(),
+            schematic.path.file_name()
+        );
 
         let _ = fs::remove_file(&path);
     }
