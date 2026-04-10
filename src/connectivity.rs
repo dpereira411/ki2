@@ -14641,6 +14641,70 @@ where
         })
 }
 
+// upstream: CONNECTION_GRAPH::Recalculate post-propagation netclass assignment sweep
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: computes reduced net-name assignments from reduced graph subgraph/driver owners and
+// returns them to the caller instead of mutating KiCad NET_SETTINGS plus changed-item callbacks
+// local_only_reason: current Rust project model lacks graph-owned persistent netclass assignment
+// storage and changed-item callback routing
+// replaced_by: graph-owned post-propagation netclass assignment storage on the fuller live graph
+// remove_when: connectivity can mutate persistent project netclass assignments directly
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn reduced_project_netclass_assignments<F>(
+    graph: &ReducedProjectNetGraph,
+    mut driver_netclasses: F,
+) -> BTreeMap<String, BTreeSet<String>>
+where
+    F: FnMut(&ReducedProjectStrongDriver) -> Vec<String>,
+{
+    let mut assignments = BTreeMap::<String, BTreeSet<String>>::new();
+
+    for (net_name, subgraph_indexes) in &graph.subgraphs_by_name {
+        let subgraphs = subgraph_indexes
+            .iter()
+            .filter_map(|index| graph.subgraphs.get(*index))
+            .collect::<Vec<_>>();
+        if subgraphs.is_empty() {
+            continue;
+        }
+
+        let mut netclasses = BTreeSet::<String>::new();
+        for subgraph in &subgraphs {
+            for driver in &subgraph.drivers {
+                netclasses.extend(
+                    driver_netclasses(driver)
+                        .into_iter()
+                        .filter(|name| !name.is_empty()),
+                );
+            }
+        }
+
+        if netclasses.is_empty() {
+            continue;
+        }
+
+        assignments.insert(net_name.clone(), netclasses.clone());
+
+        for subgraph in &subgraphs {
+            if !reduced_connection_is_bus(subgraph.driver_connection.connection_type) {
+                continue;
+            }
+
+            for member_name in
+                reduced_bus_member_full_local_names(&subgraph.driver_connection.members)
+            {
+                assignments
+                    .entry(member_name)
+                    .or_default()
+                    .extend(netclasses.iter().cloned());
+            }
+        }
+    }
+
+    assignments
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -14657,14 +14721,18 @@ mod tests {
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name_from_handles,
         recache_live_reduced_subgraph_name_handle_cache_from_handles, reduced_bus_member_objects,
-        reduced_project_label_connectivity_subgraphs, reduced_project_pin_not_connected_candidates,
-        refresh_reduced_live_graph_propagation, resolve_reduced_net_name_at,
-        resolve_reduced_project_driver_name_for_label, resolve_reduced_project_net_at,
-        resolve_reduced_project_net_for_label, resolve_reduced_project_subgraph_at,
-        resolve_reduced_project_subgraph_for_label,
+        reduced_project_label_connectivity_subgraphs, reduced_project_netclass_assignments,
+        reduced_project_pin_not_connected_candidates, refresh_reduced_live_graph_propagation,
+        resolve_reduced_net_name_at, resolve_reduced_project_driver_name_for_label,
+        resolve_reduced_project_net_at, resolve_reduced_project_net_for_label,
+        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
         resolve_reduced_project_subgraph_for_sheet_pin,
         resolve_reduced_project_subgraph_for_symbol_pin,
+    };
+    use crate::connectivity::{
+        ReducedProjectDriverIdentity, reduced_global_label_driver_priority,
+        reduced_sheet_pin_driver_priority,
     };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
@@ -31926,6 +31994,157 @@ mod tests {
             group.connection_type,
             ReducedProjectConnectionType::BusGroup
         );
+    }
+
+    #[test]
+    fn reduced_project_netclass_assignments_union_driver_netclasses_per_net() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: reduced_global_label_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: Some(ReducedProjectDriverIdentity::Label {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(0, 0),
+                        kind: 2,
+                    }),
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: reduced_sheet_pin_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                        schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+                        at: PointKey(1, 0),
+                        child_sheet_uuid: Some("child".to_string()),
+                    }),
+                }],
+                "",
+            ),
+        ];
+        let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
+            rebuild_reduced_project_graph_name_caches(&mut subgraphs);
+        let graph = ReducedProjectNetGraph {
+            subgraphs,
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name,
+            subgraphs_by_sheet_and_name,
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let assignments =
+            reduced_project_netclass_assignments(&graph, |driver| match driver.identity.as_ref() {
+                Some(ReducedProjectDriverIdentity::Label { .. }) => {
+                    vec!["HighSpeed".to_string()]
+                }
+                Some(ReducedProjectDriverIdentity::SheetPin { .. }) => {
+                    vec!["Default".to_string(), "Power".to_string()]
+                }
+                _ => Vec::new(),
+            });
+
+        assert_eq!(
+            assignments.get("/SIG"),
+            Some(&BTreeSet::from([
+                "Default".to_string(),
+                "HighSpeed".to_string(),
+                "Power".to_string(),
+            ]))
+        );
+    }
+
+    #[test]
+    fn reduced_project_netclass_assignments_propagate_to_bus_member_leaves() {
+        let mut subgraphs = vec![test_net_subgraph(
+            1,
+            test_bus_connection(
+                "/BUS",
+                "BUS",
+                "/BUS",
+                "",
+                vec![ReducedBusMember {
+                    net_code: 0,
+                    name: "PAIR".to_string(),
+                    local_name: "PAIR".to_string(),
+                    full_local_name: "/PAIR".to_string(),
+                    vector_index: None,
+                    kind: ReducedBusMemberKind::Bus,
+                    members: vec![
+                        test_bus_member("DP", "DP", "/DP"),
+                        test_bus_member("DM", "DM", "/DM"),
+                    ],
+                }],
+            ),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: reduced_global_label_driver_priority(),
+                connection: test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "PAIR".to_string(),
+                        local_name: "PAIR".to_string(),
+                        full_local_name: "/PAIR".to_string(),
+                        vector_index: None,
+                        kind: ReducedBusMemberKind::Bus,
+                        members: vec![
+                            test_bus_member("DP", "DP", "/DP"),
+                            test_bus_member("DM", "DM", "/DM"),
+                        ],
+                    }],
+                ),
+                identity: Some(ReducedProjectDriverIdentity::Label {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    kind: 2,
+                }),
+            }],
+            "",
+        )];
+        let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
+            rebuild_reduced_project_graph_name_caches(&mut subgraphs);
+        let graph = ReducedProjectNetGraph {
+            subgraphs,
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name,
+            subgraphs_by_sheet_and_name,
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let assignments =
+            reduced_project_netclass_assignments(&graph, |_driver| vec!["USB".to_string()]);
+
+        let expected = BTreeSet::from(["USB".to_string()]);
+        assert_eq!(assignments.get("/BUS"), Some(&expected));
+        assert_eq!(assignments.get("/DP"), Some(&expected));
+        assert_eq!(assignments.get("/DM"), Some(&expected));
     }
 
     #[test]
