@@ -599,7 +599,10 @@ fn reduced_project_absorb_push_secondary_test_names(
     for (index, driver) in subgraph.drivers.iter().enumerate() {
         if Some(index) == reduced_project_chosen_driver_index(subgraph)
             || driver.connection.connection_type != parent_type
-            || driver.kind != ReducedProjectDriverKind::Label
+            || !matches!(
+                driver.kind,
+                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+            )
             || reduced_project_driver_match_name(
                 &driver.connection,
                 &subgraph.driver_connection.name,
@@ -16694,6 +16697,54 @@ mod tests {
                 .drivers
                 .iter()
                 .any(|driver| driver.connection.name == "/CCC")
+        );
+    }
+
+    #[test]
+    fn reduced_absorb_uses_parent_secondary_power_pin_names() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: super::reduced_local_power_pin_driver_priority(),
+                        connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/PWR", "PWR", "/PWR", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_local_power_pin_driver_priority(),
+                    connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/PWR")
         );
     }
 
