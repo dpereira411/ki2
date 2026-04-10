@@ -3479,13 +3479,10 @@ impl LiveReducedSubgraph {
                 }
 
                 let target_connection = handle.borrow().driver_connection.clone();
-                let changed = clone_live_connection_handle_from_handle_if_changed(
+                clone_live_connection_handle_from_handle_if_changed(
                     &target_connection,
                     &chosen_connection,
                 );
-                if !changed {
-                    continue;
-                }
 
                 promoted.push(handle.clone());
             }
@@ -9277,6 +9274,68 @@ mod tests {
     use std::fs;
     use std::rc::{Rc, Weak};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_net_connection(
+        name: &str,
+        local_name: &str,
+        full_local_name: &str,
+        sheet_instance_path: &str,
+    ) -> ReducedProjectConnection {
+        ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: name.to_string(),
+            local_name: local_name.to_string(),
+            full_local_name: full_local_name.to_string(),
+            sheet_instance_path: sheet_instance_path.to_string(),
+            members: Vec::new(),
+        }
+    }
+
+    fn test_net_subgraph(
+        subgraph_code: usize,
+        driver_connection: ReducedProjectConnection,
+        drivers: Vec<ReducedProjectStrongDriver>,
+        sheet_instance_path: &str,
+    ) -> ReducedProjectSubgraphEntry {
+        ReducedProjectSubgraphEntry {
+            subgraph_code,
+            code: subgraph_code,
+            name: driver_connection.name.clone(),
+            resolved_connection: driver_connection.clone(),
+            driver_connection,
+            chosen_driver_index: None,
+            drivers,
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: sheet_instance_path.to_string(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }
+    }
+
+    fn test_power_driver(connection: ReducedProjectConnection) -> ReducedProjectStrongDriver {
+        ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::PowerPin,
+            priority: 6,
+            connection,
+            identity: None,
+        }
+    }
 
     #[test]
     fn reduced_net_name_prefers_wider_bus_driver() {
@@ -16927,6 +16986,40 @@ mod tests {
         assert_eq!(graph[2].driver_connection.name, "PWR_ALT");
         assert_eq!(graph[3].name, "PWR_ALT");
         assert_eq!(graph[3].driver_connection.full_local_name, "/same-sheet/PWR_ALT");
+    }
+
+    #[test]
+    fn reduced_live_secondary_promotion_schedules_already_cloned_candidate() {
+        let chosen_connection = test_net_connection("VCC", "VCC", "VCC", "");
+        let secondary_connection = test_net_connection("PWR_ALT", "PWR_ALT", "PWR_ALT", "");
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                chosen_connection.clone(),
+                vec![
+                    test_power_driver(chosen_connection.clone()),
+                    test_power_driver(secondary_connection.clone()),
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                chosen_connection,
+                vec![test_power_driver(secondary_connection)],
+                "/other",
+            ),
+        ];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
+        let promoted = LiveReducedSubgraph::refresh_global_secondary_driver_promotions(
+            &live_subgraphs[0],
+            &global_subgraphs,
+        );
+
+        assert_eq!(promoted.len(), 1);
+        assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
     }
 
     #[test]
