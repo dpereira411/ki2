@@ -8515,10 +8515,19 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
+    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
+        .and_then(|index| graph.subgraphs.get(index))
+}
+
+fn resolve_reduced_project_subgraph_index_at(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<usize> {
     graph
         .point_subgraph_identities
         .get(&reduced_project_point_identity_key(sheet_path, at))
-        .and_then(|index| graph.subgraphs.get(*index))
+        .copied()
         .or_else(|| {
             graph
                 .point_subgraph_identities
@@ -8526,8 +8535,7 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
                 .find_map(|(key, index)| {
                     (key.sheet_instance_path == sheet_path.instance_path
                         && point_key_matches(key.at, at))
-                    .then(|| graph.subgraphs.get(*index))
-                    .flatten()
+                    .then_some(*index)
                 })
         })
 }
@@ -8545,10 +8553,19 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
+    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
+        .and_then(|index| graph.subgraphs.get(index))
+}
+
+fn resolve_reduced_project_subgraph_index_for_label(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    label: &Label,
+) -> Option<usize> {
     graph
         .label_subgraph_identities
         .get(&reduced_project_label_identity_key(sheet_path, label))
-        .and_then(|index| graph.subgraphs.get(*index))
+        .copied()
         .or_else(|| {
             graph
                 .label_subgraph_identities
@@ -8557,8 +8574,7 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
                     (key.sheet_instance_path == sheet_path.instance_path
                         && key.kind == reduced_label_kind_sort_key(label.kind)
                         && point_key_matches(key.at, label.at))
-                    .then(|| graph.subgraphs.get(*index))
-                    .flatten()
+                    .then_some(*index)
                 })
         })
 }
@@ -8574,14 +8590,31 @@ pub(crate) fn resolve_reduced_project_net_for_label(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
-        ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: subgraph.driver_connection.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: subgraph.has_no_connect,
-        }
-    })
+    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
+        .and_then(|index| {
+            graph.live_subgraphs.get(index).map(|subgraph| {
+                let subgraph = subgraph.borrow();
+                let reduced = graph.subgraphs.get(index);
+                ReducedProjectNetIdentity {
+                    code: reduced.map_or(0, |subgraph| subgraph.code),
+                    name: subgraph.driver_connection.borrow().name.clone(),
+                    class: reduced
+                        .map(|subgraph| subgraph.class.clone())
+                        .unwrap_or_default(),
+                    has_no_connect: subgraph.has_no_connect,
+                }
+            })
+        })
+        .or_else(|| {
+            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
+                ReducedProjectNetIdentity {
+                    code: subgraph.code,
+                    name: subgraph.driver_connection.name.clone(),
+                    class: subgraph.class.clone(),
+                    has_no_connect: subgraph.has_no_connect,
+                }
+            })
+        })
 }
 
 // Upstream parity: reduced local analogue for the label `Name(true)` path via
@@ -8594,8 +8627,21 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_for_label(graph, sheet_path, label)
-        .map(|subgraph| subgraph.driver_connection.local_name.clone())
+    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
+        .and_then(|index| {
+            graph.live_subgraphs.get(index).map(|subgraph| {
+                subgraph
+                    .borrow()
+                    .driver_connection
+                    .borrow()
+                    .local_name
+                    .clone()
+            })
+        })
+        .or_else(|| {
+            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label)
+                .map(|subgraph| subgraph.driver_connection.local_name.clone())
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -9006,8 +9052,21 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_at(graph, sheet_path, at)
-        .map(|subgraph| subgraph.driver_connection.local_name.clone())
+    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
+        .and_then(|index| {
+            graph.live_subgraphs.get(index).map(|subgraph| {
+                subgraph
+                    .borrow()
+                    .driver_connection
+                    .borrow()
+                    .local_name
+                    .clone()
+            })
+        })
+        .or_else(|| {
+            resolve_reduced_project_subgraph_at(graph, sheet_path, at)
+                .map(|subgraph| subgraph.driver_connection.local_name.clone())
+        })
 }
 
 fn reduced_project_pin_identity_key(
@@ -9895,14 +9954,31 @@ pub(crate) fn resolve_reduced_project_net_at(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
-        ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: subgraph.driver_connection.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: subgraph.has_no_connect,
-        }
-    })
+    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
+        .and_then(|index| {
+            graph.live_subgraphs.get(index).map(|subgraph| {
+                let subgraph = subgraph.borrow();
+                let reduced = graph.subgraphs.get(index);
+                ReducedProjectNetIdentity {
+                    code: reduced.map_or(0, |subgraph| subgraph.code),
+                    name: subgraph.driver_connection.borrow().name.clone(),
+                    class: reduced
+                        .map(|subgraph| subgraph.class.clone())
+                        .unwrap_or_default(),
+                    has_no_connect: subgraph.has_no_connect,
+                }
+            })
+        })
+        .or_else(|| {
+            resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
+                ReducedProjectNetIdentity {
+                    code: subgraph.code,
+                    name: subgraph.driver_connection.name.clone(),
+                    class: subgraph.class.clone(),
+                    has_no_connect: subgraph.has_no_connect,
+                }
+            })
+        })
 }
 
 fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
@@ -19570,6 +19646,81 @@ mod tests {
             super::reduced_project_symbol_pin_net_name(&graph, &pin),
             "/LIVE"
         );
+    }
+
+    #[test]
+    fn live_label_and_point_queries_read_live_subgraph_owner() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_live_label_point_owner_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (global_label "SIG" (shape input) (at 0 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .cloned()
+            .expect("root sheet path");
+        let project = SchematicProject::from_load_result(loaded);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+        let label = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Label(label) => Some(label),
+                _ => None,
+            })
+            .expect("label");
+        let graph = project.reduced_project_net_graph(false);
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        assert_eq!(
+            super::resolve_reduced_project_net_for_label(&graph, &sheet_path, label)
+                .expect("label net")
+                .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_label(&graph, &sheet_path, label)
+                .expect("label driver"),
+            "LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_net_at(&graph, &sheet_path, [0.0, 0.0])
+                .expect("point net")
+                .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_at(&graph, &sheet_path, [0.0, 0.0])
+                .expect("point driver"),
+            "LIVE"
+        );
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
