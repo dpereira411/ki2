@@ -1799,14 +1799,14 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
             let has_sheet_pin = subgraph
                 .hier_sheet_pins
                 .iter()
-                .any(|pin| pin.at == *no_connect_point);
+                .any(|pin| pin.at == no_connect_point.at);
             let has_hierarchical_label = subgraph
                 .hier_ports
                 .iter()
-                .any(|label| label.at == *no_connect_point);
+                .any(|label| label.at == no_connect_point.at);
             let has_nc_pin = subgraph.base_pins.iter().any(|base_pin| {
                 base_pin.electrical_type.as_deref() == Some("no_connect")
-                    && base_pin.key.at == *no_connect_point
+                    && base_pin.key.at == no_connect_point.at
             });
 
             if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
@@ -1845,12 +1845,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                     .len();
                 (unique_pin_count, unique_label_count)
             };
-            let diagnostic_path = project
-                .sheet_paths
-                .iter()
-                .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-                .map(|sheet_path| sheet_path.schematic_path.clone())
-                .unwrap_or_else(|| project.root_path.clone());
+            let diagnostic_path = no_connect_point.schematic_path.clone();
 
             if unique_pin_count <= 1 {
                 if unique_pin_count == 0 && unique_label_count == 0 {
@@ -1859,7 +1854,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                         code: "erc-no-connect-dangling",
                         kind: crate::diagnostic::DiagnosticKind::Validation,
                         message: "Unconnected \"no connection\" flag".to_string(),
-                        path: Some(diagnostic_path),
+                        path: Some(diagnostic_path.clone()),
                         span: None,
                         line: None,
                         column: None,
@@ -2276,7 +2271,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     || subgraph
                         .no_connect_points
                         .iter()
-                        .copied()
+                        .map(|point| point.at)
                         .any(endpoint_matches);
                 let endpoint_has_same_sheet_owner = !endpoint_has_owner
                     && !subgraph.driver_connection.name.is_empty()
@@ -2309,7 +2304,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                             || neighbor
                                 .no_connect_points
                                 .iter()
-                                .copied()
+                                .map(|point| point.at)
                                 .any(endpoint_matches)
                     });
                 let endpoint_wire_count = subgraph

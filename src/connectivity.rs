@@ -202,6 +202,12 @@ pub(crate) struct ReducedFourWayJunctionPoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ReducedNoConnectPoint {
+    pub(crate) schematic_path: std::path::PathBuf,
+    pub(crate) at: PointKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ReducedHierSheetPinLink {
     pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) at: PointKey,
@@ -233,7 +239,7 @@ pub(crate) struct ReducedProjectSubgraphEntry {
     pub(crate) nodes: Vec<ReducedNetNode>,
     pub(crate) base_pins: Vec<ReducedProjectBasePin>,
     pub(crate) label_links: Vec<ReducedLabelLink>,
-    pub(crate) no_connect_points: Vec<PointKey>,
+    pub(crate) no_connect_points: Vec<ReducedNoConnectPoint>,
     pub(crate) hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
     pub(crate) hier_ports: Vec<ReducedHierPortLink>,
     pub(crate) bus_members: Vec<ReducedBusMember>,
@@ -7127,7 +7133,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         nodes: Vec<ReducedNetNode>,
         base_pins: Vec<ReducedProjectBasePin>,
         label_links: Vec<ReducedLabelLink>,
-        no_connect_points: Vec<PointKey>,
+        no_connect_points: Vec<ReducedNoConnectPoint>,
         hier_sheet_pins: Vec<ReducedHierSheetPinLink>,
         hier_ports: Vec<ReducedHierPortLink>,
         bus_members: Vec<ReducedBusMember>,
@@ -7716,7 +7722,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             no_connect_subgraph_identities.insert(
                 ReducedProjectNoConnectIdentityKey {
                     sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                    at: *point,
+                    at: point.at,
                 },
                 index,
             );
@@ -7787,7 +7793,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             no_connect_subgraph_identities.insert(
                 ReducedProjectNoConnectIdentityKey {
                     sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                    at: *point,
+                    at: point.at,
                 },
                 index,
             );
@@ -8782,7 +8788,7 @@ fn collect_reduced_subgraph_local_membership(
     connected_component: &ConnectionComponent,
 ) -> (
     Vec<ReducedLabelLink>,
-    Vec<PointKey>,
+    Vec<ReducedNoConnectPoint>,
     Vec<ReducedSubgraphWireItem>,
     Vec<ReducedSubgraphWireItem>,
 ) {
@@ -8872,7 +8878,10 @@ fn collect_reduced_subgraph_local_membership(
         .members
         .iter()
         .filter(|member| member.kind == ConnectionMemberKind::NoConnectMarker)
-        .map(|member| point_key(member.at))
+        .map(|member| ReducedNoConnectPoint {
+            schematic_path: schematic.path.clone(),
+            at: point_key(member.at),
+        })
         .collect::<Vec<_>>();
     no_connect_points.sort();
     no_connect_points.dedup();
