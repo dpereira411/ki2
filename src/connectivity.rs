@@ -1617,6 +1617,30 @@ fn reduced_connection_vector_index_guess(connection: &LiveProjectConnection) -> 
     trailing_digits(&connection.local_name).or_else(|| trailing_digits(&connection.name))
 }
 
+// upstream: CONNECTION_GRAPH::propagateToNeighbors same-parent bus preservation branch
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: constructs a reduced live connection from the current neighbor name instead of
+// `SCH_CONNECTION temp( nullptr, sheet ); temp.ConfigureFromLabel( neighbor_name )`
+// local_only_reason: current propagation still carries reduced connection fields rather than a
+// full mutable SCH_CONNECTION object
+// replaced_by: live SCH_CONNECTION analogue with ConfigureFromLabel semantics
+// remove_when: bus-neighbor propagation owns real SCH_CONNECTION objects
+fn reduced_live_net_connection_from_label_name(
+    name: &str,
+    sheet_instance_path: &str,
+) -> LiveProjectConnection {
+    LiveProjectConnection {
+        net_code: 0,
+        connection_type: ReducedProjectConnectionType::Net,
+        name: name.to_string(),
+        local_name: reduced_short_net_name(name),
+        full_local_name: name.to_string(),
+        sheet_instance_path: sheet_instance_path.to_string(),
+        members: Vec::new(),
+    }
+}
+
 fn live_bus_member_clone_eq(target: &LiveProjectBusMember, source: &LiveProjectBusMember) -> bool {
     if target.net_code != source.net_code
         || target.name != source.name
@@ -3953,8 +3977,12 @@ impl LiveReducedSubgraph {
                     let parent_has_search = {
                         let parent = parent_handle.borrow();
                         let parent_connection = parent.driver_connection.borrow();
+                        let search = reduced_live_net_connection_from_label_name(
+                            &neighbor_name,
+                            &neighbor_sheet_instance_path,
+                        );
                         parent_connection
-                            .find_member_for_connection(&promoted_connection)
+                            .find_member_for_connection(&search)
                             .is_some()
                     };
                     if parent_has_search {
@@ -16245,6 +16273,55 @@ mod tests {
             ReducedProjectConnectionType::Bus
         );
         assert_eq!(graph[1].driver_connection.full_local_name, "/OTHER");
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_preserve_same_parent_member_by_neighbor_name() {
+        let member_a = test_bus_member("SIGA", "SIGA", "/SIGA");
+        let member_b = test_bus_member("SIGB", "SIGB", "/SIGB");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![member_a.clone(), member_b.clone()],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SIGA", "RENAMED", "/SIGA", ""),
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member_b.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member: member_b,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        let recurse_targets = LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert!(recurse_targets.is_empty());
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIGA");
+        assert_eq!(graph[1].driver_connection.local_name, "RENAMED");
     }
 
     #[test]
