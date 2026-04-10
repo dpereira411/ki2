@@ -11294,10 +11294,10 @@ fn live_reduced_subgraph_bus_entry_conflict_candidate(
         let driver = driver.borrow();
         let driver_connection = driver.connection_handle();
         let driver_connection = driver_connection.borrow();
-        (!driver_connection.name.is_empty()
-            && driver_connection.name != bus_full_local_name
+        (!driver_connection.full_local_name.is_empty()
+            && driver_connection.full_local_name != bus_full_local_name
             && driver_connection.local_name != bus_local_name)
-            .then(|| driver_connection.name.clone())
+            .then(|| driver_connection.full_local_name.clone())
     }) {
         test_names.push(non_bus_driver);
     }
@@ -11351,7 +11351,7 @@ fn live_reduced_subgraph_bus_entry_conflict_candidate(
             let driver = driver.borrow();
             let driver_connection = driver.connection_handle();
             let driver_connection = driver_connection.borrow();
-            let name = driver_connection.name.clone();
+            let name = driver_connection.full_local_name.clone();
             (!bus_members.iter().any(|member| member == &name)
                 && name != bus_full_local_name
                 && name != bus_local_name)
@@ -24705,6 +24705,73 @@ mod tests {
 
         assert_eq!(candidate.test_names, vec!["/NET".to_string()]);
         assert_eq!(candidate.fallback_net_name, "/NET");
+    }
+
+    #[test]
+    fn live_bus_entry_conflict_candidate_prefers_full_local_driver_names() {
+        let bus_connection = test_bus_connection(
+            "/BUS",
+            "BUS",
+            "/BUS",
+            "",
+            vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+        );
+        let net_connection = test_net_connection("/NET", "NET", "/NET", "");
+        let alt_driver = test_net_connection("/child/ALT", "ALT", "/child/ALT", "/child");
+
+        let mut bus_subgraph = test_net_subgraph(1, bus_connection.clone(), Vec::new(), "/child");
+        bus_subgraph.bus_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            start: PointKey(0f64.to_bits(), 0f64.to_bits()),
+            end: PointKey(10f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let mut entry_subgraph = test_net_subgraph(
+            2,
+            net_connection.clone(),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: alt_driver.clone(),
+                identity: None,
+            }],
+            "/child",
+        );
+        entry_subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            start: PointKey(20f64.to_bits(), 10f64.to_bits()),
+            end: PointKey(5f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: true,
+            start_is_wire_side: true,
+            connected_bus_subgraph_index: Some(0),
+        });
+        entry_subgraph.base_pins.push(test_base_pin(
+            "/child",
+            "sym-net",
+            PointKey(20f64.to_bits(), 10f64.to_bits()),
+            "1",
+            "input",
+            net_connection,
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![bus_subgraph, entry_subgraph]);
+        let candidate =
+            super::live_reduced_subgraph_bus_entry_conflict_candidate(&graph.live_subgraphs[1])
+                .expect("bus-entry conflict candidate");
+
+        assert!(
+            candidate.test_names.iter().any(|name| name == "/child/ALT"),
+            "full local driver name should be preserved: {:?}",
+            candidate.test_names
+        );
+        assert!(
+            !candidate.test_names.iter().any(|name| name == "ALT"),
+            "live candidate should not collapse to bare local driver name: {:?}",
+            candidate.test_names
+        );
     }
 
     #[test]
