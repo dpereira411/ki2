@@ -11161,18 +11161,18 @@ pub(crate) fn reduced_project_subgraph_dangling_wire_endpoints(
     for wire_item in &subgraph.wire_items {
         for endpoint in [wire_item.start, wire_item.end] {
             let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
-            let endpoint_matches = |point: PointKey| {
-                points_equal(
-                    endpoint_at,
-                    [f64::from_bits(point.0), f64::from_bits(point.1)],
-                )
-            };
             let endpoint_has_owner =
                 reduced_project_wire_endpoint_has_graph_owner(graph, subgraph, wire_item, endpoint);
             let endpoint_wire_count = subgraph
                 .wire_items
                 .iter()
-                .filter(|other| endpoint_matches(other.start) || endpoint_matches(other.end))
+                .filter(|other| {
+                    point_on_wire_segment(
+                        endpoint_at,
+                        [f64::from_bits(other.start.0), f64::from_bits(other.start.1)],
+                        [f64::from_bits(other.end.0), f64::from_bits(other.end.1)],
+                    )
+                })
                 .count();
 
             if endpoint_has_owner || endpoint_wire_count > 1 {
@@ -11209,12 +11209,6 @@ fn live_reduced_subgraph_dangling_wire_endpoints(
         let wire_item = wire_item.borrow();
         for endpoint in [wire_item.start, wire_item.end] {
             let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
-            let endpoint_matches = |point: PointKey| {
-                points_equal(
-                    endpoint_at,
-                    [f64::from_bits(point.0), f64::from_bits(point.1)],
-                )
-            };
             let endpoint_has_owner = live_reduced_wire_endpoint_has_graph_owner(
                 graph,
                 subgraph_handle,
@@ -11226,7 +11220,11 @@ fn live_reduced_subgraph_dangling_wire_endpoints(
                 .iter()
                 .filter(|other| {
                     let other = other.borrow();
-                    endpoint_matches(other.start) || endpoint_matches(other.end)
+                    point_on_wire_segment(
+                        endpoint_at,
+                        [f64::from_bits(other.start.0), f64::from_bits(other.start.1)],
+                        [f64::from_bits(other.end.0), f64::from_bits(other.end.1)],
+                    )
                 })
                 .count();
 
@@ -17367,6 +17365,87 @@ mod tests {
         let handles = build_live_reduced_subgraph_handles(&reduced);
 
         assert!(super::live_reduced_subgraph_floating_wire(&handles[0]).is_none());
+    }
+
+    #[test]
+    fn reduced_dangling_wire_endpoints_treat_endpoint_on_other_wire_segment_as_connected() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_dangling_t_junction_reduced_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-0000000007ba")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (wire (pts (xy 5 0) (xy 5 5)))
+  (junction (at 5 0)))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let mut graph = project.reduced_project_net_graph(false);
+        graph.live_subgraphs.clear();
+
+        let endpoints = super::reduced_project_dangling_wire_endpoint_events(&graph);
+
+        assert_eq!(
+            endpoints
+                .iter()
+                .filter(|endpoint| !endpoint.is_bus_entry)
+                .count(),
+            3
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn live_dangling_wire_endpoints_treat_endpoint_on_other_wire_segment_as_connected() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_dangling_t_junction_live_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-0000000007bb")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (wire (pts (xy 5 0) (xy 5 5)))
+  (junction (at 5 0)))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+
+        let endpoints = super::reduced_project_dangling_wire_endpoint_events(&graph);
+
+        assert_eq!(
+            endpoints
+                .iter()
+                .filter(|endpoint| !endpoint.is_bus_entry)
+                .count(),
+            3
+        );
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
