@@ -10550,14 +10550,15 @@ fn live_same_sheet_named_neighbor_endpoint_has_owner(
     drop(subgraph);
 
     graph
-        .live_subgraphs
+        .subgraphs_by_sheet_and_name
+        .get(&(sheet_instance_path, name))
         .iter()
+        .flat_map(|indexes| indexes.iter())
+        .filter_map(|index| graph.live_subgraphs.get(*index))
         .filter(|neighbor| !Rc::ptr_eq(neighbor, subgraph_handle))
         .any(|neighbor| {
             let neighbor = neighbor.borrow();
-            neighbor.sheet_instance_path == sheet_instance_path
-                && neighbor.driver_connection.borrow().name == name
-                && live_reduced_subgraph_endpoint_has_owner(&neighbor, endpoint)
+            live_reduced_subgraph_endpoint_has_owner(&neighbor, endpoint)
         })
 }
 
