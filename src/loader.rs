@@ -7,9 +7,11 @@ use std::process::Command;
 use crate::connectivity::{
     ReducedProjectNetGraph, collect_reduced_project_net_graph, resolve_reduced_net_name_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_netclass_at,
-    resolve_reduced_project_driver_name_at, resolve_reduced_project_driver_name_for_sheet_pin,
+    resolve_reduced_project_driver_name_at, resolve_reduced_project_driver_name_for_label,
+    resolve_reduced_project_driver_name_for_sheet_pin,
     resolve_reduced_project_driver_name_for_symbol_pin, resolve_reduced_project_net_at,
-    resolve_reduced_project_net_for_sheet_pin, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_project_net_for_label, resolve_reduced_project_net_for_sheet_pin,
+    resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
@@ -5474,7 +5476,7 @@ fn resolve_label_connectivity_text_var_with_graph(
     );
 
     let graph_net = reduced_graph
-        .and_then(|graph| resolve_reduced_project_net_at(graph, loaded_path, label.at));
+        .and_then(|graph| resolve_reduced_project_net_for_label(graph, loaded_path, label));
     let net_name = graph_net
         .as_ref()
         .map(|net| net.name.clone())
@@ -5515,7 +5517,9 @@ fn resolve_label_connectivity_text_var_with_graph(
     match token_upper.as_str() {
         "NET_NAME" => Some(net_name),
         "SHORT_NET_NAME" => reduced_graph
-            .and_then(|graph| resolve_reduced_project_driver_name_at(graph, loaded_path, label.at))
+            .and_then(|graph| {
+                resolve_reduced_project_driver_name_for_label(graph, loaded_path, label)
+            })
             .or_else(|| Some(short_net_name(&net_name))),
         "NET_CLASS" => graph_net
             .as_ref()
