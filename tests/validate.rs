@@ -6198,6 +6198,14 @@ fn erc_routes_unconnected_bus_entries_to_dangling_wire_checks() {
             .all(|diagnostic| diagnostic.code != "erc-bus-entry-conflict"),
         "{diagnostics:#?}"
     );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-endpoint-off-grid")
+            .count(),
+        4,
+        "{diagnostics:#?}"
+    );
 }
 
 #[test]

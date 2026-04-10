@@ -3978,6 +3978,32 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                         });
                     }
                 }
+                SchItem::Bus(line) => {
+                    if line
+                        .points
+                        .first()
+                        .copied()
+                        .filter(|point| !point_is_on_grid(*point, grid_size_mm))
+                        .or_else(|| {
+                            line.points
+                                .last()
+                                .copied()
+                                .filter(|point| !point_is_on_grid(*point, grid_size_mm))
+                        })
+                        .is_some()
+                    {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            code: "erc-endpoint-off-grid",
+                            kind: crate::diagnostic::DiagnosticKind::Validation,
+                            message: "Symbol pin or wire end off connection grid".to_string(),
+                            path: Some(schematic.path.clone()),
+                            span: None,
+                            line: None,
+                            column: None,
+                        });
+                    }
+                }
                 SchItem::BusEntry(entry) => {
                     for point in [
                         entry.at,
