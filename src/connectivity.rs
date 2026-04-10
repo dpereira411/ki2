@@ -8431,6 +8431,20 @@ pub(crate) fn reduced_project_subgraph_by_index(
     graph.subgraphs.get(index)
 }
 
+fn projected_reduced_project_subgraph_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+) -> Option<ReducedProjectSubgraphEntry> {
+    let mut subgraph = graph.subgraphs.get(index)?.clone();
+
+    if let Some(live) = graph.live_subgraphs.get(index) {
+        live.borrow()
+            .project_onto_reduced(&mut subgraph, &graph.live_subgraphs);
+    }
+
+    Some(subgraph)
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
 // graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
@@ -8454,15 +8468,15 @@ pub(crate) fn reduced_project_subgraph_index(
 // same-name multi-subgraph list shape instead of the old repo-local short-driver key. Remaining
 // divergence is the fuller subgraph object model and exact driver-connection caching.
 pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     net_name: &str,
     sheet_path: &LoadedSheetPath,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     graph
         .subgraphs_by_sheet_and_name
         .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
         .and_then(|indexes| indexes.first())
-        .and_then(|index| graph.subgraphs.get(*index))
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, *index))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -8474,14 +8488,14 @@ pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
 // bus `prefix[]` alias entries beside the full resolved bus name. Remaining divergence is the
 // fuller subgraph object model and graph-owned resolved-name caches.
 pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     net_name: &str,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     graph
         .subgraphs_by_name
         .get(net_name)
         .and_then(|indexes| indexes.first())
-        .and_then(|index| graph.subgraphs.get(*index))
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, *index))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -8491,15 +8505,15 @@ pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
 // name" lookup boundary so ERC/export callers do not rebuild per-net neighbor lists locally.
 // Remaining divergence is the fuller subgraph object model and graph-owned cache lifetime.
 pub(crate) fn collect_reduced_project_subgraphs_by_name<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     net_name: &str,
-) -> Vec<&'a ReducedProjectSubgraphEntry> {
+) -> Vec<ReducedProjectSubgraphEntry> {
     graph
         .subgraphs_by_name
         .get(net_name)
         .into_iter()
         .flat_map(|indexes| indexes.iter())
-        .filter_map(|index| graph.subgraphs.get(*index))
+        .filter_map(|index| projected_reduced_project_subgraph_by_index(graph, *index))
         .collect()
 }
 
