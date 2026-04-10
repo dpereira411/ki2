@@ -509,6 +509,16 @@ fn append_unique<T: PartialEq>(target: &mut Vec<T>, values: Vec<T>) {
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with real `m_drivers` / `m_driver`
 // remove_when: absorbed subgraph mutation and driver resolution run on live subgraph objects
 fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraphEntry) {
+    if subgraph
+        .drivers
+        .iter()
+        .any(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+    {
+        subgraph
+            .drivers
+            .retain(|driver| driver.priority >= reduced_hierarchical_label_driver_priority());
+    }
+
     let Some((index, driver)) =
         subgraph
             .drivers
@@ -521,6 +531,7 @@ fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraph
                 })
             })
     else {
+        subgraph.chosen_driver_index = None;
         return;
     };
 
@@ -16746,6 +16757,41 @@ mod tests {
                 .iter()
                 .any(|driver| driver.connection.name == "/PWR")
         );
+    }
+
+    #[test]
+    fn reduced_absorb_resolve_drops_weak_drivers_after_strong_merge() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Pin,
+                    priority: super::reduced_pin_driver_priority(),
+                    connection: test_net_connection(
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "",
+                    ),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        super::reduced_project_resolve_absorbed_driver(&mut subgraph);
+
+        assert_eq!(subgraph.chosen_driver_index, Some(0));
+        assert_eq!(subgraph.drivers.len(), 1);
+        assert_eq!(subgraph.drivers[0].kind, ReducedProjectDriverKind::Label);
+        assert_eq!(subgraph.driver_connection.name, "/SIG");
     }
 
     #[test]
