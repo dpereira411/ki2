@@ -3546,7 +3546,24 @@ impl LiveReducedSubgraph {
             handle.borrow_mut().dirty = false;
         }
 
-        Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
+        let bus_neighbor_recurse_targets =
+            Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
+
+        for target in bus_neighbor_recurse_targets {
+            if Rc::ptr_eq(&target, start) {
+                continue;
+            }
+
+            Self::propagate_neighbors_from_selected_start(
+                &target,
+                live_subgraphs,
+                global_subgraphs,
+                force,
+                visiting,
+                stale_members,
+                false,
+            );
+        }
 
         for handle in &dirty_active {
             let has_hierarchy_links = live_subgraph_has_hierarchy_handles_from_handle(handle);
@@ -3653,7 +3670,9 @@ impl LiveReducedSubgraph {
         live_subgraphs: &[LiveReducedSubgraphHandle],
         component: &[LiveReducedSubgraphHandle],
         stale_members: &mut Vec<LiveProjectBusMemberHandle>,
-    ) {
+    ) -> Vec<LiveReducedSubgraphHandle> {
+        let mut recurse_targets = Vec::new();
+
         for parent_handle in component {
             let is_bus = matches!(
                 parent_handle
@@ -3799,8 +3818,13 @@ impl LiveReducedSubgraph {
                     &neighbor_sheet_instance_path,
                 );
                 neighbor_handle.borrow_mut().dirty = true;
+                recurse_targets.push(neighbor_handle);
             }
         }
+
+        recurse_targets.sort_by_key(live_subgraph_handle_id);
+        recurse_targets.dedup_by(|left, right| Rc::ptr_eq(left, right));
+        recurse_targets
     }
 
     // Upstream parity: local live-subgraph analogue for refreshing parent-bus members from dirty
@@ -15247,7 +15271,7 @@ mod tests {
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
         let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
         let mut stale_members = Vec::new();
-        LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+        let recurse_targets = LiveReducedSubgraph::refresh_bus_neighbor_drivers(
             &live_subgraphs,
             &component,
             &mut stale_members,
@@ -15266,6 +15290,8 @@ mod tests {
         assert_eq!(graph[1].resolved_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].base_pins[0].connection.full_local_name, "/SIG1");
+        assert_eq!(recurse_targets.len(), 1);
+        assert!(Rc::ptr_eq(&recurse_targets[0], &live_subgraphs[1]));
     }
 
     #[test]
