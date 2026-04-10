@@ -4950,11 +4950,15 @@ impl LiveReducedSubgraph {
                         continue;
                     };
 
-                    if member.borrow().full_local_name == connection.borrow().full_local_name {
+                    if member.borrow().name == connection.borrow().name {
                         continue;
                     }
 
-                    let old_name = member.borrow().full_local_name.clone();
+                    let old_name = if member.borrow().full_local_name.is_empty() {
+                        member.borrow().name.clone()
+                    } else {
+                        member.borrow().full_local_name.clone()
+                    };
                     clone_live_connection_owner_into_live_bus_member(
                         &mut member.borrow_mut(),
                         &connection.borrow(),
@@ -19211,6 +19215,68 @@ mod tests {
         assert_eq!(
             graph[1].driver_connection.members[0].full_local_name,
             "/PWR"
+        );
+    }
+
+    #[test]
+    fn reduced_live_multiple_bus_parent_names_skip_same_resolved_name_different_sheet_path() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS_A",
+                    "BUS_A",
+                    "/BUS_A",
+                    "",
+                    vec![test_bus_member("SIG", "SIG", "/SIG")],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_bus_connection(
+                    "/BUS_B",
+                    "BUS_B",
+                    "/BUS_B",
+                    "",
+                    vec![test_bus_member("SIG", "SIG", "/SIG")],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("SIG", "SIG", "/child/SIG", "/child"),
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        graph[2].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG", "SIG", "/SIG"),
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG", "SIG", "/SIG"),
+                subgraph_index: 1,
+            },
+        ];
+        graph[2].bus_parent_indexes = vec![0, 1];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        LiveReducedSubgraph::refresh_multiple_bus_parent_names(&live_subgraphs);
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].driver_connection.members[0].name, "SIG");
+        assert_eq!(
+            graph[0].driver_connection.members[0].full_local_name,
+            "/SIG"
+        );
+        assert_eq!(graph[1].driver_connection.members[0].name, "SIG");
+        assert_eq!(
+            graph[1].driver_connection.members[0].full_local_name,
+            "/SIG"
         );
     }
 
