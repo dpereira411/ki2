@@ -4,8 +4,8 @@ use crate::connectivity::{
     reduced_connected_wire_label_full_names_at, reduced_project_dangling_directive_label_links,
     reduced_project_four_way_junction_points, reduced_project_hier_port_entries_in_sheet,
     reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
-    reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
+    reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
+    reduced_project_sheet_pin_names, reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain,
     reduced_project_subgraph_has_non_bus_entry_owner, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
@@ -62,32 +62,6 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_off_grid_endpoints(project));
     diagnostics.extend(check_field_name_whitespace(project));
     apply_configured_rule_severities(project, diagnostics)
-}
-
-// Upstream parity: reduced local analogue for the top-level subgraph iteration inside
-// `CONNECTION_GRAPH::RunERC()`. This is not a 1:1 KiCad iterator because the Rust tree still lacks
-// live `CONNECTION_SUBGRAPH*` and absorbed-subgraph state, but it now preserves KiCad's
-// `seenDriverInstances` behavior by deduplicating graph-owned ERC passes on reused screens through
-// the shared reduced driver owner instead of sweeping every repeated subgraph independently. For
-// reused-screen drivers, the reduced pass keeps the last page-ordered occurrence, matching the
-// exercised KiCad `m_subgraphs` traversal after the live item connection-map expansion rather than
-// keeping the first reduced occurrence. Remaining divergence is the still-missing live
-// subgraph/driver object model behind that owner.
-fn graph_run_erc_subgraphs(
-    graph: &crate::connectivity::ReducedProjectNetGraph,
-) -> Vec<&crate::connectivity::ReducedProjectSubgraphEntry> {
-    let mut seen_driver_identities = std::collections::BTreeSet::new();
-    let mut subgraphs = reduced_project_subgraphs(graph)
-        .iter()
-        .rev()
-        .filter(|subgraph| {
-            crate::connectivity::reduced_project_subgraph_driver_identity(subgraph)
-                .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
-        })
-        .collect::<Vec<_>>();
-
-    subgraphs.reverse();
-    subgraphs
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1537,7 +1511,7 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph) {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
         if subgraph.label_links.is_empty() {
             continue;
         }
@@ -1677,7 +1651,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         }
     }
 
-    for subgraph in graph_run_erc_subgraphs(&graph)
+    for subgraph in reduced_project_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.no_connect_points.is_empty())
     {
@@ -1894,7 +1868,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let graph = project.reduced_project_net_graph(false);
     let mut label_subgraphs = Vec::new();
 
-    for subgraph in graph_run_erc_subgraphs(&graph) {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
         if subgraph.label_links.is_empty() {
             continue;
         }
@@ -2072,7 +2046,7 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph)
+    for subgraph in reduced_project_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
@@ -2131,7 +2105,7 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph)
+    for subgraph in reduced_project_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.is_empty())
     {
@@ -2290,7 +2264,7 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph)
+    for subgraph in reduced_project_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
@@ -2387,7 +2361,7 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph) {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
         let mut label_members = None::<Vec<String>>;
         let mut port_members = None::<Vec<String>>;
         let mut label_at = None::<[f64; 2]>;
@@ -2488,7 +2462,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph)
+    for subgraph in reduced_project_run_erc_subgraphs(&graph)
         .into_iter()
         .filter(|subgraph| subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
@@ -2871,7 +2845,7 @@ pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in graph_run_erc_subgraphs(&graph) {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
         let Some(primary_driver) = subgraph.drivers.first() else {
             continue;
         };

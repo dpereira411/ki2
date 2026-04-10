@@ -8226,6 +8226,34 @@ pub(crate) fn reduced_project_subgraphs(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::RunERC top-level subgraph iteration or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still iterates reduced subgraph snapshots instead of live `CONNECTION_SUBGRAPH*`
+// storage and absorbed-subgraph state
+// local_only_reason: centralizes the exercised `seenDriverInstances`/reused-screen traversal policy
+// on the shared graph owner instead of duplicating it in each ERC rule
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC runs directly over live graph-owned ERC subgraph traversal
+pub(crate) fn reduced_project_run_erc_subgraphs(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<&ReducedProjectSubgraphEntry> {
+    let mut seen_driver_identities = std::collections::BTreeSet::new();
+    let mut subgraphs = graph
+        .subgraphs
+        .iter()
+        .rev()
+        .filter(|subgraph| {
+            reduced_project_subgraph_driver_identity(subgraph)
+                .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
+        })
+        .collect::<Vec<_>>();
+
+    subgraphs.reverse();
+    subgraphs
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for the directive-label `SCH_TEXT::IsDangling()` slice
 // consumed by `CONNECTION_GRAPH::ercCheckDirectiveLabels()`. This is not a 1:1 text-item owner
 // because the Rust tree still stores reduced point/path snapshots instead of live `SCH_TEXT*`, but
