@@ -4,7 +4,8 @@ use crate::connectivity::{
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
-    resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_no_connect,
+    resolve_reduced_project_subgraph_for_no_connect,
+    resolve_reduced_project_subgraph_for_sheet_pin,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -765,7 +766,10 @@ fn label_property_is_intersheet_refs(property: &Property) -> bool {
         .flat_map(|ch| ch.to_lowercase())
         .collect::<String>();
 
-    matches!(normalized.as_str(), "intersheetreferences" | "intersheetrefs")
+    matches!(
+        normalized.as_str(),
+        "intersheetreferences" | "intersheetrefs"
+    )
 }
 
 fn child_sheet_path_for_sheet<'a>(
@@ -2500,8 +2504,11 @@ fn sheet_pin_is_dangling(
     graph: &crate::connectivity::ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     pin_at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
 ) -> bool {
-    let Some(subgraph) = resolve_reduced_project_subgraph_at(graph, sheet_path, pin_at) else {
+    let Some(subgraph) =
+        resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, pin_at, child_sheet_uuid)
+    else {
         return true;
     };
 
@@ -2568,7 +2575,7 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
             };
 
             for pin in &sheet.pins {
-                if sheet_pin_is_dangling(&graph, sheet_path, pin.at) {
+                if sheet_pin_is_dangling(&graph, sheet_path, pin.at, sheet.uuid.as_deref()) {
                     diagnostics.push(Diagnostic {
                         severity: Severity::Error,
                         code: "erc-pin-not-connected",

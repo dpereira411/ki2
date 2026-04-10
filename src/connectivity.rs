@@ -1126,6 +1126,13 @@ struct ReducedProjectNoConnectIdentityKey {
     at: PointKey,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ReducedProjectSheetPinIdentityKey {
+    sheet_instance_path: String,
+    at: PointKey,
+    child_sheet_uuid: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedSubgraphWireItem {
     pub(crate) start: PointKey,
@@ -1145,6 +1152,7 @@ pub(crate) struct ReducedProjectNetGraph {
     point_subgraph_identities: BTreeMap<ReducedProjectPointIdentityKey, usize>,
     label_subgraph_identities: BTreeMap<ReducedProjectLabelIdentityKey, usize>,
     no_connect_subgraph_identities: BTreeMap<ReducedProjectNoConnectIdentityKey, usize>,
+    sheet_pin_subgraph_identities: BTreeMap<ReducedProjectSheetPinIdentityKey, usize>,
 }
 
 pub(crate) struct ReducedProjectGraphInputs<'a> {
@@ -7441,6 +7449,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let mut point_subgraph_identities = BTreeMap::new();
     let mut label_subgraph_identities = BTreeMap::new();
     let mut no_connect_subgraph_identities = BTreeMap::new();
+    let mut sheet_pin_subgraph_identities = BTreeMap::new();
     let mut net_identities_by_name = BTreeMap::<String, ReducedProjectNetIdentity>::new();
 
     for (subgraph_index, pending) in pending_subgraphs.into_iter().enumerate() {
@@ -7565,6 +7574,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 index,
             );
         }
+        for pin in &subgraph.hier_sheet_pins {
+            sheet_pin_subgraph_identities.insert(
+                ReducedProjectSheetPinIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: pin.at,
+                    child_sheet_uuid: pin.child_sheet_uuid.clone(),
+                },
+                index,
+            );
+        }
         reduced_subgraphs.push(subgraph);
     }
 
@@ -7582,6 +7601,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     point_subgraph_identities.clear();
     label_subgraph_identities.clear();
     no_connect_subgraph_identities.clear();
+    sheet_pin_subgraph_identities.clear();
 
     for (index, subgraph) in reduced_subgraphs.iter().enumerate() {
         for base_pin in &subgraph.base_pins {
@@ -7620,6 +7640,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 ReducedProjectNoConnectIdentityKey {
                     sheet_instance_path: subgraph.sheet_instance_path.clone(),
                     at: *point,
+                },
+                index,
+            );
+        }
+        for pin in &subgraph.hier_sheet_pins {
+            sheet_pin_subgraph_identities.insert(
+                ReducedProjectSheetPinIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: pin.at,
+                    child_sheet_uuid: pin.child_sheet_uuid.clone(),
                 },
                 index,
             );
@@ -7825,6 +7855,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         point_subgraph_identities,
         label_subgraph_identities,
         no_connect_subgraph_identities,
+        sheet_pin_subgraph_identities,
     }
 }
 
@@ -8209,6 +8240,42 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
         })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the sheet-pin item half of
+// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
+// item map because the Rust tree still keys sheet pins by `(sheet instance path, point,
+// child-sheet uuid)` instead of live `SCH_SHEET_PIN*`, but it preserves shared sheet-pin-to-
+// subgraph identity instead of routing sheet-pin ownership through the generic point lookup.
+// Remaining divergence is fuller sheet-pin item identity and the still-missing live
+// `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
+    graph: &'a ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+) -> Option<&'a ReducedProjectSubgraphEntry> {
+    graph
+        .sheet_pin_subgraph_identities
+        .get(&reduced_project_sheet_pin_identity_key(
+            sheet_path,
+            point_key(at),
+            child_sheet_uuid,
+        ))
+        .and_then(|index| graph.subgraphs.get(*index))
+        .or_else(|| {
+            graph
+                .sheet_pin_subgraph_identities
+                .iter()
+                .find_map(|(key, index)| {
+                    (key.sheet_instance_path == sheet_path.instance_path
+                        && key.child_sheet_uuid.as_deref() == child_sheet_uuid
+                        && point_key_matches(key.at, at))
+                    .then(|| graph.subgraphs.get(*index))
+                    .flatten()
+                })
+        })
+}
+
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
@@ -8379,6 +8446,18 @@ fn reduced_project_no_connect_identity_key(
     ReducedProjectNoConnectIdentityKey {
         sheet_instance_path: sheet_path.instance_path.clone(),
         at: point_key(at),
+    }
+}
+
+fn reduced_project_sheet_pin_identity_key(
+    sheet_path: &LoadedSheetPath,
+    at: PointKey,
+    child_sheet_uuid: Option<&str>,
+) -> ReducedProjectSheetPinIdentityKey {
+    ReducedProjectSheetPinIdentityKey {
+        sheet_instance_path: sheet_path.instance_path.clone(),
+        at,
+        child_sheet_uuid: child_sheet_uuid.map(str::to_string),
     }
 }
 
@@ -10352,6 +10431,7 @@ mod tests {
         resolve_reduced_project_net_at, resolve_reduced_project_subgraph_at,
         resolve_reduced_project_subgraph_for_label,
         resolve_reduced_project_subgraph_for_no_connect,
+        resolve_reduced_project_subgraph_for_sheet_pin,
         resolve_reduced_project_subgraph_for_symbol_pin,
     };
     use crate::core::SchematicProject;
@@ -11818,6 +11898,135 @@ mod tests {
         assert_eq!(by_no_connect.subgraph_code, by_point.subgraph_code);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_sheet_pin_identity_uses_child_sheet_uuid() {
+        let reduced = super::ReducedProjectNetGraph {
+            subgraphs: vec![
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 1,
+                    code: 1,
+                    name: "/A".to_string(),
+                    resolved_connection: test_net_connection("/A", "A", "/A", ""),
+                    driver_connection: test_net_connection("/A", "A", "/A", ""),
+                    chosen_driver_index: None,
+                    drivers: Vec::new(),
+                    class: String::new(),
+                    has_no_connect: false,
+                    sheet_instance_path: String::new(),
+                    anchor: PointKey(0, 0),
+                    points: vec![PointKey(0, 0)],
+                    nodes: Vec::new(),
+                    base_pins: Vec::new(),
+                    label_links: Vec::new(),
+                    no_connect_points: Vec::new(),
+                    hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("sheet-a".to_string()),
+                        connection: test_net_connection("/A", "A", "/A", ""),
+                    }],
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: Vec::new(),
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 2,
+                    code: 2,
+                    name: "/B".to_string(),
+                    resolved_connection: test_net_connection("/B", "B", "/B", ""),
+                    driver_connection: test_net_connection("/B", "B", "/B", ""),
+                    chosen_driver_index: None,
+                    drivers: Vec::new(),
+                    class: String::new(),
+                    has_no_connect: false,
+                    sheet_instance_path: String::new(),
+                    anchor: PointKey(0, 0),
+                    points: vec![PointKey(0, 0)],
+                    nodes: Vec::new(),
+                    base_pins: Vec::new(),
+                    label_links: Vec::new(),
+                    no_connect_points: Vec::new(),
+                    hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("sheet-b".to_string()),
+                        connection: test_net_connection("/B", "B", "/B", ""),
+                    }],
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: Vec::new(),
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+            ],
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectPointIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: PointKey(0, 0),
+                },
+                1,
+            )]),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::from([
+                (
+                    super::ReducedProjectSheetPinIdentityKey {
+                        sheet_instance_path: String::new(),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("sheet-a".to_string()),
+                    },
+                    0,
+                ),
+                (
+                    super::ReducedProjectSheetPinIdentityKey {
+                        sheet_instance_path: String::new(),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("sheet-b".to_string()),
+                    },
+                    1,
+                ),
+            ]),
+        };
+        let sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: String::new(),
+            sheet_uuid: None,
+            sheet_name: Some("Root".to_string()),
+            page: Some("1".to_string()),
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+
+        let by_sheet_pin = resolve_reduced_project_subgraph_for_sheet_pin(
+            &reduced,
+            &sheet_path,
+            [0.0, 0.0],
+            Some("sheet-a"),
+        )
+        .expect("sheet pin subgraph");
+        let by_point =
+            resolve_reduced_project_subgraph_at(&reduced, &sheet_path, [0.0, 0.0]).expect("point");
+
+        assert_eq!(by_sheet_pin.subgraph_code, 1);
+        assert_eq!(by_point.subgraph_code, 2);
     }
 
     #[test]
@@ -13292,6 +13501,7 @@ mod tests {
             point_subgraph_identities: BTreeMap::new(),
             label_subgraph_identities: BTreeMap::new(),
             no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
         };
 
         assert_eq!(
@@ -13398,6 +13608,7 @@ mod tests {
             point_subgraph_identities: BTreeMap::new(),
             label_subgraph_identities: BTreeMap::new(),
             no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
         };
 
         assert_eq!(
