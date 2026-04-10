@@ -8078,6 +8078,12 @@ pub(crate) fn collect_reduced_project_net_map(
     project: &SchematicProject,
     for_board: bool,
 ) -> Vec<ReducedProjectNetEntry> {
+    let graph = project.reduced_project_net_graph(for_board);
+    let subgraphs = if graph.live_subgraphs.is_empty() {
+        graph.subgraphs
+    } else {
+        live_reduced_project_net_map_subgraphs(&graph)
+    };
     let mut grouped = BTreeMap::<
         (usize, String),
         (
@@ -8099,7 +8105,7 @@ pub(crate) fn collect_reduced_project_net_map(
         ),
     >::new();
 
-    for subgraph in project.reduced_project_net_graph(for_board).subgraphs {
+    for subgraph in subgraphs {
         let owner_name = subgraph.driver_connection.name.clone();
         let entry = grouped
             .entry((subgraph.code, owner_name.clone()))
@@ -8224,6 +8230,30 @@ pub(crate) fn collect_reduced_project_net_map(
             },
         )
         .collect()
+}
+
+// upstream: CONNECTION_GRAPH::GetNetMap export/net-map subgraph iteration or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced whole-net records and keeps immutable exporter fields from the
+// reduced graph entry, but mutable driver and item connection state is projected from the active
+// live subgraph owner
+// local_only_reason: moves the exercised export/net-map read boundary onto retained live
+// subgraph handles without inventing a second exporter-owned connectivity scan
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with exporter-visible code/class/node
+// storage
+// remove_when: export/net-map code can iterate final live subgraph storage directly
+fn live_reduced_project_net_map_subgraphs(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectSubgraphEntry> {
+    let mut subgraphs = graph.subgraphs.clone();
+
+    for (reduced, live) in subgraphs.iter_mut().zip(graph.live_subgraphs.iter()) {
+        live.borrow()
+            .project_onto_reduced(reduced, &graph.live_subgraphs);
+    }
+
+    subgraphs
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -14120,6 +14150,40 @@ mod tests {
             std::path::PathBuf::from("root.kicad_sch")
         );
         assert_eq!(candidate.entry_at, [5.0, 0.0]);
+    }
+
+    #[test]
+    fn live_net_map_projection_reads_live_driver_and_base_pin_owner() {
+        let reduced_connection = test_net_connection("/OLD", "OLD", "/OLD", "");
+        let live_connection = test_net_connection("/LIVE", "LIVE", "/LIVE", "");
+        let mut subgraph = test_net_subgraph(1, reduced_connection.clone(), Vec::new(), "");
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-live",
+            PointKey(10, 20),
+            "1",
+            "input",
+            reduced_connection,
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        {
+            let subgraph = graph.live_subgraphs[0].borrow();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut subgraph.driver_connection.borrow_mut(),
+                &live_connection,
+            );
+            let base_pin_connection = subgraph.base_pins[0].borrow().connection.clone();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut base_pin_connection.borrow_mut(),
+                &live_connection,
+            );
+        }
+
+        let projected = super::live_reduced_project_net_map_subgraphs(&graph);
+
+        assert_eq!(projected[0].driver_connection.name, "/LIVE");
+        assert_eq!(projected[0].base_pins[0].connection.name, "/LIVE");
     }
 
     #[test]
