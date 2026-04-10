@@ -9608,14 +9608,33 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_for_symbol_pin(
+    resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
-    .map(|subgraph| ReducedProjectNetIdentity {
-        code: subgraph.code,
-        name: subgraph.driver_connection.name.clone(),
-        class: subgraph.class.clone(),
-        has_no_connect: subgraph.has_no_connect,
+    .and_then(|index| {
+        graph.live_subgraphs.get(index).map(|subgraph| {
+            let subgraph = subgraph.borrow();
+            let reduced = graph.subgraphs.get(index);
+            ReducedProjectNetIdentity {
+                code: reduced.map_or(0, |subgraph| subgraph.code),
+                name: subgraph.driver_connection.borrow().name.clone(),
+                class: reduced
+                    .map(|subgraph| subgraph.class.clone())
+                    .unwrap_or_default(),
+                has_no_connect: subgraph.has_no_connect,
+            }
+        })
+    })
+    .or_else(|| {
+        resolve_reduced_project_subgraph_for_symbol_pin(
+            graph, sheet_path, symbol, at, pin_name, pin_number,
+        )
+        .map(|subgraph| ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: subgraph.driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        })
     })
 }
 
@@ -9635,9 +9654,72 @@ pub(crate) fn reduced_project_symbol_pin_net_name(
     pin: &ReducedProjectSymbolPin,
 ) -> String {
     pin.subgraph_index
-        .and_then(|index| reduced_project_subgraph_by_index(graph, index))
-        .map(|subgraph| subgraph.driver_connection.name.clone())
+        .and_then(|index| {
+            graph
+                .live_subgraphs
+                .get(index)
+                .map(|subgraph| subgraph.borrow().driver_connection.borrow().name.clone())
+        })
+        .or_else(|| {
+            pin.subgraph_index
+                .and_then(|index| reduced_project_subgraph_by_index(graph, index))
+                .map(|subgraph| subgraph.driver_connection.name.clone())
+        })
         .unwrap_or_default()
+}
+
+fn resolve_reduced_project_subgraph_index_for_symbol_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+    pin_number: Option<&str>,
+) -> Option<usize> {
+    pin_name
+        .and_then(|pin_name| {
+            graph
+                .pin_subgraph_identities
+                .get(&reduced_project_base_pin_key(
+                    sheet_path, symbol, at, pin_name, pin_number,
+                ))
+                .copied()
+        })
+        .or_else(|| {
+            graph
+                .pin_subgraph_identities_by_location
+                .get(&reduced_project_pin_identity_key(
+                    sheet_path, symbol, at, pin_number,
+                ))
+                .copied()
+        })
+        .or_else(|| {
+            pin_name.and_then(|pin_name| {
+                graph
+                    .pin_subgraph_identities
+                    .iter()
+                    .find_map(|(key, index)| {
+                        (key.sheet_instance_path == sheet_path.instance_path
+                            && key.symbol_uuid == symbol.uuid
+                            && key.name.as_deref() == Some(pin_name)
+                            && key.number.as_deref() == pin_number
+                            && point_key_matches(key.at, at))
+                        .then_some(*index)
+                    })
+            })
+        })
+        .or_else(|| {
+            graph
+                .pin_subgraph_identities_by_location
+                .iter()
+                .find_map(|(key, index)| {
+                    (key.sheet_instance_path == sheet_path.instance_path
+                        && key.symbol_uuid == symbol.uuid
+                        && key.number.as_deref() == pin_number
+                        && point_key_matches(key.at, at))
+                    .then_some(*index)
+                })
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -9656,52 +9738,10 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
-    pin_name
-        .and_then(|pin_name| {
-            graph
-                .pin_subgraph_identities
-                .get(&reduced_project_base_pin_key(
-                    sheet_path, symbol, at, pin_name, pin_number,
-                ))
-        })
-        .and_then(|index| graph.subgraphs.get(*index))
-        .or_else(|| {
-            graph
-                .pin_subgraph_identities_by_location
-                .get(&reduced_project_pin_identity_key(
-                    sheet_path, symbol, at, pin_number,
-                ))
-                .and_then(|index| graph.subgraphs.get(*index))
-        })
-        .or_else(|| {
-            pin_name.and_then(|pin_name| {
-                graph
-                    .pin_subgraph_identities
-                    .iter()
-                    .find_map(|(key, index)| {
-                        (key.sheet_instance_path == sheet_path.instance_path
-                            && key.symbol_uuid == symbol.uuid
-                            && key.name.as_deref() == Some(pin_name)
-                            && key.number.as_deref() == pin_number
-                            && point_key_matches(key.at, at))
-                        .then(|| graph.subgraphs.get(*index))
-                        .flatten()
-                    })
-            })
-        })
-        .or_else(|| {
-            graph
-                .pin_subgraph_identities_by_location
-                .iter()
-                .find_map(|(key, index)| {
-                    (key.sheet_instance_path == sheet_path.instance_path
-                        && key.symbol_uuid == symbol.uuid
-                        && key.number.as_deref() == pin_number
-                        && point_key_matches(key.at, at))
-                    .then(|| graph.subgraphs.get(*index))
-                    .flatten()
-                })
-        })
+    resolve_reduced_project_subgraph_index_for_symbol_pin(
+        graph, sheet_path, symbol, at, pin_name, pin_number,
+    )
+    .and_then(|index| graph.subgraphs.get(index))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -9799,35 +9839,40 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_for_symbol_pin(
+    resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
-    .and_then(|subgraph| {
-        pin_name
-            .and_then(|pin_name| {
-                subgraph.base_pins.iter().find(|base_pin| {
-                    base_pin.key
-                        == reduced_project_base_pin_key(
-                            sheet_path, symbol, at, pin_name, pin_number,
-                        )
+    .and_then(|index| {
+        graph.live_subgraphs.get(index).and_then(|subgraph| {
+            let subgraph = subgraph.borrow();
+            pin_name
+                .and_then(|pin_name| {
+                    subgraph.base_pins.iter().find(|base_pin| {
+                        base_pin.borrow().pin.key
+                            == reduced_project_base_pin_key(
+                                sheet_path, symbol, at, pin_name, pin_number,
+                            )
+                    })
                 })
-            })
-            .or_else(|| {
-                subgraph.base_pins.iter().find(|base_pin| {
-                    base_pin.key.symbol_uuid == symbol.uuid
-                        && base_pin.key.at == point_key(at)
-                        && (pin_number.is_none() || base_pin.key.number.as_deref() == pin_number)
+                .or_else(|| {
+                    subgraph.base_pins.iter().find(|base_pin| {
+                        let base_pin = base_pin.borrow();
+                        base_pin.pin.key.symbol_uuid == symbol.uuid
+                            && base_pin.pin.key.at == point_key(at)
+                            && (pin_number.is_none()
+                                || base_pin.pin.key.number.as_deref() == pin_number)
+                    })
                 })
-            })
-            .map(|base_pin| {
-                (
-                    base_pin.preserve_local_name_on_refresh,
-                    &base_pin.driver_connection,
-                )
-            })
-    })
-    .and_then(|(preserve_local_name_on_refresh, connection)| {
-        preserve_local_name_on_refresh.then(|| connection.local_name.clone())
+                .and_then(|base_pin| {
+                    let base_pin = base_pin.borrow();
+                    base_pin
+                        .preserved_local_name
+                        .as_ref()
+                        .is_some()
+                        .then(|| base_pin.driver_connection.borrow().local_name.clone())
+                })
+                .or_else(|| Some(subgraph.driver_connection.borrow().local_name.clone()))
+        })
     })
     .or_else(|| {
         resolve_reduced_project_subgraph_for_symbol_pin(
@@ -19487,6 +19532,47 @@ mod tests {
     }
 
     #[test]
+    fn live_symbol_pin_net_name_reads_live_subgraph_owner() {
+        let connection = test_net_connection("/OLD", "OLD", "/OLD", "");
+        let mut subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym",
+            PointKey(0, 0),
+            "1",
+            "input",
+            connection,
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let pin = ReducedProjectSymbolPin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: String::new(),
+            at: PointKey(0, 0),
+            name: Some("1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            reference: Some("U1".to_string()),
+            is_power_symbol: false,
+            subgraph_index: Some(0),
+        };
+
+        assert_eq!(
+            super::reduced_project_symbol_pin_net_name(&graph, &pin),
+            "/LIVE"
+        );
+    }
+
+    #[test]
     fn reduced_project_driver_name_for_power_pin_uses_pin_owned_connection() {
         let path = env::temp_dir().join(format!(
             "ki2_connectivity_power_pin_driver_name_{}.kicad_sch",
@@ -19566,6 +19652,105 @@ mod tests {
 
         assert_eq!(driver_name, "VCC");
         assert_eq!(net_name.name, "SIG");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn symbol_pin_queries_read_live_owner_state() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_live_symbol_pin_owner_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:VCC"
+      (power)
+      (property "Reference" "#PWR" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "VCC" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "VCC_1_1"
+        (pin power_in line (at 0 0 270) (length 2.54)
+          (name "VCC" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "power:VCC")
+    (uuid "73050000-0000-0000-0000-0000000008af")
+    (at 0 0 0)
+    (property "Reference" "#PWR1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "VCC" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "SIG" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"##,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let sheet_path = loaded
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet")
+            .clone();
+        let project = SchematicProject::from_load_result(loaded);
+        let schematic = project
+            .schematic(&sheet_path.schematic_path)
+            .expect("root schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("power symbol");
+        let graph = project.reduced_project_net_graph(false);
+
+        let live_driver = test_net_connection("/LIVE", "LIVE", "/LIVE", "");
+        let live_pin_driver = test_net_connection("/PINLIVE", "PINLIVE", "/PINLIVE", "");
+        {
+            let subgraph = graph.live_subgraphs[0].borrow();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut subgraph.driver_connection.borrow_mut(),
+                &live_driver,
+            );
+            let mut base_pin = subgraph.base_pins[0].borrow_mut();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut base_pin.driver_connection.borrow_mut(),
+                &live_pin_driver,
+            );
+            base_pin.preserved_local_name = Some("PINLIVE".to_string());
+        }
+
+        let driver_name = super::resolve_reduced_project_driver_name_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [0.0, 0.0],
+            Some("VCC"),
+            Some("1"),
+        )
+        .expect("driver name");
+        let net_name = super::resolve_reduced_project_net_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            symbol,
+            [0.0, 0.0],
+            Some("VCC"),
+            Some("1"),
+        )
+        .expect("net identity");
+
+        assert_eq!(driver_name, "PINLIVE");
+        assert_eq!(net_name.name, "/LIVE");
 
         let _ = fs::remove_file(path);
     }
