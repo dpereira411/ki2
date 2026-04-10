@@ -3,15 +3,15 @@ use crate::connectivity::{
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
     reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
-    reduced_project_label_name_caches, reduced_project_no_connect_marker_outcomes,
-    reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_label_name_caches, reduced_project_named_label_entries,
+    reduced_project_no_connect_marker_outcomes, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_pin_not_connected_candidates, reduced_project_run_erc_subgraphs,
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
-    reduced_project_subgraph_floating_wire, reduced_project_subgraphs,
-    reduced_project_symbol_pin_inventories, reduced_project_symbol_pin_net_name,
+    reduced_project_subgraph_floating_wire, reduced_project_symbol_pin_inventories,
+    reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2488,14 +2488,13 @@ pub fn check_single_global_labels(project: &SchematicProject) -> Vec<Diagnostic>
     let mut label_data = BTreeMap::<String, (usize, Option<std::path::PathBuf>)>::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for label in reduced_project_subgraphs(&graph)
-        .iter()
-        .flat_map(|subgraph| subgraph.label_links.iter())
+    for label in reduced_project_named_label_entries(&graph)
+        .into_iter()
         .filter(|label| label.kind == LabelKind::Global)
     {
         let entry = label_data
-            .entry(label.connection.local_name.clone())
-            .or_insert_with(|| (0, Some(label.schematic_path.clone())));
+            .entry(label.local_name)
+            .or_insert_with(|| (0, Some(label.schematic_path)));
         entry.0 += 1;
 
         if entry.0 > 1 {
@@ -2548,9 +2547,8 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut seen: BTreeMap<String, Vec<SimilarLabelEntry>> = BTreeMap::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for label in reduced_project_subgraphs(&graph)
-        .iter()
-        .flat_map(|subgraph| subgraph.label_links.iter())
+    for label in reduced_project_named_label_entries(&graph)
+        .into_iter()
         .filter(|label| {
             matches!(
                 label.kind,
@@ -2558,7 +2556,7 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
             )
         })
     {
-        let shown_text = label.connection.local_name.clone();
+        let shown_text = label.local_name.clone();
         let normalized = shown_text.to_ascii_lowercase();
         let kind = if label.kind == LabelKind::Local {
             SimilarLabelItemKind::LocalLabel
@@ -2611,7 +2609,7 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
         seen.entry(normalized).or_default().push(SimilarLabelEntry {
             kind,
             shown_text,
-            path: label.schematic_path.clone(),
+            path: label.schematic_path,
         });
     }
 
@@ -2690,20 +2688,17 @@ pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnost
     let mut locals = BTreeMap::<String, std::path::PathBuf>::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for label in reduced_project_subgraphs(&graph)
-        .iter()
-        .flat_map(|subgraph| subgraph.label_links.iter())
-    {
+    for label in reduced_project_named_label_entries(&graph) {
         match label.kind {
             LabelKind::Global => {
                 globals
-                    .entry(label.connection.local_name.clone())
-                    .or_insert_with(|| label.schematic_path.clone());
+                    .entry(label.local_name)
+                    .or_insert(label.schematic_path);
             }
             LabelKind::Local => {
                 locals
-                    .entry(label.connection.local_name.clone())
-                    .or_insert_with(|| label.schematic_path.clone());
+                    .entry(label.local_name)
+                    .or_insert(label.schematic_path);
             }
             _ => {}
         }

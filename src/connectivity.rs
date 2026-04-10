@@ -9948,6 +9948,13 @@ pub(crate) struct ReducedProjectLabelNameCaches {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectNamedLabelEntry {
+    pub(crate) kind: LabelKind,
+    pub(crate) local_name: String,
+    pub(crate) schematic_path: std::path::PathBuf,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum ReducedProjectNoConnectMarkerOutcome {
     Dangling { diagnostic_path: std::path::PathBuf },
     Connected { diagnostic_path: std::path::PathBuf },
@@ -10471,6 +10478,38 @@ pub(crate) fn reduced_project_label_name_caches(
         global_names,
         local_names_by_sheet,
     }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: assorted `ERC_TESTER` label-name scans or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still exposes reduced named label snapshots instead of live `SCH_LABEL_BASE` item
+// owners and marker attachments
+// local_only_reason: keeps named label ownership on the shared graph owner instead of duplicating
+// reduced label-link flatmaps inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live named label items directly from graph item links
+pub(crate) fn reduced_project_named_label_entries(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectNamedLabelEntry> {
+    let mut labels = Vec::new();
+
+    for subgraph in reduced_project_subgraphs(graph) {
+        for label in &subgraph.label_links {
+            if label.kind == LabelKind::Directive {
+                continue;
+            }
+
+            labels.push(ReducedProjectNamedLabelEntry {
+                kind: label.kind,
+                local_name: label.connection.local_name.clone(),
+                schematic_path: label.schematic_path.clone(),
+            });
+        }
+    }
+
+    labels
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
