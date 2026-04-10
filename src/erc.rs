@@ -7,7 +7,7 @@ use crate::connectivity::{
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
-    reduced_project_subgraph_driver_conflict,
+    reduced_project_subgraph_driver_conflict, reduced_project_subgraph_floating_wire,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
@@ -2107,27 +2107,17 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph)
-        .into_iter()
-        .filter(|subgraph| !subgraph.wire_items.is_empty())
-    {
-        if !subgraph.base_pins.is_empty()
-            || !subgraph.hier_sheet_pins.is_empty()
-            || !subgraph.hier_ports.is_empty()
-            || !subgraph.label_links.is_empty()
-            || !subgraph.no_connect_points.is_empty()
-        {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
+        let Some(floating_wire) = reduced_project_subgraph_floating_wire(&subgraph) else {
             continue;
-        }
+        };
+
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
             code: "erc-wire-dangling",
             kind: crate::diagnostic::DiagnosticKind::Validation,
             message: "Wires not connected to anything".to_string(),
-            path: subgraph
-                .wire_items
-                .first()
-                .map(|item| item.schematic_path.clone()),
+            path: floating_wire.diagnostic_path,
             span: None,
             line: None,
             column: None,

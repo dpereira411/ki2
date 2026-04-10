@@ -9915,6 +9915,11 @@ pub(crate) struct ReducedProjectDriverConflict {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectFloatingWire {
+    pub(crate) diagnostic_path: Option<std::path::PathBuf>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10203,6 +10208,37 @@ pub(crate) fn reduced_project_subgraph_driver_conflict(
         secondary_name: reduced_project_strong_driver_name(secondary_driver).to_string(),
         diagnostic_path: driver_identity_schematic_path(primary_driver)
             .or_else(|| driver_identity_schematic_path(secondary_driver)),
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckFloatingWires floating subgraph branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still checks reduced subgraph item buckets instead of live
+// `CONNECTION_SUBGRAPH::m_items` and driver state
+// local_only_reason: keeps floating-wire ownership classification on the shared graph owner
+// instead of duplicating reduced subgraph item-bucket checks inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / wire-item owner graph
+// remove_when: ERC can query live floating-wire state directly from graph item links
+pub(crate) fn reduced_project_subgraph_floating_wire(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<ReducedProjectFloatingWire> {
+    if subgraph.wire_items.is_empty()
+        || !subgraph.base_pins.is_empty()
+        || !subgraph.hier_sheet_pins.is_empty()
+        || !subgraph.hier_ports.is_empty()
+        || !subgraph.label_links.is_empty()
+        || !subgraph.no_connect_points.is_empty()
+    {
+        return None;
+    }
+
+    Some(ReducedProjectFloatingWire {
+        diagnostic_path: subgraph
+            .wire_items
+            .first()
+            .map(|item| item.schematic_path.clone()),
     })
 }
 
