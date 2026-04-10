@@ -8603,6 +8603,94 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
             .any(|pin| pin.at != pin_point)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckLabels local-hierarchy bus-parent branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still walks reduced bus-parent links and reduced hierarchy members instead of live
+// `CONNECTION_SUBGRAPH` parent links
+// local_only_reason: keeps the exercised local-hierarchy query on one graph-owned helper instead
+// of duplicating parent-link traversal policy inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query local hierarchy state directly from live subgraph owners
+pub(crate) fn reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
+    graph: &ReducedProjectNetGraph,
+    subgraph_index: usize,
+) -> bool {
+    let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+        return false;
+    };
+
+    subgraph.bus_parent_links.iter().any(|parent_link| {
+        let Some(parent) = reduced_project_subgraph_by_index(graph, parent_link.subgraph_index)
+        else {
+            return false;
+        };
+
+        parent.sheet_instance_path == subgraph.sheet_instance_path
+            && (!parent.hier_sheet_pins.is_empty() || !parent.hier_ports.is_empty())
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckLabels no-connect bus-parent chain branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still walks reduced parent indexes and reduced no-connect flags instead of live
+// `CONNECTION_SUBGRAPH` hierarchy/parent ownership
+// local_only_reason: keeps the exercised no-connect parent-chain query on one graph-owned helper
+// instead of duplicating parent traversal policy inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query inherited no-connect state directly from live subgraph owners
+pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
+    graph: &ReducedProjectNetGraph,
+    subgraph_index: usize,
+) -> bool {
+    let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+        return false;
+    };
+    let mut pending = subgraph
+        .bus_parent_links
+        .iter()
+        .map(|link| link.subgraph_index)
+        .collect::<Vec<_>>();
+    let mut seen = std::collections::BTreeSet::new();
+
+    while let Some(parent_index) = pending.pop() {
+        if !seen.insert(parent_index) {
+            continue;
+        }
+
+        let Some(parent) = reduced_project_subgraph_by_index(graph, parent_index) else {
+            continue;
+        };
+
+        if parent.has_no_connect {
+            return true;
+        }
+
+        let mut hier_parent_index = parent.hier_parent_index;
+
+        while let Some(index) = hier_parent_index {
+            if !seen.insert(index) {
+                break;
+            }
+
+            let Some(hier_parent) = reduced_project_subgraph_by_index(graph, index) else {
+                break;
+            };
+
+            if hier_parent.has_no_connect {
+                return true;
+            }
+
+            hier_parent_index = hier_parent.hier_parent_index;
+        }
+    }
+
+    false
+}
+
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
