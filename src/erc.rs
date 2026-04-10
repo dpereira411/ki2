@@ -3,12 +3,11 @@ use crate::connectivity::{
     reduced_project_bus_to_bus_conflicts, reduced_project_bus_to_net_conflicts,
     reduced_project_dangling_directive_label_links, reduced_project_dangling_wire_endpoint_events,
     reduced_project_floating_wire_events, reduced_project_four_way_junction_points,
-    reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
-    reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
-    reduced_project_label_name_caches, reduced_project_named_label_entries,
-    reduced_project_no_connect_marker_outcomes, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_hierarchical_sheet_events, reduced_project_label_connectivity_subgraphs,
+    reduced_project_label_multiple_wire_events, reduced_project_label_name_caches,
+    reduced_project_named_label_entries, reduced_project_no_connect_marker_outcomes,
+    reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_pin_not_connected_candidates, reduced_project_run_erc_subgraphs,
-    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_driver_conflict, reduced_project_symbol_pin_inventories,
     reduced_project_symbol_pin_net_name,
@@ -1838,103 +1837,67 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-
-        if project
-            .parent_sheet_path(&sheet_path.instance_path)
-            .is_none()
-        {
-            for (name, path) in
-                reduced_project_hier_port_entries_in_sheet(&graph, &sheet_path.instance_path)
-            {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-pin-not-connected",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Hierarchical label '{}' in root sheet cannot be connected to non-existent parent sheet",
-                        name
-                    ),
-                    path: Some(path),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
-        }
-
-        for item in &schematic.screen.items {
-            let SchItem::Sheet(sheet) = item else {
-                continue;
-            };
-
-            for pin in &sheet.pins {
-                if reduced_project_sheet_pin_is_dangling(
-                    &graph,
-                    sheet_path,
-                    pin.at,
-                    sheet.uuid.as_deref(),
-                ) {
-                    diagnostics.push(Diagnostic {
-                        severity: Severity::Error,
-                        code: "erc-pin-not-connected",
-                        kind: crate::diagnostic::DiagnosticKind::Validation,
-                        message: format!("Sheet pin '{}' is not connected", pin.name),
-                        path: Some(sheet_path.schematic_path.clone()),
-                        span: None,
-                        line: None,
-                        column: None,
-                    });
-                }
-            }
-
-            let Some(_) = sheet.uuid.as_deref() else {
-                continue;
-            };
-            let Some(child_sheet_path) = child_sheet_path_for_sheet(project, sheet_path, sheet)
-            else {
-                continue;
-            };
-            let pins = reduced_project_sheet_pin_names(
-                &graph,
-                &sheet_path.instance_path,
-                sheet.uuid.as_deref(),
-            );
-            let child_labels =
-                reduced_project_hier_port_names_in_sheet(&graph, &child_sheet_path.instance_path);
-
-            for name in pins.difference(&child_labels) {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-hier-label-mismatch",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Sheet pin {name} has no matching hierarchical label inside the sheet"
-                    ),
-                    path: Some(sheet_path.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
-
-            for name in child_labels.difference(&pins) {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-hier-label-mismatch",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Hierarchical label {name} has no matching sheet pin in the parent sheet"
-                    ),
-                    path: Some(child_sheet_path.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
+    for event in reduced_project_hierarchical_sheet_events(project, &graph) {
+        match event {
+            crate::connectivity::ReducedProjectHierarchicalSheetEvent::RootHierLabel {
+                name,
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-pin-not-connected",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Hierarchical label '{}' in root sheet cannot be connected to non-existent parent sheet",
+                    name
+                ),
+                path: Some(diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            }),
+            crate::connectivity::ReducedProjectHierarchicalSheetEvent::DanglingSheetPin {
+                name,
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-pin-not-connected",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!("Sheet pin '{}' is not connected", name),
+                path: Some(diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            }),
+            crate::connectivity::ReducedProjectHierarchicalSheetEvent::MissingChildLabel {
+                name,
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-hier-label-mismatch",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Sheet pin {name} has no matching hierarchical label inside the sheet"
+                ),
+                path: Some(diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            }),
+            crate::connectivity::ReducedProjectHierarchicalSheetEvent::MissingParentPin {
+                name,
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-hier-label-mismatch",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Hierarchical label {name} has no matching sheet pin in the parent sheet"
+                ),
+                path: Some(diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            }),
         }
     }
 

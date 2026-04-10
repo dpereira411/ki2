@@ -9956,6 +9956,26 @@ pub(crate) struct ReducedProjectNamedLabelEntry {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum ReducedProjectHierarchicalSheetEvent {
+    RootHierLabel {
+        name: String,
+        diagnostic_path: std::path::PathBuf,
+    },
+    DanglingSheetPin {
+        name: String,
+        diagnostic_path: std::path::PathBuf,
+    },
+    MissingChildLabel {
+        name: String,
+        diagnostic_path: std::path::PathBuf,
+    },
+    MissingParentPin {
+        name: String,
+        diagnostic_path: std::path::PathBuf,
+    },
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectBusToNetConflictEvent {
     pub(crate) diagnostic_path: Option<std::path::PathBuf>,
 }
@@ -10520,6 +10540,106 @@ pub(crate) fn reduced_project_named_label_entries(
     }
 
     labels
+}
+
+fn reduced_project_child_sheet_path_for_sheet<'a>(
+    project: &'a SchematicProject,
+    parent_path: &LoadedSheetPath,
+    sheet: &crate::model::Sheet,
+) -> Option<&'a LoadedSheetPath> {
+    project
+        .child_sheet_paths(&parent_path.instance_path)
+        .into_iter()
+        .find(|child| child.sheet_uuid == sheet.uuid)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckHierSheets or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced hierarchical-sheet events using loaded project sheets and graph
+// helpers instead of live `SCH_SHEET_PATH`, `SCH_SHEET_PIN::IsDangling()`, and marker owners
+// local_only_reason: keeps hierarchical sheet mismatch/dangling event generation on the shared
+// graph-owner boundary instead of rebuilding it inside ERC
+// replaced_by: fuller live `CONNECTION_GRAPH::ercCheckHierSheets()` owner graph
+// remove_when: ERC can consume live hierarchical-sheet events directly from graph/sheet owners
+pub(crate) fn reduced_project_hierarchical_sheet_events(
+    project: &SchematicProject,
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectHierarchicalSheetEvent> {
+    let mut events = Vec::new();
+
+    for sheet_path in &project.sheet_paths {
+        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
+            continue;
+        };
+
+        if project
+            .parent_sheet_path(&sheet_path.instance_path)
+            .is_none()
+        {
+            for (name, path) in
+                reduced_project_hier_port_entries_in_sheet(graph, &sheet_path.instance_path)
+            {
+                events.push(ReducedProjectHierarchicalSheetEvent::RootHierLabel {
+                    name,
+                    diagnostic_path: path,
+                });
+            }
+        }
+
+        for item in &schematic.screen.items {
+            let SchItem::Sheet(sheet) = item else {
+                continue;
+            };
+
+            for pin in &sheet.pins {
+                if reduced_project_sheet_pin_is_dangling(
+                    graph,
+                    sheet_path,
+                    pin.at,
+                    sheet.uuid.as_deref(),
+                ) {
+                    events.push(ReducedProjectHierarchicalSheetEvent::DanglingSheetPin {
+                        name: pin.name.clone(),
+                        diagnostic_path: sheet_path.schematic_path.clone(),
+                    });
+                }
+            }
+
+            let Some(_) = sheet.uuid.as_deref() else {
+                continue;
+            };
+            let Some(child_sheet_path) =
+                reduced_project_child_sheet_path_for_sheet(project, sheet_path, sheet)
+            else {
+                continue;
+            };
+            let pins = reduced_project_sheet_pin_names(
+                graph,
+                &sheet_path.instance_path,
+                sheet.uuid.as_deref(),
+            );
+            let child_labels =
+                reduced_project_hier_port_names_in_sheet(graph, &child_sheet_path.instance_path);
+
+            for name in pins.difference(&child_labels) {
+                events.push(ReducedProjectHierarchicalSheetEvent::MissingChildLabel {
+                    name: name.clone(),
+                    diagnostic_path: sheet_path.schematic_path.clone(),
+                });
+            }
+
+            for name in child_labels.difference(&pins) {
+                events.push(ReducedProjectHierarchicalSheetEvent::MissingParentPin {
+                    name: name.clone(),
+                    diagnostic_path: child_sheet_path.schematic_path.clone(),
+                });
+            }
+        }
+    }
+
+    events
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
