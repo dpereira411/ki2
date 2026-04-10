@@ -10681,6 +10681,7 @@ pub(crate) struct ReducedProjectLabelNameCaches {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectNamedLabelEntry {
     pub(crate) kind: LabelKind,
+    pub(crate) sheet_instance_path: String,
     pub(crate) local_name: String,
     pub(crate) schematic_path: std::path::PathBuf,
 }
@@ -12075,22 +12076,15 @@ pub(crate) fn reduced_project_label_name_caches(
     let mut local_names_by_sheet = BTreeSet::new();
 
     if !graph.live_subgraphs.is_empty() {
-        for handle in &graph.live_subgraphs {
-            let subgraph = handle.borrow();
-            for label in &subgraph.label_links {
-                let label = label.borrow();
-                match label.kind {
-                    LabelKind::Global => {
-                        global_names.insert(label.connection.borrow().name.clone());
-                    }
-                    LabelKind::Local | LabelKind::Hierarchical => {
-                        local_names_by_sheet.insert((
-                            subgraph.sheet_instance_path.clone(),
-                            label.connection.borrow().local_name.clone(),
-                        ));
-                    }
-                    LabelKind::Directive => {}
+        for label in live_reduced_project_named_label_entries(graph) {
+            match label.kind {
+                LabelKind::Global => {
+                    global_names.insert(label.local_name);
                 }
+                LabelKind::Local | LabelKind::Hierarchical => {
+                    local_names_by_sheet.insert((label.sheet_instance_path, label.local_name));
+                }
+                LabelKind::Directive => {}
             }
         }
     } else {
@@ -12131,6 +12125,7 @@ fn live_reduced_project_named_label_entries(
                 LabelKind::Local | LabelKind::Global | LabelKind::Hierarchical => {
                     labels.push(ReducedProjectNamedLabelEntry {
                         kind: label.kind,
+                        sheet_instance_path: subgraph.sheet_instance_path.clone(),
                         local_name: label.connection.borrow().local_name.clone(),
                         schematic_path: label.schematic_path.clone(),
                     });
@@ -12170,6 +12165,7 @@ pub(crate) fn reduced_project_named_label_entries(
 
             labels.push(ReducedProjectNamedLabelEntry {
                 kind: label.kind,
+                sheet_instance_path: subgraph.sheet_instance_path.clone(),
                 local_name: label.connection.local_name.clone(),
                 schematic_path: label.schematic_path.clone(),
             });
