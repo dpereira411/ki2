@@ -4702,9 +4702,15 @@ fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
 
 fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
     subgraph
-        .drivers
-        .first()
+        .chosen_driver
+        .as_ref()
         .map(|driver| driver.borrow().priority())
+        .or_else(|| {
+            subgraph
+                .drivers
+                .first()
+                .map(|driver| driver.borrow().priority())
+        })
         .or_else(|| {
             (!matches!(
                 subgraph.driver_connection.borrow().connection_type,
@@ -14519,6 +14525,39 @@ mod tests {
             &owner.borrow().driver_connection
         ));
         assert_eq!(owner.borrow().connection.borrow().name, "SEEDED");
+    }
+
+    #[test]
+    fn live_reduced_subgraph_driver_priority_uses_chosen_driver() {
+        let mut graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("GLOBAL", "GLOBAL", "GLOBAL", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        )];
+        graph[0].chosen_driver_index = Some(1);
+
+        let handles = build_live_reduced_subgraph_handles(&graph);
+        let subgraph = handles[0].borrow();
+
+        assert_eq!(
+            super::live_reduced_subgraph_driver_priority(&subgraph),
+            super::reduced_local_label_driver_priority()
+        );
+        assert!(super::live_subgraph_has_local_driver(&subgraph));
     }
 
     #[test]
