@@ -7,9 +7,9 @@ use crate::core::SchematicProject;
 use crate::loader::{
     LoadedProjectSettings, LoadedSheetPath, SymbolPinTextVarKind, collect_wire_segments,
     point_on_wire_segment, points_equal, reduced_net_name_sheet_path_prefix,
-    resolve_point_connectivity_text_var, resolved_sheet_text_state,
-    resolved_symbol_text_property_value, shown_label_text_without_connectivity,
-    shown_sheet_pin_text,
+    resolve_point_connectivity_text_var, resolved_label_text_property_value_without_connectivity,
+    resolved_sheet_text_state, resolved_symbol_text_property_value,
+    shown_label_text_without_connectivity, shown_sheet_pin_text,
 };
 use crate::model::{
     Label, LabelKind, MirrorAxis, SchItem, Schematic, Shape, ShapeKind, SheetPinShape, Symbol,
@@ -6080,6 +6080,105 @@ fn refresh_reduced_live_graph_propagation_with_handles(
     live_subgraphs
 }
 
+// upstream: CONNECTION_GRAPH::Recalculate post-propagation netclass driver sweep
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: rewrites one reduced `class` field per subgraph from connectivity-owned point
+// membership and shown-text callbacks instead of mutating KiCad NET_SETTINGS assignments
+// local_only_reason: current Rust graph still stores one reduced netclass string per subgraph
+// rather than KiCad's full net-to-netclass assignment map
+// replaced_by: graph-owned post-propagation netclass assignment storage on the fuller live graph
+// remove_when: graph queries read persistent post-propagation netclass assignments directly
+fn refresh_reduced_project_subgraph_classes_from_inputs(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+    inputs: &ReducedProjectGraphInputs<'_>,
+) {
+    for subgraph in reduced_subgraphs {
+        let Some(sheet_path) = inputs
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+        else {
+            continue;
+        };
+        let Some(schematic) = inputs
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        else {
+            continue;
+        };
+
+        let mut seen_points = BTreeSet::new();
+        subgraph.class = subgraph
+            .points
+            .iter()
+            .copied()
+            .filter(|point| seen_points.insert(*point))
+            .find_map(|point| {
+                resolve_reduced_netclass_at(
+                    schematic,
+                    [f64::from_bits(point.0), f64::from_bits(point.1)],
+                    |directive: &crate::model::Label| {
+                        if directive.kind != crate::model::LabelKind::Directive {
+                            return None;
+                        }
+
+                        directive.properties.iter().find_map(|property| {
+                            let key = property.key.to_ascii_uppercase();
+                            matches!(key.as_str(), "NETCLASS" | "NET CLASS" | "NET_CLASS")
+                                .then(|| {
+                                    crate::loader::resolve_text_variables(
+                                        &property.value,
+                                        &|nested| {
+                                            crate::loader::resolve_label_text_token_without_connectivity(
+                                                inputs.schematics,
+                                                inputs.sheet_paths,
+                                                sheet_path,
+                                                inputs.project,
+                                                inputs.current_variant,
+                                                directive,
+                                                nested,
+                                            )
+                                        },
+                                        0,
+                                    )
+                                })
+                                .filter(|value| !value.is_empty())
+                        })
+                    },
+                    |label: &crate::model::Label| {
+                        shown_label_text_without_connectivity(
+                            inputs.schematics,
+                            inputs.sheet_paths,
+                            sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            label,
+                        )
+                    },
+                    |label: &crate::model::Label| {
+                        if label.kind == crate::model::LabelKind::Directive {
+                            return None;
+                        }
+
+                        resolved_label_text_property_value_without_connectivity(
+                            inputs.schematics,
+                            inputs.sheet_paths,
+                            sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            label,
+                            "Netclass",
+                        )
+                        .filter(|value| !value.is_empty())
+                    },
+                )
+            })
+            .unwrap_or_default();
+    }
+}
+
 // Upstream parity: reduced local analogue for the global-secondary-driver promotion branch in
 // `CONNECTION_GRAPH::Recalculate()` immediately before `propagateToNeighbors()`. This still stops
 // short of pointer-owned driver/item mutation, but it now mutates the shared live subgraph owner
@@ -8111,6 +8210,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 
     let live_subgraphs =
         refresh_reduced_live_graph_propagation_with_handles(&mut reduced_subgraphs);
+    refresh_reduced_project_subgraph_classes_from_inputs(&mut reduced_subgraphs, &inputs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
     let symbol_pins_by_symbol =
@@ -14713,9 +14813,9 @@ mod tests {
         ReducedHierPortLink, ReducedHierSheetPinLink, ReducedLabelLink, ReducedNetBasePinKey,
         ReducedNoConnectPoint, ReducedProjectBasePin, ReducedProjectBusNeighborLink,
         ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectDriverKind,
-        ReducedProjectLabelNameCaches, ReducedProjectNetGraph, ReducedProjectStrongDriver,
-        ReducedProjectSubgraphEntry, ReducedProjectSymbolPin, ReducedSubgraphWireItem,
-        apply_live_reduced_driver_connections_from_handles,
+        ReducedProjectGraphInputs, ReducedProjectLabelNameCaches, ReducedProjectNetGraph,
+        ReducedProjectStrongDriver, ReducedProjectSubgraphEntry, ReducedProjectSymbolPin,
+        ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
         clone_reduced_connection_into_live_connection_owner,
         find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
@@ -14736,7 +14836,7 @@ mod tests {
     };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
-    use crate::model::{LabelKind, SchItem};
+    use crate::model::{LabelKind, SchItem, Schematic, Screen};
     use crate::parser::parse_schematic_file;
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -32145,6 +32245,85 @@ mod tests {
         assert_eq!(assignments.get("/BUS"), Some(&expected));
         assert_eq!(assignments.get("/DP"), Some(&expected));
         assert_eq!(assignments.get("/DM"), Some(&expected));
+    }
+
+    #[test]
+    fn reduced_project_subgraph_classes_refresh_from_post_propagation_points() {
+        let mut label = crate::model::Label::new(LabelKind::Local, "SIG".to_string());
+        label.at = [0.0, 0.0];
+        label.properties.push(crate::model::Property::new_named(
+            crate::model::PropertyKind::User,
+            "Netclass",
+            "HV".to_string(),
+            false,
+        ));
+
+        let schematic = Schematic {
+            path: std::path::PathBuf::from("root.kicad_sch"),
+            version: 20260306,
+            generator: "ki2".to_string(),
+            generator_version: None,
+            root_sheet: crate::model::RootSheet {
+                uuid: Some("root-sheet".to_string()),
+            },
+            screen: Screen {
+                file_format_version_at_load: None,
+                uuid: None,
+                paper: None,
+                page: None,
+                root_sheet_page: None,
+                page_number: None,
+                page_count: None,
+                virtual_page_number: None,
+                content_modified: false,
+                title_block: None,
+                embedded_fonts: None,
+                embedded_files: Vec::new(),
+                parse_warnings: Vec::new(),
+                bus_aliases: Vec::new(),
+                lib_symbols: Vec::new(),
+                items: vec![
+                    SchItem::Label(label),
+                    SchItem::Wire(crate::model::Line {
+                        kind: crate::model::LineKind::Wire,
+                        points: vec![[0.0, 0.0], [10.0, 0.0]],
+                        has_stroke: false,
+                        stroke: None,
+                        uuid: None,
+                    }),
+                ],
+                sheet_instances: Vec::new(),
+                symbol_instances: Vec::new(),
+            },
+        };
+        let sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: "/root".to_string(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: Some("Root".to_string()),
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let inputs = ReducedProjectGraphInputs {
+            schematics: std::slice::from_ref(&schematic),
+            sheet_paths: std::slice::from_ref(&sheet_path),
+            project: None,
+            current_variant: None,
+        };
+        let mut subgraphs = vec![test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            Vec::new(),
+            "",
+        )];
+        subgraphs[0].points = vec![PointKey(0.0f64.to_bits(), 0.0f64.to_bits())];
+        subgraphs[0].class = "OLD".to_string();
+
+        super::refresh_reduced_project_subgraph_classes_from_inputs(&mut subgraphs, &inputs);
+
+        assert_eq!(subgraphs[0].class, "HV");
     }
 
     #[test]
