@@ -9926,6 +9926,12 @@ pub(crate) struct ReducedProjectDanglingWireEndpoint {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectLabelMultipleWires {
+    pub(crate) at: PointKey,
+    pub(crate) diagnostic_path: std::path::PathBuf,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10293,6 +10299,37 @@ pub(crate) fn reduced_project_subgraph_dangling_wire_endpoints(
     }
 
     endpoints
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: ERC_TESTER::TestLabelMultipleWires label overlap branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still uses reduced label link non-endpoint wire counts instead of live graph-owned
+// `SCH_LABEL` item overlap state
+// local_only_reason: keeps label/wire overlap ownership on the shared graph owner instead of
+// duplicating reduced label-link scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live label multi-wire overlap directly from graph item links
+pub(crate) fn reduced_project_label_multiple_wire_events(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectLabelMultipleWires> {
+    let mut events = Vec::new();
+
+    for subgraph in reduced_project_run_erc_subgraphs(graph) {
+        for label in &subgraph.label_links {
+            if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
+                continue;
+            }
+
+            events.push(ReducedProjectLabelMultipleWires {
+                at: label.at,
+                diagnostic_path: label.schematic_path.clone(),
+            });
+        }
+    }
+
+    events
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(

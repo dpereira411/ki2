@@ -3,9 +3,9 @@ use crate::connectivity::{
     collect_reduced_project_subgraphs_by_name, reduced_connected_wire_label_full_names_at,
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
-    reduced_project_no_connect_pin_has_connected_owner, reduced_project_run_erc_subgraphs,
-    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
-    reduced_project_subgraph_bus_entry_conflict_candidate,
+    reduced_project_label_multiple_wire_events, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
+    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
     reduced_project_subgraph_floating_wire,
@@ -1513,34 +1513,22 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        if subgraph.label_links.is_empty() {
-            continue;
-        }
-
-        for label in &subgraph.label_links {
-            if label.kind != crate::model::LabelKind::Local
-                || label.non_endpoint_wire_segment_count <= 1
-            {
-                continue;
-            }
-
-            let report_x = (f64::from_bits(label.at.0) * 10_000.0).round() as i64;
-            let report_y = (f64::from_bits(label.at.1) * 10_000.0).round() as i64;
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-label-multiple-wires",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Label connects more than one wire at {}, {}",
-                    report_x, report_y
-                ),
-                path: Some(label.schematic_path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+    for event in reduced_project_label_multiple_wire_events(&graph) {
+        let report_x = (f64::from_bits(event.at.0) * 10_000.0).round() as i64;
+        let report_y = (f64::from_bits(event.at.1) * 10_000.0).round() as i64;
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-label-multiple-wires",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!(
+                "Label connects more than one wire at {}, {}",
+                report_x, report_y
+            ),
+            path: Some(event.diagnostic_path),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
