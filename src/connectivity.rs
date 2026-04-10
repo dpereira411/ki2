@@ -3405,14 +3405,23 @@ impl LiveReducedSubgraph {
                 live_subgraph_child_handles_from_handle(handle)
                     .into_iter()
                     .find_map(|child_handle| {
+                        let parent = handle.borrow();
                         let child = child_handle.borrow();
                         let child_connection = child.driver_connection.borrow();
 
-                        matches!(
-                            child_connection.connection_type,
-                            ReducedProjectConnectionType::Bus
-                                | ReducedProjectConnectionType::BusGroup
-                        )
+                        let matching_hier_port = parent.hier_sheet_pins.iter().any(|pin| {
+                            let pin = pin.borrow();
+                            child.hier_ports.iter().any(|port| {
+                                port.borrow().connection.borrow().local_name
+                                    == pin.connection.borrow().local_name
+                            })
+                        });
+                        (matching_hier_port
+                            && matches!(
+                                child_connection.connection_type,
+                                ReducedProjectConnectionType::Bus
+                                    | ReducedProjectConnectionType::BusGroup
+                            ))
                         .then_some((
                             child_connection.connection_type,
                             child_connection.members.clone(),
@@ -19453,7 +19462,20 @@ mod tests {
                 base_pins: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/BUS".to_string(),
+                        local_name: "BUS".to_string(),
+                        full_local_name: "/BUS".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: Vec::new(),
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
@@ -19514,7 +19536,19 @@ mod tests {
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
-                hier_ports: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Bus,
+                        name: "/BUS".to_string(),
+                        local_name: "BUS".to_string(),
+                        full_local_name: "/BUS".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
                 bus_members: Vec::new(),
                 bus_items: Vec::new(),
                 wire_items: Vec::new(),
