@@ -27765,6 +27765,73 @@ mod tests {
     }
 
     #[test]
+    fn replay_reduced_live_stale_net_member_keeps_same_parent_bus_preservation() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![
+                        test_bus_member("SIG0", "SIG0", "/SIG0"),
+                        test_bus_member("SIG1", "SIG1", "/SIG1"),
+                    ],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG0", "SIG0", "/SIG0"),
+                subgraph_index: 1,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 1,
+            },
+        ];
+        graph[1].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG0", "SIG0", "/SIG0"),
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 0,
+            },
+        ];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = vec![Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            test_bus_member("RENAMED", "RENAMED", "/RENAMED"),
+        )))];
+
+        LiveReducedSubgraph::replay_stale_bus_members(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(
+            graph[0].driver_connection.members[0].full_local_name,
+            "/RENAMED"
+        );
+        assert_eq!(graph[1].driver_connection.full_local_name, "/RENAMED");
+    }
+
+    #[test]
     fn reduced_live_bus_parent_members_refresh_from_child_driver() {
         let mut graph = vec![
             ReducedProjectSubgraphEntry {
