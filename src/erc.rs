@@ -3264,12 +3264,81 @@ struct SimilarLabelEntry {
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestSimilarLabels()`. This is not a
 // 1:1 KiCad marker pass because the Rust tree still compares reduced label/power snapshots instead
-// of `CONNECTION_SUBGRAPH` items and marker objects, but it preserves the exercised normalized
-// label/power collision rules, including the "similar local labels on different sheets are fine"
-// exception. Remaining divergence is broader connection-graph participation and marker selection.
+// of `CONNECTION_SUBGRAPH` items and marker objects, but it now reads label names from shared
+// graph-owned label links while preserving the exercised normalized label/power collision rules,
+// including the "similar local labels on different sheets are fine" exception. Remaining
+// divergence is broader connection-graph participation and marker selection.
 pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut seen: BTreeMap<String, Vec<SimilarLabelEntry>> = BTreeMap::new();
+    let graph = project.reduced_project_net_graph(false);
+
+    for label in reduced_project_subgraphs(&graph)
+        .iter()
+        .flat_map(|subgraph| subgraph.label_links.iter())
+        .filter(|label| {
+            matches!(
+                label.kind,
+                LabelKind::Local | LabelKind::Global | LabelKind::Hierarchical
+            )
+        })
+    {
+        let shown_text = label.connection.local_name.clone();
+        let normalized = shown_text.to_ascii_lowercase();
+        let kind = if label.kind == LabelKind::Local {
+            SimilarLabelItemKind::LocalLabel
+        } else {
+            SimilarLabelItemKind::Label
+        };
+
+        if let Some(existing) = seen.get(&normalized) {
+            for other in existing {
+                if shown_text == other.shown_text {
+                    continue;
+                }
+
+                if kind == SimilarLabelItemKind::LocalLabel
+                    && other.kind == SimilarLabelItemKind::LocalLabel
+                    && label.schematic_path != other.path
+                {
+                    continue;
+                }
+
+                let (code, message) = match (kind, other.kind) {
+                    (SimilarLabelItemKind::Power, SimilarLabelItemKind::Power) => (
+                        "erc-similar-power",
+                        "Power pins are similar (lower/upper case difference only)".to_string(),
+                    ),
+                    (SimilarLabelItemKind::Power, _) | (_, SimilarLabelItemKind::Power) => (
+                        "erc-similar-label-and-power",
+                        "Power pin and label are similar (lower/upper case difference only)"
+                            .to_string(),
+                    ),
+                    _ => (
+                        "erc-similar-labels",
+                        "Labels are similar (lower/upper case difference only)".to_string(),
+                    ),
+                };
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code,
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message,
+                    path: Some(label.schematic_path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+
+        seen.entry(normalized).or_default().push(SimilarLabelEntry {
+            kind,
+            shown_text,
+            path: label.schematic_path.clone(),
+        });
+    }
 
     for sheet_path in &project.sheet_paths {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
@@ -3277,71 +3346,6 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
         };
         for item in &schematic.screen.items {
             match item {
-                SchItem::Label(label)
-                    if matches!(
-                        label.kind,
-                        LabelKind::Local | LabelKind::Global | LabelKind::Hierarchical
-                    ) =>
-                {
-                    let shown_text = shown_label_text(project, sheet_path, label);
-                    let normalized = shown_text.to_ascii_lowercase();
-                    let kind = if label.kind == LabelKind::Local {
-                        SimilarLabelItemKind::LocalLabel
-                    } else {
-                        SimilarLabelItemKind::Label
-                    };
-
-                    if let Some(existing) = seen.get(&normalized) {
-                        for other in existing {
-                            if shown_text == other.shown_text {
-                                continue;
-                            }
-
-                            if kind == SimilarLabelItemKind::LocalLabel
-                                && other.kind == SimilarLabelItemKind::LocalLabel
-                                && sheet_path.schematic_path != other.path
-                            {
-                                continue;
-                            }
-
-                            let (code, message) = match (kind, other.kind) {
-                                (SimilarLabelItemKind::Power, SimilarLabelItemKind::Power) => (
-                                    "erc-similar-power",
-                                    "Power pins are similar (lower/upper case difference only)"
-                                        .to_string(),
-                                ),
-                                (SimilarLabelItemKind::Power, _)
-                                | (_, SimilarLabelItemKind::Power) => (
-                                    "erc-similar-label-and-power",
-                                    "Power pin and label are similar (lower/upper case difference only)"
-                                        .to_string(),
-                                ),
-                                _ => (
-                                    "erc-similar-labels",
-                                    "Labels are similar (lower/upper case difference only)"
-                                        .to_string(),
-                                ),
-                            };
-
-                            diagnostics.push(Diagnostic {
-                                severity: Severity::Warning,
-                                code,
-                                kind: crate::diagnostic::DiagnosticKind::Validation,
-                                message,
-                                path: Some(sheet_path.schematic_path.clone()),
-                                span: None,
-                                line: None,
-                                column: None,
-                            });
-                        }
-                    }
-
-                    seen.entry(normalized).or_default().push(SimilarLabelEntry {
-                        kind,
-                        shown_text,
-                        path: sheet_path.schematic_path.clone(),
-                    });
-                }
                 SchItem::Symbol(symbol)
                     if symbol
                         .lib_symbol
