@@ -11066,7 +11066,8 @@ pub(crate) fn reduced_project_driver_conflicts(
 pub(crate) fn reduced_project_subgraph_floating_wire(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<ReducedProjectFloatingWire> {
-    if subgraph.wire_items.is_empty()
+    if reduced_project_chosen_driver_index(subgraph).is_some()
+        || subgraph.wire_items.is_empty()
         || !subgraph.base_pins.is_empty()
         || !subgraph.hier_sheet_pins.is_empty()
         || !subgraph.hier_ports.is_empty()
@@ -11098,7 +11099,8 @@ fn live_reduced_subgraph_floating_wire(
 ) -> Option<ReducedProjectFloatingWire> {
     let subgraph = handle.borrow();
 
-    if subgraph.wire_items.is_empty()
+    if subgraph.chosen_driver.is_some()
+        || subgraph.wire_items.is_empty()
         || !subgraph.base_pins.is_empty()
         || !subgraph.hier_sheet_pins.is_empty()
         || !subgraph.hier_ports.is_empty()
@@ -16914,6 +16916,60 @@ mod tests {
 
         assert_eq!(conflict.primary_name, "PWR_ALT");
         assert_eq!(conflict.secondary_name, "PWR");
+    }
+
+    #[test]
+    fn reduced_floating_wire_skips_subgraph_with_chosen_driver() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_global_label_driver_priority(),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                identity: None,
+            }],
+            "",
+        );
+        subgraph.chosen_driver_index = Some(0);
+        subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0, 0),
+            end: PointKey(10, 0),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        assert!(super::reduced_project_subgraph_floating_wire(&subgraph).is_none());
+    }
+
+    #[test]
+    fn live_floating_wire_skips_subgraph_with_chosen_driver() {
+        let mut reduced = vec![test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_global_label_driver_priority(),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                identity: None,
+            }],
+            "",
+        )];
+        reduced[0].chosen_driver_index = Some(0);
+        reduced[0].wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0, 0),
+            end: PointKey(10, 0),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+
+        assert!(super::live_reduced_subgraph_floating_wire(&handles[0]).is_none());
     }
 
     #[test]
