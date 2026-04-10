@@ -11936,6 +11936,53 @@ pub(crate) fn reduced_project_bus_to_net_conflicts(
         .collect()
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects unique-pins `SCH_PIN::IsStacked()` branch or
+// none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still approximates `SCH_PIN::IsStacked()` from reduced pin snapshots instead of
+// live `SCH_PIN` item identity
+// local_only_reason: keeps the exercised stacked-pin suppression on the shared graph owner while
+// final live pin identity is still reduced
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: no-connect classification can deduplicate live pin owners directly
+fn reduced_base_pins_are_stacked(lhs: &ReducedProjectBasePin, rhs: &ReducedProjectBasePin) -> bool {
+    lhs.key.sheet_instance_path == rhs.key.sheet_instance_path
+        && lhs.key.symbol_uuid == rhs.key.symbol_uuid
+        && lhs.key.name == rhs.key.name
+        && lhs.electrical_type == rhs.electrical_type
+        && lhs.key.at == rhs.key.at
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects unique-pins `SCH_PIN::IsStacked()` branch or
+// none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still approximates stacked-pin uniqueness from reduced pin snapshots instead of
+// live `SCH_PIN::IsStacked()` item identity
+// local_only_reason: centralizes explicit no-connect stacked-pin suppression on the shared graph
+// owner so reduced/live branches do not drift
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: no-connect classification can deduplicate live pin owners directly
+fn reduced_unique_stacked_pin_count<'a>(
+    pins: impl IntoIterator<Item = &'a ReducedProjectBasePin>,
+) -> usize {
+    let mut unique_pins = Vec::<&ReducedProjectBasePin>::new();
+
+    for pin in pins {
+        if unique_pins
+            .iter()
+            .any(|existing| reduced_base_pins_are_stacked(existing, pin))
+        {
+            continue;
+        }
+
+        unique_pins.push(pin);
+    }
+
+    unique_pins.len()
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckNoConnects explicit no-connect branch or none
 // parity_status: partial
@@ -11965,7 +12012,6 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                 continue;
             }
 
-            let local_unique_pins = subgraph.base_pins.iter().cloned().collect::<BTreeSet<_>>();
             let local_unique_labels = subgraph
                 .label_links
                 .iter()
@@ -11996,7 +12042,10 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
 
             let (unique_pin_count, unique_label_count) =
                 if subgraph.driver_connection.name.is_empty() {
-                    (local_unique_pins.len(), local_unique_labels.len())
+                    (
+                        reduced_unique_stacked_pin_count(subgraph.base_pins.iter()),
+                        local_unique_labels.len(),
+                    )
                 } else {
                     let neighbors = collect_reduced_project_subgraphs_by_name(
                         graph,
@@ -12004,16 +12053,11 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                     )
                     .into_iter()
                     .collect::<Vec<_>>();
-                    let unique_pin_count = neighbors
-                        .iter()
-                        .flat_map(|neighbor| {
-                            neighbor
-                                .base_pins
-                                .iter()
-                                .map(|base_pin| base_pin.key.clone())
-                        })
-                        .collect::<BTreeSet<ReducedNetBasePinKey>>()
-                        .len();
+                    let unique_pin_count = reduced_unique_stacked_pin_count(
+                        neighbors
+                            .iter()
+                            .flat_map(|neighbor| neighbor.base_pins.iter()),
+                    );
                     let unique_label_count =
                         neighbors
                             .iter()
@@ -12077,9 +12121,7 @@ fn live_reduced_project_no_connect_marker_outcomes(
                 continue;
             }
 
-            let local_unique_pins = live_base_pin_handles_to_snapshots(&subgraph.base_pins)
-                .into_iter()
-                .collect::<BTreeSet<_>>();
+            let local_unique_pins = live_base_pin_handles_to_snapshots(&subgraph.base_pins);
             let local_unique_labels = subgraph
                 .label_links
                 .iter()
@@ -12111,7 +12153,10 @@ fn live_reduced_project_no_connect_marker_outcomes(
 
             let driver_name = subgraph.driver_connection.borrow().name.clone();
             let (unique_pin_count, unique_label_count) = if driver_name.is_empty() {
-                (local_unique_pins.len(), local_unique_labels.len())
+                (
+                    reduced_unique_stacked_pin_count(local_unique_pins.iter()),
+                    local_unique_labels.len(),
+                )
             } else {
                 let neighbors = graph
                     .live_subgraphs
@@ -12120,18 +12165,14 @@ fn live_reduced_project_no_connect_marker_outcomes(
                         neighbor.borrow().driver_connection.borrow().name == driver_name
                     })
                     .collect::<Vec<_>>();
-                let unique_pin_count = neighbors
+                let neighbor_pins = neighbors
                     .iter()
                     .flat_map(|neighbor| {
-                        neighbor
-                            .borrow()
-                            .base_pins
-                            .iter()
-                            .map(|base_pin| base_pin.borrow().pin.key.clone())
-                            .collect::<Vec<_>>()
+                        let borrowed = neighbor.borrow();
+                        live_base_pin_handles_to_snapshots(&borrowed.base_pins)
                     })
-                    .collect::<BTreeSet<ReducedNetBasePinKey>>()
-                    .len();
+                    .collect::<Vec<_>>();
+                let unique_pin_count = reduced_unique_stacked_pin_count(neighbor_pins.iter());
                 let unique_label_count = neighbors
                     .iter()
                     .flat_map(|neighbor| {
@@ -18214,6 +18255,176 @@ mod tests {
             no_connect_subgraph_identities: BTreeMap::new(),
             sheet_pin_subgraph_identities: BTreeMap::new(),
         };
+
+        let outcomes = super::reduced_project_no_connect_marker_outcomes(&graph);
+
+        assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn reduced_no_connect_outcome_ignores_stacked_pins_at_same_point() {
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: vec![
+                    ReducedProjectBasePin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        key: ReducedNetBasePinKey {
+                            sheet_instance_path: String::new(),
+                            symbol_uuid: Some("sym".to_string()),
+                            at: PointKey(0, 0),
+                            name: Some("IO".to_string()),
+                            number: Some("1".to_string()),
+                        },
+                        reference: Some("U1".to_string()),
+                        number: Some("1".to_string()),
+                        electrical_type: Some("input".to_string()),
+                        visible: true,
+                        is_power_symbol: false,
+                        connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        preserve_local_name_on_refresh: false,
+                    },
+                    ReducedProjectBasePin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        key: ReducedNetBasePinKey {
+                            sheet_instance_path: String::new(),
+                            symbol_uuid: Some("sym".to_string()),
+                            at: PointKey(0, 0),
+                            name: Some("IO".to_string()),
+                            number: Some("2".to_string()),
+                        },
+                        reference: Some("U1".to_string()),
+                        number: Some("2".to_string()),
+                        electrical_type: Some("input".to_string()),
+                        visible: true,
+                        is_power_symbol: false,
+                        connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        preserve_local_name_on_refresh: false,
+                    },
+                ],
+                label_links: Vec::new(),
+                no_connect_points: vec![ReducedNoConnectPoint {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                }],
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            }],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG".to_string(), vec![0])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([(
+                (String::new(), "/SIG".to_string()),
+                vec![0],
+            )]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let outcomes = super::reduced_project_no_connect_marker_outcomes(&graph);
+
+        assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn live_no_connect_outcome_ignores_stacked_pins_at_same_point() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            chosen_driver_index: None,
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![
+                ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: ReducedNetBasePinKey {
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(0, 0),
+                        name: Some("IO".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    reference: Some("U1".to_string()),
+                    number: Some("1".to_string()),
+                    electrical_type: Some("input".to_string()),
+                    visible: true,
+                    is_power_symbol: false,
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    preserve_local_name_on_refresh: false,
+                },
+                ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: ReducedNetBasePinKey {
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(0, 0),
+                        name: Some("IO".to_string()),
+                        number: Some("2".to_string()),
+                    },
+                    reference: Some("U1".to_string()),
+                    number: Some("2".to_string()),
+                    electrical_type: Some("input".to_string()),
+                    visible: true,
+                    is_power_symbol: false,
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    preserve_local_name_on_refresh: false,
+                },
+            ],
+            label_links: Vec::new(),
+            no_connect_points: vec![ReducedNoConnectPoint {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+            }],
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+        let graph = test_graph_with_live_subgraphs(reduced);
 
         let outcomes = super::reduced_project_no_connect_marker_outcomes(&graph);
 

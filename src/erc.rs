@@ -1607,11 +1607,10 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // instead of leaving the reduced ERC path on the older connected-only point-local check. Same-name
 // grouping on the real graph path now also keys from the graph-owned reduced driver connection
 // name instead of the parallel reduced subgraph `name` field, and no-connect pin presence plus the
-// exercised dangling-pin branch now read graph-owned base-pin payload instead of re-walking
-// projected symbol pins at report time. The remaining dangling-pin same-name label cache now also
-// comes from graph-owned label links instead of rescanning schematics. Remaining divergence is the
-// fuller hier-pin and marker attachment path plus KiCad's extra multi-pin power-symbol dangling
-// branch.
+// exercised dangling-pin and multi-pin power-symbol branches now read graph-owned base-pin payload
+// instead of re-walking projected symbol pins at report time. The remaining dangling-pin
+// same-name label cache now also comes from graph-owned label links instead of rescanning
+// schematics. Remaining divergence is the fuller hier-pin traversal and marker attachment path.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
