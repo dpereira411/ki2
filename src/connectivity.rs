@@ -2213,9 +2213,18 @@ fn reduced_live_net_connection_from_label_name(
     name: &str,
     sheet_instance_path: &str,
 ) -> LiveProjectConnection {
+    let connection_type = if name.is_empty() {
+        ReducedProjectConnectionType::None
+    } else if name.contains('{') || name.contains('}') {
+        ReducedProjectConnectionType::BusGroup
+    } else if name.contains('[') || name.contains(']') {
+        ReducedProjectConnectionType::Bus
+    } else {
+        ReducedProjectConnectionType::Net
+    };
     LiveProjectConnection {
         net_code: 0,
-        connection_type: ReducedProjectConnectionType::Net,
+        connection_type,
         name: name.to_string(),
         local_name: reduced_short_net_name(name),
         full_local_name: name.to_string(),
@@ -27525,6 +27534,20 @@ mod tests {
         assert_eq!(
             by_sheet_and_name.get(&("".to_string(), "/SIG_1".to_string())),
             Some(&vec![0])
+        );
+    }
+
+    #[test]
+    fn reduced_live_net_connection_from_label_name_preserves_bus_kind_syntax() {
+        let net = super::reduced_live_net_connection_from_label_name("/SIG", "");
+        let bus = super::reduced_live_net_connection_from_label_name("BUS[0..3]", "");
+        let group = super::reduced_live_net_connection_from_label_name("BUS{A B}", "");
+
+        assert_eq!(net.connection_type, ReducedProjectConnectionType::Net);
+        assert_eq!(bus.connection_type, ReducedProjectConnectionType::Bus);
+        assert_eq!(
+            group.connection_type,
+            ReducedProjectConnectionType::BusGroup
         );
     }
 
