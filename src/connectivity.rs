@@ -3961,6 +3961,9 @@ impl LiveReducedSubgraph {
                 {
                     continue;
                 }
+                if !live_subgraphs_have_matching_hierarchy_driver_names(&parent_handle, &handle) {
+                    continue;
+                }
                 if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
                     stack.push(parent_handle);
                 }
@@ -3971,6 +3974,9 @@ impl LiveReducedSubgraph {
                     continue;
                 }
                 if live_subgraph_strong_driver_count(&child_handle.borrow()) == 0 {
+                    continue;
+                }
+                if !live_subgraphs_have_matching_hierarchy_driver_names(&handle, &child_handle) {
                     continue;
                 }
                 if visited_set.insert(live_subgraph_handle_id(&child_handle)) {
@@ -4059,6 +4065,9 @@ impl LiveReducedSubgraph {
                 {
                     continue;
                 }
+                if !live_subgraphs_have_matching_hierarchy_driver_names(&parent_handle, &handle) {
+                    continue;
+                }
                 if visited.insert(live_subgraph_handle_id(&parent_handle)) {
                     queue.push_back(parent_handle);
                 }
@@ -4069,6 +4078,9 @@ impl LiveReducedSubgraph {
                     continue;
                 }
                 if live_subgraph_strong_driver_count(&child_handle.borrow()) == 0 {
+                    continue;
+                }
+                if !live_subgraphs_have_matching_hierarchy_driver_names(&handle, &child_handle) {
                     continue;
                 }
                 if visited.insert(live_subgraph_handle_id(&child_handle)) {
@@ -5437,6 +5449,31 @@ fn live_subgraph_child_handles_from_handle(
         .iter()
         .filter_map(Weak::upgrade)
         .collect()
+}
+
+// Upstream parity: live-subgraph analogue for the `GetNameForDriver()` equality checks in
+// `CONNECTION_GRAPH::propagateToNeighbors()` hierarchy visits. The current topology still starts
+// from reduced precomputed parent/child handles, so the active walk revalidates the current
+// sheet-pin and hierarchical-label shown names before following that edge.
+fn live_subgraphs_have_matching_hierarchy_driver_names(
+    parent: &LiveReducedSubgraphHandle,
+    child: &LiveReducedSubgraphHandle,
+) -> bool {
+    let parent = parent.borrow();
+    let child = child.borrow();
+
+    parent.hier_sheet_pins.iter().any(|pin| {
+        let pin = pin.borrow();
+        let pin_connection = pin.connection.borrow();
+
+        child.hier_ports.iter().any(|port| {
+            let port = port.borrow();
+            let port_connection = port.connection.borrow();
+
+            pin_connection.connection_type == port_connection.connection_type
+                && pin_connection.local_name == port_connection.local_name
+        })
+    })
 }
 
 // Upstream parity: active plain bus-parent traversal now follows shared live parent handles. The
@@ -15931,7 +15968,20 @@ mod tests {
                 nodes: Vec::new(),
                 label_links: Vec::new(),
                 no_connect_points: Vec::new(),
-                hier_sheet_pins: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(1, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/CHILD".to_string(),
+                        local_name: "CHILD".to_string(),
+                        full_local_name: "/CHILD".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
                 hier_ports: vec![ReducedHierPortLink {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(0, 0),
@@ -19229,6 +19279,82 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![0]);
+    }
+
+    #[test]
+    fn reduced_hierarchy_visit_rechecks_current_driver_names() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/child/ROOT_SIG", "ROOT_SIG", "/child/ROOT_SIG", "/child"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/child/ROOT_SIG",
+                        "ROOT_SIG",
+                        "/child/ROOT_SIG",
+                        "/child",
+                    ),
+                    identity: None,
+                }],
+                "/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/child/ROOT_SIG",
+                "ROOT_SIG",
+                "/child/ROOT_SIG",
+                "/child",
+            ),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&graph);
+        handles[1].borrow().hier_ports[0]
+            .borrow()
+            .connection
+            .borrow_mut()
+            .local_name = "OTHER".to_string();
+
+        let parent_component = LiveReducedSubgraph::collect_propagation_component_handles(
+            &handles[0],
+            &handles,
+        )
+        .into_iter()
+        .map(|handle| handle.borrow().source_index)
+        .collect::<Vec<_>>();
+        let child_component = LiveReducedSubgraph::collect_propagation_component_handles(
+            &handles[1],
+            &handles,
+        )
+        .into_iter()
+        .map(|handle| handle.borrow().source_index)
+        .collect::<Vec<_>>();
+
+        assert_eq!(parent_component, vec![0]);
+        assert_eq!(child_component, vec![1]);
     }
 
     #[test]
