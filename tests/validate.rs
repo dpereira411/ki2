@@ -3493,6 +3493,32 @@ fn erc_reports_dangling_directive_labels() {
 }
 
 #[test]
+fn erc_allows_overlapping_directive_labels() {
+    let path = temp_schematic(
+        "erc_overlapping_directive_labels",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (directive_label "D" (shape dot) (at 5 0 0) (effects (font (size 1 1))))
+  (directive_label "D2" (shape dot) (at 5 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "erc-label-dangling"),
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_deduplicates_reused_screen_label_checks_by_driver_instance() {
     let dir = env::temp_dir().join(format!(
         "ki2_erc_reused_label_driver_{}",

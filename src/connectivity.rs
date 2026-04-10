@@ -12535,6 +12535,12 @@ fn label_is_dangling_on_component(
     connected_component: &ConnectionComponent,
     at: [f64; 2],
 ) -> bool {
+    let overlapping_label_count = connected_component
+        .members
+        .iter()
+        .filter(|member| points_equal(member.at, at) && member.kind == ConnectionMemberKind::Label)
+        .count();
+
     if connected_component.members.iter().any(|member| {
         points_equal(member.at, at)
             && matches!(
@@ -12543,7 +12549,8 @@ fn label_is_dangling_on_component(
                     | ConnectionMemberKind::SheetPin
                     | ConnectionMemberKind::NoConnectMarker
             )
-    }) {
+    }) || overlapping_label_count > 1
+    {
         return false;
     }
 
@@ -20132,6 +20139,42 @@ mod tests {
             links[0].schematic_path.file_name(),
             schematic.path.file_name()
         );
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_dangling_directive_label_points_treat_overlapping_directives_as_connected() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_directive_overlap_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (directive_label "D" (at 0 0 0) (effects (font (size 1 1))))
+  (directive_label "D2" (at 0 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let points = super::collect_reduced_dangling_directive_label_points(&schematic);
+
+        assert!(points.is_empty(), "{points:#?}");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let links = super::reduced_project_dangling_directive_label_links(&graph);
+
+        assert!(links.is_empty(), "{links:#?}");
 
         let _ = fs::remove_file(&path);
     }
