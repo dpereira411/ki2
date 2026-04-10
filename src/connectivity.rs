@@ -4298,15 +4298,21 @@ impl LiveReducedSubgraph {
                             .find_member_for_connection(&child_connection.borrow())
                     });
 
-                let Some(refreshed_member) = refreshed_member else {
-                    continue;
-                };
-
                 let existing_link = existing_parent_links.iter().find(|link| {
                     live_subgraph_handle_for_link(live_subgraphs, link)
                         .as_ref()
                         .is_some_and(|candidate| Rc::ptr_eq(candidate, &parent_handle))
                 });
+
+                let Some(refreshed_member) = refreshed_member else {
+                    if let Some(existing_link) = existing_link {
+                        refreshed_parent_links
+                            .entry(child_id)
+                            .or_default()
+                            .push(existing_link.clone());
+                    }
+                    continue;
+                };
 
                 refreshed_parent_links.entry(child_id).or_default().push(
                     update_live_subgraph_link_handle(
@@ -17624,6 +17630,76 @@ mod tests {
             graph[3].base_pins[0].connection.full_local_name,
             "/RENAMED1"
         );
+    }
+
+    #[test]
+    fn reduced_live_bus_link_rematch_preserves_unmatched_parent_for_multi_parent_rename() {
+        let stale_member = test_bus_member("STALE", "STALE", "/STALE");
+        let old_member = test_bus_member("OLD", "OLD", "/OLD");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS_A",
+                    "BUS_A",
+                    "/BUS_A",
+                    "",
+                    vec![test_bus_member("UNRELATED", "UNRELATED", "/UNRELATED")],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_bus_connection(
+                    "/BUS_B",
+                    "BUS_B",
+                    "/BUS_B",
+                    "",
+                    vec![old_member.clone()],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/PWR", "PWR", "/PWR", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: stale_member.clone(),
+            subgraph_index: 2,
+        }];
+        graph[1].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: old_member.clone(),
+            subgraph_index: 2,
+        }];
+        graph[2].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: stale_member,
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: old_member,
+                subgraph_index: 1,
+            },
+        ];
+        graph[2].bus_parent_indexes = vec![0, 1];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        LiveReducedSubgraph::refresh_bus_link_members(&live_subgraphs, &component);
+        LiveReducedSubgraph::refresh_multiple_bus_parent_names(&live_subgraphs);
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[2].bus_parent_links.len(), 2);
+        assert_eq!(
+            graph[0].driver_connection.members[0].full_local_name,
+            "/UNRELATED"
+        );
+        assert_eq!(graph[1].driver_connection.members[0].full_local_name, "/PWR");
     }
 
     #[test]
