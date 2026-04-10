@@ -8691,6 +8691,54 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
     false
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckHierSheets parent sheet-pin name matching branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still enumerates reduced hierarchy links and reduced shown-text payload instead of
+// live `SCH_SHEET_PIN*` owners
+// local_only_reason: keeps exercised parent sheet-pin name ownership on the shared graph instead
+// of recomputing shown text by rescanning sheet items inside ERC
+// replaced_by: fuller live `SCH_SHEET_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can iterate live sheet-pin owners directly with shown-text state attached
+pub(crate) fn reduced_project_sheet_pin_names(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+    child_sheet_uuid: Option<&str>,
+) -> std::collections::BTreeSet<String> {
+    reduced_project_subgraphs(graph)
+        .iter()
+        .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
+        .flat_map(|subgraph| subgraph.hier_sheet_pins.iter())
+        .filter(|pin| pin.child_sheet_uuid.as_deref() == child_sheet_uuid)
+        .map(|pin| pin.connection.local_name.clone())
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckHierSheets child hierarchical-label name matching branch or
+// none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still enumerates reduced hierarchy-port links and reduced shown-text payload instead
+// of live `SCH_HIERLABEL*` owners
+// local_only_reason: keeps exercised child hierarchical-label name ownership on the shared graph
+// instead of recomputing shown text by rescanning child schematics inside ERC
+// replaced_by: fuller live `SCH_HIERLABEL` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can iterate live hierarchical-label owners directly with shown-text state
+// attached
+pub(crate) fn reduced_project_hier_port_names_in_sheet(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+) -> std::collections::BTreeSet<String> {
+    reduced_project_subgraphs(graph)
+        .iter()
+        .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
+        .flat_map(|subgraph| subgraph.hier_ports.iter())
+        .map(|port| port.connection.local_name.clone())
+        .collect()
+}
+
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced

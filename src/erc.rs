@@ -3,7 +3,8 @@ use crate::connectivity::{
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     reduced_bus_member_full_local_names, reduced_connected_wire_label_full_names_at,
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
-    reduced_project_no_connect_pin_has_connected_owner, reduced_project_sheet_pin_is_dangling,
+    reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_by_index,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
@@ -16,7 +17,7 @@ use crate::loader::{
     LoadedErcSeverity, points_equal, resolve_cross_reference_text_var,
     resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
     resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
-    resolved_symbol_text_state, shown_sheet_pin_text,
+    resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::{BTreeMap, BTreeSet};
@@ -972,36 +973,6 @@ fn shown_label_property_text(
             })
         },
         0,
-    )
-}
-
-// Upstream parity: reduced local helper for `SCH_SHEET_PIN::GetShownText()` calls inside
-// graph-owned ERC checks. This is not a 1:1 KiCad item method dispatch because the Rust tree
-// still reaches sheet pins through reduced model carriers plus `child_sheet_path_for_sheet()`, but
-// it keeps the child-path ownership in one place so ERC does not fall back to raw pin names after
-// the loader-side shown-text owner exists. Remaining divergence is fuller live sheet/item
-// ownership and marker attachment.
-fn shown_sheet_pin_name(
-    project: &SchematicProject,
-    graph: &crate::connectivity::ReducedProjectNetGraph,
-    parent_sheet_path: &crate::loader::LoadedSheetPath,
-    sheet: &crate::model::Sheet,
-    pin: &crate::model::SheetPin,
-) -> String {
-    let Some(child_sheet_path) = child_sheet_path_for_sheet(project, parent_sheet_path, sheet)
-    else {
-        return pin.name.clone();
-    };
-
-    shown_sheet_pin_text(
-        &project.schematics,
-        &project.sheet_paths,
-        parent_sheet_path,
-        &child_sheet_path,
-        project.project.as_ref(),
-        project.current_variant(),
-        Some(graph),
-        pin,
     )
 }
 
@@ -2318,11 +2289,12 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
 // Upstream parity: reduced local helper for the parent-sheet-pin query inside
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckHierSheets()`. This is
 // not a 1:1 KiCad marker/`GetShownText()` path because the Rust tree still uses reduced sheet-path
-// helpers and lacks full sheet-pin / marker owners, but it now compares parent sheet pins through
-// a reduced `SCH_SHEET_PIN::GetShownText()` analogue instead of raw pin names. It now also asks a
-// shared graph-owned helper whether parent sheet pins belong to a broader subgraph instead of
-// embedding the reduced subgraph-membership test inside ERC. Remaining divergence is fuller marker
-// attachment and item ownership parity.
+// helpers and lacks full sheet-pin / marker owners, but it now compares both parent sheet pins and
+// child hierarchical labels through shared graph-owned hierarchy-link payload instead of rescanning
+// child schematics and recomputing shown text inside ERC. It also asks a shared graph-owned helper
+// whether parent sheet pins belong to a broader subgraph instead of embedding the reduced
+// subgraph-membership test inside ERC. Remaining divergence is fuller marker attachment and item
+// ownership parity.
 pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2393,34 +2365,15 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
             else {
                 continue;
             };
-            let Some(child_schematic) = project.schematic(&child_sheet_path.schematic_path) else {
-                continue;
-            };
+            let pins = reduced_project_sheet_pin_names(
+                &graph,
+                &sheet_path.instance_path,
+                sheet.uuid.as_deref(),
+            );
+            let child_labels =
+                reduced_project_hier_port_names_in_sheet(&graph, &child_sheet_path.instance_path);
 
-            let mut pins = BTreeMap::new();
-            for pin in &sheet.pins {
-                let shown = shown_sheet_pin_name(project, &graph, sheet_path, sheet, pin);
-                pins.insert(shown, pin);
-            }
-
-            let mut child_labels = BTreeMap::new();
-            for sub_item in &child_schematic.screen.items {
-                let SchItem::Label(label) = sub_item else {
-                    continue;
-                };
-
-                if label.kind != LabelKind::Hierarchical {
-                    continue;
-                }
-
-                let label_text = shown_label_text(project, child_sheet_path, label);
-
-                if pins.remove(&label_text).is_none() {
-                    child_labels.insert(label_text, label);
-                }
-            }
-
-            for (name, _) in pins {
+            for name in pins.difference(&child_labels) {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
                     code: "erc-hier-label-mismatch",
@@ -2435,7 +2388,7 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
                 });
             }
 
-            for (name, _) in child_labels {
+            for name in child_labels.difference(&pins) {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
                     code: "erc-hier-label-mismatch",
