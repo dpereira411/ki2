@@ -8335,6 +8335,12 @@ pub(crate) fn reduced_project_run_erc_subgraphs(
     subgraphs
 }
 
+fn reduced_project_run_erc_subgraphs_without_driver_dedup(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<&ReducedProjectSubgraphEntry> {
+    graph.subgraphs.iter().collect()
+}
+
 // upstream: CONNECTION_GRAPH::RunERC live subgraph iteration or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -8361,6 +8367,12 @@ fn live_reduced_project_run_erc_subgraph_handles(
 
     subgraphs.reverse();
     subgraphs
+}
+
+fn live_reduced_project_run_erc_subgraph_handles_without_driver_dedup(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<LiveReducedSubgraphHandle> {
+    graph.live_subgraphs.clone()
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -11917,19 +11929,12 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
 
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut seen_driver_identities = BTreeSet::new();
 
-    for subgraph in reduced_project_run_erc_subgraphs(graph)
+    for subgraph in reduced_project_run_erc_subgraphs_without_driver_dedup(graph)
         .into_iter()
         .filter(|subgraph| !subgraph.no_connect_points.is_empty())
     {
         for no_connect_point in &subgraph.no_connect_points {
-            if reduced_project_subgraph_driver_identity(&subgraph)
-                .is_some_and(|identity| !seen_driver_identities.insert(identity.clone()))
-            {
-                continue;
-            }
-
             if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
                 continue;
             }
@@ -12023,9 +12028,8 @@ fn live_reduced_project_no_connect_marker_outcomes(
 ) -> Vec<ReducedProjectNoConnectMarkerOutcome> {
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut seen_driver_identities = BTreeSet::new();
 
-    for subgraph_handle in live_reduced_project_run_erc_subgraph_handles(graph)
+    for subgraph_handle in live_reduced_project_run_erc_subgraph_handles_without_driver_dedup(graph)
         .into_iter()
         .filter(|subgraph| !subgraph.borrow().no_connect_points.is_empty())
     {
@@ -12033,12 +12037,6 @@ fn live_reduced_project_no_connect_marker_outcomes(
         let subgraph = subgraph_handle.borrow();
 
         for no_connect_point in &subgraph.no_connect_points {
-            if live_reduced_subgraph_driver_identity(&subgraph)
-                .is_some_and(|identity| !seen_driver_identities.insert(identity))
-            {
-                continue;
-            }
-
             if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph_id)) {
                 continue;
             }
@@ -17676,6 +17674,257 @@ mod tests {
         let outcomes = super::reduced_project_no_connect_marker_outcomes(&graph);
 
         assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn reduced_no_connect_outcomes_do_not_deduplicate_distinct_markers_by_driver_identity() {
+        let driver_identity = Some(super::ReducedProjectDriverIdentity::Label {
+            schematic_path: std::path::PathBuf::from("shared.kicad_sch"),
+            at: PointKey(5, 5),
+            kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+        });
+        let driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Label,
+            priority: super::reduced_global_label_driver_priority(),
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            identity: driver_identity.clone(),
+        };
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 1,
+                    code: 1,
+                    name: "/SIG".to_string(),
+                    resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    chosen_driver_index: Some(0),
+                    drivers: vec![driver.clone()],
+                    class: String::new(),
+                    has_no_connect: false,
+                    sheet_instance_path: "/a".to_string(),
+                    anchor: PointKey(0, 0),
+                    points: Vec::new(),
+                    nodes: Vec::new(),
+                    base_pins: vec![
+                        test_base_pin(
+                            "/a",
+                            "sym-a",
+                            PointKey(0, 0),
+                            "1",
+                            "input",
+                            test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        ),
+                        test_base_pin(
+                            "/a",
+                            "sym-b",
+                            PointKey(20, 0),
+                            "1",
+                            "input",
+                            test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        ),
+                    ],
+                    label_links: Vec::new(),
+                    no_connect_points: vec![ReducedNoConnectPoint {
+                        schematic_path: std::path::PathBuf::from("a.kicad_sch"),
+                        at: PointKey(0, 0),
+                    }],
+                    hier_sheet_pins: Vec::new(),
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: Vec::new(),
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 2,
+                    code: 2,
+                    name: "/SIG".to_string(),
+                    resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    chosen_driver_index: Some(0),
+                    drivers: vec![driver],
+                    class: String::new(),
+                    has_no_connect: false,
+                    sheet_instance_path: "/b".to_string(),
+                    anchor: PointKey(100, 0),
+                    points: Vec::new(),
+                    nodes: Vec::new(),
+                    base_pins: vec![
+                        test_base_pin(
+                            "/b",
+                            "sym-c",
+                            PointKey(100, 0),
+                            "1",
+                            "input",
+                            test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        ),
+                        test_base_pin(
+                            "/b",
+                            "sym-d",
+                            PointKey(120, 0),
+                            "1",
+                            "input",
+                            test_net_connection("/SIG", "SIG", "/SIG", ""),
+                        ),
+                    ],
+                    label_links: Vec::new(),
+                    no_connect_points: vec![ReducedNoConnectPoint {
+                        schematic_path: std::path::PathBuf::from("b.kicad_sch"),
+                        at: PointKey(100, 0),
+                    }],
+                    hier_sheet_pins: Vec::new(),
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: Vec::new(),
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+            ],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([
+                (("/a".to_string(), "/SIG".to_string()), vec![0]),
+                (("/b".to_string(), "/SIG".to_string()), vec![1]),
+            ]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let outcomes = super::reduced_project_no_connect_marker_outcomes(&graph);
+
+        assert_eq!(outcomes.len(), 2);
+    }
+
+    #[test]
+    fn live_no_connect_outcomes_do_not_deduplicate_distinct_markers_by_driver_identity() {
+        let driver_identity = Some(super::ReducedProjectDriverIdentity::Label {
+            schematic_path: std::path::PathBuf::from("shared.kicad_sch"),
+            at: PointKey(5, 5),
+            kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+        });
+        let driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Label,
+            priority: super::reduced_global_label_driver_priority(),
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            identity: driver_identity,
+        };
+        let graph = test_graph_with_live_subgraphs(vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: Some(0),
+                drivers: vec![driver.clone()],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/a".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: vec![
+                    test_base_pin(
+                        "/a",
+                        "sym-a",
+                        PointKey(0, 0),
+                        "1",
+                        "input",
+                        test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    ),
+                    test_base_pin(
+                        "/a",
+                        "sym-b",
+                        PointKey(20, 0),
+                        "1",
+                        "input",
+                        test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    ),
+                ],
+                label_links: Vec::new(),
+                no_connect_points: vec![ReducedNoConnectPoint {
+                    schematic_path: std::path::PathBuf::from("a.kicad_sch"),
+                    at: PointKey(0, 0),
+                }],
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: Some(0),
+                drivers: vec![driver],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/b".to_string(),
+                anchor: PointKey(100, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: vec![
+                    test_base_pin(
+                        "/b",
+                        "sym-c",
+                        PointKey(100, 0),
+                        "1",
+                        "input",
+                        test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    ),
+                    test_base_pin(
+                        "/b",
+                        "sym-d",
+                        PointKey(120, 0),
+                        "1",
+                        "input",
+                        test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    ),
+                ],
+                label_links: Vec::new(),
+                no_connect_points: vec![ReducedNoConnectPoint {
+                    schematic_path: std::path::PathBuf::from("b.kicad_sch"),
+                    at: PointKey(100, 0),
+                }],
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ]);
+
+        let outcomes = super::reduced_project_no_connect_marker_outcomes(&graph);
+
+        assert_eq!(outcomes.len(), 2);
     }
 
     #[test]
