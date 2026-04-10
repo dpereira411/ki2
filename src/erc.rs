@@ -1,11 +1,11 @@
 use crate::connectivity::{
-    ReducedProjectDriverKind, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name, reduced_connected_wire_label_full_names_at,
+    collect_reduced_project_net_map, reduced_connected_wire_label_full_names_at,
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
     reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
     reduced_project_label_name_caches, reduced_project_no_connect_marker_outcomes,
-    reduced_project_no_connect_pin_has_connected_owner, reduced_project_run_erc_subgraphs,
+    reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_pin_not_connected_candidates, reduced_project_run_erc_subgraphs,
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
@@ -1649,98 +1649,25 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         }
     }
 
-    for subgraph in reduced_project_subgraphs(&graph) {
-        if subgraph.has_no_connect
-            || !subgraph.no_connect_points.is_empty()
-            || subgraph.base_pins.is_empty()
-        {
-            continue;
-        }
-
-        let mut has_other_connections = !subgraph.label_links.is_empty()
-            || !subgraph.hier_sheet_pins.is_empty()
-            || !subgraph.hier_ports.is_empty()
-            || subgraph
-                .drivers
-                .iter()
-                .any(|driver| driver.kind == ReducedProjectDriverKind::PowerPin);
-        let pins = subgraph
-            .base_pins
+    for candidate in reduced_project_pin_not_connected_candidates(&graph, &label_name_caches) {
+        let Some(_sheet_path) = project
+            .sheet_paths
             .iter()
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        if pins.is_empty() {
+            .find(|sheet_path| sheet_path.instance_path == candidate.sheet_instance_path)
+        else {
             continue;
-        }
+        };
 
-        if !has_other_connections && pins.len() > 1 {
-            for test_pin in pins.iter().skip(1) {
-                let shares_symbol_point = test_pin.key.symbol_uuid == pins[0].key.symbol_uuid
-                    && test_pin.key.at == pins[0].key.at;
-                if test_pin.key != pins[0].key && !shares_symbol_point {
-                    has_other_connections = true;
-                    break;
-                }
-            }
-        }
-
-        let mut pin = pins[0];
-
-        for test_pin in &pins {
-            if test_pin.electrical_type.as_deref() == Some("power_in") && !test_pin.is_power_symbol
-            {
-                pin = test_pin;
-                break;
-            }
-        }
-
-        if !has_other_connections && !pin.is_power_symbol {
-            if label_name_caches
-                .global_names
-                .contains(&pin.connection.name)
-                || label_name_caches.local_names_by_sheet.contains(&(
-                    subgraph.sheet_instance_path.clone(),
-                    pin.connection.local_name.clone(),
-                ))
-            {
-                has_other_connections = true;
-            }
-        }
-
-        let same_name_has_no_connect_sibling = (subgraph
-            .driver_connection
-            .name
-            .starts_with("Net-(")
-            || subgraph.driver_connection.name.starts_with("unconnected-("))
-            && collect_reduced_project_subgraphs_by_name(&graph, &subgraph.driver_connection.name)
-                .iter()
-                .any(|neighbor| {
-                    neighbor.sheet_instance_path == subgraph.sheet_instance_path
-                        && neighbor.subgraph_code != subgraph.subgraph_code
-                        && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
-                });
-
-        if same_name_has_no_connect_sibling {
-            continue;
-        }
-
-        if !has_other_connections
-            && pin.electrical_type.as_deref() != Some("no_connect")
-            && pin.electrical_type.as_deref() != Some("not_connected")
-        {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-pin-not-connected",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: "Pin not connected".to_string(),
-                path: Some(pin.schematic_path.clone()),
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-pin-not-connected",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: "Pin not connected".to_string(),
+            path: Some(candidate.pin_schematic_path),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
