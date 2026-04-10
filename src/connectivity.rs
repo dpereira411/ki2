@@ -9821,6 +9821,47 @@ pub(crate) fn reduced_project_symbol_pin_net_name(
         .unwrap_or_default()
 }
 
+fn live_reduced_project_subgraph_index_for_symbol_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+    pin_number: Option<&str>,
+) -> Option<usize> {
+    graph
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            subgraph
+                .borrow()
+                .base_pins
+                .iter()
+                .any(|candidate| {
+                    let candidate = candidate.borrow();
+                    candidate.pin.key.sheet_instance_path == sheet_path.instance_path
+                        && candidate.pin.key.symbol_uuid == symbol.uuid
+                        && point_key_matches(candidate.pin.key.at, at)
+                        && candidate.pin.key.number.as_deref() == pin_number
+                        && pin_name.is_none_or(|pin_name| {
+                            candidate.pin.key.name.as_deref() == Some(pin_name)
+                        })
+                })
+                .then_some(index)
+        })
+}
+
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() for symbol pins or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still falls back to reduced pin-identity maps when no live base-pin owner graph is
+// available, and symbol-pin identity is still reduced key matching instead of live `SCH_PIN*`
+// local_only_reason: keeps symbol-pin item lookup on the shared graph while the Rust port still
+// uses reduced pin identity keys instead of true `SCH_PIN*` ownership
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` item-owner graph
+// remove_when: symbol-pin queries can resolve directly from live `SCH_PIN*` items without reduced
+// key fallback
 fn resolve_reduced_project_subgraph_index_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -9829,8 +9870,11 @@ fn resolve_reduced_project_subgraph_index_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<usize> {
-    pin_name
-        .and_then(|pin_name| {
+    live_reduced_project_subgraph_index_for_symbol_pin(
+        graph, sheet_path, symbol, at, pin_name, pin_number,
+    )
+    .or_else(|| {
+        pin_name.and_then(|pin_name| {
             graph
                 .pin_subgraph_identities
                 .get(&reduced_project_base_pin_key(
@@ -9838,41 +9882,42 @@ fn resolve_reduced_project_subgraph_index_for_symbol_pin(
                 ))
                 .copied()
         })
-        .or_else(|| {
+    })
+    .or_else(|| {
+        graph
+            .pin_subgraph_identities_by_location
+            .get(&reduced_project_pin_identity_key(
+                sheet_path, symbol, at, pin_number,
+            ))
+            .copied()
+    })
+    .or_else(|| {
+        pin_name.and_then(|pin_name| {
             graph
-                .pin_subgraph_identities_by_location
-                .get(&reduced_project_pin_identity_key(
-                    sheet_path, symbol, at, pin_number,
-                ))
-                .copied()
-        })
-        .or_else(|| {
-            pin_name.and_then(|pin_name| {
-                graph
-                    .pin_subgraph_identities
-                    .iter()
-                    .find_map(|(key, index)| {
-                        (key.sheet_instance_path == sheet_path.instance_path
-                            && key.symbol_uuid == symbol.uuid
-                            && key.name.as_deref() == Some(pin_name)
-                            && key.number.as_deref() == pin_number
-                            && point_key_matches(key.at, at))
-                        .then_some(*index)
-                    })
-            })
-        })
-        .or_else(|| {
-            graph
-                .pin_subgraph_identities_by_location
+                .pin_subgraph_identities
                 .iter()
                 .find_map(|(key, index)| {
                     (key.sheet_instance_path == sheet_path.instance_path
                         && key.symbol_uuid == symbol.uuid
+                        && key.name.as_deref() == Some(pin_name)
                         && key.number.as_deref() == pin_number
                         && point_key_matches(key.at, at))
                     .then_some(*index)
                 })
         })
+    })
+    .or_else(|| {
+        graph
+            .pin_subgraph_identities_by_location
+            .iter()
+            .find_map(|(key, index)| {
+                (key.sheet_instance_path == sheet_path.instance_path
+                    && key.symbol_uuid == symbol.uuid
+                    && key.number.as_deref() == pin_number
+                    && point_key_matches(key.at, at))
+                .then_some(*index)
+            })
+    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -19952,6 +19997,85 @@ mod tests {
         assert_eq!(
             super::reduced_project_symbol_pin_net_name(&graph, &pin),
             "/LIVE"
+        );
+    }
+
+    #[test]
+    fn symbol_pin_queries_find_live_owner_without_reduced_pin_indexes() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("sym".to_string());
+
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            Vec::new(),
+            "",
+        );
+        subgraph.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: symbol.uuid.clone(),
+                at: PointKey(0, 0),
+                name: Some("PIN".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/OLD", "OLD", "/OLD", ""),
+            driver_connection: test_net_connection("/OLD", "OLD", "/OLD", ""),
+            preserve_local_name_on_refresh: false,
+        });
+
+        let mut graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.pin_subgraph_identities.clear();
+        graph.pin_subgraph_identities_by_location.clear();
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        assert_eq!(
+            super::resolve_reduced_project_net_for_symbol_pin(
+                &graph,
+                &sheet_path,
+                &symbol,
+                [0.0, 0.0],
+                Some("PIN"),
+                Some("1"),
+            )
+            .expect("live net")
+            .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_symbol_pin(
+                &graph,
+                &sheet_path,
+                &symbol,
+                [0.0, 0.0],
+                Some("PIN"),
+                Some("1"),
+            )
+            .as_deref(),
+            Some("LIVE")
         );
     }
 
