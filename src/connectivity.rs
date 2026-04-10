@@ -11793,8 +11793,9 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
 // upstream: CONNECTION_GRAPH::ercCheckLabels label-subgraph setup branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still builds reduced label subgraph summaries instead of walking live
-// `CONNECTION_SUBGRAPH::m_items` and `SCH_TEXT::IsDangling()` state
+// divergence: still emits reduced label summary records and still lacks final
+// `CONNECTION_SUBGRAPH::m_items` / `SCH_TEXT::IsDangling()` ownership, but production summaries
+// now read live subgraph owners when available
 // local_only_reason: keeps label subgraph pin/no-connect/local-hierarchy summary ownership on the
 // shared graph owner instead of duplicating reduced subgraph scans inside ERC
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
@@ -11986,6 +11987,8 @@ fn live_reduced_project_label_connectivity_subgraphs(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectLabelConnectivitySubgraph> {
     let mut label_subgraphs = Vec::new();
+    let subgraphs_by_name =
+        build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0;
 
     for subgraph_handle in live_reduced_project_run_erc_subgraph_handles(graph) {
         let subgraph = subgraph_handle.borrow();
@@ -12009,16 +12012,12 @@ fn live_reduced_project_label_connectivity_subgraphs(
         let driver_name = subgraph.driver_connection.borrow().name.clone();
 
         if !driver_name.is_empty() {
-            for neighbor_handle in &graph.live_subgraphs {
+            for neighbor_handle in subgraphs_by_name.get(&driver_name).into_iter().flatten() {
                 if Rc::ptr_eq(neighbor_handle, &subgraph_handle) {
                     continue;
                 }
 
                 let neighbor = neighbor_handle.borrow();
-                if neighbor.driver_connection.borrow().name != driver_name {
-                    continue;
-                }
-
                 let neighbor_pin_count = neighbor.base_pins.len();
                 let neighbor_has_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
