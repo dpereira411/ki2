@@ -3719,6 +3719,10 @@ impl LiveReducedSubgraph {
                     continue;
                 }
 
+                if promoted_connection.connection_type != ReducedProjectConnectionType::Net {
+                    continue;
+                }
+
                 let parent_sheet_instance_path = parent_handle.borrow().sheet_instance_path.clone();
                 let neighbor_sheet_instance_path =
                     neighbor_handle.borrow().sheet_instance_path.clone();
@@ -9307,6 +9311,36 @@ mod tests {
             full_local_name: full_local_name.to_string(),
             sheet_instance_path: sheet_instance_path.to_string(),
             members: Vec::new(),
+        }
+    }
+
+    fn test_bus_member(name: &str, local_name: &str, full_local_name: &str) -> ReducedBusMember {
+        ReducedBusMember {
+            net_code: 0,
+            name: name.to_string(),
+            local_name: local_name.to_string(),
+            full_local_name: full_local_name.to_string(),
+            vector_index: None,
+            kind: ReducedBusMemberKind::Net,
+            members: Vec::new(),
+        }
+    }
+
+    fn test_bus_connection(
+        name: &str,
+        local_name: &str,
+        full_local_name: &str,
+        sheet_instance_path: &str,
+        members: Vec<ReducedBusMember>,
+    ) -> ReducedProjectConnection {
+        ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: name.to_string(),
+            local_name: local_name.to_string(),
+            full_local_name: full_local_name.to_string(),
+            sheet_instance_path: sheet_instance_path.to_string(),
+            members,
         }
     }
 
@@ -15232,6 +15266,50 @@ mod tests {
         assert_eq!(graph[1].resolved_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].base_pins[0].connection.full_local_name, "/SIG1");
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_skip_non_net_neighbor_driver() {
+        let member = test_bus_member("SIG1", "SIG1", "/SIG1");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_bus_connection("/OTHER", "OTHER", "/OTHER", "", vec![member.clone()]),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(
+            graph[1].driver_connection.connection_type,
+            ReducedProjectConnectionType::Bus
+        );
+        assert_eq!(graph[1].driver_connection.full_local_name, "/OTHER");
     }
 
     #[test]
