@@ -1709,8 +1709,10 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // grouping on the real graph path now also keys from the graph-owned reduced driver connection
 // name instead of the parallel reduced subgraph `name` field, and no-connect pin presence plus the
 // exercised dangling-pin branch now read graph-owned base-pin payload instead of re-walking
-// projected symbol pins at report time. Remaining divergence is the fuller hier-pin and marker
-// attachment path plus KiCad's extra multi-pin power-symbol dangling branch.
+// projected symbol pins at report time. The remaining dangling-pin same-name label cache now also
+// comes from graph-owned label links instead of rescanning schematics. Remaining divergence is the
+// fuller hier-pin and marker attachment path plus KiCad's extra multi-pin power-symbol dangling
+// branch.
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -1719,24 +1721,17 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut global_label_cache = std::collections::BTreeSet::new();
     let mut local_label_cache = std::collections::BTreeSet::new();
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-
-        for item in &schematic.screen.items {
-            let SchItem::Label(label) = item else {
-                continue;
-            };
-
-            let shown_text = shown_label_text(project, sheet_path, label);
-
+    for subgraph in reduced_project_subgraphs(&graph) {
+        for label in &subgraph.label_links {
             match label.kind {
                 LabelKind::Global => {
-                    global_label_cache.insert(shown_text);
+                    global_label_cache.insert(label.connection.name.clone());
                 }
                 LabelKind::Local | LabelKind::Hierarchical => {
-                    local_label_cache.insert((sheet_path.instance_path.clone(), shown_text));
+                    local_label_cache.insert((
+                        subgraph.sheet_instance_path.clone(),
+                        label.connection.local_name.clone(),
+                    ));
                 }
                 LabelKind::Directive => {}
             }
