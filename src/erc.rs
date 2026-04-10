@@ -1,8 +1,7 @@
 use crate::connectivity::{
     ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_reduced_dangling_directive_label_points, collect_reduced_four_way_junction_points,
-    collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name,
+    collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_connected_wire_label_full_names_at, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
@@ -1619,46 +1618,41 @@ pub fn check_missing_netclasses(project: &SchematicProject) -> Vec<Diagnostic> {
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestLabelMultipleWires()`. This is not
-// a 1:1 KiCad overlapping-item pass because the current tree still uses reduced label snapshots
+// a 1:1 KiCad overlapping-item pass because the current tree still uses reduced graph label links
 // instead of live graph-owned text items, but it preserves the exercised local-label rule: a label
 // touching more than one non-endpoint wire segment is an ERC error. Remaining divergence is the
 // fuller live label item owner and marker attachment.
 pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project
-            .schematics
-            .iter()
-            .find(|schematic| schematic.path == sheet_path.schematic_path)
-        else {
+    for subgraph in graph_run_erc_subgraphs(&graph) {
+        if subgraph.label_links.is_empty() {
             continue;
-        };
+        }
 
-        for component in collect_reduced_label_component_snapshots(schematic) {
-            for label in component.labels {
-                if label.kind != crate::model::LabelKind::Local
-                    || label.non_endpoint_wire_segment_count <= 1
-                {
-                    continue;
-                }
-
-                let report_x = (label.at[0] * 10_000.0).round() as i64;
-                let report_y = (label.at[1] * 10_000.0).round() as i64;
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-label-multiple-wires",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Label connects more than one wire at {}, {}",
-                        report_x, report_y
-                    ),
-                    path: Some(schematic.path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
+        for label in &subgraph.label_links {
+            if label.kind != crate::model::LabelKind::Local
+                || label.non_endpoint_wire_segment_count <= 1
+            {
+                continue;
             }
+
+            let report_x = (f64::from_bits(label.at.0) * 10_000.0).round() as i64;
+            let report_y = (f64::from_bits(label.at.1) * 10_000.0).round() as i64;
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-label-multiple-wires",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Label connects more than one wire at {}, {}",
+                    report_x, report_y
+                ),
+                path: Some(label.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 
@@ -2015,7 +2009,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // walks reduced member-keyed bus-parent links instead of bare parent index lists. Subgraph net
 // names on the real graph path now also flow from the graph-owned reduced driver connection
 // instead of the parallel reduced subgraph `name` field. Remaining divergence is fuller live
-// bus-neighbor connection ownership plus the local dangling-label probe.
+// bus-neighbor connection ownership plus fuller live label item dangling state.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     fn subgraph_has_local_hierarchy_via_bus_parents(
         graph: &crate::connectivity::ReducedProjectNetGraph,

@@ -56,7 +56,6 @@ pub(crate) struct ReducedLabelComponentLabel {
     pub(crate) at: [f64; 2],
     pub(crate) kind: LabelKind,
     pub(crate) dangling: bool,
-    pub(crate) non_endpoint_wire_segment_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -186,6 +185,7 @@ pub(crate) struct ReducedLabelLink {
     pub(crate) at: PointKey,
     pub(crate) kind: LabelKind,
     pub(crate) dangling: bool,
+    pub(crate) non_endpoint_wire_segment_count: usize,
     pub(crate) connection: ReducedProjectConnection,
 }
 
@@ -2717,6 +2717,7 @@ struct LiveReducedLabelLink {
     at: PointKey,
     kind: LabelKind,
     dangling: bool,
+    non_endpoint_wire_segment_count: usize,
     connection: LiveProjectConnectionHandle,
     driver_connection: LiveProjectConnectionHandle,
     driver: Option<LiveProjectStrongDriverHandle>,
@@ -5477,6 +5478,7 @@ fn build_live_reduced_subgraph_handles(
                             at: link.at,
                             kind: link.kind,
                             dangling: link.dangling,
+                            non_endpoint_wire_segment_count: link.non_endpoint_wire_segment_count,
                             connection: Rc::new(RefCell::new(link.connection.clone().into())),
                             driver_connection: Rc::new(RefCell::new(
                                 link.connection.clone().into(),
@@ -8721,6 +8723,7 @@ fn collect_reduced_subgraph_local_membership(
     Vec<ReducedSubgraphWireItem>,
 ) {
     let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, sheet_path);
+    let wire_segments = collect_wire_segments(schematic);
     let mut label_links = connected_component
         .members
         .iter()
@@ -8770,6 +8773,10 @@ fn collect_reduced_subgraph_local_membership(
                         dangling: label_is_dangling_on_component(
                             schematic,
                             connected_component,
+                            label.at,
+                        ),
+                        non_endpoint_wire_segment_count: label_non_endpoint_wire_segment_count(
+                            &wire_segments,
                             label.at,
                         ),
                         connection: build_reduced_project_connection(
@@ -9501,46 +9508,40 @@ fn label_non_endpoint_wire_segment_count(wire_segments: &[[[f64; 2]; 2]], at: [f
 }
 
 // Upstream parity: reduced local analogue for the label-item `IsDangling()` facts consumed by
-// `CONNECTION_GRAPH::ercCheckLabels()`, `ercCheckDirectiveLabels()`, and the exercised label
-// multiple-wires branch. This is not a 1:1 KiCad subgraph snapshot because the Rust tree still
-// lacks live `SCH_TEXT*` objects and graph-owned label item state. It exists for the remaining
-// per-label dangling and wire-touch probes while the shared project subgraph owner carries the
-// broader label/pin/no-connect grouping facts.
+// `CONNECTION_GRAPH::ercCheckLabels()` and `ercCheckDirectiveLabels()`. This is not a 1:1 KiCad
+// subgraph snapshot because the Rust tree still lacks live `SCH_TEXT*` objects and graph-owned
+// label item state. It exists for remaining per-label dangling probes while the shared project
+// subgraph owner carries broader label/pin/no-connect grouping facts.
 pub(crate) fn collect_reduced_label_component_snapshots(
     schematic: &Schematic,
 ) -> Vec<ReducedLabelComponentSnapshot> {
-    let wire_segments = collect_wire_segments(schematic);
-
     collect_connection_components(schematic)
         .into_iter()
         .filter_map(|connected_component| {
-            let labels =
-                schematic
-                    .screen
-                    .items
-                    .iter()
-                    .filter_map(|item| match item {
-                        SchItem::Label(label)
-                            if connected_component.members.iter().any(|member| {
-                                member.kind == ConnectionMemberKind::Label
-                                    && points_equal(member.at, label.at)
-                            }) =>
-                        {
-                            Some(ReducedLabelComponentLabel {
-                                at: label.at,
-                                kind: label.kind,
-                                dangling: label_is_dangling_on_component(
-                                    schematic,
-                                    &connected_component,
-                                    label.at,
-                                ),
-                                non_endpoint_wire_segment_count:
-                                    label_non_endpoint_wire_segment_count(&wire_segments, label.at),
-                            })
-                        }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
+            let labels = schematic
+                .screen
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    SchItem::Label(label)
+                        if connected_component.members.iter().any(|member| {
+                            member.kind == ConnectionMemberKind::Label
+                                && points_equal(member.at, label.at)
+                        }) =>
+                    {
+                        Some(ReducedLabelComponentLabel {
+                            at: label.at,
+                            kind: label.kind,
+                            dangling: label_is_dangling_on_component(
+                                schematic,
+                                &connected_component,
+                                label.at,
+                            ),
+                        })
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
 
             if labels.is_empty() {
                 return None;
@@ -11957,6 +11958,7 @@ mod tests {
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Bus,
@@ -12568,6 +12570,7 @@ mod tests {
                         at: PointKey(0, 0),
                         kind: LabelKind::Global,
                         dangling: false,
+                        non_endpoint_wire_segment_count: 0,
                         connection: test_net_connection(
                             "label-net",
                             "LABEL_LOCAL",
@@ -15502,8 +15505,20 @@ mod tests {
             .find(|label| label.kind == LabelKind::Local)
             .expect("local label snapshot");
 
-        assert_eq!(label.non_endpoint_wire_segment_count, 2);
         assert!(!label.dangling);
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let link = graph
+            .subgraphs
+            .iter()
+            .flat_map(|subgraph| subgraph.label_links.iter())
+            .find(|label| label.kind == LabelKind::Local)
+            .expect("local label link");
+
+        assert_eq!(link.non_endpoint_wire_segment_count, 2);
+        assert!(!link.dangling);
 
         let _ = fs::remove_file(&path);
     }
@@ -17051,6 +17066,7 @@ mod tests {
                 at: PointKey(5, 6),
                 kind: LabelKind::Global,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -17185,6 +17201,7 @@ mod tests {
                 at: PointKey(5, 6),
                 kind: LabelKind::Global,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -17861,6 +17878,7 @@ mod tests {
                 at: PointKey(5, 6),
                 kind: LabelKind::Global,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 0,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -21216,6 +21234,7 @@ mod tests {
                     at: PointKey(0, 0),
                     kind: LabelKind::Local,
                     dangling: false,
+                    non_endpoint_wire_segment_count: 0,
                     connection: ReducedProjectConnection {
                         net_code: 0,
                         connection_type: ReducedProjectConnectionType::Net,
@@ -22913,6 +22932,7 @@ mod tests {
                 at: PointKey(0, 0),
                 kind: LabelKind::Global,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23066,6 +23086,7 @@ mod tests {
                 at: PointKey(0, 0),
                 kind: LabelKind::Global,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23209,6 +23230,7 @@ mod tests {
                 at: PointKey(0, 0),
                 kind: LabelKind::Global,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 1,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23712,6 +23734,7 @@ mod tests {
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 3,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -23805,6 +23828,7 @@ mod tests {
                 at: PointKey(0, 0),
                 kind: LabelKind::Local,
                 dangling: false,
+                non_endpoint_wire_segment_count: 0,
                 connection: ReducedProjectConnection {
                     net_code: 9,
                     connection_type: ReducedProjectConnectionType::Net,
@@ -24134,6 +24158,7 @@ impl PartialEq for LiveReducedLabelLink {
             self.at,
             self.kind,
             self.dangling,
+            self.non_endpoint_wire_segment_count,
             &self.shown_text_local_name,
             self.connection.borrow().snapshot(),
             self.driver_connection.borrow().snapshot(),
@@ -24143,6 +24168,7 @@ impl PartialEq for LiveReducedLabelLink {
             other.at,
             other.kind,
             other.dangling,
+            other.non_endpoint_wire_segment_count,
             &other.shown_text_local_name,
             other.connection.borrow().snapshot(),
             other.driver_connection.borrow().snapshot(),
