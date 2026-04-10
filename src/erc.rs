@@ -3,8 +3,8 @@ use crate::connectivity::{
     collect_connection_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
-    reduced_connected_wire_label_full_names_at, reduced_project_subgraph_by_index,
-    reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_connected_wire_label_full_names_at, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
     reduced_project_wire_item_endpoint_has_connected_bus_owner,
     resolve_reduced_project_subgraph_for_no_connect,
     resolve_reduced_project_subgraph_for_sheet_pin,
@@ -1731,42 +1731,23 @@ pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestNoConnectPins()`. This is not a
 // 1:1 KiCad connectable-item walk because the Rust tree still lacks the full item connectivity API,
-// but it uses the shared connection-point snapshot and projected symbol pins so no-connect ERC now
-// checks real pin positions instead of a parser-only field approximation. Remaining divergence is
-// fuller connectable-item coverage and connection-graph ownership beyond the exercised rule.
+// but it now uses graph-owned symbol-pin inventories and point ownership instead of a per-sheet
+// connection-point snapshot. Remaining divergence is fuller connectable-item coverage and marker
+// attachment beyond the exercised rule.
 pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let graph = project.reduced_project_net_graph(false);
+    let mut seen = std::collections::BTreeSet::new();
 
     for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project
-            .schematics
-            .iter()
-            .find(|schematic| schematic.path == sheet_path.schematic_path)
-        else {
-            continue;
-        };
-
-        for point in collect_connection_points(schematic).into_values() {
-            let nc_pins = point
-                .members
-                .iter()
-                .filter(|member| {
-                    member.kind == ConnectionMemberKind::SymbolPin
-                        && member.electrical_type.as_deref() == Some("no_connect")
-                })
-                .count();
-
-            if nc_pins == 0 {
-                continue;
-            }
-
-            let connected_others = point.members.iter().filter(|member| {
-                !matches!(member.kind, ConnectionMemberKind::NoConnectMarker)
-                    && !(member.kind == ConnectionMemberKind::SymbolPin
-                        && member.electrical_type.as_deref() == Some("no_connect"))
-            });
-
-            if connected_others.clone().next().is_none() {
+        for pin in collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
+            .into_iter()
+            .flat_map(|inventory| inventory.pins.iter())
+        {
+            if pin.electrical_type.as_deref() != Some("no_connect")
+                || !reduced_project_no_connect_pin_has_connected_owner(&graph, pin)
+                || !seen.insert((sheet_path.instance_path.clone(), pin.at))
+            {
                 continue;
             }
 
@@ -1775,7 +1756,7 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                 code: "erc-nc-pin-connected",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: "Pin with 'no connection' type is connected".to_string(),
-                path: Some(schematic.path.clone()),
+                path: Some(pin.schematic_path.clone()),
                 span: None,
                 line: None,
                 column: None,

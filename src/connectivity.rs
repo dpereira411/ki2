@@ -37,7 +37,6 @@ pub(crate) struct ConnectionMember {
     pub(crate) symbol_uuid: Option<String>,
     pub(crate) pin_number: Option<String>,
     pub(crate) visible: bool,
-    pub(crate) electrical_type: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -6420,7 +6419,6 @@ fn projected_symbol_pins(symbol: &Symbol) -> Vec<ConnectionMember> {
             symbol_uuid: symbol.uuid.clone(),
             pin_number: pin.number,
             visible: true,
-            electrical_type: pin.electrical_type,
         })
         .collect()
 }
@@ -6504,7 +6502,6 @@ pub(crate) fn collect_connection_points(
                             symbol_uuid: None,
                             pin_number: None,
                             visible: pin.visible,
-                            electrical_type: None,
                         },
                     );
                 }
@@ -6519,7 +6516,6 @@ pub(crate) fn collect_connection_points(
                             symbol_uuid: None,
                             pin_number: None,
                             visible: true,
-                            electrical_type: None,
                         },
                     );
                 }
@@ -6534,7 +6530,6 @@ pub(crate) fn collect_connection_points(
                             symbol_uuid: None,
                             pin_number: None,
                             visible: true,
-                            electrical_type: None,
                         },
                     );
                 }
@@ -6552,7 +6547,6 @@ pub(crate) fn collect_connection_points(
                             symbol_uuid: entry.uuid.clone(),
                             pin_number: None,
                             visible: true,
-                            electrical_type: None,
                         },
                     );
                 }
@@ -6566,7 +6560,6 @@ pub(crate) fn collect_connection_points(
                         symbol_uuid: None,
                         pin_number: None,
                         visible: true,
-                        electrical_type: None,
                     },
                 );
             }
@@ -6579,7 +6572,6 @@ pub(crate) fn collect_connection_points(
                         symbol_uuid: None,
                         pin_number: None,
                         visible: true,
-                        electrical_type: None,
                     },
                 );
             }
@@ -6592,7 +6584,6 @@ pub(crate) fn collect_connection_points(
                         symbol_uuid: None,
                         pin_number: None,
                         visible: true,
-                        electrical_type: None,
                     },
                 );
             }
@@ -8360,6 +8351,45 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
                     .flatten()
                 })
         })
+}
+
+// Upstream parity: reduced local analogue for the no-connect pin connectivity branch in
+// `ERC_TESTER::TestNoConnectPins()`. This is not a 1:1 connectable-item query because the Rust
+// graph still projects symbol pins and wire/label owners into reduced subgraph snapshots, but it
+// keeps the "no_connect pin has another owner at the same point" test on the shared graph owner
+// instead of rebuilding it from ERC-local connection-point snapshots. Remaining divergence is
+// fuller live `SCH_PIN` / item ownership and marker attachment.
+pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
+    graph: &ReducedProjectNetGraph,
+    pin: &ReducedProjectSymbolPin,
+) -> bool {
+    if pin.electrical_type.as_deref() != Some("no_connect") {
+        return false;
+    }
+
+    let Some(subgraph) = pin
+        .subgraph_index
+        .and_then(|index| graph.subgraphs.get(index))
+    else {
+        return false;
+    };
+
+    subgraph.base_pins.iter().any(|base_pin| {
+        base_pin.key.at == pin.at && base_pin.electrical_type.as_deref() != Some("no_connect")
+    }) || subgraph
+        .wire_items
+        .iter()
+        .any(|item| item.start == pin.at || item.end == pin.at)
+        || subgraph
+            .bus_items
+            .iter()
+            .any(|item| item.start == pin.at || item.end == pin.at)
+        || subgraph.label_links.iter().any(|label| label.at == pin.at)
+        || subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|sheet_pin| sheet_pin.at == pin.at)
+        || subgraph.hier_ports.iter().any(|port| port.at == pin.at)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -13977,6 +14007,60 @@ mod tests {
 
         assert_eq!(gnd_pin.name, "VCC");
         assert_eq!(agnd_pin.name, "VCC");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_no_connect_pin_owner_reads_graph_point_owners() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_no_connect_pin_owner_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:NC"
+      (symbol "NC_1_1"
+        (pin no_connect line
+          (at 0 0 0)
+          (length 2.54)
+          (name "NC")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:NC")
+    (at 0 0 0)
+    (uuid "73050000-0000-0000-0000-0000000008aa"))
+  (wire (pts (xy 0 0) (xy 10 0))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet");
+        let graph = project.reduced_project_net_graph(false);
+        let pin =
+            super::collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, root_sheet)
+                .into_iter()
+                .flat_map(|inventory| inventory.pins.iter())
+                .find(|pin| pin.electrical_type.as_deref() == Some("no_connect"))
+                .expect("no-connect pin");
+
+        assert!(super::reduced_project_no_connect_pin_has_connected_owner(
+            &graph, pin,
+        ));
 
         let _ = fs::remove_file(path);
     }
