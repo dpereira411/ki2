@@ -10950,6 +10950,73 @@ pub(crate) fn reduced_project_subgraph_driver_conflict(
     })
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckMultipleDrivers conflicting-driver selection branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still selects from reduced live driver snapshots instead of final
+// `CONNECTION_SUBGRAPH::m_drivers` item pointers and `m_multiple_drivers`
+// local_only_reason: moves multiple-driver conflict selection onto the active live subgraph owner
+// while preserving projected shown driver names for hierarchical labels and sheet pins
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` driver owner graph
+// remove_when: ERC can query final live multiple-driver conflicts directly from graph driver links
+fn live_reduced_subgraph_driver_conflict(
+    subgraph_handle: &LiveReducedSubgraphHandle,
+) -> Option<ReducedProjectDriverConflict> {
+    let subgraph = subgraph_handle.borrow();
+    let drivers = live_strong_driver_handles_to_snapshots(&subgraph.drivers);
+    let primary_driver = drivers.first()?;
+    let secondary_driver = drivers.iter().skip(1).find(|driver| {
+        matches!(
+            driver.kind,
+            ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+        ) && reduced_project_strong_driver_name(driver)
+            != reduced_project_strong_driver_name(primary_driver)
+    })?;
+
+    let driver_identity_schematic_path =
+        |driver: &ReducedProjectStrongDriver| match driver.identity.as_ref() {
+            Some(ReducedProjectDriverIdentity::Label { schematic_path, .. })
+            | Some(ReducedProjectDriverIdentity::SheetPin { schematic_path, .. })
+            | Some(ReducedProjectDriverIdentity::SymbolPin { schematic_path, .. }) => {
+                Some(schematic_path.clone())
+            }
+            None => None,
+        };
+
+    Some(ReducedProjectDriverConflict {
+        primary_name: reduced_project_strong_driver_name(primary_driver).to_string(),
+        secondary_name: reduced_project_strong_driver_name(secondary_driver).to_string(),
+        diagnostic_path: driver_identity_schematic_path(primary_driver)
+            .or_else(|| driver_identity_schematic_path(secondary_driver)),
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckMultipleDrivers `RunERC()` slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced diagnostic payloads and falls back for hand-built reduced test
+// graphs, but production conflict selection now reads active live subgraph driver owners
+// local_only_reason: keeps multiple-driver conflict collection on the shared graph owner and
+// retires direct reduced subgraph traversal from ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
+// remove_when: ERC can consume final live multiple-driver conflict events directly from graph links
+pub(crate) fn reduced_project_driver_conflicts(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectDriverConflict> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_run_erc_subgraph_handles(graph)
+            .into_iter()
+            .filter_map(|subgraph| live_reduced_subgraph_driver_conflict(&subgraph))
+            .collect();
+    }
+
+    reduced_project_run_erc_subgraphs(graph)
+        .into_iter()
+        .filter_map(reduced_project_subgraph_driver_conflict)
+        .collect()
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckFloatingWires floating subgraph branch or none
 // parity_status: partial
@@ -25219,6 +25286,40 @@ mod tests {
                         && driver.connection.local_name == "GND"
                 }),
                 "text driver local name should not be overwritten by propagated net name: {subgraph:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_power_live_hierarchy_preserves_text_driver_names_after_propagation() {
+        let root_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch",
+        );
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let child_gnd_subgraphs = graph
+            .live_subgraphs
+            .iter()
+            .filter(|subgraph| {
+                let subgraph = subgraph.borrow();
+                !subgraph.sheet_instance_path.is_empty()
+                    && subgraph.driver_connection.borrow().name == "GND"
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(child_gnd_subgraphs.len(), 3);
+        for subgraph in child_gnd_subgraphs {
+            let subgraph = subgraph.borrow();
+            assert!(
+                subgraph.drivers.iter().any(|driver| {
+                    let driver = driver.borrow().snapshot();
+                    driver.kind == ReducedProjectDriverKind::Label
+                        && driver.connection.name == "GND"
+                        && driver.connection.local_name == "REF_NODE"
+                }),
+                "live hierarchical-label driver snapshot should keep shown text after GND propagation: {subgraph:?}"
             );
         }
     }

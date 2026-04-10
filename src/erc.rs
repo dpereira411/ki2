@@ -2,12 +2,12 @@ use crate::connectivity::{
     collect_reduced_project_net_map, reduced_project_bus_entry_conflicts,
     reduced_project_bus_to_bus_conflicts, reduced_project_bus_to_net_conflicts,
     reduced_project_dangling_directive_label_links, reduced_project_dangling_wire_endpoint_events,
-    reduced_project_floating_wire_events, reduced_project_four_way_junction_points,
-    reduced_project_hierarchical_sheet_events, reduced_project_label_connectivity_subgraphs,
-    reduced_project_label_multiple_wire_events, reduced_project_named_label_entries,
-    reduced_project_no_connect_events, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_run_erc_subgraphs, reduced_project_same_local_global_label_conflicts,
-    reduced_project_single_global_labels, reduced_project_subgraph_driver_conflict,
+    reduced_project_driver_conflicts, reduced_project_floating_wire_events,
+    reduced_project_four_way_junction_points, reduced_project_hierarchical_sheet_events,
+    reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
+    reduced_project_named_label_entries, reduced_project_no_connect_events,
+    reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_same_local_global_label_conflicts, reduced_project_single_global_labels,
     reduced_project_symbol_pin_inventories, reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
@@ -2187,17 +2187,16 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 // project subgraph owner instead of rebuilding them from per-sheet connection components, now also
 // preserves KiCad's "labels and power pins only" secondary-driver filter instead of warning on
 // sheet-pin-only name differences, and now also follows `RunERC()`-style reused-screen driver
-// de-duplication through the shared reduced driver owner. Remaining divergence is fuller bus/power
-// subgraph coverage, driver-item identity, and exact marker attachment.
+// de-duplication through the shared graph driver owner. Production conflict selection now reads
+// live subgraph driver-owner snapshots so hierarchical-label shown driver names stay attached
+// before ERC formats diagnostics. Remaining divergence is fuller bus/power subgraph coverage,
+// final driver-item identity, and exact marker attachment.
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        let Some(conflict) = reduced_project_subgraph_driver_conflict(&subgraph) else {
-            continue;
-        };
+    for conflict in reduced_project_driver_conflicts(&graph) {
         let path = conflict
             .diagnostic_path
             .unwrap_or_else(|| project.root_path.clone());
