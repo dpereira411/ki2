@@ -1650,14 +1650,6 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     }
 
     for candidate in reduced_project_pin_not_connected_candidates(&graph, &label_name_caches) {
-        let Some(_sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == candidate.sheet_instance_path)
-        else {
-            continue;
-        };
-
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
             code: "erc-pin-not-connected",
@@ -1689,14 +1681,6 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let graph = project.reduced_project_net_graph(false);
 
     for label_subgraph in reduced_project_label_connectivity_subgraphs(&graph) {
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == label_subgraph.sheet_instance_path)
-        else {
-            continue;
-        };
-
         let all_pins = label_subgraph.all_pins;
         let local_pins = label_subgraph.local_pins;
         let has_no_connect = label_subgraph.has_no_connect;
@@ -1729,7 +1713,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     code: "erc-label-dangling",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: "Label not connected".to_string(),
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: Some(label_subgraph.diagnostic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
@@ -1743,7 +1727,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     code: "erc-isolated-pin-label",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: "Label connected to only one pin".to_string(),
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: Some(label_subgraph.diagnostic_path.clone()),
                     span: None,
                     line: None,
                     column: None,

@@ -9933,7 +9933,7 @@ pub(crate) struct ReducedProjectLabelMultipleWires {
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectLabelConnectivitySubgraph {
-    pub(crate) sheet_instance_path: String,
+    pub(crate) diagnostic_path: std::path::PathBuf,
     pub(crate) all_pins: usize,
     pub(crate) local_pins: usize,
     pub(crate) has_no_connect: bool,
@@ -9962,7 +9962,6 @@ pub(crate) enum ReducedProjectNoConnectMarkerOutcome {
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectPinNotConnectedCandidate {
-    pub(crate) sheet_instance_path: String,
     pub(crate) pin_schematic_path: std::path::PathBuf,
 }
 
@@ -10429,7 +10428,11 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
         }
 
         label_subgraphs.push(ReducedProjectLabelConnectivitySubgraph {
-            sheet_instance_path: subgraph.sheet_instance_path.clone(),
+            diagnostic_path: subgraph
+                .label_links
+                .first()
+                .map(|label| label.schematic_path.clone())
+                .unwrap_or_default(),
             all_pins,
             local_pins,
             has_no_connect: aggregate_has_no_connect,
@@ -10720,7 +10723,6 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
             && pin.electrical_type.as_deref() != Some("not_connected")
         {
             candidates.push(ReducedProjectPinNotConnectedCandidate {
-                sheet_instance_path: subgraph.sheet_instance_path.clone(),
                 pin_schematic_path: pin.schematic_path.clone(),
             });
         }
