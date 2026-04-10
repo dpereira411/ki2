@@ -1299,6 +1299,10 @@ struct LiveProjectBusMember {
 
 type LiveProjectBusMemberHandle = Rc<RefCell<LiveProjectBusMember>>;
 
+fn live_bus_member_handle_id(handle: &LiveProjectBusMemberHandle) -> usize {
+    Rc::as_ptr(handle) as usize
+}
+
 fn live_bus_member_handle_snapshot(handle: &LiveProjectBusMemberHandle) -> ReducedBusMember {
     handle.borrow().snapshot()
 }
@@ -3549,7 +3553,7 @@ impl LiveReducedSubgraph {
         let bus_neighbor_recurse_targets =
             Self::refresh_bus_neighbor_drivers(live_subgraphs, &dirty_active, stale_members);
 
-        for target in bus_neighbor_recurse_targets {
+        for (target, member) in bus_neighbor_recurse_targets {
             if Rc::ptr_eq(&target, start) {
                 continue;
             }
@@ -3563,6 +3567,21 @@ impl LiveReducedSubgraph {
                 stale_members,
                 false,
             );
+
+            let target_connection = target.borrow().driver_connection.clone();
+            if target_connection.borrow().full_local_name != member.borrow().full_local_name {
+                clone_live_connection_owner_into_live_bus_member(
+                    &mut member.borrow_mut(),
+                    &target_connection.borrow(),
+                );
+
+                if !stale_members
+                    .iter()
+                    .any(|candidate| live_bus_member_handles_eq(candidate, &member))
+                {
+                    stale_members.push(member);
+                }
+            }
         }
 
         for handle in &dirty_active {
@@ -3670,7 +3689,7 @@ impl LiveReducedSubgraph {
         live_subgraphs: &[LiveReducedSubgraphHandle],
         component: &[LiveReducedSubgraphHandle],
         stale_members: &mut Vec<LiveProjectBusMemberHandle>,
-    ) -> Vec<LiveReducedSubgraphHandle> {
+    ) -> Vec<(LiveReducedSubgraphHandle, LiveProjectBusMemberHandle)> {
         let mut recurse_targets = Vec::new();
 
         for parent_handle in component {
@@ -3818,12 +3837,21 @@ impl LiveReducedSubgraph {
                     &neighbor_sheet_instance_path,
                 );
                 neighbor_handle.borrow_mut().dirty = true;
-                recurse_targets.push(neighbor_handle);
+                recurse_targets.push((neighbor_handle, parent_member));
             }
         }
 
-        recurse_targets.sort_by_key(live_subgraph_handle_id);
-        recurse_targets.dedup_by(|left, right| Rc::ptr_eq(left, right));
+        recurse_targets.sort_by(|(left_handle, left_member), (right_handle, right_member)| {
+            live_subgraph_handle_id(left_handle)
+                .cmp(&live_subgraph_handle_id(right_handle))
+                .then(
+                    live_bus_member_handle_id(left_member)
+                        .cmp(&live_bus_member_handle_id(right_member)),
+                )
+        });
+        recurse_targets.dedup_by(|(left_handle, left_member), (right_handle, right_member)| {
+            Rc::ptr_eq(left_handle, right_handle) && Rc::ptr_eq(left_member, right_member)
+        });
         recurse_targets
     }
 
@@ -15291,7 +15319,77 @@ mod tests {
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].base_pins[0].connection.full_local_name, "/SIG1");
         assert_eq!(recurse_targets.len(), 1);
-        assert!(Rc::ptr_eq(&recurse_targets[0], &live_subgraphs[1]));
+        assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbor_recursion_refreshes_upgraded_member() {
+        let member = test_bus_member("SIG1", "SIG1", "/SIG1");
+        let sig_connection = test_net_connection("/SIG1", "SIG1", "/SIG1", "");
+        let power_connection = test_net_connection("/PWR", "PWR", "/PWR", "/child");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                power_connection.clone(),
+                vec![test_power_driver(power_connection.clone())],
+                "/child",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+        graph[1].hier_child_indexes = vec![2];
+        graph[1].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child".to_string()),
+            connection: sig_connection.clone(),
+        }];
+        graph[2].hier_parent_index = Some(1);
+        graph[2].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: sig_connection,
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
+        let mut visiting = std::collections::BTreeSet::new();
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_neighbors_from_selected_start(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            &global_subgraphs,
+            false,
+            &mut visiting,
+            &mut stale_members,
+            false,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[1].driver_connection.full_local_name, "/PWR");
+        assert_eq!(graph[0].driver_connection.members[0].full_local_name, "/PWR");
+        assert_eq!(stale_members.len(), 1);
+        assert_eq!(stale_members[0].borrow().full_local_name, "/PWR");
     }
 
     #[test]
