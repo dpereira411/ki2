@@ -3,7 +3,8 @@ use crate::connectivity::{
     collect_connection_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
-    reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_connected_wire_label_full_names_at, reduced_project_subgraph_by_index,
+    reduced_project_subgraph_index, reduced_project_subgraphs,
     resolve_reduced_project_subgraph_for_no_connect,
     resolve_reduced_project_subgraph_for_sheet_pin,
 };
@@ -2895,9 +2896,11 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 // This is not a 1:1 KiCad driver/subgraph pass because the Rust tree still lacks live
 // `SCH_CONNECTION` plus connected-bus-item ownership, but the exercised real graph path now reads
 // bus, member, and fallback net-name state through the graph-owned reduced `driver_connection`
-// owners instead of mixing those checks across parallel reduced boundary carriers. It still
-// compares flattened reduced `FullLocalName()` values and still diverges on fuller resolved
-// bus-object ownership plus cached live driver connections.
+// owners instead of mixing those checks across parallel reduced boundary carriers. It also now
+// keeps the reported net name stable by sorting the reduced wire-side candidates before picking
+// the first mismatch, which is closer to KiCad's connected-wire-label minimum-name behavior on
+// this check. It still compares flattened reduced `FullLocalName()` values and still diverges on
+// fuller resolved bus-object ownership plus cached live driver connections.
 pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2916,6 +2919,24 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let Some(bus_entry) = subgraph.wire_items.iter().find(|item| item.is_bus_entry) else {
             continue;
         };
+        let has_non_bus_entry_owner = subgraph.wire_items.iter().any(|item| !item.is_bus_entry)
+            || !subgraph.base_pins.is_empty()
+            || !subgraph.no_connect_points.is_empty()
+            || subgraph.label_links.iter().any(|label| {
+                label.connection.connection_type
+                    == crate::connectivity::ReducedProjectConnectionType::Net
+            })
+            || subgraph.hier_sheet_pins.iter().any(|pin| {
+                pin.connection.connection_type
+                    == crate::connectivity::ReducedProjectConnectionType::Net
+            })
+            || subgraph.hier_ports.iter().any(|port| {
+                port.connection.connection_type
+                    == crate::connectivity::ReducedProjectConnectionType::Net
+            });
+        if !has_non_bus_entry_owner {
+            continue;
+        }
         let entry_at = [
             f64::from_bits(bus_entry.start.0),
             f64::from_bits(bus_entry.start.1),
@@ -3003,6 +3024,16 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 test_names.push(driver_connection.full_local_name.clone());
             }
         }
+        test_names.extend(reduced_connected_wire_label_full_names_at(
+            &project.schematics,
+            &project.sheet_paths,
+            sheet_path,
+            project.project.as_ref(),
+            project.current_variant(),
+            entry_at,
+        ));
+        test_names.sort();
+        test_names.dedup();
 
         let suppress_conflict =
             crate::connectivity::reduced_project_subgraph_non_bus_driver_priority(&subgraph)

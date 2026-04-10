@@ -6169,9 +6169,33 @@ fn erc_reports_dangling_global_label_on_no_connect_line_fixture() {
 
     assert!(
         diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "erc-label-dangling"
-                && diagnostic.message == "Label not connected"
+            diagnostic.code == "erc-label-dangling" && diagnostic.message == "Label not connected"
         }),
+        "{diagnostics:#?}"
+    );
+}
+
+#[test]
+fn erc_routes_unconnected_bus_entries_to_dangling_wire_checks() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../ki/tests/fixtures/erc_upstream_qa/projects/unconnected_bus_entry_qa.kicad_sch");
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "erc-wire-dangling")
+            .count(),
+        2,
+        "{diagnostics:#?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "erc-bus-entry-conflict"),
         "{diagnostics:#?}"
     );
 }
@@ -6439,20 +6463,12 @@ fn erc_uses_project_pin_map_overrides() {
     let project = SchematicProject::from_load_result(load);
     let diagnostics = erc::run(&project);
 
-    assert!(
-        diagnostics
-            .iter()
-            .any(|diagnostic| {
-                diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Warning
-            })
-    );
-    assert!(
-        !diagnostics
-            .iter()
-            .any(|diagnostic| {
-                diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
-            })
-    );
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Warning
+    }));
+    assert!(!diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "erc-pin-to-pin" && diagnostic.severity == Severity::Error
+    }));
 
     let _ = fs::remove_file(schematic_path);
     let _ = fs::remove_file(project_path);

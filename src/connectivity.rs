@@ -1175,6 +1175,7 @@ fn point_key_set_contains(points: &BTreeSet<PointKey>, at: [f64; 2]) -> bool {
 }
 
 fn bus_entry_preferred_wire_endpoint(
+    schematic: &Schematic,
     point_snapshot: &BTreeMap<PointKey, ConnectionPointSnapshot>,
     entry: &crate::model::BusEntry,
 ) -> [f64; 2] {
@@ -1187,9 +1188,22 @@ fn bus_entry_preferred_wire_endpoint(
             .unwrap_or(&[])
     };
     let has_wire = |at| {
-        endpoint_members(at)
-            .iter()
-            .any(|member| member.kind == ConnectionMemberKind::Wire)
+        schematic.screen.items.iter().any(|item| match item {
+            SchItem::Wire(line) => line
+                .points
+                .windows(2)
+                .any(|pair| point_on_wire_segment(at, pair[0], pair[1])),
+            _ => false,
+        })
+    };
+    let has_bus = |at| {
+        schematic.screen.items.iter().any(|item| match item {
+            SchItem::Bus(line) => line
+                .points
+                .windows(2)
+                .any(|pair| point_on_wire_segment(at, pair[0], pair[1])),
+            _ => false,
+        })
     };
     let has_non_bus_owner = |at| {
         endpoint_members(at).iter().any(|member| {
@@ -1204,13 +1218,17 @@ fn bus_entry_preferred_wire_endpoint(
         })
     };
 
-    match (has_wire(entry.at), has_wire(end)) {
+    match (has_non_bus_owner(entry.at), has_non_bus_owner(end)) {
         (true, false) => entry.at,
         (false, true) => end,
-        _ => match (has_non_bus_owner(entry.at), has_non_bus_owner(end)) {
-            (true, false) => entry.at,
-            (false, true) => end,
-            _ => entry.at,
+        _ => match (has_bus(entry.at), has_bus(end)) {
+            (true, false) => end,
+            (false, true) => entry.at,
+            _ => match (has_wire(entry.at), has_wire(end)) {
+                (true, false) => entry.at,
+                (false, true) => end,
+                _ => entry.at,
+            },
         },
     }
 }
@@ -6696,6 +6714,10 @@ fn collect_connection_components_with_options(
     );
     segments.extend(schematic.screen.items.iter().filter_map(|item| match item {
         SchItem::BusEntry(entry) => {
+            if !include_bus_entry_segments {
+                return None;
+            }
+
             let endpoint_members = |at| {
                 points
                     .iter()
@@ -6704,7 +6726,7 @@ fn collect_connection_components_with_options(
                     .unwrap_or(&[])
             };
             let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
-            let wire_side = bus_entry_preferred_wire_endpoint(&point_snapshot, entry);
+            let wire_side = bus_entry_preferred_wire_endpoint(schematic, &point_snapshot, entry);
             let bus_side = if points_equal(wire_side, entry.at) {
                 end
             } else {
@@ -7343,15 +7365,54 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         }
 
         for connected_component in collect_reduced_graph_connection_components(schematic) {
-            let net_name = resolve_point_connectivity_text_var(
-                inputs.schematics,
-                inputs.sheet_paths,
-                sheet_path,
-                inputs.project,
-                inputs.current_variant,
-                None,
-                connected_component.anchor,
-                SymbolPinTextVarKind::NetName,
+            let component_points = connected_component
+                .members
+                .iter()
+                .map(|member| point_key(member.at))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let already_has_pending_subgraph = pending_subgraphs.iter().any(|pending| {
+                pending.sheet_instance_path == sheet_path.instance_path
+                    && pending.points == component_points
+            });
+
+            if already_has_pending_subgraph {
+                continue;
+            }
+
+            let net_name = resolve_reduced_net_name_on_component(
+                schematic,
+                &connected_component,
+                Some(&sheet_path_prefix),
+                |label| {
+                    shown_label_text_without_connectivity(
+                        inputs.schematics,
+                        inputs.sheet_paths,
+                        sheet_path,
+                        inputs.project,
+                        inputs.current_variant,
+                        label,
+                    )
+                },
+                |sheet, pin| {
+                    let Some(child_sheet_path) =
+                        child_sheet_path_for_sheet(inputs.sheet_paths, sheet_path, sheet)
+                    else {
+                        return pin.name.clone();
+                    };
+
+                    shown_sheet_pin_text(
+                        inputs.schematics,
+                        inputs.sheet_paths,
+                        sheet_path,
+                        child_sheet_path,
+                        inputs.project,
+                        inputs.current_variant,
+                        None,
+                        pin,
+                    )
+                },
             )
             .unwrap_or_default();
 
@@ -7362,11 +7423,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             let keeps_local_subgraph = connected_component.members.iter().any(|member| {
                 matches!(
                     member.kind,
-                    ConnectionMemberKind::Wire
-                        | ConnectionMemberKind::BusEntry
-                        | ConnectionMemberKind::NoConnectMarker
+                    ConnectionMemberKind::Wire | ConnectionMemberKind::NoConnectMarker
                 )
-            });
+            }) || (connected_component
+                .members
+                .iter()
+                .any(|member| member.kind == ConnectionMemberKind::BusEntry)
+                && !connected_component
+                    .members
+                    .iter()
+                    .any(|member| member.kind == ConnectionMemberKind::Bus));
 
             if !keeps_local_subgraph {
                 continue;
@@ -7411,13 +7477,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 has_no_connect: true,
                 sheet_instance_path: sheet_path.instance_path.clone(),
                 anchor: point_key(connected_component.anchor),
-                points: connected_component
-                    .members
-                    .iter()
-                    .map(|member| point_key(member.at))
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect(),
+                points: component_points,
                 nodes: Vec::new(),
                 base_pins: Vec::new(),
                 label_links,
@@ -8719,7 +8779,8 @@ fn collect_reduced_subgraph_local_membership(
                 })
             }
             SchItem::BusEntry(entry) => {
-                let wire_side = bus_entry_preferred_wire_endpoint(&point_snapshot, entry);
+                let wire_side =
+                    bus_entry_preferred_wire_endpoint(schematic, &point_snapshot, entry);
                 let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
                 point_key_set_contains(&component_points, wire_side).then_some(
                     ReducedSubgraphWireItem {
@@ -9278,7 +9339,13 @@ pub(crate) fn collect_reduced_label_component_snapshots(
         .collect()
 }
 
-fn connected_wire_segment_indices(
+// Upstream parity: reduced local analogue for the wire-only traversal KiCad uses for several
+// connection-point queries before it reaches fuller live `SCH_CONNECTION` ownership. This is not
+// a 1:1 graph walk because the Rust tree still expands over reduced geometric wire segments
+// instead of live connection objects, but it centralizes the exercised wire-only connected-set
+// traversal so ERC and reduced connectivity callers stop open-coding their own segment scans.
+// Remaining divergence is fuller live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` ownership.
+pub(crate) fn connected_wire_segment_indices(
     segments: &[[[f64; 2]; 2]],
     junctions: &[[f64; 2]],
     anchor: [f64; 2],
@@ -9322,6 +9389,86 @@ fn connected_wire_segment_indices(
     connected.sort_unstable();
     connected.dedup();
     connected
+}
+
+// Upstream parity: reduced local analogue for the connected-wire label-name query KiCad reaches
+// through the connection graph on bus-entry ERC paths. This is not a 1:1 `SCH_CONNECTION` owner
+// because the Rust tree still walks reduced wire segments and computes shown label text on demand,
+// but it keeps the wire-only label-name selection on the shared connectivity owner instead of
+// re-deriving it independently inside ERC. Remaining divergence is fuller live item ownership and
+// cached connection-object names.
+pub(crate) fn reduced_connected_wire_label_full_names_at(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    sheet_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    at: [f64; 2],
+) -> Vec<String> {
+    let Some(schematic) = schematics
+        .iter()
+        .find(|schematic| schematic.path == sheet_path.schematic_path)
+    else {
+        return Vec::new();
+    };
+
+    let wire_segments = collect_wire_segments(schematic);
+    let junctions = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Junction(junction) => Some(junction.at),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let connected_segments = connected_wire_segment_indices(&wire_segments, &junctions, at);
+    let sheet_path_prefix = reduced_net_name_sheet_path_prefix(sheet_paths, sheet_path);
+
+    let mut names = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Label(label) if label.kind != LabelKind::Directive => connected_segments
+                .iter()
+                .copied()
+                .any(|segment_index| {
+                    let segment = wire_segments[segment_index];
+                    point_on_wire_segment(label.at, segment[0], segment[1])
+                })
+                .then(|| {
+                    let shown = shown_label_text_without_connectivity(
+                        schematics,
+                        sheet_paths,
+                        sheet_path,
+                        project,
+                        current_variant,
+                        label,
+                    );
+                    let source = match label.kind {
+                        LabelKind::Global => ReducedNetNameSource::GlobalLabel,
+                        LabelKind::Local => ReducedNetNameSource::LocalLabel,
+                        LabelKind::Hierarchical => ReducedNetNameSource::HierarchicalLabel,
+                        LabelKind::Directive => unreachable!(),
+                    };
+
+                    reduced_driver_full_name(
+                        &shown,
+                        source,
+                        if label.kind == LabelKind::Global {
+                            ""
+                        } else {
+                            &sheet_path_prefix
+                        },
+                    )
+                }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn points_share_segment(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
@@ -14884,6 +15031,51 @@ mod tests {
                 member.kind == super::ConnectionMemberKind::Label
                     && crate::loader::points_equal(member.at, [-5.0, 0.0])
             })
+        }));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_connection_components_keep_dangling_bus_entries_out_of_bus_component() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_dangling_bus_entry_components_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (global_label "DATA[0..7]" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (bus_entry (at 5 0) (size 5 5)))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let components = super::collect_connection_components_with_options(&schematic, false);
+
+        assert_eq!(components.len(), 2, "{components:#?}");
+        assert!(components.iter().any(|component| {
+            component
+                .members
+                .iter()
+                .any(|member| member.kind == super::ConnectionMemberKind::Bus)
+                && component.members.iter().any(|member| {
+                    member.kind == super::ConnectionMemberKind::Label
+                        && crate::loader::points_equal(member.at, [10.0, 0.0])
+                })
+        }));
+        assert!(components.iter().any(|component| {
+            component.members.len() == 1
+                && component.members[0].kind == super::ConnectionMemberKind::BusEntry
+                && crate::loader::points_equal(component.members[0].at, [10.0, 5.0])
         }));
 
         let _ = fs::remove_file(&path);
