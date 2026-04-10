@@ -2383,6 +2383,9 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
             } else {
                 None
             };
+            let bus_entry_bus_side = (wire_item.is_bus_entry && wire_item.start_is_wire_side)
+                .then_some(wire_item.end)
+                .or_else(|| wire_item.is_bus_entry.then_some(wire_item.start));
             for endpoint in [wire_item.start, wire_item.end] {
                 let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
                 let endpoint_matches = |point: crate::connectivity::PointKey| {
@@ -2400,10 +2403,10 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                         .iter()
                         .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
                     || connected_bus_subgraph.is_some_and(|bus_subgraph| {
-                        bus_subgraph
-                            .bus_items
-                            .iter()
-                            .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
+                        bus_entry_bus_side.is_some_and(|bus_side| bus_side == endpoint)
+                            && bus_subgraph.bus_items.iter().any(|item| {
+                                endpoint_matches(item.start) || endpoint_matches(item.end)
+                            })
                     })
                     || subgraph
                         .label_links
