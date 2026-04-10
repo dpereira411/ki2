@@ -9948,6 +9948,12 @@ pub(crate) struct ReducedProjectLabelNameCaches {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum ReducedProjectNoConnectMarkerOutcome {
+    Dangling { diagnostic_path: std::path::PathBuf },
+    Connected { diagnostic_path: std::path::PathBuf },
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10459,6 +10465,116 @@ pub(crate) fn reduced_project_label_name_caches(
         global_names,
         local_names_by_sheet,
     }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects explicit no-connect branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still evaluates reduced no-connect points and reduced same-name subgraph snapshots
+// instead of live `m_no_connect` plus `m_net_name_to_subgraphs_map` item owners
+// local_only_reason: keeps explicit no-connect marker classification on the shared graph owner
+// instead of duplicating reduced subgraph and same-name aggregation scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / no-connect item owner graph
+// remove_when: ERC can query live no-connect marker outcomes directly from graph item links
+pub(crate) fn reduced_project_no_connect_marker_outcomes(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectNoConnectMarkerOutcome> {
+    let mut outcomes = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut seen_driver_identities = BTreeSet::new();
+
+    for subgraph in reduced_project_run_erc_subgraphs(graph)
+        .into_iter()
+        .filter(|subgraph| !subgraph.no_connect_points.is_empty())
+    {
+        for no_connect_point in &subgraph.no_connect_points {
+            if reduced_project_subgraph_driver_identity(&subgraph)
+                .is_some_and(|identity| !seen_driver_identities.insert(identity.clone()))
+            {
+                continue;
+            }
+
+            if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
+                continue;
+            }
+
+            let local_unique_pins = subgraph.base_pins.iter().cloned().collect::<BTreeSet<_>>();
+            let local_unique_labels = subgraph
+                .label_links
+                .iter()
+                .map(|label| (subgraph.sheet_instance_path.clone(), label.at))
+                .collect::<BTreeSet<_>>();
+            let has_sheet_pin = subgraph
+                .hier_sheet_pins
+                .iter()
+                .any(|pin| pin.at == no_connect_point.at);
+            let has_hierarchical_label = subgraph
+                .hier_ports
+                .iter()
+                .any(|label| label.at == no_connect_point.at);
+            let has_nc_pin = subgraph.base_pins.iter().any(|base_pin| {
+                base_pin.electrical_type.as_deref() == Some("no_connect")
+                    && base_pin.key.at == no_connect_point.at
+            });
+
+            if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
+                || (has_nc_pin && local_unique_pins.len() <= 1)
+            {
+                continue;
+            }
+
+            let (unique_pin_count, unique_label_count) =
+                if subgraph.driver_connection.name.is_empty() {
+                    (local_unique_pins.len(), local_unique_labels.len())
+                } else {
+                    let neighbors = collect_reduced_project_subgraphs_by_name(
+                        graph,
+                        &subgraph.driver_connection.name,
+                    )
+                    .into_iter()
+                    .filter(|neighbor| neighbor.sheet_instance_path == subgraph.sheet_instance_path)
+                    .collect::<Vec<_>>();
+                    let unique_pin_count = neighbors
+                        .iter()
+                        .flat_map(|neighbor| {
+                            neighbor
+                                .base_pins
+                                .iter()
+                                .map(|base_pin| base_pin.key.clone())
+                        })
+                        .collect::<BTreeSet<ReducedNetBasePinKey>>()
+                        .len();
+                    let unique_label_count = neighbors
+                        .iter()
+                        .flat_map(|neighbor| {
+                            neighbor
+                                .label_links
+                                .iter()
+                                .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
+                        })
+                        .collect::<BTreeSet<_>>()
+                        .len();
+                    (unique_pin_count, unique_label_count)
+                };
+
+            if unique_pin_count <= 1 {
+                if unique_pin_count == 0 && unique_label_count == 0 {
+                    outcomes.push(ReducedProjectNoConnectMarkerOutcome::Dangling {
+                        diagnostic_path: no_connect_point.schematic_path.clone(),
+                    });
+                }
+
+                continue;
+            }
+
+            outcomes.push(ReducedProjectNoConnectMarkerOutcome::Connected {
+                diagnostic_path: no_connect_point.schematic_path.clone(),
+            });
+        }
+    }
+
+    outcomes
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(

@@ -1,12 +1,13 @@
 use crate::connectivity::{
-    ReducedNetBasePinKey, ReducedProjectDriverKind, collect_reduced_project_net_map,
+    ReducedProjectDriverKind, collect_reduced_project_net_map,
     collect_reduced_project_subgraphs_by_name, reduced_connected_wire_label_full_names_at,
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
     reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
-    reduced_project_label_name_caches, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
-    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_entry_conflict_candidate,
+    reduced_project_label_name_caches, reduced_project_no_connect_marker_outcomes,
+    reduced_project_no_connect_pin_has_connected_owner, reduced_project_run_erc_subgraphs,
+    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
+    reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
     reduced_project_subgraph_floating_wire, reduced_project_subgraphs,
@@ -1617,104 +1618,25 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
-    let mut seen = std::collections::BTreeSet::new();
-    let mut seen_driver_identities = std::collections::BTreeSet::new();
     let label_name_caches = reduced_project_label_name_caches(&graph);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph)
-        .into_iter()
-        .filter(|subgraph| !subgraph.no_connect_points.is_empty())
-    {
-        for no_connect_point in &subgraph.no_connect_points {
-            if crate::connectivity::reduced_project_subgraph_driver_identity(&subgraph)
-                .is_some_and(|identity| !seen_driver_identities.insert(identity.clone()))
-            {
-                continue;
-            }
-
-            if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
-                continue;
-            }
-
-            let local_unique_pins = subgraph
-                .base_pins
-                .iter()
-                .cloned()
-                .collect::<std::collections::BTreeSet<_>>();
-            let local_unique_labels = subgraph
-                .label_links
-                .iter()
-                .map(|label| (subgraph.sheet_instance_path.clone(), label.at))
-                .collect::<std::collections::BTreeSet<_>>();
-            let has_sheet_pin = subgraph
-                .hier_sheet_pins
-                .iter()
-                .any(|pin| pin.at == no_connect_point.at);
-            let has_hierarchical_label = subgraph
-                .hier_ports
-                .iter()
-                .any(|label| label.at == no_connect_point.at);
-            let has_nc_pin = subgraph.base_pins.iter().any(|base_pin| {
-                base_pin.electrical_type.as_deref() == Some("no_connect")
-                    && base_pin.key.at == no_connect_point.at
-            });
-
-            if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
-                || (has_nc_pin && local_unique_pins.len() <= 1)
-            {
-                continue;
-            }
-
-            let subgraph_name = subgraph.driver_connection.name.clone();
-            let (unique_pin_count, unique_label_count) = if subgraph_name.is_empty() {
-                (local_unique_pins.len(), local_unique_labels.len())
-            } else {
-                let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &subgraph_name)
-                    .into_iter()
-                    .filter(|neighbor| neighbor.sheet_instance_path == subgraph.sheet_instance_path)
-                    .collect::<Vec<_>>();
-                let unique_pin_count = neighbors
-                    .iter()
-                    .flat_map(|neighbor| {
-                        neighbor
-                            .base_pins
-                            .iter()
-                            .map(|base_pin| base_pin.key.clone())
-                    })
-                    .collect::<std::collections::BTreeSet<ReducedNetBasePinKey>>()
-                    .len();
-                let unique_label_count = neighbors
-                    .iter()
-                    .flat_map(|neighbor| {
-                        neighbor
-                            .label_links
-                            .iter()
-                            .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
-                    })
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len();
-                (unique_pin_count, unique_label_count)
-            };
-            let diagnostic_path = no_connect_point.schematic_path.clone();
-
-            if unique_pin_count <= 1 {
-                if unique_pin_count == 0 && unique_label_count == 0 {
-                    diagnostics.push(Diagnostic {
-                        severity: Severity::Warning,
-                        code: "erc-no-connect-dangling",
-                        kind: crate::diagnostic::DiagnosticKind::Validation,
-                        message: "Unconnected \"no connection\" flag".to_string(),
-                        path: Some(diagnostic_path.clone()),
-                        span: None,
-                        line: None,
-                        column: None,
-                    });
-                }
-
-                continue;
-            }
-
-            diagnostics.push(Diagnostic {
+    for outcome in reduced_project_no_connect_marker_outcomes(&graph) {
+        match outcome {
+            crate::connectivity::ReducedProjectNoConnectMarkerOutcome::Dangling {
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "erc-no-connect-dangling",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: "Unconnected \"no connection\" flag".to_string(),
+                path: Some(diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            }),
+            crate::connectivity::ReducedProjectNoConnectMarkerOutcome::Connected {
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 code: "erc-no-connect-connected",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
@@ -1723,7 +1645,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 span: None,
                 line: None,
                 column: None,
-            });
+            }),
         }
     }
 
