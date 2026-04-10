@@ -11295,11 +11295,13 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
         let subgraph_index = reduced_project_subgraph_index(graph, &subgraph);
 
         let pin_count = subgraph.base_pins.len();
-        let has_local_hierarchy = !subgraph.hier_sheet_pins.is_empty()
-            || !subgraph.hier_ports.is_empty()
-            || subgraph_index.is_some_and(|index| {
-                reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, index)
-            });
+        let has_local_hierarchy =
+            !subgraph.hier_sheet_pins.is_empty() || !subgraph.hier_ports.is_empty();
+        let has_local_hierarchy = has_local_hierarchy
+            || (has_local_hierarchy
+                && subgraph_index.is_some_and(|index| {
+                    reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, index)
+                }));
         let has_no_connect = subgraph.has_no_connect
             || subgraph_index.is_some_and(|index| {
                 reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
@@ -11463,9 +11465,11 @@ fn live_reduced_project_label_connectivity_subgraphs(
         }
 
         let pin_count = subgraph.base_pins.len();
-        let has_local_hierarchy = !subgraph.hier_sheet_pins.is_empty()
-            || !subgraph.hier_ports.is_empty()
-            || live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph_handle);
+        let has_local_hierarchy =
+            !subgraph.hier_sheet_pins.is_empty() || !subgraph.hier_ports.is_empty();
+        let has_local_hierarchy = has_local_hierarchy
+            || (has_local_hierarchy
+                && live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph_handle));
         let has_no_connect = subgraph.has_no_connect
             || live_reduced_subgraph_has_no_connect_via_parent_chain(&subgraph_handle);
         let mut all_pins = pin_count;
@@ -14278,6 +14282,159 @@ mod tests {
         parent_subgraph.has_no_connect = true;
 
         let graph = test_graph_with_live_subgraphs(vec![label_subgraph, parent_subgraph]);
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(label_subgraphs[0].has_no_connect);
+    }
+
+    #[test]
+    fn reduced_label_connectivity_subgraphs_require_local_hierarchy_before_parent_exemption() {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection,
+        });
+        label_subgraph.bus_parent_indexes.push(1);
+
+        let mut parent_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            Vec::new(),
+            "",
+        );
+        parent_subgraph
+            .hier_sheet_pins
+            .push(ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(3, 4),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: test_net_connection("/BUS", "BUS", "/BUS", ""),
+            });
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![label_subgraph, parent_subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(!label_subgraphs[0].has_local_hierarchy);
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_require_local_hierarchy_before_parent_exemption() {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection,
+        });
+        label_subgraph.bus_parent_indexes.push(1);
+
+        let mut parent_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            Vec::new(),
+            "",
+        );
+        parent_subgraph
+            .hier_sheet_pins
+            .push(ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(3, 4),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: test_net_connection("/BUS", "BUS", "/BUS", ""),
+            });
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, parent_subgraph]);
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(!label_subgraphs[0].has_local_hierarchy);
+    }
+
+    #[test]
+    fn reduced_label_connectivity_subgraphs_aggregate_cross_sheet_no_connect() {
+        let connection_a = test_net_connection("/SIG", "SIG", "/SIG", "/a");
+        let connection_b = test_net_connection("/SIG", "SIG", "/SIG", "/b");
+        let mut label_subgraph = test_net_subgraph(1, connection_a.clone(), Vec::new(), "/a");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("a.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Global,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection_a,
+        });
+
+        let mut same_name_subgraph = test_net_subgraph(2, connection_b, Vec::new(), "/b");
+        same_name_subgraph.has_no_connect = true;
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![label_subgraph, same_name_subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([
+                (("/a".to_string(), "/SIG".to_string()), vec![0]),
+                (("/b".to_string(), "/SIG".to_string()), vec![1]),
+            ]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(label_subgraphs[0].has_no_connect);
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_aggregate_cross_sheet_no_connect() {
+        let connection_a = test_net_connection("/SIG", "SIG", "/SIG", "/a");
+        let connection_b = test_net_connection("/SIG", "SIG", "/SIG", "/b");
+        let mut label_subgraph = test_net_subgraph(1, connection_a.clone(), Vec::new(), "/a");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("a.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Global,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection_a,
+        });
+
+        let mut same_name_subgraph = test_net_subgraph(2, connection_b, Vec::new(), "/b");
+        same_name_subgraph.has_no_connect = true;
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, same_name_subgraph]);
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
