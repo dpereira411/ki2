@@ -1123,7 +1123,8 @@ fn reduced_bus_member_leaf_objects(members: &[ReducedBusMember]) -> Vec<ReducedB
 // instead of `SCH_CONNECTION*`, but it now preserves the same exercised rule split:
 // - vector buses remap by vector index even if the visible member name changes
 // - bus groups remap by local member name
-// Remaining divergence is live cloned-member refresh after hierarchy propagation.
+// Remaining divergence is fuller live `SCH_CONNECTION*` member identity outside the exercised
+// reduced snapshot matcher.
 fn match_reduced_bus_member<'a>(
     bus_members: &'a [ReducedBusMember],
     search: &ReducedBusMember,
