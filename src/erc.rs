@@ -3,9 +3,9 @@ use crate::connectivity::{
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     reduced_bus_member_full_local_names, reduced_connected_wire_label_full_names_at,
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
-    reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
-    reduced_project_subgraph_by_index,
+    reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
+    reduced_project_no_connect_pin_has_connected_owner, reduced_project_sheet_pin_is_dangling,
+    reduced_project_sheet_pin_names, reduced_project_subgraph_by_index,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
@@ -936,57 +936,6 @@ fn shown_label_property_text(
 ) -> String {
     resolve_text_variables(
         &property.value,
-        &|token| {
-            resolve_label_connectivity_text_var(
-                &project.schematics,
-                &project.sheet_paths,
-                sheet_path,
-                project.project.as_ref(),
-                project.current_variant(),
-                label,
-                token,
-            )
-            .or_else(|| {
-                if token.contains(':') {
-                    resolve_cross_reference_text_var(
-                        &project.schematics,
-                        &project.sheet_paths,
-                        sheet_path,
-                        project.project.as_ref(),
-                        project.current_variant(),
-                        token,
-                    )
-                } else {
-                    None
-                }
-            })
-            .or_else(|| {
-                resolve_label_text_token_without_connectivity(
-                    &project.schematics,
-                    &project.sheet_paths,
-                    sheet_path,
-                    project.project.as_ref(),
-                    project.current_variant(),
-                    label,
-                    token,
-                )
-            })
-        },
-        0,
-    )
-}
-
-// Upstream parity: reduced local analogue for `SCH_LABEL_BASE::GetShownText()`. This is not a 1:1
-// KiCad label resolver because the current tree still runs through the reduced Rust text-variable
-// helpers instead of KiCad's full label/item resolver stack, but it preserves the exercised shown-
-// text behavior needed by ERC label checks.
-fn shown_label_text(
-    project: &SchematicProject,
-    sheet_path: &crate::loader::LoadedSheetPath,
-    label: &crate::model::Label,
-) -> String {
-    resolve_text_variables(
-        &label.text,
         &|token| {
             resolve_label_connectivity_text_var(
                 &project.schematics,
@@ -2286,10 +2235,11 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
 // not a 1:1 KiCad marker/`GetShownText()` path because the Rust tree still uses reduced sheet-path
 // helpers and lacks full sheet-pin / marker owners, but it now compares both parent sheet pins and
 // child hierarchical labels through shared graph-owned hierarchy-link payload instead of rescanning
-// child schematics and recomputing shown text inside ERC. It also asks a shared graph-owned helper
-// whether parent sheet pins belong to a broader subgraph instead of embedding the reduced
-// subgraph-membership test inside ERC. Remaining divergence is fuller marker attachment and item
-// ownership parity.
+// child schematics and recomputing shown text inside ERC. Root-sheet hierarchical-label diagnostics
+// also read graph-owned hierarchy-port entries instead of rescanning root labels. It also asks a
+// shared graph-owned helper whether parent sheet pins belong to a broader subgraph instead of
+// embedding the reduced subgraph-membership test inside ERC. Remaining divergence is fuller marker
+// attachment and item ownership parity.
 pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -2303,24 +2253,18 @@ pub fn check_hierarchical_sheets(project: &SchematicProject) -> Vec<Diagnostic> 
             .parent_sheet_path(&sheet_path.instance_path)
             .is_none()
         {
-            for item in &schematic.screen.items {
-                let SchItem::Label(label) = item else {
-                    continue;
-                };
-
-                if label.kind != LabelKind::Hierarchical {
-                    continue;
-                }
-
+            for (name, path) in
+                reduced_project_hier_port_entries_in_sheet(&graph, &sheet_path.instance_path)
+            {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Error,
                     code: "erc-pin-not-connected",
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: format!(
                         "Hierarchical label '{}' in root sheet cannot be connected to non-existent parent sheet",
-                        shown_label_text(project, sheet_path, label)
+                        name
                     ),
-                    path: Some(sheet_path.schematic_path.clone()),
+                    path: Some(path),
                     span: None,
                     line: None,
                     column: None,

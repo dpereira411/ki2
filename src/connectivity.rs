@@ -8731,11 +8731,37 @@ pub(crate) fn reduced_project_hier_port_names_in_sheet(
     graph: &ReducedProjectNetGraph,
     sheet_instance_path: &str,
 ) -> std::collections::BTreeSet<String> {
+    reduced_project_hier_port_entries_in_sheet(graph, sheet_instance_path)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckHierSheets root hierarchical-label branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still enumerates reduced hierarchy-port links and reduced shown-text payload instead
+// of live `SCH_HIERLABEL*` owners
+// local_only_reason: keeps root hierarchical-label diagnostics on graph-owned hierarchy-port
+// payload instead of rescanning schematic labels inside ERC
+// replaced_by: fuller live `SCH_HIERLABEL` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can iterate live hierarchical-label owners directly with shown-text state
+// attached
+pub(crate) fn reduced_project_hier_port_entries_in_sheet(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+) -> Vec<(String, std::path::PathBuf)> {
     reduced_project_subgraphs(graph)
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
         .flat_map(|subgraph| subgraph.hier_ports.iter())
-        .map(|port| port.connection.local_name.clone())
+        .map(|port| {
+            (
+                port.connection.local_name.clone(),
+                port.schematic_path.clone(),
+            )
+        })
         .collect()
 }
 
