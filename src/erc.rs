@@ -2405,7 +2405,11 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                     || connected_bus_subgraph.is_some_and(|bus_subgraph| {
                         bus_entry_bus_side.is_some_and(|bus_side| bus_side == endpoint)
                             && bus_subgraph.bus_items.iter().any(|item| {
-                                endpoint_matches(item.start) || endpoint_matches(item.end)
+                                point_on_wire_segment(
+                                    endpoint_at,
+                                    [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                                    [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                                )
                             })
                     })
                     || subgraph

@@ -3702,6 +3702,38 @@ fn erc_bus_touching_wire_side_of_entry_does_not_satisfy_bus_entry_wire_endpoint(
 }
 
 #[test]
+fn erc_bus_entry_midpoint_bus_connection_satisfies_only_bus_side_endpoint() {
+    let path = temp_schematic(
+        "erc_bus_entry_midpoint_bus_connection",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -5 5) (xy 0 0)))
+  (bus (pts (xy -10 0) (xy 10 0)))
+  (bus_entry (at 0 0) (size -5 5)))"#,
+    );
+
+    let loaded = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "erc-unconnected-wire-endpoint"
+                    && diagnostic.message == "Unconnected wire to bus entry"
+            })
+            .count(),
+        0,
+        "{diagnostics:#?}"
+    );
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_bus_to_net_conflicts_from_connected_lines() {
     let path = temp_schematic(
         "erc_bus_to_net_lines",
