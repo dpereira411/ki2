@@ -552,6 +552,51 @@ fn reduced_project_absorb_candidate_matches_name(
     })
 }
 
+// Upstream parity: CONNECTION_GRAPH::processSubGraphs `add_connections_to_check()` slice
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: derives secondary label connections from reduced strong-driver records instead of
+// iterating full `m_items` through `getDefaultConnection()`; power-pin secondary expansion remains
+// blocked on fuller live pin ownership for multi-pin power symbols
+// local_only_reason: reduced absorption still runs before a fuller live `CONNECTION_SUBGRAPH`
+// item set exists
+// replaced_by: fuller processSubGraphs loop over live subgraph items and default connections
+// remove_when: reduced same-name absorption is replaced by live `CONNECTION_SUBGRAPH::Absorb()`
+fn reduced_project_absorb_push_secondary_test_names(
+    subgraph: &ReducedProjectSubgraphEntry,
+    test_names: &mut Vec<String>,
+) {
+    let parent_type = subgraph.driver_connection.connection_type;
+
+    for (index, driver) in subgraph.drivers.iter().enumerate() {
+        if Some(index) == subgraph.chosen_driver_index
+            || driver.connection.connection_type != parent_type
+            || driver.kind != ReducedProjectDriverKind::Label
+            || reduced_project_driver_match_name(
+                &driver.connection,
+                &subgraph.driver_connection.name,
+            )
+        {
+            continue;
+        }
+
+        push_unique(test_names, driver.connection.name.clone());
+        if !driver.connection.full_local_name.is_empty() {
+            push_unique(test_names, driver.connection.full_local_name.clone());
+        }
+
+        if matches!(
+            driver.connection.connection_type,
+            ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+        ) {
+            for member in reduced_bus_member_leaf_objects(&driver.connection.members) {
+                push_unique(test_names, member.full_local_name);
+                push_unique(test_names, member.name);
+            }
+        }
+    }
+}
+
 // Upstream parity: reduced local analogue for the same-sheet/same-type primary-driver slice of
 // `CONNECTION_SUBGRAPH::Absorb()` as called from `CONNECTION_GRAPH::processSubGraphs()`. This is
 // still partial because the Rust graph lacks `m_absorbed_by`, live item pointers, bus-entry
@@ -600,6 +645,10 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
                 push_unique(&mut parent_test_names, member.name);
             }
         }
+        reduced_project_absorb_push_secondary_test_names(
+            &subgraphs[parent_index],
+            &mut parent_test_names,
+        );
         if parent_type == ReducedProjectConnectionType::Net
             && subgraphs.iter().any(|candidate| {
                 candidate.sheet_instance_path == parent_sheet
@@ -11775,6 +11824,54 @@ mod tests {
         assert!(super::collect_reduced_project_subgraphs_by_name(&graph, "PWR").is_empty());
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_absorb_uses_parent_secondary_driver_names() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/PWR", "PWR", "/PWR", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/PWR")
+        );
     }
 
     #[test]
