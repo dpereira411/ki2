@@ -4011,21 +4011,18 @@ impl LiveReducedSubgraph {
             visited.push(handle.clone());
             if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
                 if parent_handle.borrow().hier_sheet_pins.is_empty() {
-                    continue;
-                }
-                if parent_handle
+                } else if parent_handle
                     .borrow()
                     .driver_connection
                     .borrow()
                     .connection_type
                     != handle.borrow().driver_connection.borrow().connection_type
                 {
-                    continue;
-                }
-                if !live_subgraphs_have_matching_hierarchy_driver_names(&parent_handle, &handle) {
-                    continue;
-                }
-                if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
+                } else if live_subgraphs_have_matching_hierarchy_driver_names(
+                    &parent_handle,
+                    &handle,
+                ) && visited_set.insert(live_subgraph_handle_id(&parent_handle))
+                {
                     stack.push(parent_handle);
                 }
             }
@@ -4102,7 +4099,9 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for collecting the hierarchy-visited slice
     // around one dirty subgraph during `propagateToNeighbors()`. Bus-parent and bus-neighbor
-    // mutations are handled by their own branches and should not expand this visited chain.
+    // mutations are handled by their own branches and should not expand this visited chain. Parent
+    // and child hierarchy scans intentionally remain independent, matching upstream's two visit
+    // loops in `propagateToNeighbors()`.
     fn collect_propagation_component_handles(
         start: &LiveReducedSubgraphHandle,
         _live_subgraphs: &[LiveReducedSubgraphHandle],
@@ -4115,21 +4114,18 @@ impl LiveReducedSubgraph {
             component.push(handle.clone());
             if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
                 if parent_handle.borrow().hier_sheet_pins.is_empty() {
-                    continue;
-                }
-                if parent_handle
+                } else if parent_handle
                     .borrow()
                     .driver_connection
                     .borrow()
                     .connection_type
                     != handle.borrow().driver_connection.borrow().connection_type
                 {
-                    continue;
-                }
-                if !live_subgraphs_have_matching_hierarchy_driver_names(&parent_handle, &handle) {
-                    continue;
-                }
-                if visited.insert(live_subgraph_handle_id(&parent_handle)) {
+                } else if live_subgraphs_have_matching_hierarchy_driver_names(
+                    &parent_handle,
+                    &handle,
+                ) && visited.insert(live_subgraph_handle_id(&parent_handle))
+                {
                     queue.push_back(parent_handle);
                 }
             }
@@ -19604,6 +19600,89 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![1]);
+    }
+
+    #[test]
+    fn reduced_hierarchy_invalid_parent_does_not_skip_child_descent() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/PARENT_SIG", "PARENT_SIG", "/PARENT_SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/PARENT_SIG", "PARENT_SIG", "/PARENT_SIG", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/mid/SIG", "SIG", "/mid/SIG", "/mid"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection("/mid/SIG", "SIG", "/mid/SIG", "/mid"),
+                    identity: None,
+                }],
+                "/mid",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/mid/child/SIG", "SIG", "/mid/child/SIG", "/mid/child"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/mid/child/SIG",
+                        "SIG",
+                        "/mid/child/SIG",
+                        "/mid/child",
+                    ),
+                    identity: None,
+                }],
+                "/mid/child",
+            ),
+        ];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("mid.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/mid/PARENT_SIG",
+                "PARENT_SIG",
+                "/mid/PARENT_SIG",
+                "/mid",
+            ),
+        }];
+        graph[1].hier_child_indexes = vec![2];
+        graph[1].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("mid.kicad_sch"),
+            at: PointKey(10, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/mid/SIG", "SIG", "/mid/SIG", "/mid"),
+        }];
+        graph[2].hier_parent_index = Some(1);
+        graph[2].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/mid/child/SIG",
+                "SIG",
+                "/mid/child/SIG",
+                "/mid/child",
+            ),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&graph);
+        let mut component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[1], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
+        component.sort_unstable();
+
+        assert_eq!(component, vec![1, 2]);
     }
 
     #[test]
