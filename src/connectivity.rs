@@ -3931,8 +3931,8 @@ impl LiveReducedSubgraph {
                 left.borrow()
                     .member
                     .borrow()
-                    .name
-                    .cmp(&right.borrow().member.borrow().name)
+                    .full_local_name
+                    .cmp(&right.borrow().member.borrow().full_local_name)
                     .then(
                         live_subgraph_link_index(live_subgraphs, left)
                             .cmp(&live_subgraph_link_index(live_subgraphs, right)),
@@ -16606,6 +16606,65 @@ mod tests {
             ReducedProjectConnectionType::Bus
         );
         assert_eq!(graph[1].driver_connection.full_local_name, "/OTHER");
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_sort_by_resolved_member_name() {
+        let first_by_display = test_bus_member("A", "A", "/Z");
+        let first_by_resolved = test_bus_member("Z", "Z", "/A");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![first_by_display.clone(), first_by_resolved.clone()],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: first_by_display.clone(),
+                subgraph_index: 1,
+            },
+            ReducedProjectBusNeighborLink {
+                member: first_by_resolved.clone(),
+                subgraph_index: 1,
+            },
+        ];
+        graph[1].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: first_by_display,
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: first_by_resolved,
+                subgraph_index: 0,
+            },
+        ];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[1].driver_connection.full_local_name, "/Z");
     }
 
     #[test]
