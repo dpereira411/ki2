@@ -5,6 +5,7 @@ use crate::connectivity::{
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_connected_wire_label_full_names_at, reduced_project_subgraph_by_index,
     reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_project_wire_item_endpoint_has_connected_bus_owner,
     resolve_reduced_project_subgraph_for_no_connect,
     resolve_reduced_project_subgraph_for_sheet_pin,
 };
@@ -2376,16 +2377,6 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
         };
 
         for wire_item in &subgraph.wire_items {
-            let connected_bus_subgraph = if wire_item.is_bus_entry {
-                crate::connectivity::reduced_project_connected_bus_subgraph_for_wire_item(
-                    &graph, subgraph, wire_item,
-                )
-            } else {
-                None
-            };
-            let bus_entry_bus_side = (wire_item.is_bus_entry && wire_item.start_is_wire_side)
-                .then_some(wire_item.end)
-                .or_else(|| wire_item.is_bus_entry.then_some(wire_item.start));
             for endpoint in [wire_item.start, wire_item.end] {
                 let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
                 let endpoint_matches = |point: crate::connectivity::PointKey| {
@@ -2402,16 +2393,9 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                         .bus_items
                         .iter()
                         .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
-                    || connected_bus_subgraph.is_some_and(|bus_subgraph| {
-                        bus_entry_bus_side.is_some_and(|bus_side| bus_side == endpoint)
-                            && bus_subgraph.bus_items.iter().any(|item| {
-                                point_on_wire_segment(
-                                    endpoint_at,
-                                    [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
-                                    [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
-                                )
-                            })
-                    })
+                    || reduced_project_wire_item_endpoint_has_connected_bus_owner(
+                        &graph, subgraph, wire_item, endpoint,
+                    )
                     || subgraph
                         .label_links
                         .iter()

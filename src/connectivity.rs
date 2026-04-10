@@ -9289,17 +9289,57 @@ fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
 }
 
 // Upstream parity: reduced local analogue for the attached-bus lookup KiCad reaches through the
-// connection graph on the bus-entry ERC/query path. This still replays the reduced geometric match
-// instead of asking a live bus-entry item for its attached bus owner directly, but it keeps that
-// lookup on the shared reduced graph owner instead of storing a second copied connected-bus
-// subgraph index on each reduced wire item. Remaining divergence is the still-missing fuller live
-// bus-item / `SCH_CONNECTION` object graph behind this reduced owner query.
+// connection graph on the bus-entry ERC/query path. This now prefers the graph-owned projected
+// attached-bus subgraph index before falling back to the reduced geometric match, so ERC/export
+// callers do not need to know how that owner is recovered. Remaining divergence is the still-
+// missing fuller live bus-item / `SCH_CONNECTION` object graph behind this reduced owner query.
 pub(crate) fn reduced_project_connected_bus_subgraph_for_wire_item<'a>(
     graph: &'a ReducedProjectNetGraph,
     subgraph: &ReducedProjectSubgraphEntry,
     wire_item: &ReducedSubgraphWireItem,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
     reduced_connected_bus_subgraph_for_wire_item_in(&graph.subgraphs, subgraph, wire_item)
+}
+
+// Upstream parity: reduced local analogue for the bus-entry connected-bus endpoint ownership KiCad
+// gets from live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` item links. This is not a 1:1 item-owner
+// query because the Rust graph still projects bus-entry attachments into reduced wire items, but it
+// keeps the attached-bus endpoint coverage check inside the shared graph owner instead of making
+// ERC scan bus segments independently. Remaining divergence is fuller live bus-entry item
+// ownership.
+pub(crate) fn reduced_project_wire_item_endpoint_has_connected_bus_owner(
+    graph: &ReducedProjectNetGraph,
+    subgraph: &ReducedProjectSubgraphEntry,
+    wire_item: &ReducedSubgraphWireItem,
+    endpoint: PointKey,
+) -> bool {
+    if !wire_item.is_bus_entry {
+        return false;
+    }
+
+    let bus_side = if wire_item.start_is_wire_side {
+        wire_item.end
+    } else {
+        wire_item.start
+    };
+
+    if endpoint != bus_side {
+        return false;
+    }
+
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+
+    reduced_project_connected_bus_subgraph_for_wire_item(graph, subgraph, wire_item).is_some_and(
+        |bus_subgraph| {
+            bus_subgraph.bus_items.iter().any(|item| {
+                point_on_wire_segment(
+                    endpoint_at,
+                    [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                    [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+                )
+            })
+        },
+    )
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(
@@ -15426,6 +15466,22 @@ mod tests {
             super::reduced_project_subgraph_index(&graph, connected_bus)
                 .expect("connected bus graph index"),
             connected_bus_index
+        );
+        assert!(
+            super::reduced_project_wire_item_endpoint_has_connected_bus_owner(
+                &graph,
+                entry,
+                bus_entry,
+                bus_entry.end,
+            )
+        );
+        assert!(
+            !super::reduced_project_wire_item_endpoint_has_connected_bus_owner(
+                &graph,
+                entry,
+                bus_entry,
+                bus_entry.start,
+            )
         );
 
         let _ = fs::remove_file(path);
