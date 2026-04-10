@@ -12564,6 +12564,8 @@ fn live_reduced_project_no_connect_marker_outcomes(
 ) -> Vec<ReducedProjectNoConnectMarkerOutcome> {
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
+    let subgraphs_by_name =
+        build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0;
 
     for subgraph_handle in live_reduced_project_run_erc_subgraph_handles_without_driver_dedup(graph)
         .into_iter()
@@ -12614,12 +12616,10 @@ fn live_reduced_project_no_connect_marker_outcomes(
                     local_unique_labels.len(),
                 )
             } else {
-                let neighbors = graph
-                    .live_subgraphs
-                    .iter()
-                    .filter(|neighbor| {
-                        neighbor.borrow().driver_connection.borrow().name == driver_name
-                    })
+                let neighbors = subgraphs_by_name
+                    .get(&driver_name)
+                    .into_iter()
+                    .flat_map(|neighbors| neighbors.iter())
                     .collect::<Vec<_>>();
                 let neighbor_pins = neighbors
                     .iter()
@@ -12868,6 +12868,8 @@ fn live_reduced_project_pin_not_connected_candidates(
     label_name_caches: &ReducedProjectLabelNameCaches,
 ) -> Vec<ReducedProjectPinNotConnectedCandidate> {
     let mut candidates = Vec::new();
+    let subgraphs_by_name =
+        build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0;
 
     for subgraph_handle in &graph.live_subgraphs {
         let subgraph = subgraph_handle.borrow();
@@ -12929,15 +12931,18 @@ fn live_reduced_project_pin_not_connected_candidates(
         let driver_name = subgraph.driver_connection.borrow().name.clone();
         let same_name_has_no_connect_sibling = (driver_name.starts_with("Net-(")
             || driver_name.starts_with("unconnected-("))
-            && graph.live_subgraphs.iter().any(|neighbor_handle| {
-                if Rc::ptr_eq(neighbor_handle, subgraph_handle) {
-                    return false;
-                }
+            && subgraphs_by_name
+                .get(&driver_name)
+                .into_iter()
+                .flat_map(|neighbors| neighbors.iter())
+                .any(|neighbor_handle| {
+                    if Rc::ptr_eq(neighbor_handle, subgraph_handle) {
+                        return false;
+                    }
 
-                let neighbor = neighbor_handle.borrow();
-                neighbor.driver_connection.borrow().name == driver_name
-                    && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
-            });
+                    let neighbor = neighbor_handle.borrow();
+                    neighbor.has_no_connect || !neighbor.no_connect_points.is_empty()
+                });
 
         if same_name_has_no_connect_sibling {
             continue;
