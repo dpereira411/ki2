@@ -1462,6 +1462,22 @@ impl LiveProjectBusMember {
         self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
     }
 
+    // upstream: CONNECTION_GRAPH::matchBusMember vector-bus branch with SCH_CONNECTION search
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: derives vector index from reduced connection text because the connection
+    // carrier does not yet store SCH_CONNECTION::VectorIndex()
+    // local_only_reason: current live connection owner lacks explicit vector-index state
+    // replaced_by: full SCH_CONNECTION analogue with stored VectorIndex()
+    // remove_when: live connection matching reads VectorIndex() directly
+    fn matches_connection_vector_member(&self, search: &LiveProjectConnection) -> bool {
+        if let Some(search_index) = reduced_connection_vector_index_guess(search) {
+            return self.vector_index == Some(search_index);
+        }
+
+        self.matches_connection_member(search)
+    }
+
     // upstream: CONNECTION_GRAPH::matchBusMember group-bus non-vector member branch
     // parity_status: partial
     // local_kind: local-only-transitional
@@ -1575,6 +1591,30 @@ impl LiveProjectBusMember {
 
         None
     }
+}
+
+// upstream: SCH_CONNECTION::VectorIndex() as consumed by CONNECTION_GRAPH::matchBusMember
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: extracts trailing digits from reduced connection names instead of reading stored
+// vector-index state
+// local_only_reason: current live connection owner lacks explicit vector-index state
+// replaced_by: full SCH_CONNECTION analogue with stored VectorIndex()
+// remove_when: live connection matching reads VectorIndex() directly
+fn reduced_connection_vector_index_guess(connection: &LiveProjectConnection) -> Option<usize> {
+    fn trailing_digits(value: &str) -> Option<usize> {
+        let digits = value
+            .chars()
+            .rev()
+            .take_while(|ch| ch.is_ascii_digit())
+            .collect::<String>();
+        if digits.is_empty() {
+            return None;
+        }
+        digits.chars().rev().collect::<String>().parse().ok()
+    }
+
+    trailing_digits(&connection.local_name).or_else(|| trailing_digits(&connection.name))
 }
 
 fn live_bus_member_clone_eq(target: &LiveProjectBusMember, source: &LiveProjectBusMember) -> bool {
@@ -1818,7 +1858,12 @@ impl LiveProjectConnection {
     ) -> Option<LiveProjectBusMemberHandle> {
         for member in &self.members {
             let member_ref = member.borrow();
-            if member_ref.matches_connection_member(search) {
+            let matches = if self.connection_type == ReducedProjectConnectionType::Bus {
+                member_ref.matches_connection_vector_member(search)
+            } else {
+                member_ref.matches_connection_member(search)
+            };
+            if matches {
                 return Some(member.clone());
             }
 
@@ -15709,7 +15754,8 @@ mod tests {
 
     #[test]
     fn reduced_live_bus_neighbors_retry_secondary_driver_for_stale_member() {
-        let bus_member = test_bus_member("SIG1", "SIG1", "/SIG1");
+        let mut bus_member = test_bus_member("SIG1", "SIG1", "/SIG1");
+        bus_member.vector_index = Some(1);
         let stale_link_member = test_bus_member("ALT", "ALT", "/ALT");
         let sig_connection = test_net_connection("/SIG1", "SIG1", "/SIG1", "");
         let alt_connection = test_net_connection("/ALT", "ALT", "/ALT", "");
@@ -15771,7 +15817,8 @@ mod tests {
 
     #[test]
     fn reduced_live_bus_neighbors_promote_secondary_retry_member() {
-        let bus_member = test_bus_member("SIG1", "SIG1", "/SIG1");
+        let mut bus_member = test_bus_member("SIG1", "SIG1", "/SIG1");
+        bus_member.vector_index = Some(1);
         let stale_link_member = test_bus_member("ALT", "ALT", "/ALT");
         let sig_connection = test_net_connection("/SIG1", "SIG1", "/SIG1", "");
         let alt_connection = test_net_connection("/ALT", "ALT", "/ALT", "");
@@ -15964,6 +16011,53 @@ mod tests {
             .expect("group member should match direct vector member by local name");
 
         assert_eq!(matched.borrow().full_local_name, "/B0");
+    }
+
+    #[test]
+    fn live_vector_bus_connection_match_uses_vector_index_not_local_name() {
+        let bus = LiveProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "A[0..1]".to_string(),
+            local_name: "A".to_string(),
+            full_local_name: "/A".to_string(),
+            sheet_instance_path: String::new(),
+            members: vec![
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A0".to_string(),
+                    local_name: "A0".to_string(),
+                    full_local_name: "/A0".to_string(),
+                    vector_index: Some(0),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                })),
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A1".to_string(),
+                    local_name: "A1".to_string(),
+                    full_local_name: "/A1".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                })),
+            ],
+        };
+        let search = LiveProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "/B0".to_string(),
+            local_name: "B0".to_string(),
+            full_local_name: "/B0".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+
+        let matched = bus
+            .find_member_for_connection(&search)
+            .expect("vector bus member should match by vector index");
+
+        assert_eq!(matched.borrow().full_local_name, "/A0");
     }
 
     #[test]
