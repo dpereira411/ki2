@@ -1,6 +1,8 @@
 use crate::connectivity::{
     collect_reduced_project_net_map, reduced_connected_wire_label_full_names_at,
-    reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
+    reduced_project_bus_to_bus_conflicts, reduced_project_bus_to_net_conflicts,
+    reduced_project_dangling_directive_label_links, reduced_project_dangling_wire_endpoint_events,
+    reduced_project_floating_wire_events, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
     reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
     reduced_project_label_name_caches, reduced_project_named_label_entries,
@@ -8,9 +10,7 @@ use crate::connectivity::{
     reduced_project_pin_not_connected_candidates, reduced_project_run_erc_subgraphs,
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
-    reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
-    reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
-    reduced_project_subgraph_floating_wire, reduced_project_symbol_pin_inventories,
+    reduced_project_subgraph_driver_conflict, reduced_project_symbol_pin_inventories,
     reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
@@ -1776,23 +1776,21 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        for endpoint in reduced_project_subgraph_dangling_wire_endpoints(&graph, &subgraph) {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Warning,
-                code: "erc-unconnected-wire-endpoint",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: if endpoint.is_bus_entry {
-                    "Unconnected wire to bus entry".to_string()
-                } else {
-                    "Unconnected wire endpoint".to_string()
-                },
-                path: Some(endpoint.diagnostic_path),
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+    for endpoint in reduced_project_dangling_wire_endpoint_events(&graph) {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            code: "erc-unconnected-wire-endpoint",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: if endpoint.is_bus_entry {
+                "Unconnected wire to bus entry".to_string()
+            } else {
+                "Unconnected wire endpoint".to_string()
+            },
+            path: Some(endpoint.diagnostic_path),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
@@ -1810,11 +1808,7 @@ pub fn check_floating_wires(project: &SchematicProject) -> Vec<Diagnostic> {
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        let Some(floating_wire) = reduced_project_subgraph_floating_wire(&subgraph) else {
-            continue;
-        };
-
+    for floating_wire in reduced_project_floating_wire_events(&graph) {
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
             code: "erc-wire-dangling",
@@ -1959,19 +1953,17 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        if let Some(conflict) = reduced_project_subgraph_bus_to_net_conflict(&subgraph) {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-bus-to-net-conflict",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: "Invalid connection between bus and net items".to_string(),
-                path: conflict.diagnostic_path,
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+    for conflict in reduced_project_bus_to_net_conflicts(&graph) {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-bus-to-net-conflict",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: "Invalid connection between bus and net items".to_string(),
+            path: conflict.diagnostic_path,
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
@@ -1990,22 +1982,20 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        if let Some(conflict) = reduced_project_subgraph_bus_to_bus_conflict(&subgraph) {
-            diagnostics.push(Diagnostic {
-                severity: Severity::Error,
-                code: "erc-bus-to-bus-conflict",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!(
-                    "Bus label and port do not share members at {}, {}",
-                    conflict.label_at[0], conflict.label_at[1]
-                ),
-                path: conflict.diagnostic_path,
-                span: None,
-                line: None,
-                column: None,
-            });
-        }
+    for conflict in reduced_project_bus_to_bus_conflicts(&graph) {
+        diagnostics.push(Diagnostic {
+            severity: Severity::Error,
+            code: "erc-bus-to-bus-conflict",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: format!(
+                "Bus label and port do not share members at {}, {}",
+                conflict.label_at[0], conflict.label_at[1]
+            ),
+            path: conflict.diagnostic_path,
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics

@@ -9956,6 +9956,11 @@ pub(crate) struct ReducedProjectNamedLabelEntry {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectBusToNetConflictEvent {
+    pub(crate) diagnostic_path: Option<std::path::PathBuf>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum ReducedProjectNoConnectMarkerOutcome {
     Dangling { diagnostic_path: std::path::PathBuf },
     Connected { diagnostic_path: std::path::PathBuf },
@@ -10518,6 +10523,31 @@ pub(crate) fn reduced_project_named_label_entries(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts `RunERC()` slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced subgraph conflict events instead of live `CONNECTION_SUBGRAPH`
+// item-attached marker owners
+// local_only_reason: keeps bus-to-net conflict event collection on the shared graph owner instead
+// of duplicating `RunERC()` subgraph walks inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
+// remove_when: ERC can consume live bus-to-net conflict events directly from graph item links
+pub(crate) fn reduced_project_bus_to_net_conflicts(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectBusToNetConflictEvent> {
+    reduced_project_run_erc_subgraphs(graph)
+        .into_iter()
+        .filter_map(|subgraph| {
+            reduced_project_subgraph_bus_to_net_conflict(&subgraph).map(|conflict| {
+                ReducedProjectBusToNetConflictEvent {
+                    diagnostic_path: conflict.diagnostic_path,
+                }
+            })
+        })
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckNoConnects explicit no-connect branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10731,6 +10761,67 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
     }
 
     candidates
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints `RunERC()` slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced dangling-endpoint events instead of live `SCH_LINE` / bus-entry
+// marker owners
+// local_only_reason: keeps dangling-endpoint event collection on the shared graph owner instead of
+// duplicating `RunERC()` subgraph walks inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / line and bus-entry owner graph
+// remove_when: ERC can consume live dangling-endpoint events directly from graph item links
+pub(crate) fn reduced_project_dangling_wire_endpoint_events(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectDanglingWireEndpoint> {
+    let mut endpoints = Vec::new();
+
+    for subgraph in reduced_project_run_erc_subgraphs(graph) {
+        endpoints.extend(reduced_project_subgraph_dangling_wire_endpoints(
+            graph, &subgraph,
+        ));
+    }
+
+    endpoints
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckFloatingWires `RunERC()` slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced floating-wire events instead of live subgraph/marker owners
+// local_only_reason: keeps floating-wire event collection on the shared graph owner instead of
+// duplicating `RunERC()` subgraph walks inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
+// remove_when: ERC can consume live floating-wire events directly from graph item links
+pub(crate) fn reduced_project_floating_wire_events(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectFloatingWire> {
+    reduced_project_run_erc_subgraphs(graph)
+        .into_iter()
+        .filter_map(|subgraph| reduced_project_subgraph_floating_wire(&subgraph))
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts `RunERC()` slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced bus-to-bus conflict events instead of live `CONNECTION_SUBGRAPH`
+// item-attached marker owners
+// local_only_reason: keeps bus-to-bus conflict event collection on the shared graph owner instead
+// of duplicating `RunERC()` subgraph walks inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
+// remove_when: ERC can consume live bus-to-bus conflict events directly from graph item links
+pub(crate) fn reduced_project_bus_to_bus_conflicts(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectBusToBusConflict> {
+    reduced_project_run_erc_subgraphs(graph)
+        .into_iter()
+        .filter_map(|subgraph| reduced_project_subgraph_bus_to_bus_conflict(&subgraph))
+        .collect()
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(
