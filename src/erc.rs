@@ -3235,7 +3235,7 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
                                 "Pin {} is connected to both {} and {}",
                                 pin_number, net_name, existing_net
                             ),
-                            path: Some(sheet_path.schematic_path.clone()),
+                            path: Some(pin.schematic_path.clone()),
                             span: None,
                             line: None,
                             column: None,
