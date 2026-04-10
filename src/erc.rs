@@ -1,10 +1,10 @@
 use crate::connectivity::{
     ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
-    collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
-    reduced_connected_wire_label_full_names_at, reduced_project_dangling_directive_label_links,
-    reduced_project_four_way_junction_points, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_bus_member_full_local_names, reduced_connected_wire_label_full_names_at,
+    reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
+    reduced_project_no_connect_pin_has_connected_owner, reduced_project_subgraph_by_index,
+    reduced_project_subgraph_index, reduced_project_subgraphs,
     reduced_project_symbol_pin_inventories,
     reduced_project_wire_item_endpoint_has_connected_bus_owner,
     resolve_reduced_project_subgraph_for_sheet_pin,
@@ -3783,13 +3783,15 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 // graph-owned symbol-pin inventory in millimeter coordinates instead of live schematic items in
 // KiCad IU, but it preserves the exercised rule: connectable wire endpoints, bus-entry endpoints,
 // and non-NC symbol pins must land on the typed schematic connection grid from companion project
-// settings. It now de-duplicates reused sheet screens like upstream's `m_screens` traversal
-// instead of checking each loaded sheet occurrence. Remaining divergence is fuller item coverage
-// and KiCad marker attachment.
+// settings. It now de-duplicates reused sheet screens like upstream's `m_screens` traversal for
+// schematic items and reads symbol-pin occurrences from the shared graph-owned inventory instead
+// of re-entering per-sheet pin projection. Remaining divergence is fuller item coverage and KiCad
+// marker attachment.
 pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
     let mut checked_schematic_paths = BTreeSet::new();
+    let mut reported_pin_schematic_paths = BTreeSet::new();
     let grid_size_mm = project
         .project
         .as_ref()
@@ -3886,38 +3888,33 @@ pub fn check_off_grid_endpoints(project: &SchematicProject) -> Vec<Diagnostic> {
                 _ => {}
             }
         }
+    }
 
-        for pin_inventory in
-            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
-        {
-            if pin_inventory
-                .pins
-                .iter()
-                .find(|pin| {
-                    pin.electrical_type.as_deref() != Some("no_connect")
-                        && !point_is_on_grid(
-                            [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
-                            grid_size_mm,
-                        )
-                })
-                .is_some()
-            {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    code: "erc-endpoint-off-grid",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: "Symbol pin or wire end off connection grid".to_string(),
-                    path: pin_inventory
-                        .pins
-                        .first()
-                        .map(|pin| pin.schematic_path.clone())
-                        .or_else(|| Some(sheet_path.schematic_path.clone())),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
+    for pin_inventory in reduced_project_symbol_pin_inventories(&graph) {
+        let Some(pin) = pin_inventory.pins.iter().find(|pin| {
+            pin.electrical_type.as_deref() != Some("no_connect")
+                && !point_is_on_grid(
+                    [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
+                    grid_size_mm,
+                )
+        }) else {
+            continue;
+        };
+
+        if !reported_pin_schematic_paths.insert(pin.schematic_path.clone()) {
+            continue;
         }
+
+        diagnostics.push(Diagnostic {
+            severity: Severity::Warning,
+            code: "erc-endpoint-off-grid",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: "Symbol pin or wire end off connection grid".to_string(),
+            path: Some(pin.schematic_path.clone()),
+            span: None,
+            line: None,
+            column: None,
+        });
     }
 
     diagnostics
