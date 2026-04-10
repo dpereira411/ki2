@@ -5,6 +5,7 @@ use crate::connectivity::{
     reduced_connected_wire_label_full_names_at, reduced_project_dangling_directive_label_links,
     reduced_project_four_way_junction_points, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
+    reduced_project_symbol_pin_inventories,
     reduced_project_wire_item_endpoint_has_connected_bus_owner,
     resolve_reduced_project_subgraph_for_sheet_pin,
 };
@@ -3201,49 +3202,45 @@ pub fn check_mult_unit_pin_conflicts(project: &SchematicProject) -> Vec<Diagnost
     let mut pin_to_net = BTreeMap::<String, String>::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        for pin_inventory in
-            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
-        {
-            if pin_inventory.unit_count < 2 || pin_inventory.unit.is_none() {
-                continue;
-            }
+    for pin_inventory in reduced_project_symbol_pin_inventories(&graph) {
+        if pin_inventory.unit_count < 2 || pin_inventory.unit.is_none() {
+            continue;
+        }
 
-            let Some(reference) = pin_inventory
-                .pins
-                .iter()
-                .find_map(|pin| pin.reference.clone())
-            else {
+        let Some(reference) = pin_inventory
+            .pins
+            .iter()
+            .find_map(|pin| pin.reference.clone())
+        else {
+            continue;
+        };
+
+        for pin in &pin_inventory.pins {
+            let Some(ref pin_number) = pin.number else {
                 continue;
             };
 
-            for pin in &pin_inventory.pins {
-                let Some(ref pin_number) = pin.number else {
-                    continue;
-                };
+            let net_name = reduced_project_symbol_pin_net_name(&graph, pin);
+            let key = format!("{reference}:{pin_number}");
 
-                let net_name = reduced_project_symbol_pin_net_name(&graph, pin);
-                let key = format!("{reference}:{pin_number}");
-
-                if let Some(existing_net) = pin_to_net.get(&key) {
-                    if *existing_net != net_name {
-                        diagnostics.push(Diagnostic {
-                            severity: Severity::Error,
-                            code: "erc-different-unit-net",
-                            kind: crate::diagnostic::DiagnosticKind::Validation,
-                            message: format!(
-                                "Pin {} is connected to both {} and {}",
-                                pin_number, net_name, existing_net
-                            ),
-                            path: Some(pin.schematic_path.clone()),
-                            span: None,
-                            line: None,
-                            column: None,
-                        });
-                    }
-                } else {
-                    pin_to_net.insert(key, net_name);
+            if let Some(existing_net) = pin_to_net.get(&key) {
+                if *existing_net != net_name {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Error,
+                        code: "erc-different-unit-net",
+                        kind: crate::diagnostic::DiagnosticKind::Validation,
+                        message: format!(
+                            "Pin {} is connected to both {} and {}",
+                            pin_number, net_name, existing_net
+                        ),
+                        path: Some(pin.schematic_path.clone()),
+                        span: None,
+                        line: None,
+                        column: None,
+                    });
                 }
+            } else {
+                pin_to_net.insert(key, net_name);
             }
         }
     }
@@ -3263,83 +3260,79 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        for pin_inventory in
-            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
-        {
-            if pin_inventory.duplicate_pin_numbers_are_jumpers {
+    for pin_inventory in reduced_project_symbol_pin_inventories(&graph) {
+        if pin_inventory.duplicate_pin_numbers_are_jumpers {
+            continue;
+        }
+
+        let reference = pin_inventory
+            .pins
+            .iter()
+            .find_map(|pin| pin.reference.clone())
+            .unwrap_or_else(|| "?".to_string());
+
+        let mut pins_by_number = BTreeMap::<String, Vec<(Option<String>, String)>>::new();
+
+        for pin in &pin_inventory.pins {
+            let Some(ref pin_number) = pin.number else {
+                continue;
+            };
+
+            let net_name = reduced_project_symbol_pin_net_name(&graph, pin);
+
+            pins_by_number
+                .entry(pin_number.clone())
+                .or_default()
+                .push((pin.name.clone(), net_name));
+        }
+
+        for (pin_number, pin_net_pairs) in pins_by_number {
+            if pin_net_pairs.len() < 2 {
                 continue;
             }
 
-            let reference = pin_inventory
-                .pins
-                .iter()
-                .find_map(|pin| pin.reference.clone())
-                .unwrap_or_else(|| "?".to_string());
+            let first_net = pin_net_pairs[0].1.clone();
+            let first_display = if first_net.is_empty() {
+                "<no net>".to_string()
+            } else {
+                first_net.clone()
+            };
 
-            let mut pins_by_number = BTreeMap::<String, Vec<(Option<String>, String)>>::new();
+            let mut conflict_net = None;
 
-            for pin in &pin_inventory.pins {
-                let Some(ref pin_number) = pin.number else {
-                    continue;
-                };
-
-                let net_name = reduced_project_symbol_pin_net_name(&graph, pin);
-
-                pins_by_number
-                    .entry(pin_number.clone())
-                    .or_default()
-                    .push((pin.name.clone(), net_name));
+            for (_, net_name) in pin_net_pairs.iter().skip(1) {
+                if *net_name != first_net {
+                    conflict_net = Some(net_name.clone());
+                    break;
+                }
             }
 
-            for (pin_number, pin_net_pairs) in pins_by_number {
-                if pin_net_pairs.len() < 2 {
-                    continue;
-                }
+            let Some(conflict_net) = conflict_net else {
+                continue;
+            };
 
-                let first_net = pin_net_pairs[0].1.clone();
-                let first_display = if first_net.is_empty() {
-                    "<no net>".to_string()
-                } else {
-                    first_net.clone()
-                };
+            let conflict_display = if conflict_net.is_empty() {
+                "<no net>".to_string()
+            } else {
+                conflict_net
+            };
 
-                let mut conflict_net = None;
-
-                for (_, net_name) in pin_net_pairs.iter().skip(1) {
-                    if *net_name != first_net {
-                        conflict_net = Some(net_name.clone());
-                        break;
-                    }
-                }
-
-                let Some(conflict_net) = conflict_net else {
-                    continue;
-                };
-
-                let conflict_display = if conflict_net.is_empty() {
-                    "<no net>".to_string()
-                } else {
-                    conflict_net
-                };
-
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-duplicate-pin-nets",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Pin {} on symbol '{}' is connected to different nets: {} and {}",
-                        pin_number, reference, first_display, conflict_display
-                    ),
-                    path: pin_inventory
-                        .pins
-                        .first()
-                        .map(|pin| pin.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-duplicate-pin-nets",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Pin {} on symbol '{}' is connected to different nets: {} and {}",
+                    pin_number, reference, first_display, conflict_display
+                ),
+                path: pin_inventory
+                    .pins
+                    .first()
+                    .map(|pin| pin.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 
@@ -3688,34 +3681,30 @@ pub fn check_stacked_pin_notation(project: &SchematicProject) -> Vec<Diagnostic>
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        for pin_inventory in
-            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
-        {
-            for pin in &pin_inventory.pins {
-                let Some(number) = pin.number.as_deref() else {
-                    continue;
-                };
+    for pin_inventory in reduced_project_symbol_pin_inventories(&graph) {
+        for pin in &pin_inventory.pins {
+            let Some(number) = pin.number.as_deref() else {
+                continue;
+            };
 
-                if stacked_pin_notation_is_valid(number) {
-                    continue;
-                }
-
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    code: "erc-stacked-pin-syntax",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!(
-                        "Pin number resembles stacked pin notation but is invalid: '{}'",
-                        number
-                    ),
-                    path: Some(pin.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-                break;
+            if stacked_pin_notation_is_valid(number) {
+                continue;
             }
+
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "erc-stacked-pin-syntax",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Pin number resembles stacked pin notation but is invalid: '{}'",
+                    number
+                ),
+                path: Some(pin.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
+            break;
         }
     }
 
@@ -3733,61 +3722,57 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        for pin_inventory in
-            collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, sheet_path)
-        {
-            let mut has_ground_net = false;
-            let mut mismatched_pins = Vec::new();
+    for pin_inventory in reduced_project_symbol_pin_inventories(&graph) {
+        let mut has_ground_net = false;
+        let mut mismatched_pins = Vec::new();
 
-            for pin in &pin_inventory.pins {
-                let Some(pin_type) = pin.electrical_type.as_deref() else {
-                    continue;
-                };
+        for pin in &pin_inventory.pins {
+            let Some(pin_type) = pin.electrical_type.as_deref() else {
+                continue;
+            };
 
-                if !matches!(pin_type, "power_in" | "power_out") {
-                    continue;
-                }
-
-                let net_name = reduced_project_symbol_pin_net_name(&graph, pin);
-                let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
-
-                if net_is_ground {
-                    has_ground_net = true;
-                }
-
-                if pin
-                    .name
-                    .as_deref()
-                    .is_some_and(|name| name.to_ascii_uppercase().contains("GND"))
-                    && !net_is_ground
-                {
-                    mismatched_pins.push((
-                        pin.name.clone().unwrap_or_default(),
-                        [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
-                    ));
-                }
-            }
-
-            if !has_ground_net {
+            if !matches!(pin_type, "power_in" | "power_out") {
                 continue;
             }
 
-            for (pin_name, _pin_at) in mismatched_pins {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-ground-pin-not-ground",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: format!("Pin {} not connected to ground net", pin_name),
-                    path: pin_inventory
-                        .pins
-                        .first()
-                        .map(|pin| pin.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
+            let net_name = reduced_project_symbol_pin_net_name(&graph, pin);
+            let net_is_ground = net_name.to_ascii_uppercase().contains("GND");
+
+            if net_is_ground {
+                has_ground_net = true;
             }
+
+            if pin
+                .name
+                .as_deref()
+                .is_some_and(|name| name.to_ascii_uppercase().contains("GND"))
+                && !net_is_ground
+            {
+                mismatched_pins.push((
+                    pin.name.clone().unwrap_or_default(),
+                    [f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)],
+                ));
+            }
+        }
+
+        if !has_ground_net {
+            continue;
+        }
+
+        for (pin_name, _pin_at) in mismatched_pins {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-ground-pin-not-ground",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!("Pin {} not connected to ground net", pin_name),
+                path: pin_inventory
+                    .pins
+                    .first()
+                    .map(|pin| pin.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 

@@ -9299,6 +9299,22 @@ pub(crate) fn collect_reduced_project_symbol_pin_inventories_in_sheet<'a>(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::GetNetMap or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still iterates reduced graph-owned symbol pin inventories instead of live
+// `SCH_SYMBOL*` / `SCH_PIN*` owners
+// local_only_reason: keeps whole-project ERC callers on one graph-owned per-symbol pin inventory
+// instead of rediscovering symbol owners by sweeping loaded sheet paths
+// replaced_by: fuller live `SCH_SYMBOL` / `SCH_PIN` owner graph
+// remove_when: production callers can iterate live symbol/pin owners directly across the project
+pub(crate) fn reduced_project_symbol_pin_inventories(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<&ReducedProjectSymbolPinInventory> {
+    graph.symbol_pins_by_symbol.values().collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for iterating a symbol's `SCH_PIN` owners through the
 // shared graph. This still projects reduced pin payload instead of exposing live `SCH_PIN*`
 // objects, but it keeps ERC/net-name callers on one graph-owned per-symbol pin inventory,
