@@ -6594,6 +6594,34 @@ pub(crate) fn collect_connection_points(
     snapshot
 }
 
+// Upstream parity: reduced local analogue for the connectable-item counting branch in
+// `ERC_TESTER::TestFourWayJunction()`. This is not a 1:1 marker/source-item pass because the Rust
+// graph still uses reduced connection-point snapshots instead of live item sets, but it keeps the
+// four-way item-kind filter on the connectivity owner instead of making ERC inspect connection
+// snapshot internals. Remaining divergence is fuller live item ownership and exact marker
+// attachment.
+pub(crate) fn collect_reduced_four_way_junction_points(schematic: &Schematic) -> Vec<[f64; 2]> {
+    collect_connection_points(schematic)
+        .into_values()
+        .filter_map(|point| {
+            let junction_items = point
+                .members
+                .iter()
+                .filter(|member| {
+                    matches!(
+                        member.kind,
+                        ConnectionMemberKind::SymbolPin
+                            | ConnectionMemberKind::SheetPin
+                            | ConnectionMemberKind::Wire
+                    )
+                })
+                .count();
+
+            (junction_items >= 4).then_some(point.at)
+        })
+        .collect()
+}
+
 fn segment_components(segments: &[[[f64; 2]; 2]], junctions: &[[f64; 2]]) -> Vec<Vec<usize>> {
     let mut components = Vec::new();
     let mut seen = vec![false; segments.len()];
@@ -15379,6 +15407,39 @@ mod tests {
             member.kind == super::ConnectionMemberKind::SymbolPin
                 && member.pin_number.as_deref() == Some("2")
         }));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_four_way_junction_points_count_only_connectable_items() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_four_way_junction_points_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (wire (pts (xy -10 0) (xy 0 0)))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (wire (pts (xy 0 -10) (xy 0 0)))
+  (wire (pts (xy 0 0) (xy 0 10)))
+  (bus (pts (xy 0 0) (xy 10 10)))
+  (junction (at 0 0)))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let points = super::collect_reduced_four_way_junction_points(&schematic);
+
+        assert_eq!(points, vec![[0.0, 0.0]]);
 
         let _ = fs::remove_file(&path);
     }

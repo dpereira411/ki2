@@ -1,6 +1,6 @@
 use crate::connectivity::{
-    ConnectionMemberKind, ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
-    collect_connection_points, collect_reduced_label_component_snapshots,
+    ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
+    collect_reduced_four_way_junction_points, collect_reduced_label_component_snapshots,
     collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_connected_wire_label_full_names_at, reduced_project_no_connect_pin_has_connected_owner,
@@ -1679,10 +1679,9 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestFourWayJunction()`. This is not a
 // 1:1 KiCad marker pass because the Rust tree still lacks `SCH_MARKER` / `ERC_ITEM` and the full
-// connection graph, but it now uses a shared connection-point snapshot that includes projected
-// symbol pins and keeps bus segments separate from wire segments instead of collapsing both into a
-// wire-only geometry shortcut. Remaining divergence is fuller connection-graph ownership and
-// broader item-class participation beyond the exercised ERC slice.
+// connection graph, but it now consumes graph-owned four-way points instead of inspecting
+// connection-point snapshots inside ERC. Remaining divergence is fuller connection-graph ownership
+// and broader item-class participation beyond the exercised ERC slice.
 pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -1695,29 +1694,12 @@ pub fn check_four_way_junction(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         };
 
-        for point in collect_connection_points(schematic).into_values() {
-            let junction_items = point
-                .members
-                .iter()
-                .filter(|member| {
-                    matches!(
-                        member.kind,
-                        ConnectionMemberKind::SymbolPin
-                            | ConnectionMemberKind::SheetPin
-                            | ConnectionMemberKind::Wire
-                    )
-                })
-                .count();
-
-            if junction_items < 4 {
-                continue;
-            }
-
+        for point in collect_reduced_four_way_junction_points(schematic) {
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 code: "erc-four-way-junction",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: format!("Four items connected at {}, {}", point.at[0], point.at[1]),
+                message: format!("Four items connected at {}, {}", point[0], point[1]),
                 path: Some(schematic.path.clone()),
                 span: None,
                 line: None,
