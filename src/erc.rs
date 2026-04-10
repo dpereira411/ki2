@@ -1,7 +1,8 @@
 use crate::connectivity::{
     ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
-    collect_reduced_four_way_junction_points, collect_reduced_label_component_snapshots,
-    collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
+    collect_reduced_dangling_directive_label_points, collect_reduced_four_way_junction_points,
+    collect_reduced_label_component_snapshots, collect_reduced_project_net_map,
+    collect_reduced_project_subgraphs_by_name,
     collect_reduced_project_symbol_pin_inventories_in_sheet, reduced_bus_member_full_local_names,
     reduced_connected_wire_label_full_names_at, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
@@ -2269,9 +2270,9 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckDirectiveLabels()`. This
 // is not a 1:1 KiCad `SCH_TEXT::IsDangling()`/marker path because the Rust tree still runs through
-// the shared reduced label-component snapshot instead of live graph-owned text items. It exists so
-// directive labels now participate in the same shared connectivity owner as the other graph-backed
-// label checks instead of remaining an uncovered `RunERC()` branch.
+// reduced graph-owned directive-label dangling points instead of live graph-owned text items. It
+// exists so directive labels now participate in the same shared connectivity owner as the other
+// graph-backed label checks instead of remaining an uncovered `RunERC()` branch.
 pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -2279,23 +2280,17 @@ pub fn check_directive_labels(project: &SchematicProject) -> Vec<Diagnostic> {
         let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
             continue;
         };
-        for component in collect_reduced_label_component_snapshots(schematic) {
-            for _label in component
-                .labels
-                .iter()
-                .filter(|label| label.kind == LabelKind::Directive && label.dangling)
-            {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Error,
-                    code: "erc-label-dangling",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: "Label not connected".to_string(),
-                    path: Some(sheet_path.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
+        for _label_at in collect_reduced_dangling_directive_label_points(schematic) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-label-dangling",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: "Label not connected".to_string(),
+                path: Some(sheet_path.schematic_path.clone()),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 

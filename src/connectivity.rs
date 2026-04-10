@@ -9543,6 +9543,24 @@ pub(crate) fn collect_reduced_label_component_snapshots(
         .collect()
 }
 
+// Upstream parity: reduced local analogue for the directive-label dangling branch in
+// `CONNECTION_GRAPH::ercCheckDirectiveLabels()`. This is not a 1:1 graph item query because the
+// Rust tree still derives dangling state from reduced label-component snapshots, but it keeps the
+// directive-specific label filter on the connectivity owner instead of having ERC inspect reduced
+// snapshot internals. Remaining divergence is fuller live `SCH_TEXT` item ownership and marker
+// attachment.
+pub(crate) fn collect_reduced_dangling_directive_label_points(
+    schematic: &Schematic,
+) -> Vec<[f64; 2]> {
+    collect_reduced_label_component_snapshots(schematic)
+        .into_iter()
+        .flat_map(|component| component.labels.into_iter())
+        .filter_map(|label| {
+            (label.kind == LabelKind::Directive && label.dangling).then_some(label.at)
+        })
+        .collect()
+}
+
 // Upstream parity: reduced local analogue for the wire-only traversal KiCad uses for several
 // connection-point queries before it reaches fuller live `SCH_CONNECTION` ownership. This is not
 // a 1:1 graph walk because the Rust tree still expands over reduced geometric wire segments
@@ -15476,6 +15494,35 @@ mod tests {
 
         assert_eq!(label.non_endpoint_wire_segment_count, 2);
         assert!(!label.dangling);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_dangling_directive_label_points_filter_directives() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_dangling_directive_labels_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (directive_label "D" (at 0 0 0) (effects (font (size 1 1))))
+  (label "L" (at 10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let points = super::collect_reduced_dangling_directive_label_points(&schematic);
+
+        assert_eq!(points, vec![[0.0, 0.0]]);
 
         let _ = fs::remove_file(&path);
     }
