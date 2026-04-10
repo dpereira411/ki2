@@ -6,7 +6,6 @@ use crate::connectivity::{
     reduced_project_four_way_junction_points, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_subgraph_by_index, reduced_project_subgraph_index, reduced_project_subgraphs,
     reduced_project_wire_item_endpoint_has_connected_bus_owner,
-    resolve_reduced_project_subgraph_for_no_connect,
     resolve_reduced_project_subgraph_for_sheet_pin,
 };
 use crate::core::SchematicProject;
@@ -1772,21 +1771,11 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         }
     }
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-
-        for no_connect in schematic.screen.items.iter().filter_map(|item| match item {
-            SchItem::NoConnect(no_connect) => Some(no_connect),
-            _ => None,
-        }) {
-            let Some(subgraph) =
-                resolve_reduced_project_subgraph_for_no_connect(&graph, sheet_path, no_connect.at)
-            else {
-                continue;
-            };
-
+    for subgraph in graph_run_erc_subgraphs(&graph)
+        .into_iter()
+        .filter(|subgraph| !subgraph.no_connect_points.is_empty())
+    {
+        for no_connect_point in &subgraph.no_connect_points {
             if crate::connectivity::reduced_project_subgraph_driver_identity(&subgraph)
                 .is_some_and(|identity| !seen_driver_identities.insert(identity.clone()))
             {
@@ -1807,27 +1796,17 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 .iter()
                 .map(|label| (subgraph.sheet_instance_path.clone(), label.at))
                 .collect::<std::collections::BTreeSet<_>>();
-            let has_sheet_pin = subgraph.hier_sheet_pins.iter().any(|pin| {
-                pin.at
-                    == crate::connectivity::PointKey(
-                        no_connect.at[0].to_bits(),
-                        no_connect.at[1].to_bits(),
-                    )
-            });
-            let has_hierarchical_label = subgraph.hier_ports.iter().any(|label| {
-                label.at
-                    == crate::connectivity::PointKey(
-                        no_connect.at[0].to_bits(),
-                        no_connect.at[1].to_bits(),
-                    )
-            });
+            let has_sheet_pin = subgraph
+                .hier_sheet_pins
+                .iter()
+                .any(|pin| pin.at == *no_connect_point);
+            let has_hierarchical_label = subgraph
+                .hier_ports
+                .iter()
+                .any(|label| label.at == *no_connect_point);
             let has_nc_pin = subgraph.base_pins.iter().any(|base_pin| {
                 base_pin.electrical_type.as_deref() == Some("no_connect")
-                    && base_pin.key.at
-                        == crate::connectivity::PointKey(
-                            no_connect.at[0].to_bits(),
-                            no_connect.at[1].to_bits(),
-                        )
+                    && base_pin.key.at == *no_connect_point
             });
 
             if ((has_sheet_pin || has_hierarchical_label) && local_unique_pins.is_empty())
@@ -1866,6 +1845,12 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                     .len();
                 (unique_pin_count, unique_label_count)
             };
+            let diagnostic_path = project
+                .sheet_paths
+                .iter()
+                .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+                .map(|sheet_path| sheet_path.schematic_path.clone())
+                .unwrap_or_else(|| project.root_path.clone());
 
             if unique_pin_count <= 1 {
                 if unique_pin_count == 0 && unique_label_count == 0 {
@@ -1874,7 +1859,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                         code: "erc-no-connect-dangling",
                         kind: crate::diagnostic::DiagnosticKind::Validation,
                         message: "Unconnected \"no connection\" flag".to_string(),
-                        path: Some(sheet_path.schematic_path.clone()),
+                        path: Some(diagnostic_path),
                         span: None,
                         line: None,
                         column: None,
@@ -1889,7 +1874,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 code: "erc-no-connect-connected",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: "A pin with a \"no connection\" flag is connected".to_string(),
-                path: Some(sheet_path.schematic_path.clone()),
+                path: Some(diagnostic_path),
                 span: None,
                 line: None,
                 column: None,
