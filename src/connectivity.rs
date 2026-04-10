@@ -3336,6 +3336,15 @@ impl LiveReducedSubgraph {
         while let Some(handle) = stack.pop() {
             visited.push(handle.clone());
             if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
+                if parent_handle
+                    .borrow()
+                    .driver_connection
+                    .borrow()
+                    .connection_type
+                    != handle.borrow().driver_connection.borrow().connection_type
+                {
+                    continue;
+                }
                 if visited_set.insert(live_subgraph_handle_id(&parent_handle)) {
                     stack.push(parent_handle);
                 }
@@ -3419,6 +3428,15 @@ impl LiveReducedSubgraph {
         while let Some(handle) = queue.pop_front() {
             component.push(handle.clone());
             if let Some(parent_handle) = live_subgraph_parent_handle_from_handle(&handle) {
+                if parent_handle
+                    .borrow()
+                    .driver_connection
+                    .borrow()
+                    .connection_type
+                    != handle.borrow().driver_connection.borrow().connection_type
+                {
+                    continue;
+                }
                 if visited.insert(live_subgraph_handle_id(&parent_handle)) {
                     queue.push_back(parent_handle);
                 }
@@ -17098,6 +17116,58 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![0]);
+    }
+
+    #[test]
+    fn reduced_hierarchy_parent_visit_requires_matching_connection_type() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![test_bus_member("SIG0", "SIG0", "/SIG0")],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/child/SIG0", "SIG0", "/child/SIG0", "/child"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection("/child/SIG0", "SIG0", "/child/SIG0", "/child"),
+                    identity: None,
+                }],
+                "/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/SIG0", "SIG0", "/SIG0", ""),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection("/child/SIG0", "SIG0", "/child/SIG0", "/child"),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&graph);
+        let mut component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[1], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
+        component.sort_unstable();
+
+        assert_eq!(component, vec![1]);
     }
 
     #[test]
