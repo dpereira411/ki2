@@ -750,6 +750,7 @@ pub(crate) enum ReducedProjectDriverIdentity {
     },
     SymbolPin {
         schematic_path: std::path::PathBuf,
+        sheet_instance_path: String,
         symbol_uuid: Option<String>,
         at: PointKey,
         pin_number: Option<String>,
@@ -908,6 +909,7 @@ impl LiveProjectStrongDriverOwner {
                     owner.pin.key.symbol_uuid.as_ref().map(|symbol_uuid| {
                         ReducedProjectDriverIdentity::SymbolPin {
                             schematic_path: owner.pin.schematic_path.clone(),
+                            sheet_instance_path: owner.pin.key.sheet_instance_path.clone(),
                             symbol_uuid: Some(symbol_uuid.clone()),
                             at: owner.pin.key.at,
                             pin_number: owner.pin.number.clone(),
@@ -3728,6 +3730,7 @@ impl LiveReducedSubgraph {
                     )
                 }),
             Some(ReducedProjectDriverIdentity::SymbolPin {
+                sheet_instance_path,
                 symbol_uuid,
                 at,
                 pin_number,
@@ -3737,7 +3740,8 @@ impl LiveReducedSubgraph {
                 .iter()
                 .find(|base_pin| {
                     let key = &base_pin.borrow().pin.key;
-                    key.symbol_uuid.as_ref() == symbol_uuid.as_ref()
+                    key.sheet_instance_path == sheet_instance_path
+                        && key.symbol_uuid.as_ref() == symbol_uuid.as_ref()
                         && key.at == at
                         && key.number.as_ref() == pin_number.as_ref()
                 })
@@ -9961,6 +9965,7 @@ where
                                     ),
                                     identity: Some(ReducedProjectDriverIdentity::SymbolPin {
                                         schematic_path: schematic_path.to_path_buf(),
+                                        sheet_instance_path: sheet_instance_path.to_string(),
                                         symbol_uuid: symbol.uuid.clone(),
                                         at: point_key(pin.at),
                                         pin_number: pin.number.clone(),
@@ -9989,6 +9994,7 @@ where
                                     ),
                                     identity: Some(ReducedProjectDriverIdentity::SymbolPin {
                                         schematic_path: schematic_path.to_path_buf(),
+                                        sheet_instance_path: sheet_instance_path.to_string(),
                                         symbol_uuid: symbol.uuid.clone(),
                                         at: point_key(pin.at),
                                         pin_number: pin.number.clone(),
@@ -16245,6 +16251,7 @@ mod tests {
                 },
                 identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
                     at: PointKey(10, 20),
                     pin_number: Some("1".to_string()),
@@ -16335,11 +16342,12 @@ mod tests {
                 assert!(matches!(
                     driver.identity,
                     Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                        sheet_instance_path,
                         symbol_uuid: Some(ref uuid),
                         at: PointKey(10, 20),
                         pin_number: Some(ref pin_number),
                         ..
-                    }) if uuid == "sym" && pin_number == "1"
+                    }) if sheet_instance_path.is_empty() && uuid == "sym" && pin_number == "1"
                 ));
             }
             _ => panic!("expected symbol pin strong-driver owner"),
@@ -16408,6 +16416,7 @@ mod tests {
                 },
                 identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
                     at: PointKey(10, 20),
                     pin_number: Some("1".to_string()),
@@ -16525,6 +16534,7 @@ mod tests {
                 },
                 identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
                     at: PointKey(10, 20),
                     pin_number: Some("1".to_string()),
@@ -16592,6 +16602,156 @@ mod tests {
             &owner.borrow().driver_connection
         ));
         assert_eq!(owner.borrow().connection.borrow().name, "SEEDED");
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_match_symbol_pin_driver_by_sheet_instance_path() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "PWR".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: "/a".to_string(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "PWR".to_string(),
+                local_name: "PWR".to_string(),
+                full_local_name: "PWR".to_string(),
+                sheet_instance_path: "/a".to_string(),
+                members: Vec::new(),
+            },
+            chosen_driver_index: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::PowerPin,
+                priority: 6,
+                connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "PWR".to_string(),
+                    local_name: "PWR".to_string(),
+                    full_local_name: "PWR".to_string(),
+                    sheet_instance_path: "/a".to_string(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: "/a".to_string(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 20),
+                    pin_number: Some("1".to_string()),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: "/a".to_string(),
+            anchor: PointKey(10, 20),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: vec![
+                super::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: super::ReducedNetBasePinKey {
+                        sheet_instance_path: "/b".to_string(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(10, 20),
+                        name: Some("1".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    reference: None,
+                    number: Some("1".to_string()),
+                    electrical_type: Some("power_in".to_string()),
+                    visible: true,
+                    is_power_symbol: true,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "OTHER".to_string(),
+                        local_name: "OTHER".to_string(),
+                        full_local_name: "OTHER".to_string(),
+                        sheet_instance_path: "/b".to_string(),
+                        members: Vec::new(),
+                    },
+                    driver_connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "OTHER".to_string(),
+                        local_name: "OTHER".to_string(),
+                        full_local_name: "OTHER".to_string(),
+                        sheet_instance_path: "/b".to_string(),
+                        members: Vec::new(),
+                    },
+                    preserve_local_name_on_refresh: true,
+                },
+                super::ReducedProjectBasePin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    key: super::ReducedNetBasePinKey {
+                        sheet_instance_path: "/a".to_string(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(10, 20),
+                        name: Some("1".to_string()),
+                        number: Some("1".to_string()),
+                    },
+                    reference: None,
+                    number: Some("1".to_string()),
+                    electrical_type: Some("power_in".to_string()),
+                    visible: true,
+                    is_power_symbol: true,
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR".to_string(),
+                        local_name: "PWR".to_string(),
+                        full_local_name: "PWR".to_string(),
+                        sheet_instance_path: "/a".to_string(),
+                        members: Vec::new(),
+                    },
+                    driver_connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "PWR".to_string(),
+                        local_name: "PWR".to_string(),
+                        full_local_name: "PWR".to_string(),
+                        sheet_instance_path: "/a".to_string(),
+                        members: Vec::new(),
+                    },
+                    preserve_local_name_on_refresh: true,
+                },
+            ],
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+
+        let owner = match &*subgraph.drivers[0].borrow() {
+            super::LiveProjectStrongDriverOwner::SymbolPin { owner, .. } => {
+                owner.upgrade().expect("symbol pin owner")
+            }
+            _ => panic!("expected symbol pin strong-driver owner"),
+        };
+
+        assert!(Rc::ptr_eq(&owner, &subgraph.base_pins[1]));
+        assert!(!Rc::ptr_eq(&owner, &subgraph.base_pins[0]));
+        assert_eq!(owner.borrow().pin.key.sheet_instance_path, "/a");
     }
 
     #[test]
@@ -16750,6 +16910,7 @@ mod tests {
                     },
                     identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                         schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        sheet_instance_path: String::new(),
                         symbol_uuid: Some("sym".to_string()),
                         at: PointKey(10, 20),
                         pin_number: Some("1".to_string()),
@@ -16769,6 +16930,7 @@ mod tests {
                     },
                     identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                         schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        sheet_instance_path: String::new(),
                         symbol_uuid: Some("sym".to_string()),
                         at: PointKey(10, 20),
                         pin_number: Some("2".to_string()),
@@ -21812,6 +21974,7 @@ mod tests {
                     },
                     identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                         schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        sheet_instance_path: String::new(),
                         symbol_uuid: Some("pwr".to_string()),
                         at: PointKey(10, 0),
                         pin_number: Some("1".to_string()),
@@ -21953,6 +22116,7 @@ mod tests {
                     },
                     identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                         schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        sheet_instance_path: String::new(),
                         symbol_uuid: Some("pwr".to_string()),
                         at: PointKey(10, 0),
                         pin_number: Some("1".to_string()),
@@ -22167,6 +22331,7 @@ mod tests {
                 },
                 identity: Some(super::ReducedProjectDriverIdentity::SymbolPin {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: String::new(),
                     symbol_uuid: Some("sym".to_string()),
                     at: PointKey(10, 20),
                     pin_number: Some("1".to_string()),
@@ -22251,6 +22416,7 @@ mod tests {
     fn live_projection_preserves_chosen_driver_identity_on_bound_owner() {
         let chosen_identity = super::ReducedProjectDriverIdentity::SymbolPin {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: String::new(),
             symbol_uuid: Some("sym".to_string()),
             at: PointKey(10, 20),
             pin_number: Some("1".to_string()),
