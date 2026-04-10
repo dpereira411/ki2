@@ -10691,10 +10691,10 @@ pub(crate) fn reduced_project_subgraph_dangling_wire_endpoints(
 // upstream: ERC_TESTER::TestLabelMultipleWires label overlap branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still uses reduced label link non-endpoint wire counts instead of live graph-owned
-// `SCH_LABEL` item overlap state
-// local_only_reason: keeps label/wire overlap ownership on the shared graph owner instead of
-// duplicating reduced label-link scans inside ERC
+// divergence: still falls back to reduced label snapshots for hand-built test graphs and lacks
+// final `SCH_LABEL` marker attachment, but production overlap checks read live label owners
+// local_only_reason: keeps label/wire overlap ownership on the shared graph owner and starts
+// retiring projected reduced label-link scans from ERC-facing paths
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
 // remove_when: ERC can query live label multi-wire overlap directly from graph item links
 pub(crate) fn reduced_project_label_multiple_wire_events(
@@ -10702,16 +10702,33 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
 ) -> Vec<ReducedProjectLabelMultipleWires> {
     let mut events = Vec::new();
 
-    for subgraph in reduced_project_run_erc_subgraphs(graph) {
-        for label in &subgraph.label_links {
-            if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
-                continue;
-            }
+    if !graph.live_subgraphs.is_empty() {
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            let subgraph = subgraph.borrow();
+            for label in &subgraph.label_links {
+                let label = label.borrow();
+                if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
+                    continue;
+                }
 
-            events.push(ReducedProjectLabelMultipleWires {
-                at: label.at,
-                diagnostic_path: label.schematic_path.clone(),
-            });
+                events.push(ReducedProjectLabelMultipleWires {
+                    at: label.at,
+                    diagnostic_path: label.schematic_path.clone(),
+                });
+            }
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraphs(graph) {
+            for label in &subgraph.label_links {
+                if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
+                    continue;
+                }
+
+                events.push(ReducedProjectLabelMultipleWires {
+                    at: label.at,
+                    diagnostic_path: label.schematic_path.clone(),
+                });
+            }
         }
     }
 
