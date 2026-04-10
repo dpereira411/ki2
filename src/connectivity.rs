@@ -9908,6 +9908,13 @@ pub(crate) struct ReducedProjectBusEntryConflictCandidate {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectDriverConflict {
+    pub(crate) primary_name: String,
+    pub(crate) secondary_name: String,
+    pub(crate) diagnostic_path: Option<std::path::PathBuf>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10156,6 +10163,46 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
         test_names,
         fallback_net_name,
         suppress_conflict,
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckMultipleDrivers conflicting-driver selection branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still selects from reduced driver snapshots instead of live
+// `CONNECTION_SUBGRAPH::m_drivers` item pointers and `m_multiple_drivers`
+// local_only_reason: keeps driver priority/name identity selection on the shared graph owner
+// instead of duplicating reduced subgraph driver scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` driver owner graph
+// remove_when: ERC can query live multiple-driver conflicts directly from graph driver links
+pub(crate) fn reduced_project_subgraph_driver_conflict(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<ReducedProjectDriverConflict> {
+    let primary_driver = subgraph.drivers.first()?;
+    let secondary_driver = subgraph.drivers.iter().skip(1).find(|driver| {
+        matches!(
+            driver.kind,
+            ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+        ) && reduced_project_strong_driver_name(driver)
+            != reduced_project_strong_driver_name(primary_driver)
+    })?;
+
+    let driver_identity_schematic_path =
+        |driver: &ReducedProjectStrongDriver| match driver.identity.as_ref() {
+            Some(ReducedProjectDriverIdentity::Label { schematic_path, .. })
+            | Some(ReducedProjectDriverIdentity::SheetPin { schematic_path, .. })
+            | Some(ReducedProjectDriverIdentity::SymbolPin { schematic_path, .. }) => {
+                Some(schematic_path.clone())
+            }
+            None => None,
+        };
+
+    Some(ReducedProjectDriverConflict {
+        primary_name: reduced_project_strong_driver_name(primary_driver).to_string(),
+        secondary_name: reduced_project_strong_driver_name(secondary_driver).to_string(),
+        diagnostic_path: driver_identity_schematic_path(primary_driver)
+            .or_else(|| driver_identity_schematic_path(secondary_driver)),
     })
 }
 

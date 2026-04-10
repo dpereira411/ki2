@@ -7,6 +7,7 @@ use crate::connectivity::{
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
+    reduced_project_subgraph_driver_conflict,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
@@ -2588,50 +2589,19 @@ pub fn check_pin_to_pin(project: &SchematicProject) -> Vec<Diagnostic> {
 // de-duplication through the shared reduced driver owner. Remaining divergence is fuller bus/power
 // subgraph coverage, driver-item identity, and exact marker attachment.
 pub fn check_driver_conflicts(project: &SchematicProject) -> Vec<Diagnostic> {
-    fn driver_identity_schematic_path(
-        driver: &crate::connectivity::ReducedProjectStrongDriver,
-    ) -> Option<std::path::PathBuf> {
-        match driver.identity.as_ref() {
-            Some(crate::connectivity::ReducedProjectDriverIdentity::Label {
-                schematic_path,
-                ..
-            })
-            | Some(crate::connectivity::ReducedProjectDriverIdentity::SheetPin {
-                schematic_path,
-                ..
-            })
-            | Some(crate::connectivity::ReducedProjectDriverIdentity::SymbolPin {
-                schematic_path,
-                ..
-            }) => Some(schematic_path.clone()),
-            None => None,
-        }
-    }
-
     let mut diagnostics = Vec::new();
 
     let graph = project.reduced_project_net_graph(false);
 
     for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        let Some(primary_driver) = subgraph.drivers.first() else {
+        let Some(conflict) = reduced_project_subgraph_driver_conflict(&subgraph) else {
             continue;
         };
-        let Some(secondary_driver) = subgraph.drivers.iter().skip(1).find(|driver| {
-            matches!(
-                driver.kind,
-                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
-            ) && crate::connectivity::reduced_project_strong_driver_name(driver)
-                != crate::connectivity::reduced_project_strong_driver_name(primary_driver)
-        }) else {
-            continue;
-        };
-        let primary_name =
-            crate::connectivity::reduced_project_strong_driver_name(primary_driver).to_string();
-        let secondary_name =
-            crate::connectivity::reduced_project_strong_driver_name(secondary_driver).to_string();
-        let path = driver_identity_schematic_path(primary_driver)
-            .or_else(|| driver_identity_schematic_path(secondary_driver))
+        let path = conflict
+            .diagnostic_path
             .unwrap_or_else(|| project.root_path.clone());
+        let primary_name = conflict.primary_name;
+        let secondary_name = conflict.secondary_name;
 
         diagnostics.push(Diagnostic {
             severity: Severity::Error,
