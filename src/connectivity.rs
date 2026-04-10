@@ -8656,10 +8656,19 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
+    resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
+        .and_then(|index| graph.subgraphs.get(index))
+}
+
+fn resolve_reduced_project_subgraph_index_for_no_connect(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<usize> {
     graph
         .no_connect_subgraph_identities
         .get(&reduced_project_no_connect_identity_key(sheet_path, at))
-        .and_then(|index| graph.subgraphs.get(*index))
+        .copied()
         .or_else(|| {
             graph
                 .no_connect_subgraph_identities
@@ -8667,8 +8676,7 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
                 .find_map(|(key, index)| {
                     (key.sheet_instance_path == sheet_path.instance_path
                         && point_key_matches(key.at, at))
-                    .then(|| graph.subgraphs.get(*index))
-                    .flatten()
+                    .then_some(*index)
                 })
         })
 }
@@ -8781,6 +8789,16 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
+    resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+        .and_then(|index| graph.subgraphs.get(index))
+}
+
+fn resolve_reduced_project_subgraph_index_for_sheet_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+) -> Option<usize> {
     graph
         .sheet_pin_subgraph_identities
         .get(&reduced_project_sheet_pin_identity_key(
@@ -8788,7 +8806,7 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
             point_key(at),
             child_sheet_uuid,
         ))
-        .and_then(|index| graph.subgraphs.get(*index))
+        .copied()
         .or_else(|| {
             graph
                 .sheet_pin_subgraph_identities
@@ -8797,8 +8815,7 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
                     (key.sheet_instance_path == sheet_path.instance_path
                         && key.child_sheet_uuid.as_deref() == child_sheet_uuid
                         && point_key_matches(key.at, at))
-                    .then(|| graph.subgraphs.get(*index))
-                    .flatten()
+                    .then_some(*index)
                 })
         })
 }
@@ -8815,14 +8832,30 @@ pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid).map(
-        |subgraph| ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: subgraph.driver_connection.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: subgraph.has_no_connect,
-        },
-    )
+    resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+        .and_then(|index| {
+            graph.live_subgraphs.get(index).map(|subgraph| {
+                let subgraph = subgraph.borrow();
+                let reduced = graph.subgraphs.get(index);
+                ReducedProjectNetIdentity {
+                    code: reduced.map_or(0, |subgraph| subgraph.code),
+                    name: subgraph.driver_connection.borrow().name.clone(),
+                    class: reduced
+                        .map(|subgraph| subgraph.class.clone())
+                        .unwrap_or_default(),
+                    has_no_connect: subgraph.has_no_connect,
+                }
+            })
+        })
+        .or_else(|| {
+            resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+                .map(|subgraph| ReducedProjectNetIdentity {
+                    code: subgraph.code,
+                    name: subgraph.driver_connection.name.clone(),
+                    class: subgraph.class.clone(),
+                    has_no_connect: subgraph.has_no_connect,
+                })
+        })
 }
 
 // Upstream parity: reduced local analogue for the sheet-pin `Name(true)` path via
@@ -8836,8 +8869,21 @@ pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .map(|subgraph| subgraph.driver_connection.local_name.clone())
+    resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+        .and_then(|index| {
+            graph.live_subgraphs.get(index).map(|subgraph| {
+                subgraph
+                    .borrow()
+                    .driver_connection
+                    .borrow()
+                    .local_name
+                    .clone()
+            })
+        })
+        .or_else(|| {
+            resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+                .map(|subgraph| subgraph.driver_connection.local_name.clone())
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -17266,6 +17312,68 @@ mod tests {
         );
 
         assert_eq!(shown, "SHEET_LOCAL/SheetClass/sheet-net");
+    }
+
+    #[test]
+    fn live_sheet_pin_queries_read_live_subgraph_owner() {
+        let connection = test_net_connection("/OLD", "OLD", "/OLD", "");
+        let mut subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        subgraph.hier_sheet_pins.push(ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection,
+        });
+
+        let mut graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.sheet_pin_subgraph_identities.insert(
+            super::ReducedProjectSheetPinIdentityKey {
+                sheet_instance_path: String::new(),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("child-sheet".to_string()),
+            },
+            0,
+        );
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: String::new(),
+            sheet_uuid: None,
+            sheet_name: Some("Root".to_string()),
+            page: Some("1".to_string()),
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+
+        assert_eq!(
+            super::resolve_reduced_project_net_for_sheet_pin(
+                &graph,
+                &sheet_path,
+                [0.0, 0.0],
+                Some("child-sheet"),
+            )
+            .expect("sheet pin net")
+            .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_sheet_pin(
+                &graph,
+                &sheet_path,
+                [0.0, 0.0],
+                Some("child-sheet"),
+            )
+            .expect("sheet pin driver"),
+            "LIVE"
+        );
     }
 
     #[test]
