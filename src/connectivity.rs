@@ -498,10 +498,10 @@ fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraph
 // `CONNECTION_SUBGRAPH::Absorb()` as called from `CONNECTION_GRAPH::processSubGraphs()`. This is
 // still partial because the Rust graph lacks `m_absorbed_by`, live item pointers, bus-entry
 // connected-bus ownership, and the full secondary-driver traversal before `ResolveDrivers()`, but
-// it now moves items from exact matching non-bus candidate subgraphs onto one reduced owner before
+// it now moves items from exact matching net/bus candidate subgraphs onto one reduced owner before
 // hierarchy, bus-link, ERC, or export lookups observe them. Bus-entry carriers are deliberately
 // skipped until the fuller live subgraph can preserve their connected-bus item topology while
-// absorbing; same-sheet bus-member names are also skipped for the same reason.
+// absorbing; same-sheet bus-member net names are also skipped for the same reason.
 fn reduced_project_absorb_primary_same_name_subgraphs(
     subgraphs: &mut Vec<ReducedProjectSubgraphEntry>,
 ) {
@@ -509,10 +509,18 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
     let subgraphs_by_sheet_and_name = reduced_project_rebuild_process_name_indexes(subgraphs).1;
 
     for parent_index in 0..subgraphs.len() {
+        let parent_type = subgraphs[parent_index].driver_connection.connection_type;
         if absorbed[parent_index]
-            || subgraphs[parent_index].driver_connection.connection_type
-                != ReducedProjectConnectionType::Net
-            || !subgraphs[parent_index].bus_items.is_empty()
+            || !matches!(
+                parent_type,
+                ReducedProjectConnectionType::Net
+                    | ReducedProjectConnectionType::Bus
+                    | ReducedProjectConnectionType::BusGroup
+            )
+            || subgraphs[parent_index]
+                .bus_items
+                .iter()
+                .any(|item| item.is_bus_entry)
             || !reduced_project_subgraph_has_process_strong_driver(
                 subgraphs,
                 &subgraphs_by_sheet_and_name,
@@ -524,24 +532,30 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
 
         let parent_sheet = subgraphs[parent_index].sheet_instance_path.clone();
         let parent_name = subgraphs[parent_index].driver_connection.name.clone();
-        if subgraphs.iter().any(|candidate| {
-            candidate.sheet_instance_path == parent_sheet
-                && candidate.bus_members.iter().any(|member| {
-                    reduced_bus_member_leaf_objects(std::slice::from_ref(member))
-                        .iter()
-                        .any(|leaf| leaf.full_local_name == parent_name || leaf.name == parent_name)
-                })
-        }) {
+        if parent_type == ReducedProjectConnectionType::Net
+            && subgraphs.iter().any(|candidate| {
+                candidate.sheet_instance_path == parent_sheet
+                    && candidate.bus_members.iter().any(|member| {
+                        reduced_bus_member_leaf_objects(std::slice::from_ref(member))
+                            .iter()
+                            .any(|leaf| {
+                                leaf.full_local_name == parent_name || leaf.name == parent_name
+                            })
+                    })
+            })
+        {
             continue;
         }
 
         for candidate_index in (parent_index + 1)..subgraphs.len() {
             if absorbed[candidate_index]
                 || subgraphs[candidate_index].sheet_instance_path != parent_sheet
-                || subgraphs[candidate_index].driver_connection.connection_type
-                    != ReducedProjectConnectionType::Net
+                || subgraphs[candidate_index].driver_connection.connection_type != parent_type
                 || subgraphs[candidate_index].driver_connection.name != parent_name
-                || !subgraphs[candidate_index].bus_items.is_empty()
+                || subgraphs[candidate_index]
+                    .bus_items
+                    .iter()
+                    .any(|item| item.is_bus_entry)
                 || !reduced_project_subgraph_has_process_strong_driver(
                     subgraphs,
                     &subgraphs_by_sheet_and_name,
@@ -11538,6 +11552,57 @@ mod tests {
             chosen.priority,
             super::reduced_local_label_driver_priority()
         );
+    }
+
+    #[test]
+    fn reduced_absorb_merges_same_sheet_duplicate_bus_drivers() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_duplicate_bus_absorb_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000202")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (label "DATA[0..1]" (at 10 0 0) (effects (font (size 1 1))))
+  (bus (pts (xy 0 20) (xy 10 20)))
+  (label "DATA[0..1]" (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("first bus subgraph");
+        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+            .expect("second bus subgraph");
+
+        assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        assert_eq!(
+            first_by_point.driver_connection.connection_type,
+            ReducedProjectConnectionType::Bus
+        );
+        assert_eq!(
+            super::collect_reduced_project_subgraphs_by_name(&graph, &first_by_point.name).len(),
+            1
+        );
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
