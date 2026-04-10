@@ -5,7 +5,8 @@ use crate::connectivity::{
     reduced_project_four_way_junction_points, reduced_project_hier_port_entries_in_sheet,
     reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
-    reduced_project_sheet_pin_names, reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
+    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_to_net_conflict,
+    reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain,
     reduced_project_subgraph_has_non_bus_entry_owner, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
@@ -2264,80 +2265,14 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph)
-        .into_iter()
-        .filter(|subgraph| !subgraph.wire_items.iter().any(|item| item.is_bus_entry))
-    {
-        let mut has_bus_item = !subgraph.bus_items.is_empty();
-        let mut has_net_item = !subgraph.wire_items.is_empty();
-        let mut net_at = subgraph
-            .wire_items
-            .first()
-            .map(|item| [f64::from_bits(item.start.0), f64::from_bits(item.start.1)]);
-        let mut diagnostic_path = subgraph
-            .wire_items
-            .first()
-            .map(|item| item.schematic_path.clone())
-            .or_else(|| {
-                subgraph
-                    .bus_items
-                    .first()
-                    .map(|item| item.schematic_path.clone())
-            });
-
-        for label in &subgraph.label_links {
-            if label.kind == LabelKind::Directive {
-                continue;
-            }
-
-            if matches!(
-                label.connection.connection_type,
-                crate::connectivity::ReducedProjectConnectionType::Bus
-                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
-            ) {
-                has_bus_item = true;
-            } else {
-                has_net_item = true;
-                net_at.get_or_insert([f64::from_bits(label.at.0), f64::from_bits(label.at.1)]);
-                diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
-            }
-        }
-
-        for pin in &subgraph.hier_sheet_pins {
-            if matches!(
-                pin.connection.connection_type,
-                crate::connectivity::ReducedProjectConnectionType::Bus
-                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
-            ) {
-                has_bus_item = true;
-            } else {
-                has_net_item = true;
-                net_at.get_or_insert([f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)]);
-                diagnostic_path.get_or_insert_with(|| pin.schematic_path.clone());
-            }
-        }
-
-        for port in &subgraph.hier_ports {
-            if matches!(
-                port.connection.connection_type,
-                crate::connectivity::ReducedProjectConnectionType::Bus
-                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
-            ) {
-                has_bus_item = true;
-            } else {
-                has_net_item = true;
-                net_at.get_or_insert([f64::from_bits(port.at.0), f64::from_bits(port.at.1)]);
-                diagnostic_path.get_or_insert_with(|| port.schematic_path.clone());
-            }
-        }
-
-        if has_bus_item && has_net_item {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
+        if let Some(conflict) = reduced_project_subgraph_bus_to_net_conflict(&subgraph) {
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 code: "erc-bus-to-net-conflict",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: "Invalid connection between bus and net items".to_string(),
-                path: diagnostic_path,
+                path: conflict.diagnostic_path,
                 span: None,
                 line: None,
                 column: None,

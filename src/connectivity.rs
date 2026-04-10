@@ -9885,6 +9885,75 @@ pub(crate) fn reduced_project_subgraph_has_non_bus_entry_owner(
             .any(|port| port.connection.connection_type == ReducedProjectConnectionType::Net)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectBusToNetConflict {
+    pub(crate) diagnostic_path: Option<std::path::PathBuf>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still classifies reduced subgraph item payload instead of live `CONNECTION_SUBGRAPH`
+// item owners
+// local_only_reason: keeps bus-vs-net ownership classification on the shared graph owner instead
+// of duplicating reduced label/sheet-pin/port membership scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query live subgraph bus/net item classification directly
+pub(crate) fn reduced_project_subgraph_bus_to_net_conflict(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<ReducedProjectBusToNetConflict> {
+    if subgraph.wire_items.iter().any(|item| item.is_bus_entry) {
+        return None;
+    }
+
+    let mut has_bus_item = !subgraph.bus_items.is_empty();
+    let mut has_net_item = !subgraph.wire_items.is_empty();
+    let mut diagnostic_path = subgraph
+        .wire_items
+        .first()
+        .map(|item| item.schematic_path.clone())
+        .or_else(|| {
+            subgraph
+                .bus_items
+                .first()
+                .map(|item| item.schematic_path.clone())
+        });
+
+    for label in &subgraph.label_links {
+        if label.kind == LabelKind::Directive {
+            continue;
+        }
+
+        if reduced_connection_is_bus(label.connection.connection_type) {
+            has_bus_item = true;
+        } else {
+            has_net_item = true;
+            diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
+        }
+    }
+
+    for pin in &subgraph.hier_sheet_pins {
+        if reduced_connection_is_bus(pin.connection.connection_type) {
+            has_bus_item = true;
+        } else {
+            has_net_item = true;
+            diagnostic_path.get_or_insert_with(|| pin.schematic_path.clone());
+        }
+    }
+
+    for port in &subgraph.hier_ports {
+        if reduced_connection_is_bus(port.connection.connection_type) {
+            has_bus_item = true;
+        } else {
+            has_net_item = true;
+            diagnostic_path.get_or_insert_with(|| port.schematic_path.clone());
+        }
+    }
+
+    (has_bus_item && has_net_item).then_some(ReducedProjectBusToNetConflict { diagnostic_path })
+}
+
 fn assign_reduced_connected_bus_subgraph_indexes(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
