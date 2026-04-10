@@ -9943,6 +9943,12 @@ pub(crate) struct ReducedProjectLabelConnectivitySubgraph {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectLabelNameCaches {
+    pub(crate) global_names: BTreeSet<String>,
+    pub(crate) local_names_by_sheet: BTreeSet<(String, String)>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10388,6 +10394,45 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
     }
 
     label_subgraphs
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects same-name label cache branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still builds reduced label-name caches instead of querying live label item owners
+// from `CONNECTION_SUBGRAPH` neighbors
+// local_only_reason: keeps global/local label name ownership on the shared graph owner instead of
+// duplicating reduced label-link scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live same-name label presence directly from graph item links
+pub(crate) fn reduced_project_label_name_caches(
+    graph: &ReducedProjectNetGraph,
+) -> ReducedProjectLabelNameCaches {
+    let mut global_names = BTreeSet::new();
+    let mut local_names_by_sheet = BTreeSet::new();
+
+    for subgraph in reduced_project_subgraphs(graph) {
+        for label in &subgraph.label_links {
+            match label.kind {
+                LabelKind::Global => {
+                    global_names.insert(label.connection.name.clone());
+                }
+                LabelKind::Local | LabelKind::Hierarchical => {
+                    local_names_by_sheet.insert((
+                        subgraph.sheet_instance_path.clone(),
+                        label.connection.local_name.clone(),
+                    ));
+                }
+                LabelKind::Directive => {}
+            }
+        }
+    }
+
+    ReducedProjectLabelNameCaches {
+        global_names,
+        local_names_by_sheet,
+    }
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(

@@ -4,9 +4,9 @@ use crate::connectivity::{
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
     reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
-    reduced_project_no_connect_pin_has_connected_owner, reduced_project_run_erc_subgraphs,
-    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
-    reduced_project_subgraph_bus_entry_conflict_candidate,
+    reduced_project_label_name_caches, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
+    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
     reduced_project_subgraph_floating_wire, reduced_project_subgraphs,
@@ -1619,25 +1619,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let graph = project.reduced_project_net_graph(false);
     let mut seen = std::collections::BTreeSet::new();
     let mut seen_driver_identities = std::collections::BTreeSet::new();
-    let mut global_label_cache = std::collections::BTreeSet::new();
-    let mut local_label_cache = std::collections::BTreeSet::new();
-
-    for subgraph in reduced_project_subgraphs(&graph) {
-        for label in &subgraph.label_links {
-            match label.kind {
-                LabelKind::Global => {
-                    global_label_cache.insert(label.connection.name.clone());
-                }
-                LabelKind::Local | LabelKind::Hierarchical => {
-                    local_label_cache.insert((
-                        subgraph.sheet_instance_path.clone(),
-                        label.connection.local_name.clone(),
-                    ));
-                }
-                LabelKind::Directive => {}
-            }
-        }
-    }
+    let label_name_caches = reduced_project_label_name_caches(&graph);
 
     for subgraph in reduced_project_run_erc_subgraphs(&graph)
         .into_iter()
@@ -1793,8 +1775,10 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
         }
 
         if !has_other_connections && !pin.is_power_symbol {
-            if global_label_cache.contains(&pin.connection.name)
-                || local_label_cache.contains(&(
+            if label_name_caches
+                .global_names
+                .contains(&pin.connection.name)
+                || label_name_caches.local_names_by_sheet.contains(&(
                     subgraph.sheet_instance_path.clone(),
                     pin.connection.local_name.clone(),
                 ))
