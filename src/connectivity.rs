@@ -8569,6 +8569,40 @@ pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
         .map(|subgraph| subgraph.driver_connection.local_name.clone())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckHierSheets parent-sheet-pin connectivity branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still answers from reduced project-subgraph membership instead of live
+// `CONNECTION_SUBGRAPH` / `SCH_SHEET_PIN*` ownership
+// local_only_reason: keeps the exercised sheet-pin dangling query on one shared graph-owned helper
+// instead of duplicating the same reduced subgraph-membership test inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query dangling state directly from live sheet-pin / subgraph owners
+pub(crate) fn reduced_project_sheet_pin_is_dangling(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+) -> bool {
+    let Some(subgraph) =
+        resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+    else {
+        return true;
+    };
+
+    let pin_point = point_key(at);
+    subgraph.base_pins.is_empty()
+        && subgraph.label_links.is_empty()
+        && subgraph.no_connect_points.is_empty()
+        && subgraph.wire_items.is_empty()
+        && subgraph.bus_items.is_empty()
+        && !subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|pin| pin.at != pin_point)
+}
+
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
