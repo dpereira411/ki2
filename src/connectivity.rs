@@ -8980,6 +8980,10 @@ pub(crate) fn reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
     graph: &ReducedProjectNetGraph,
     subgraph_index: usize,
 ) -> bool {
+    if let Some(subgraph) = graph.live_subgraphs.get(subgraph_index) {
+        return live_reduced_subgraph_has_local_hierarchy_via_bus_parents(subgraph);
+    }
+
     let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
         return false;
     };
@@ -9009,6 +9013,10 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
     graph: &ReducedProjectNetGraph,
     subgraph_index: usize,
 ) -> bool {
+    if let Some(subgraph) = graph.live_subgraphs.get(subgraph_index) {
+        return live_reduced_subgraph_has_no_connect_via_parent_chain(subgraph);
+    }
+
     let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
         return false;
     };
