@@ -5757,25 +5757,6 @@ fn recache_live_reduced_subgraph_name_handle_cache_from_handles(
         .push(subgraph_handle.clone());
 }
 
-#[allow(dead_code)]
-fn reduced_connection_from_live_bus_member(
-    member: &LiveProjectBusMember,
-    sheet_instance_path: &str,
-) -> ReducedProjectConnection {
-    ReducedProjectConnection {
-        net_code: member.net_code,
-        connection_type: match member.kind {
-            ReducedBusMemberKind::Net => ReducedProjectConnectionType::Net,
-            ReducedBusMemberKind::Bus => ReducedProjectConnectionType::Bus,
-        },
-        name: member.full_local_name.clone(),
-        local_name: member.local_name.clone(),
-        full_local_name: member.full_local_name.clone(),
-        sheet_instance_path: sheet_instance_path.to_string(),
-        members: live_bus_member_handles_to_snapshots(&member.members),
-    }
-}
-
 // Upstream parity: reduced local analogue for the repeated bus-neighbor dirty propagation KiCad
 // gets by revisiting the same live subgraphs until bus-driven renames stop changing. This is still
 // not the final `m_dirty` / recursive `propagateToNeighbors()` engine, but it moves the repeat
