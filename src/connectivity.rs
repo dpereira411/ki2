@@ -4103,6 +4103,7 @@ impl LiveReducedSubgraph {
                     &target_connection,
                     &chosen_connection,
                 );
+                handle.borrow_mut().dirty = false;
 
                 promoted.push(handle.clone());
             }
@@ -4246,7 +4247,7 @@ impl LiveReducedSubgraph {
                 force,
                 visiting,
                 stale_members,
-                false,
+                true,
             );
         }
     }
@@ -19678,6 +19679,7 @@ mod tests {
 
         assert_eq!(promoted.len(), 1);
         assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
+        assert!(!live_subgraphs[1].borrow().dirty);
     }
 
     #[test]
