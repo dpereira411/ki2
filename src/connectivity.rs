@@ -12634,11 +12634,26 @@ pub(crate) fn collect_reduced_label_component_snapshots(
 pub(crate) fn collect_reduced_dangling_directive_label_points(
     schematic: &Schematic,
 ) -> Vec<[f64; 2]> {
+    let rule_areas = schematic
+        .screen
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SchItem::Shape(shape) if shape.kind == ShapeKind::RuleArea => Some(shape),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
     collect_reduced_label_component_snapshots(schematic)
         .into_iter()
         .flat_map(|component| component.labels.into_iter())
         .filter_map(|label| {
-            (label.kind == LabelKind::Directive && label.dangling).then_some(label.at)
+            (label.kind == LabelKind::Directive
+                && label.dangling
+                && !rule_areas
+                    .iter()
+                    .any(|rule_area| point_in_polygon(label.at, &rule_area.points)))
+            .then_some(label.at)
         })
         .collect()
 }
@@ -20161,6 +20176,42 @@ mod tests {
   (paper "A4")
   (directive_label "D" (at 0 0 0) (effects (font (size 1 1))))
   (directive_label "D2" (at 0 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let points = super::collect_reduced_dangling_directive_label_points(&schematic);
+
+        assert!(points.is_empty(), "{points:#?}");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let links = super::reduced_project_dangling_directive_label_links(&graph);
+
+        assert!(links.is_empty(), "{links:#?}");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_dangling_directive_label_points_skip_labels_inside_rule_area() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_directive_rule_area_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (rule_area (polyline (pts (xy 0 0) (xy 10 0) (xy 10 10) (xy 0 10))))
+  (directive_label "D" (at 5 5 0) (effects (font (size 1 1)))))"#,
         )
         .expect("write schematic");
 
