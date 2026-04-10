@@ -2099,7 +2099,7 @@ impl LiveProjectBusMember {
             return self.vector_index == Some(search_index);
         }
 
-        self.matches_connection_member(search)
+        false
     }
 
     // upstream: CONNECTION_GRAPH::matchBusMember group-bus non-vector member branch
@@ -26880,6 +26880,49 @@ mod tests {
             .expect("vector bus member should match by vector index");
 
         assert_eq!(matched.borrow().full_local_name, "/A0");
+    }
+
+    #[test]
+    fn live_vector_bus_connection_without_vector_index_does_not_match_by_local_name() {
+        let bus = LiveProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "A[0..1]".to_string(),
+            local_name: "A".to_string(),
+            full_local_name: "/A".to_string(),
+            sheet_instance_path: String::new(),
+            members: vec![
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A0".to_string(),
+                    local_name: "A0".to_string(),
+                    full_local_name: "/A0".to_string(),
+                    vector_index: Some(0),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                })),
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A1".to_string(),
+                    local_name: "A1".to_string(),
+                    full_local_name: "/A1".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                })),
+            ],
+        };
+        let search = LiveProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "/PLAIN".to_string(),
+            local_name: "A0".to_string(),
+            full_local_name: "/PLAIN".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+
+        assert!(bus.find_member_for_connection(&search).is_none());
     }
 
     #[test]
