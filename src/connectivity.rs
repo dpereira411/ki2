@@ -7678,6 +7678,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         &mut subgraphs_by_sheet_and_name,
     );
     reduced_project_absorb_primary_same_name_subgraphs(&mut reduced_subgraphs);
+    assign_reduced_connected_bus_subgraph_indexes(&mut reduced_subgraphs);
     subgraphs_by_sheet_and_name =
         reduced_project_rebuild_process_name_indexes(&reduced_subgraphs).1;
 
@@ -9299,6 +9300,54 @@ pub(crate) fn reduced_project_connected_bus_subgraph_for_wire_item<'a>(
     wire_item: &ReducedSubgraphWireItem,
 ) -> Option<&'a ReducedProjectSubgraphEntry> {
     reduced_connected_bus_subgraph_for_wire_item_in(&graph.subgraphs, subgraph, wire_item)
+}
+
+fn assign_reduced_connected_bus_subgraph_indexes(
+    reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
+) {
+    let bus_candidates = reduced_subgraphs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, subgraph)| {
+            (!subgraph.bus_items.is_empty()).then_some((
+                index,
+                subgraph.sheet_instance_path.clone(),
+                subgraph
+                    .bus_items
+                    .iter()
+                    .map(|item| (item.start, item.end))
+                    .collect::<Vec<_>>(),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    for subgraph in reduced_subgraphs.iter_mut() {
+        let sheet_instance_path = subgraph.sheet_instance_path.clone();
+        for wire_item in &mut subgraph.wire_items {
+            if !wire_item.is_bus_entry {
+                continue;
+            }
+
+            let bus_side = if wire_item.start_is_wire_side {
+                wire_item.end
+            } else {
+                wire_item.start
+            };
+            wire_item.connected_bus_subgraph_index = bus_candidates.iter().find_map(
+                |(candidate_index, candidate_sheet_path, bus_segments)| {
+                    (*candidate_sheet_path == sheet_instance_path
+                        && bus_segments.iter().any(|(start, end)| {
+                            point_on_wire_segment(
+                                [f64::from_bits(bus_side.0), f64::from_bits(bus_side.1)],
+                                [f64::from_bits(start.0), f64::from_bits(start.1)],
+                                [f64::from_bits(end.0), f64::from_bits(end.1)],
+                            )
+                        }))
+                    .then_some(*candidate_index)
+                },
+            );
+        }
+    }
 }
 
 fn label_is_dangling_on_component(
@@ -15321,6 +15370,63 @@ mod tests {
         assert!(net.bus_parent_links.iter().any(|link| {
             link.member.full_local_name == "/DATA0" && link.subgraph_index == bus.subgraph_code - 1
         }));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_graph_assigns_bus_entry_connected_bus_owner_indexes() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_entry_owner_indexes_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-0000000007aa")
+  (paper "A4")
+  (wire (pts (xy -5 5) (xy 0 0)))
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (bus_entry (at 0 0) (size -5 5))
+  (label "ADDR9" (at -5 5 0) (effects (font (size 1 1))))
+  (global_label "DATA[0..7]" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let entry = resolve_reduced_project_subgraph_at(&graph, root_sheet, [-5.0, 5.0])
+            .expect("entry subgraph");
+
+        let bus_entry = entry
+            .wire_items
+            .iter()
+            .find(|item| item.is_bus_entry)
+            .expect("bus entry wire item");
+        let connected_bus_index = bus_entry
+            .connected_bus_subgraph_index
+            .expect("connected bus owner index");
+        let connected_bus =
+            super::reduced_project_connected_bus_subgraph_for_wire_item(&graph, entry, bus_entry)
+                .expect("connected bus subgraph");
+        assert_eq!(
+            super::reduced_project_subgraph_index(&graph, connected_bus)
+                .expect("connected bus graph index"),
+            connected_bus_index
+        );
 
         let _ = fs::remove_file(path);
     }
