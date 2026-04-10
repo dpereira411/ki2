@@ -57,6 +57,7 @@ pub(crate) struct ReducedLabelComponentLabel {
     pub(crate) at: [f64; 2],
     pub(crate) kind: LabelKind,
     pub(crate) dangling: bool,
+    pub(crate) non_endpoint_wire_segment_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -9412,41 +9413,68 @@ fn label_is_dangling_on_component(
         .any(|segment| point_on_wire_segment(at, segment[0], segment[1]))
 }
 
+// Upstream parity: ERC_TESTER::TestLabelMultipleWires exercised wire-touch count branch.
+// upstream: ERC_TESTER::TestLabelMultipleWires exercised wire-touch count branch
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: counts reduced wire segments by geometry instead of asking live SCH_TEXT/SCH_LINE
+// overlap state
+// local_only_reason: keeps label multiple-wire ERC input on the shared graph snapshot while live
+// label item ownership is still missing
+// replaced_by: fuller live CONNECTION_SUBGRAPH/SCH_TEXT/SCH_LINE item owner
+// remove_when: label multiple-wire ERC consumes live graph item overlap state directly
+fn label_non_endpoint_wire_segment_count(wire_segments: &[[[f64; 2]; 2]], at: [f64; 2]) -> usize {
+    wire_segments
+        .iter()
+        .filter(|segment| {
+            point_on_wire_segment(at, segment[0], segment[1])
+                && !points_equal(at, segment[0])
+                && !points_equal(at, segment[1])
+        })
+        .count()
+}
+
 // Upstream parity: reduced local analogue for the label-item `IsDangling()` facts consumed by
-// `CONNECTION_GRAPH::ercCheckLabels()` / `ercCheckDirectiveLabels()`. This is not a 1:1 KiCad
-// subgraph snapshot because the Rust tree still lacks live `SCH_TEXT*` objects and graph-owned
-// dangling state. It now exists only for the remaining per-label dangling probe while the shared
-// project subgraph owner carries the broader label/pin/no-connect grouping facts.
+// `CONNECTION_GRAPH::ercCheckLabels()`, `ercCheckDirectiveLabels()`, and the exercised label
+// multiple-wires branch. This is not a 1:1 KiCad subgraph snapshot because the Rust tree still
+// lacks live `SCH_TEXT*` objects and graph-owned label item state. It exists for the remaining
+// per-label dangling and wire-touch probes while the shared project subgraph owner carries the
+// broader label/pin/no-connect grouping facts.
 pub(crate) fn collect_reduced_label_component_snapshots(
     schematic: &Schematic,
 ) -> Vec<ReducedLabelComponentSnapshot> {
+    let wire_segments = collect_wire_segments(schematic);
+
     collect_connection_components(schematic)
         .into_iter()
         .filter_map(|connected_component| {
-            let labels = schematic
-                .screen
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    SchItem::Label(label)
-                        if connected_component.members.iter().any(|member| {
-                            member.kind == ConnectionMemberKind::Label
-                                && points_equal(member.at, label.at)
-                        }) =>
-                    {
-                        Some(ReducedLabelComponentLabel {
-                            at: label.at,
-                            kind: label.kind,
-                            dangling: label_is_dangling_on_component(
-                                schematic,
-                                &connected_component,
-                                label.at,
-                            ),
-                        })
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
+            let labels =
+                schematic
+                    .screen
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        SchItem::Label(label)
+                            if connected_component.members.iter().any(|member| {
+                                member.kind == ConnectionMemberKind::Label
+                                    && points_equal(member.at, label.at)
+                            }) =>
+                        {
+                            Some(ReducedLabelComponentLabel {
+                                at: label.at,
+                                kind: label.kind,
+                                dangling: label_is_dangling_on_component(
+                                    schematic,
+                                    &connected_component,
+                                    label.at,
+                                ),
+                                non_endpoint_wire_segment_count:
+                                    label_non_endpoint_wire_segment_count(&wire_segments, label.at),
+                            })
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
 
             if labels.is_empty() {
                 return None;
@@ -15267,6 +15295,42 @@ mod tests {
             member.kind == super::ConnectionMemberKind::SymbolPin
                 && member.pin_number.as_deref() == Some("2")
         }));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reduced_label_component_snapshot_counts_non_endpoint_wire_segments() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_label_wire_touch_count_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (label "L" (at 0 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy -10 0) (xy 10 0)))
+  (wire (pts (xy 0 -10) (xy 0 10))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+        let snapshots = super::collect_reduced_label_component_snapshots(&schematic);
+        let label = snapshots
+            .iter()
+            .flat_map(|snapshot| snapshot.labels.iter())
+            .find(|label| label.kind == LabelKind::Local)
+            .expect("local label snapshot");
+
+        assert_eq!(label.non_endpoint_wire_segment_count, 2);
+        assert!(!label.dangling);
 
         let _ = fs::remove_file(&path);
     }

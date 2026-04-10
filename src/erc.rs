@@ -12,10 +12,10 @@ use crate::connectivity::{
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    LoadedErcSeverity, LoadedSheetPath, collect_wire_segments, point_on_wire_segment, points_equal,
-    resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
-    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
-    resolved_sheet_text_state, resolved_symbol_text_state, shown_sheet_pin_text,
+    LoadedErcSeverity, LoadedSheetPath, points_equal, resolve_cross_reference_text_var,
+    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
+    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
+    resolved_symbol_text_state, shown_sheet_pin_text,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1631,10 +1631,10 @@ pub fn check_missing_netclasses(project: &SchematicProject) -> Vec<Diagnostic> {
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestLabelMultipleWires()`. This is not
-// a 1:1 KiCad overlapping-item pass because the current tree still uses reduced wire-segment
-// geometry instead of a full connection-point graph, but it preserves the exercised local-label
-// rule: a label touching more than one non-endpoint wire segment is an ERC error. Remaining
-// divergence is the broader connection-point snapshot needed by the later connectivity routines.
+// a 1:1 KiCad overlapping-item pass because the current tree still uses reduced label snapshots
+// instead of live graph-owned text items, but it preserves the exercised local-label rule: a label
+// touching more than one non-endpoint wire segment is an ERC error. Remaining divergence is the
+// fuller live label item owner and marker attachment.
 pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -1647,27 +1647,14 @@ pub fn check_label_multiple_wires(project: &SchematicProject) -> Vec<Diagnostic>
             continue;
         };
 
-        let wire_segments = collect_wire_segments(schematic);
+        for component in collect_reduced_label_component_snapshots(schematic) {
+            for label in component.labels {
+                if label.kind != crate::model::LabelKind::Local
+                    || label.non_endpoint_wire_segment_count <= 1
+                {
+                    continue;
+                }
 
-        for item in &schematic.screen.items {
-            let SchItem::Label(label) = item else {
-                continue;
-            };
-
-            if label.kind != crate::model::LabelKind::Local {
-                continue;
-            }
-
-            let touching_segments = wire_segments
-                .iter()
-                .filter(|segment| {
-                    point_on_wire_segment(label.at, segment[0], segment[1])
-                        && !points_equal(label.at, segment[0])
-                        && !points_equal(label.at, segment[1])
-                })
-                .count();
-
-            if touching_segments > 1 {
                 let report_x = (label.at[0] * 10_000.0).round() as i64;
                 let report_y = (label.at[1] * 10_000.0).round() as i64;
                 diagnostics.push(Diagnostic {
