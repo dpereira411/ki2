@@ -4,12 +4,10 @@ use crate::connectivity::{
     reduced_project_dangling_directive_label_links, reduced_project_dangling_wire_endpoint_events,
     reduced_project_floating_wire_events, reduced_project_four_way_junction_points,
     reduced_project_hierarchical_sheet_events, reduced_project_label_connectivity_subgraphs,
-    reduced_project_label_multiple_wire_events, reduced_project_label_name_caches,
-    reduced_project_named_label_entries, reduced_project_no_connect_marker_outcomes,
-    reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_pin_not_connected_candidates, reduced_project_run_erc_subgraphs,
-    reduced_project_subgraph_driver_conflict, reduced_project_symbol_pin_inventories,
-    reduced_project_symbol_pin_net_name,
+    reduced_project_label_multiple_wire_events, reduced_project_named_label_entries,
+    reduced_project_no_connect_events, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_run_erc_subgraphs, reduced_project_subgraph_driver_conflict,
+    reduced_project_symbol_pin_inventories, reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -1616,11 +1614,10 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
-    let label_name_caches = reduced_project_label_name_caches(&graph);
 
-    for outcome in reduced_project_no_connect_marker_outcomes(&graph) {
-        match outcome {
-            crate::connectivity::ReducedProjectNoConnectMarkerOutcome::Dangling {
+    for event in reduced_project_no_connect_events(&graph) {
+        match event {
+            crate::connectivity::ReducedProjectNoConnectEvent::MarkerDangling {
                 diagnostic_path,
             } => diagnostics.push(Diagnostic {
                 severity: Severity::Warning,
@@ -1632,7 +1629,7 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 line: None,
                 column: None,
             }),
-            crate::connectivity::ReducedProjectNoConnectMarkerOutcome::Connected {
+            crate::connectivity::ReducedProjectNoConnectEvent::MarkerConnected {
                 diagnostic_path,
             } => diagnostics.push(Diagnostic {
                 severity: Severity::Error,
@@ -1644,20 +1641,19 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
                 line: None,
                 column: None,
             }),
+            crate::connectivity::ReducedProjectNoConnectEvent::PinNotConnected {
+                diagnostic_path,
+            } => diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-pin-not-connected",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: "Pin not connected".to_string(),
+                path: Some(diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            }),
         }
-    }
-
-    for candidate in reduced_project_pin_not_connected_candidates(&graph, &label_name_caches) {
-        diagnostics.push(Diagnostic {
-            severity: Severity::Error,
-            code: "erc-pin-not-connected",
-            kind: crate::diagnostic::DiagnosticKind::Validation,
-            message: "Pin not connected".to_string(),
-            path: Some(candidate.pin_schematic_path),
-            span: None,
-            line: None,
-            column: None,
-        });
     }
 
     diagnostics

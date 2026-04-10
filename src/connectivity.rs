@@ -10000,6 +10000,13 @@ pub(crate) struct ReducedProjectPinNotConnectedCandidate {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum ReducedProjectNoConnectEvent {
+    MarkerDangling { diagnostic_path: std::path::PathBuf },
+    MarkerConnected { diagnostic_path: std::path::PathBuf },
+    PinNotConnected { diagnostic_path: std::path::PathBuf },
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10965,6 +10972,45 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
     }
 
     candidates
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckNoConnects `RunERC()` exercised output slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still emits reduced no-connect events instead of live marker-attached
+// `CONNECTION_SUBGRAPH` / pin owners
+// local_only_reason: keeps explicit no-connect and pin-not-connected event collection on the
+// shared graph owner instead of stitching reduced caches and subgraph scans together inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / no-connect item / pin owner graph
+// remove_when: ERC can consume live no-connect diagnostics directly from graph item links
+pub(crate) fn reduced_project_no_connect_events(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectNoConnectEvent> {
+    let mut events = Vec::new();
+    let label_name_caches = reduced_project_label_name_caches(graph);
+
+    events.extend(
+        reduced_project_no_connect_marker_outcomes(graph)
+            .into_iter()
+            .map(|outcome| match outcome {
+                ReducedProjectNoConnectMarkerOutcome::Dangling { diagnostic_path } => {
+                    ReducedProjectNoConnectEvent::MarkerDangling { diagnostic_path }
+                }
+                ReducedProjectNoConnectMarkerOutcome::Connected { diagnostic_path } => {
+                    ReducedProjectNoConnectEvent::MarkerConnected { diagnostic_path }
+                }
+            }),
+    );
+    events.extend(
+        reduced_project_pin_not_connected_candidates(graph, &label_name_caches)
+            .into_iter()
+            .map(|candidate| ReducedProjectNoConnectEvent::PinNotConnected {
+                diagnostic_path: candidate.pin_schematic_path,
+            }),
+    );
+
+    events
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
