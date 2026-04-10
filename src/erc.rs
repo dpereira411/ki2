@@ -3782,8 +3782,7 @@ pub fn check_ground_pins(project: &SchematicProject) -> Vec<Diagnostic> {
                     path: pin_inventory
                         .pins
                         .first()
-                        .map(|pin| pin.schematic_path.clone())
-                        .or_else(|| Some(sheet_path.schematic_path.clone())),
+                        .map(|pin| pin.schematic_path.clone()),
                     span: None,
                     line: None,
                     column: None,
