@@ -5784,8 +5784,7 @@ fn live_subgraphs_have_matching_hierarchy_driver_names(
             let port = port.borrow();
             let port_connection = port.connection.borrow();
 
-            pin_connection.connection_type == port_connection.connection_type
-                && pin_connection.local_name == port_connection.local_name
+            pin_connection.local_name == port_connection.local_name
         })
     })
 }
@@ -28834,6 +28833,68 @@ mod tests {
         component.sort_unstable();
 
         assert_eq!(component, vec![0]);
+    }
+
+    #[test]
+    fn reduced_hierarchy_descent_uses_driver_name_even_when_port_item_type_differs() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/child/ROOT_SIG", "ROOT_SIG", "/child/ROOT_SIG", "/child"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/child/ROOT_SIG",
+                        "ROOT_SIG",
+                        "/child/ROOT_SIG",
+                        "/child",
+                    ),
+                    identity: None,
+                }],
+                "/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_bus_connection(
+                "/child/BUS",
+                "ROOT_SIG",
+                "/child/BUS",
+                "/child",
+                vec![test_bus_member("ROOT_SIG", "ROOT_SIG", "/child/ROOT_SIG")],
+            ),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&graph);
+        let mut component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[0], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
+        component.sort_unstable();
+
+        assert_eq!(component, vec![0, 1]);
     }
 
     #[test]
