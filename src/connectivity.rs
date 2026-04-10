@@ -7302,6 +7302,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             }
 
             let child = &reduced_subgraphs[*child_index];
+            if child.driver_connection.connection_type != ReducedProjectConnectionType::Net {
+                continue;
+            }
+
             if !reduced_project_subgraph_has_process_strong_driver(
                 &reduced_subgraphs,
                 &subgraphs_by_sheet_and_name,
@@ -13372,6 +13376,57 @@ mod tests {
 
         let _ = fs::remove_file(root_path);
         let _ = fs::remove_file(child_path);
+    }
+
+    #[test]
+    fn reduced_project_bus_links_skip_candidate_bus_driver_connections() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_candidate_bus_driver_links_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000707")
+  (paper "A4")
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (label "DATA[0..0]" (at 10 0 0) (effects (font (size 1 1))))
+  (bus (pts (xy 0 20) (xy 10 20)))
+  (global_label "{DATA0}" (shape input) (at 0 20 0) (effects (font (size 1 1))))
+  (label "DATA0" (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("bus subgraph");
+        let candidate_bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+            .expect("candidate bus subgraph");
+
+        assert_eq!(
+            candidate_bus.driver_connection.connection_type,
+            ReducedProjectConnectionType::BusGroup
+        );
+        assert!(!bus.bus_neighbor_links.iter().any(|link| {
+            link.member.local_name == "DATA0"
+                && link.subgraph_index == candidate_bus.subgraph_code - 1
+        }));
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
