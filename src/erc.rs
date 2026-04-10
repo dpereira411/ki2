@@ -3204,35 +3204,27 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
 
 // Upstream parity: reduced local analogue for `CONNECTION_GRAPH::ercCheckSingleGlobalLabel()`.
 // This is not a 1:1 KiCad marker/severity path because the Rust tree still lacks ERC settings and
-// marker-owned item attachment. It exists so the current ERC runner checks the same shown-text
-// uniqueness rule across the loaded sheet list instead of leaving single global labels unchecked.
-// Remaining divergence is configurable severity/default-ignore handling.
+// marker-owned item attachment. It now reads shown global-label names from shared graph-owned
+// label links instead of rescanning schematics for text the graph already owns, while preserving
+// the same loaded-occurrence uniqueness rule. Remaining divergence is configurable
+// severity/default-ignore handling.
 pub fn check_single_global_labels(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let mut label_data = BTreeMap::<String, (usize, Option<std::path::PathBuf>)>::new();
+    let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for item in &schematic.screen.items {
-            let SchItem::Label(label) = item else {
-                continue;
-            };
+    for label in reduced_project_subgraphs(&graph)
+        .iter()
+        .flat_map(|subgraph| subgraph.label_links.iter())
+        .filter(|label| label.kind == LabelKind::Global)
+    {
+        let entry = label_data
+            .entry(label.connection.local_name.clone())
+            .or_insert_with(|| (0, Some(label.schematic_path.clone())));
+        entry.0 += 1;
 
-            if label.kind != LabelKind::Global {
-                continue;
-            }
-
-            let shown_text = shown_label_text(project, sheet_path, label);
-            let entry = label_data
-                .entry(shown_text)
-                .or_insert_with(|| (0, Some(sheet_path.schematic_path.clone())));
-            entry.0 += 1;
-
-            if entry.0 > 1 {
-                entry.1 = None;
-            }
+        if entry.0 > 1 {
+            entry.1 = None;
         }
     }
 
@@ -3409,38 +3401,32 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
 }
 
 // Upstream parity: reduced local analogue for `ERC_TESTER::TestSameLocalGlobalLabel()`. This is
-// not a 1:1 KiCad marker pass because the Rust tree still compares current shown-text snapshots
-// directly instead of subgraph-owned label items, but it preserves the exercised local-vs-global
-// name collision rule across the loaded hierarchy. Remaining divergence is fuller connection-graph
-// ownership and marker sheet-path metadata.
+// not a 1:1 KiCad marker pass because the Rust tree still compares reduced shown-text snapshots
+// instead of live marker-owned label items, but it now reads current label names from shared
+// graph-owned label links instead of rescanning schematics. It preserves the exercised
+// local-vs-global name collision rule across the loaded hierarchy. Remaining divergence is fuller
+// connection-graph ownership and marker sheet-path metadata.
 pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut globals = BTreeMap::<String, std::path::PathBuf>::new();
     let mut locals = BTreeMap::<String, std::path::PathBuf>::new();
+    let graph = project.reduced_project_net_graph(false);
 
-    for sheet_path in &project.sheet_paths {
-        let Some(schematic) = project.schematic(&sheet_path.schematic_path) else {
-            continue;
-        };
-        for item in &schematic.screen.items {
-            let SchItem::Label(label) = item else {
-                continue;
-            };
-
-            let shown_text = shown_label_text(project, sheet_path, label);
-
-            match label.kind {
-                LabelKind::Global => {
-                    globals
-                        .entry(shown_text)
-                        .or_insert_with(|| sheet_path.schematic_path.clone());
-                }
-                LabelKind::Local => {
-                    locals
-                        .entry(shown_text)
-                        .or_insert_with(|| sheet_path.schematic_path.clone());
-                }
-                _ => {}
+    for label in reduced_project_subgraphs(&graph)
+        .iter()
+        .flat_map(|subgraph| subgraph.label_links.iter())
+    {
+        match label.kind {
+            LabelKind::Global => {
+                globals
+                    .entry(label.connection.local_name.clone())
+                    .or_insert_with(|| label.schematic_path.clone());
             }
+            LabelKind::Local => {
+                locals
+                    .entry(label.connection.local_name.clone())
+                    .or_insert_with(|| label.schematic_path.clone());
+            }
+            _ => {}
         }
     }
 
