@@ -1170,6 +1170,7 @@ pub(crate) struct ReducedSubgraphWireItem {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReducedProjectNetGraph {
     subgraphs: Vec<ReducedProjectSubgraphEntry>,
+    live_subgraphs: Vec<LiveReducedSubgraphHandle>,
     dangling_directive_label_links: Vec<ReducedDirectiveLabelLink>,
     four_way_junction_points: Vec<ReducedFourWayJunctionPoint>,
     subgraphs_by_name: BTreeMap<String, Vec<usize>>,
@@ -5370,6 +5371,15 @@ fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 
         .unwrap_or(0)
 }
 
+fn live_reduced_subgraph_driver_identity(
+    subgraph: &LiveReducedSubgraph,
+) -> Option<ReducedProjectDriverIdentity> {
+    subgraph
+        .chosen_driver
+        .as_ref()
+        .and_then(|driver| driver.borrow().identity())
+}
+
 fn live_subgraph_is_self_driven_symbol_pin(subgraph: &LiveReducedSubgraph) -> bool {
     let has_weak_symbol_pin_driver = subgraph.drivers.len() == 1
         && matches!(
@@ -7993,7 +8003,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         subgraph.bus_parent_indexes = bus_parent_indexes[index].iter().copied().collect();
     }
 
-    let _live_subgraphs =
+    let live_subgraphs =
         refresh_reduced_live_graph_propagation_with_handles(&mut reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
@@ -8004,6 +8014,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
 
     ReducedProjectNetGraph {
         subgraphs: reduced_subgraphs,
+        live_subgraphs,
         dangling_directive_label_links,
         four_way_junction_points,
         subgraphs_by_name,
@@ -8247,6 +8258,34 @@ pub(crate) fn reduced_project_run_erc_subgraphs(
             reduced_project_subgraph_driver_identity(subgraph)
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
         })
+        .collect::<Vec<_>>();
+
+    subgraphs.reverse();
+    subgraphs
+}
+
+// upstream: CONNECTION_GRAPH::RunERC live subgraph iteration or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still iterates reduced live handles instead of full `CONNECTION_SUBGRAPH*` storage
+// local_only_reason: starts moving ERC traversal onto the active live graph owner while reduced
+// snapshot callers are retired incrementally
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC runs directly over final live graph-owned subgraph storage
+fn live_reduced_project_run_erc_subgraph_handles(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<LiveReducedSubgraphHandle> {
+    let mut seen_driver_identities = BTreeSet::new();
+    let mut subgraphs = graph
+        .live_subgraphs
+        .iter()
+        .rev()
+        .filter(|handle| {
+            let subgraph = handle.borrow();
+            live_reduced_subgraph_driver_identity(&subgraph)
+                .is_none_or(|identity| seen_driver_identities.insert(identity))
+        })
+        .cloned()
         .collect::<Vec<_>>();
 
     subgraphs.reverse();
@@ -10081,6 +10120,78 @@ pub(crate) fn reduced_project_subgraph_bus_to_net_conflict(
     (has_bus_item && has_net_item).then_some(ReducedProjectBusToNetConflict { diagnostic_path })
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still classifies reduced live owner payload instead of final `CONNECTION_SUBGRAPH`
+// item pointers
+// local_only_reason: moves the exercised bus-vs-net ERC classification from projected snapshots
+// onto the active shared live subgraph owner
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: ERC can query final live subgraph bus/net item classification directly
+fn live_reduced_subgraph_bus_to_net_conflict(
+    handle: &LiveReducedSubgraphHandle,
+) -> Option<ReducedProjectBusToNetConflict> {
+    let subgraph = handle.borrow();
+
+    if subgraph
+        .wire_items
+        .iter()
+        .any(|item| item.borrow().is_bus_entry)
+    {
+        return None;
+    }
+
+    let mut has_bus_item = !subgraph.bus_items.is_empty();
+    let mut has_net_item = !subgraph.wire_items.is_empty();
+    let mut diagnostic_path = subgraph
+        .wire_items
+        .first()
+        .map(|item| item.borrow().schematic_path.clone())
+        .or_else(|| {
+            subgraph
+                .bus_items
+                .first()
+                .map(|item| item.borrow().schematic_path.clone())
+        });
+
+    for label in &subgraph.label_links {
+        let label = label.borrow();
+        if label.kind == LabelKind::Directive {
+            continue;
+        }
+
+        if reduced_connection_is_bus(label.connection.borrow().connection_type) {
+            has_bus_item = true;
+        } else {
+            has_net_item = true;
+            diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
+        }
+    }
+
+    for pin in &subgraph.hier_sheet_pins {
+        let pin = pin.borrow();
+        if reduced_connection_is_bus(pin.connection.borrow().connection_type) {
+            has_bus_item = true;
+        } else {
+            has_net_item = true;
+            diagnostic_path.get_or_insert_with(|| pin.schematic_path.clone());
+        }
+    }
+
+    for port in &subgraph.hier_ports {
+        let port = port.borrow();
+        if reduced_connection_is_bus(port.connection.borrow().connection_type) {
+            has_bus_item = true;
+        } else {
+            has_net_item = true;
+            diagnostic_path.get_or_insert_with(|| port.schematic_path.clone());
+        }
+    }
+
+    (has_bus_item && has_net_item).then_some(ReducedProjectBusToNetConflict { diagnostic_path })
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts label/port member comparison branch or none
 // parity_status: partial
@@ -10827,15 +10938,28 @@ pub(crate) fn reduced_project_hierarchical_sheet_events(
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts `RunERC()` slice or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still emits reduced subgraph conflict events instead of live `CONNECTION_SUBGRAPH`
-// item-attached marker owners
-// local_only_reason: keeps bus-to-net conflict event collection on the shared graph owner instead
-// of duplicating `RunERC()` subgraph walks inside ERC
+// divergence: still emits reduced diagnostic events and falls back for hand-built reduced test
+// graphs, but production classification now reads the active live subgraph owner
+// local_only_reason: keeps bus-to-net conflict event collection on the shared graph owner and
+// starts retiring projected reduced snapshot classification from ERC-facing paths
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
 // remove_when: ERC can consume live bus-to-net conflict events directly from graph item links
 pub(crate) fn reduced_project_bus_to_net_conflicts(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectBusToNetConflictEvent> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_run_erc_subgraph_handles(graph)
+            .into_iter()
+            .filter_map(|subgraph| {
+                live_reduced_subgraph_bus_to_net_conflict(&subgraph).map(|conflict| {
+                    ReducedProjectBusToNetConflictEvent {
+                        diagnostic_path: conflict.diagnostic_path,
+                    }
+                })
+            })
+            .collect();
+    }
+
     reduced_project_run_erc_subgraphs(graph)
         .into_iter()
         .filter_map(|subgraph| {
@@ -14303,6 +14427,7 @@ mod tests {
         let reduced = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
             four_way_junction_points: Vec::new(),
+            live_subgraphs: Vec::new(),
             subgraphs: vec![
                 ReducedProjectSubgraphEntry {
                     subgraph_code: 1,
@@ -14452,6 +14577,7 @@ mod tests {
         let reduced = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
             four_way_junction_points: Vec::new(),
+            live_subgraphs: Vec::new(),
             subgraphs: vec![
                 ReducedProjectSubgraphEntry {
                     subgraph_code: 1,
@@ -14583,6 +14709,7 @@ mod tests {
         let reduced = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
             four_way_junction_points: Vec::new(),
+            live_subgraphs: Vec::new(),
             subgraphs: vec![
                 ReducedProjectSubgraphEntry {
                     subgraph_code: 1,
@@ -16126,6 +16253,7 @@ mod tests {
         let graph = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
             four_way_junction_points: Vec::new(),
+            live_subgraphs: Vec::new(),
             subgraphs: vec![super::ReducedProjectSubgraphEntry {
                 subgraph_code: 1,
                 code: 1,
@@ -16315,6 +16443,7 @@ mod tests {
         let graph = super::ReducedProjectNetGraph {
             dangling_directive_label_links: Vec::new(),
             four_way_junction_points: Vec::new(),
+            live_subgraphs: Vec::new(),
             subgraphs: vec![super::ReducedProjectSubgraphEntry {
                 subgraph_code: 1,
                 code: 1,
