@@ -8,8 +8,7 @@ use crate::connectivity::{
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
-    reduced_project_symbol_pin_net_name,
-    reduced_project_wire_item_endpoint_has_connected_bus_owner,
+    reduced_project_symbol_pin_net_name, reduced_project_wire_endpoint_has_graph_owner,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -2085,75 +2084,16 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
                         [f64::from_bits(point.0), f64::from_bits(point.1)],
                     )
                 };
-                let endpoint_has_owner = subgraph
-                    .base_pins
-                    .iter()
-                    .any(|base_pin| endpoint_matches(base_pin.key.at))
-                    || subgraph
-                        .bus_items
-                        .iter()
-                        .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
-                    || reduced_project_wire_item_endpoint_has_connected_bus_owner(
-                        &graph, subgraph, wire_item, endpoint,
-                    )
-                    || subgraph
-                        .label_links
-                        .iter()
-                        .any(|label| endpoint_matches(label.at))
-                    || subgraph
-                        .hier_sheet_pins
-                        .iter()
-                        .any(|pin| endpoint_matches(pin.at))
-                    || subgraph
-                        .hier_ports
-                        .iter()
-                        .any(|port| endpoint_matches(port.at))
-                    || subgraph
-                        .no_connect_points
-                        .iter()
-                        .map(|point| point.at)
-                        .any(endpoint_matches);
-                let endpoint_has_same_sheet_owner = !endpoint_has_owner
-                    && !subgraph.driver_connection.name.is_empty()
-                    && collect_reduced_project_subgraphs_by_name(
-                        &graph,
-                        &subgraph.driver_connection.name,
-                    )
-                    .into_iter()
-                    .filter(|neighbor| {
-                        neighbor.sheet_instance_path == subgraph.sheet_instance_path
-                            && neighbor.subgraph_code != subgraph.subgraph_code
-                    })
-                    .any(|neighbor| {
-                        neighbor
-                            .base_pins
-                            .iter()
-                            .any(|base_pin| endpoint_matches(base_pin.key.at))
-                            || neighbor
-                                .label_links
-                                .iter()
-                                .any(|label| endpoint_matches(label.at))
-                            || neighbor
-                                .hier_sheet_pins
-                                .iter()
-                                .any(|pin| endpoint_matches(pin.at))
-                            || neighbor
-                                .hier_ports
-                                .iter()
-                                .any(|port| endpoint_matches(port.at))
-                            || neighbor
-                                .no_connect_points
-                                .iter()
-                                .map(|point| point.at)
-                                .any(endpoint_matches)
-                    });
+                let endpoint_has_owner = reduced_project_wire_endpoint_has_graph_owner(
+                    &graph, subgraph, wire_item, endpoint,
+                );
                 let endpoint_wire_count = subgraph
                     .wire_items
                     .iter()
                     .filter(|other| endpoint_matches(other.start) || endpoint_matches(other.end))
                     .count();
 
-                if endpoint_has_owner || endpoint_has_same_sheet_owner || endpoint_wire_count > 1 {
+                if endpoint_has_owner || endpoint_wire_count > 1 {
                     continue;
                 }
 

@@ -9727,6 +9727,106 @@ pub(crate) fn reduced_project_wire_item_endpoint_has_connected_bus_owner(
     )
 }
 
+fn reduced_subgraph_endpoint_has_owner(
+    subgraph: &ReducedProjectSubgraphEntry,
+    endpoint: PointKey,
+) -> bool {
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+    let endpoint_matches = |point: PointKey| point_key_matches(point, endpoint_at);
+
+    subgraph
+        .base_pins
+        .iter()
+        .any(|base_pin| endpoint_matches(base_pin.key.at))
+        || subgraph
+            .bus_items
+            .iter()
+            .any(|item| endpoint_matches(item.start) || endpoint_matches(item.end))
+        || subgraph
+            .label_links
+            .iter()
+            .any(|label| endpoint_matches(label.at))
+        || subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|pin| endpoint_matches(pin.at))
+        || subgraph
+            .hier_ports
+            .iter()
+            .any(|port| endpoint_matches(port.at))
+        || subgraph
+            .no_connect_points
+            .iter()
+            .map(|point| point.at)
+            .any(endpoint_matches)
+}
+
+fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
+    graph: &ReducedProjectNetGraph,
+    subgraph: &ReducedProjectSubgraphEntry,
+    endpoint: PointKey,
+) -> bool {
+    if subgraph.driver_connection.name.is_empty() {
+        return false;
+    }
+
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+    let endpoint_matches = |point: PointKey| point_key_matches(point, endpoint_at);
+
+    collect_reduced_project_subgraphs_by_name(graph, &subgraph.driver_connection.name)
+        .into_iter()
+        .filter(|neighbor| {
+            neighbor.sheet_instance_path == subgraph.sheet_instance_path
+                && neighbor.subgraph_code != subgraph.subgraph_code
+        })
+        .any(|neighbor| {
+            neighbor
+                .base_pins
+                .iter()
+                .any(|base_pin| endpoint_matches(base_pin.key.at))
+                || neighbor
+                    .label_links
+                    .iter()
+                    .any(|label| endpoint_matches(label.at))
+                || neighbor
+                    .hier_sheet_pins
+                    .iter()
+                    .any(|pin| endpoint_matches(pin.at))
+                || neighbor
+                    .hier_ports
+                    .iter()
+                    .any(|port| endpoint_matches(port.at))
+                || neighbor
+                    .no_connect_points
+                    .iter()
+                    .map(|point| point.at)
+                    .any(endpoint_matches)
+        })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints endpoint-owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still checks reduced subgraph item payload and same-name reduced neighbors instead
+// of live `CONNECTION_SUBGRAPH` item owners
+// local_only_reason: keeps endpoint ownership traversal on the shared graph owner instead of
+// duplicating subgraph membership scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_LINE` owner graph
+// remove_when: ERC can query live wire endpoint owner state directly from graph item links
+pub(crate) fn reduced_project_wire_endpoint_has_graph_owner(
+    graph: &ReducedProjectNetGraph,
+    subgraph: &ReducedProjectSubgraphEntry,
+    wire_item: &ReducedSubgraphWireItem,
+    endpoint: PointKey,
+) -> bool {
+    reduced_subgraph_endpoint_has_owner(subgraph, endpoint)
+        || reduced_project_wire_item_endpoint_has_connected_bus_owner(
+            graph, subgraph, wire_item, endpoint,
+        )
+        || reduced_same_sheet_named_neighbor_endpoint_has_owner(graph, subgraph, endpoint)
+}
+
 fn assign_reduced_connected_bus_subgraph_indexes(
     reduced_subgraphs: &mut [ReducedProjectSubgraphEntry],
 ) {
