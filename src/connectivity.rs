@@ -5280,6 +5280,16 @@ fn rebuild_reduced_project_graph_name_caches(
             for port in &mut subgraph.hier_ports {
                 assign_reduced_connection_net_codes(&mut port.connection, &mut net_codes);
             }
+
+            for base_pin in &mut subgraph.base_pins {
+                assign_reduced_connection_net_codes(&mut base_pin.connection, &mut net_codes);
+                assign_reduced_connection_net_codes(&mut base_pin.driver_connection, &mut net_codes);
+            }
+
+            for driver in &mut subgraph.drivers {
+                assign_reduced_connection_net_codes(&mut driver.connection, &mut net_codes);
+            }
+
             subgraphs_by_name
                 .entry(owner_name.clone())
                 .or_default()
@@ -11298,6 +11308,60 @@ mod tests {
             .expect("second subgraph");
         assert_eq!(first_subgraph.resolved_connection.net_code, 1);
         assert_eq!(second_subgraph.resolved_connection.net_code, 2);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_item_connections_get_graph_owned_net_codes() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_item_connection_net_codes_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:OnePin"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "OnePin" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "OnePin_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "device:OnePin")
+    (uuid "73050000-0000-0000-0000-000000000631")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "OnePin" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "SIG" (shape input) (at 10 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let subgraph = graph
+            .subgraphs
+            .iter()
+            .find(|subgraph| subgraph.name == "SIG")
+            .expect("SIG subgraph");
+
+        assert_eq!(subgraph.driver_connection.net_code, 1);
+        assert_eq!(subgraph.base_pins[0].connection.net_code, 1);
+        assert_eq!(subgraph.base_pins[0].driver_connection.name, "Net-(U1-A)");
+        assert_eq!(subgraph.base_pins[0].driver_connection.net_code, 2);
+        assert_eq!(subgraph.drivers[0].connection.net_code, 1);
 
         let _ = fs::remove_file(path);
     }
