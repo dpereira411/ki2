@@ -9084,10 +9084,8 @@ fn live_reduced_project_sheet_pin_names(
     sheet_instance_path: &str,
     child_sheet_uuid: Option<&str>,
 ) -> std::collections::BTreeSet<String> {
-    graph
-        .live_subgraphs
-        .iter()
-        .filter(|subgraph| subgraph.borrow().sheet_instance_path == sheet_instance_path)
+    live_reduced_project_subgraph_handles_in_sheet(graph, sheet_instance_path)
+        .into_iter()
         .flat_map(|subgraph| {
             let subgraph = subgraph.borrow();
             subgraph
@@ -9100,6 +9098,18 @@ fn live_reduced_project_sheet_pin_names(
                 })
                 .collect::<Vec<_>>()
         })
+        .collect()
+}
+
+fn live_reduced_project_subgraph_handles_in_sheet(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+) -> Vec<LiveReducedSubgraphHandle> {
+    graph
+        .live_subgraphs
+        .iter()
+        .filter(|subgraph| subgraph.borrow().sheet_instance_path == sheet_instance_path)
+        .cloned()
         .collect()
 }
 
@@ -9135,10 +9145,8 @@ fn live_reduced_project_hier_port_entries_in_sheet(
     graph: &ReducedProjectNetGraph,
     sheet_instance_path: &str,
 ) -> Vec<(String, std::path::PathBuf)> {
-    graph
-        .live_subgraphs
-        .iter()
-        .filter(|subgraph| subgraph.borrow().sheet_instance_path == sheet_instance_path)
+    live_reduced_project_subgraph_handles_in_sheet(graph, sheet_instance_path)
+        .into_iter()
         .flat_map(|subgraph| {
             let subgraph = subgraph.borrow();
             subgraph
