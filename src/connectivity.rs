@@ -1142,6 +1142,7 @@ pub(crate) struct ReducedSubgraphWireItem {
     pub(crate) start: PointKey,
     pub(crate) end: PointKey,
     pub(crate) is_bus_entry: bool,
+    pub(crate) start_is_wire_side: bool,
     pub(crate) connected_bus_subgraph_index: Option<usize>,
 }
 
@@ -3274,6 +3275,7 @@ struct LiveReducedSubgraphWireItem {
     start: PointKey,
     end: PointKey,
     is_bus_entry: bool,
+    start_is_wire_side: bool,
     connection: LiveProjectConnectionHandle,
     connected_bus_connection_handle: Option<LiveProjectConnectionHandle>,
 }
@@ -3357,6 +3359,7 @@ impl PartialEq for LiveReducedSubgraphWireItem {
         self.start == other.start
             && self.end == other.end
             && self.is_bus_entry == other.is_bus_entry
+            && self.start_is_wire_side == other.start_is_wire_side
             && live_reduced_subgraph_wire_item_extra_eq(self, other)
     }
 }
@@ -3481,7 +3484,6 @@ struct LiveReducedSubgraph {
     drivers: Vec<LiveProjectStrongDriverHandle>,
     chosen_driver: Option<LiveProjectStrongDriverHandle>,
     sheet_instance_path: String,
-    points: Vec<PointKey>,
     bus_neighbor_links: Vec<LiveReducedSubgraphLinkHandle>,
     bus_parent_links: Vec<LiveReducedSubgraphLinkHandle>,
     #[cfg(test)]
@@ -3582,20 +3584,16 @@ impl LiveReducedSubgraph {
             .collect::<Vec<_>>();
 
         for handle in live_subgraphs {
-            let (sheet_instance_path, points) = {
+            let sheet_instance_path = {
                 let subgraph = handle.borrow();
-                (
-                    subgraph.sheet_instance_path.clone(),
-                    subgraph.points.clone(),
-                )
+                subgraph.sheet_instance_path.clone()
             };
             let subgraph = handle.borrow_mut();
 
             for item_handle in &subgraph.wire_items {
                 let bus_side = {
                     let item = item_handle.borrow();
-                    let start_is_wire_side = points.iter().any(|point| *point == item.start);
-                    if start_is_wire_side {
+                    if item.start_is_wire_side {
                         item.end
                     } else {
                         item.start
@@ -5406,7 +5404,6 @@ fn build_live_reduced_subgraph_handles(
                 drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
                 chosen_driver: None,
                 sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                points: subgraph.points.clone(),
                 bus_neighbor_links: subgraph
                     .bus_neighbor_links
                     .iter()
@@ -5528,6 +5525,7 @@ fn build_live_reduced_subgraph_handles(
                             start: item.start,
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
+                            start_is_wire_side: item.start_is_wire_side,
                             connection: Rc::new(RefCell::new(
                                 subgraph.driver_connection.clone().into(),
                             )),
@@ -5544,6 +5542,7 @@ fn build_live_reduced_subgraph_handles(
                             start: item.start,
                             end: item.end,
                             is_bus_entry: item.is_bus_entry,
+                            start_is_wire_side: item.start_is_wire_side,
                             connection: Rc::new(RefCell::new(
                                 subgraph.driver_connection.clone().into(),
                             )),
@@ -8759,6 +8758,7 @@ fn collect_reduced_subgraph_local_membership(
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 })
             }
@@ -8790,6 +8790,7 @@ fn collect_reduced_subgraph_local_membership(
                     start: point_key(start),
                     end: point_key(end),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 })
             }
@@ -8797,11 +8798,17 @@ fn collect_reduced_subgraph_local_membership(
                 let wire_side =
                     bus_entry_preferred_wire_endpoint(schematic, &point_snapshot, entry);
                 let end = [entry.at[0] + entry.size[0], entry.at[1] + entry.size[1]];
+                let bus_side = if points_equal(wire_side, entry.at) {
+                    end
+                } else {
+                    entry.at
+                };
                 point_key_set_contains(&component_points, wire_side).then_some(
                     ReducedSubgraphWireItem {
-                        start: point_key(entry.at),
-                        end: point_key(end),
+                        start: point_key(wire_side),
+                        end: point_key(bus_side),
                         is_bus_entry: true,
+                        start_is_wire_side: true,
                         connected_bus_subgraph_index: None,
                     },
                 )
@@ -9255,11 +9262,7 @@ fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
         }
     }
 
-    let start_is_wire_side = owner_subgraph
-        .points
-        .iter()
-        .any(|point| *point == wire_item.start);
-    let bus_side = if start_is_wire_side {
+    let bus_side = if wire_item.start_is_wire_side {
         wire_item.end
     } else {
         wire_item.start
@@ -11090,6 +11093,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11140,6 +11144,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(5, 5),
                     is_bus_entry: true,
+                    start_is_wire_side: true,
                     connected_bus_subgraph_index: None,
                 }],
                 bus_neighbor_links: Vec::new(),
@@ -11229,6 +11234,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11326,6 +11332,7 @@ mod tests {
                     start: PointKey((-5.0f64).to_bits(), 0.0f64.to_bits()),
                     end: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11365,6 +11372,7 @@ mod tests {
                     start: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     end: PointKey(10.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11399,6 +11407,7 @@ mod tests {
                     start: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     end: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: true,
+                    start_is_wire_side: true,
                     connected_bus_subgraph_index: None,
                 }],
                 bus_neighbor_links: Vec::new(),
@@ -11457,6 +11466,7 @@ mod tests {
                     start: PointKey((-10.0f64).to_bits(), 5.0f64.to_bits()),
                     end: PointKey((-5.0f64).to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11502,6 +11512,7 @@ mod tests {
                     start: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     end: PointKey(10.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11536,6 +11547,7 @@ mod tests {
                     start: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     end: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: true,
+                    start_is_wire_side: true,
                     connected_bus_subgraph_index: Some(0),
                 }],
                 bus_neighbor_links: Vec::new(),
@@ -11894,6 +11906,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -11944,6 +11957,7 @@ mod tests {
                     start: PointKey(5, 0),
                     end: PointKey(6, 1),
                     is_bus_entry: true,
+                    start_is_wire_side: true,
                     connected_bus_subgraph_index: None,
                 }],
                 bus_neighbor_links: Vec::new(),
@@ -12076,6 +12090,7 @@ mod tests {
                     start: PointKey((-5.0f64).to_bits(), 0.0f64.to_bits()),
                     end: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -12115,6 +12130,7 @@ mod tests {
                     start: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     end: PointKey(10.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -12149,6 +12165,7 @@ mod tests {
                     start: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
                     end: PointKey(5.0f64.to_bits(), 5.0f64.to_bits()),
                     is_bus_entry: true,
+                    start_is_wire_side: true,
                     connected_bus_subgraph_index: None,
                 }],
                 bus_neighbor_links: Vec::new(),
@@ -15887,7 +15904,6 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
-                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -15921,7 +15937,6 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
-                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -15990,7 +16005,6 @@ mod tests {
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
-            points: Vec::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -16069,7 +16083,6 @@ mod tests {
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
-            points: Vec::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -16135,7 +16148,6 @@ mod tests {
             drivers: Vec::new(),
             chosen_driver: None,
             sheet_instance_path: String::new(),
-            points: Vec::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -16250,12 +16262,14 @@ mod tests {
                 start: PointKey(0, 0),
                 end: PointKey(10, 0),
                 is_bus_entry: false,
+                start_is_wire_side: false,
                 connected_bus_subgraph_index: None,
             }],
             wire_items: vec![ReducedSubgraphWireItem {
                 start: PointKey(0, 0),
                 end: PointKey(5, 5),
                 is_bus_entry: true,
+                start_is_wire_side: true,
                 connected_bus_subgraph_index: None,
             }],
             base_pins: Vec::new(),
@@ -17661,6 +17675,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -18000,6 +18015,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 wire_items: Vec::new(),
@@ -18254,7 +18270,6 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
-                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -18296,7 +18311,6 @@ mod tests {
                 drivers: Vec::new(),
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
-                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -22227,6 +22241,7 @@ mod tests {
                     start: PointKey(0, 0),
                     end: PointKey(10, 0),
                     is_bus_entry: false,
+                    start_is_wire_side: false,
                     connected_bus_subgraph_index: None,
                 }],
                 bus_neighbor_links: Vec::new(),

@@ -2937,10 +2937,17 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         if !has_non_bus_entry_owner {
             continue;
         }
-        let entry_at = [
-            f64::from_bits(bus_entry.start.0),
-            f64::from_bits(bus_entry.start.1),
-        ];
+        let entry_at = if bus_entry.start_is_wire_side {
+            [
+                f64::from_bits(bus_entry.end.0),
+                f64::from_bits(bus_entry.end.1),
+            ]
+        } else {
+            [
+                f64::from_bits(bus_entry.start.0),
+                f64::from_bits(bus_entry.start.1),
+            ]
+        };
         let bus_connection =
             crate::connectivity::reduced_project_connected_bus_subgraph_for_wire_item(
                 &graph, &subgraph, bus_entry,
