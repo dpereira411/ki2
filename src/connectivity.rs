@@ -4216,25 +4216,23 @@ impl LiveReducedSubgraph {
                     continue;
                 }
 
-                let changed = {
+                let matched = {
                     let subgraph = handle.borrow();
                     let mut connection = subgraph.driver_connection.borrow_mut();
                     let Some(member) = connection.find_member_mut_live(&stale_member.borrow())
                     else {
                         continue;
                     };
-                    if Rc::ptr_eq(&member, stale_member) {
-                        continue;
+                    if !Rc::ptr_eq(&member, stale_member) {
+                        clone_live_bus_member_into_live_bus_member(
+                            &mut member.borrow_mut(),
+                            &stale_member.borrow(),
+                        );
                     }
-                    let changed = !live_bus_member_handle_clone_eq(&member, stale_member);
-                    clone_live_bus_member_into_live_bus_member(
-                        &mut member.borrow_mut(),
-                        &stale_member.borrow(),
-                    );
-                    changed
+                    true
                 };
 
-                if changed {
+                if matched {
                     Self::refresh_bus_neighbor_drivers(
                         live_subgraphs,
                         std::slice::from_ref(handle),
@@ -17204,6 +17202,53 @@ mod tests {
                 .full_local_name,
             "/PWR"
         );
+    }
+
+    #[test]
+    fn replay_reduced_live_stale_bus_members_refreshes_same_member_neighbors() {
+        let member = test_bus_member("PWR", "PWR", "/PWR");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let stale_member = live_subgraphs[0]
+            .borrow()
+            .driver_connection
+            .borrow()
+            .members[0]
+            .clone();
+        let mut stale_members = vec![stale_member];
+
+        LiveReducedSubgraph::replay_stale_bus_members(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[1].driver_connection.full_local_name, "/PWR");
     }
 
     #[test]
