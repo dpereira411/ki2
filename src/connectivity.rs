@@ -9897,6 +9897,17 @@ pub(crate) struct ReducedProjectBusToBusConflict {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectBusEntryConflictCandidate {
+    pub(crate) bus_entry_path: std::path::PathBuf,
+    pub(crate) entry_at: [f64; 2],
+    pub(crate) bus_name: String,
+    pub(crate) bus_members: Vec<String>,
+    pub(crate) test_names: Vec<String>,
+    pub(crate) fallback_net_name: String,
+    pub(crate) suppress_conflict: bool,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10015,6 +10026,136 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
     (!has_match).then_some(ReducedProjectBusToBusConflict {
         label_at,
         diagnostic_path,
+    })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts bus-entry candidate setup branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still derives reduced bus-entry candidate names from reduced driver/link payloads
+// instead of live `SCH_BUS_WIRE_ENTRY::m_connected_bus_item` plus `SCH_CONNECTION` members
+// local_only_reason: keeps bus-entry owner selection, connected-bus lookup, member filtering, and
+// priority suppression on the shared graph owner instead of duplicating subgraph scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` / bus-entry owner graph
+// remove_when: ERC can query live bus-entry conflict candidates directly from graph item links
+pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
+    graph: &ReducedProjectNetGraph,
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<ReducedProjectBusEntryConflictCandidate> {
+    let bus_entry = subgraph.wire_items.iter().find(|item| item.is_bus_entry)?;
+
+    if !reduced_project_subgraph_has_non_bus_entry_owner(subgraph) {
+        return None;
+    }
+
+    let entry_at = if bus_entry.start_is_wire_side {
+        [
+            f64::from_bits(bus_entry.end.0),
+            f64::from_bits(bus_entry.end.1),
+        ]
+    } else {
+        [
+            f64::from_bits(bus_entry.start.0),
+            f64::from_bits(bus_entry.start.1),
+        ]
+    };
+
+    let bus_connection =
+        reduced_project_connected_bus_subgraph_for_wire_item(graph, subgraph, bus_entry)
+            .map(|bus_subgraph| &bus_subgraph.driver_connection)
+            .unwrap_or(&subgraph.driver_connection);
+
+    if !reduced_connection_is_bus(bus_connection.connection_type) {
+        return None;
+    }
+
+    let bus_name = bus_connection.local_name.clone();
+    let bus_members = reduced_bus_member_full_local_names(&bus_connection.members);
+
+    if bus_members.is_empty() {
+        return None;
+    }
+
+    let mut test_names = Vec::new();
+
+    if let Some(non_bus_driver) = subgraph.drivers.iter().find(|driver| {
+        !reduced_project_strong_driver_full_name(driver).is_empty()
+            && reduced_project_strong_driver_full_name(driver) != bus_connection.full_local_name
+            && reduced_project_strong_driver_name(driver) != bus_connection.local_name
+    }) {
+        test_names.push(reduced_project_strong_driver_full_name(non_bus_driver).to_string());
+    }
+
+    let driver_connection = &subgraph.driver_connection;
+
+    if driver_connection.connection_type == ReducedProjectConnectionType::Net
+        && !driver_connection.full_local_name.is_empty()
+        && !bus_members
+            .iter()
+            .any(|member| member == &driver_connection.full_local_name)
+        && !test_names
+            .iter()
+            .any(|existing| existing == &driver_connection.full_local_name)
+    {
+        test_names.push(driver_connection.full_local_name.clone());
+    }
+
+    for connection in subgraph
+        .label_links
+        .iter()
+        .map(|link| &link.connection)
+        .chain(subgraph.hier_sheet_pins.iter().map(|pin| &pin.connection))
+        .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
+        .filter(|connection| connection.connection_type == ReducedProjectConnectionType::Net)
+    {
+        if !test_names
+            .iter()
+            .any(|existing| existing == &connection.full_local_name)
+            && !bus_members
+                .iter()
+                .any(|member| member == &connection.full_local_name)
+        {
+            test_names.push(connection.full_local_name.clone());
+        }
+    }
+
+    if test_names.is_empty() {
+        test_names.extend(
+            subgraph
+                .drivers
+                .iter()
+                .map(reduced_project_strong_driver_full_name)
+                .map(str::to_string)
+                .filter(|name| {
+                    !bus_members.iter().any(|member| member == name)
+                        && name != &bus_connection.full_local_name
+                        && name != &bus_connection.local_name
+                }),
+        );
+    }
+
+    let fallback_net_name = if !driver_connection.full_local_name.is_empty() {
+        driver_connection.full_local_name.clone()
+    } else {
+        subgraph.driver_connection.name.clone()
+    };
+
+    if test_names.is_empty() && !driver_connection.full_local_name.is_empty() {
+        test_names.push(driver_connection.full_local_name.clone());
+    }
+
+    let suppress_conflict = reduced_project_subgraph_non_bus_driver_priority(subgraph)
+        .is_some_and(|priority| priority >= 6);
+
+    Some(ReducedProjectBusEntryConflictCandidate {
+        bus_entry_path: bus_entry.schematic_path.clone(),
+        entry_at,
+        bus_name,
+        bus_members,
+        test_names,
+        fallback_net_name,
+        suppress_conflict,
     })
 }
 

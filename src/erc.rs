@@ -1,15 +1,14 @@
 use crate::connectivity::{
     ReducedNetBasePinKey, ReducedProjectDriverKind, collect_reduced_project_net_map,
-    collect_reduced_project_subgraphs_by_name, reduced_bus_member_full_local_names,
-    reduced_connected_wire_label_full_names_at, reduced_project_dangling_directive_label_links,
-    reduced_project_four_way_junction_points, reduced_project_hier_port_entries_in_sheet,
-    reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
-    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_to_bus_conflict,
-    reduced_project_subgraph_bus_to_net_conflict,
+    collect_reduced_project_subgraphs_by_name, reduced_connected_wire_label_full_names_at,
+    reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
+    reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
+    reduced_project_no_connect_pin_has_connected_owner, reduced_project_run_erc_subgraphs,
+    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
+    reduced_project_subgraph_bus_entry_conflict_candidate,
+    reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
-    reduced_project_subgraph_has_no_connect_via_parent_chain,
-    reduced_project_subgraph_has_non_bus_entry_owner, reduced_project_subgraph_index,
+    reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
     reduced_project_symbol_pin_net_name, reduced_project_wire_endpoint_has_graph_owner,
 };
@@ -2331,10 +2330,12 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph)
-        .into_iter()
-        .filter(|subgraph| subgraph.wire_items.iter().any(|item| item.is_bus_entry))
-    {
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
+        let Some(mut candidate) =
+            reduced_project_subgraph_bus_entry_conflict_candidate(&graph, &subgraph)
+        else {
+            continue;
+        };
         let Some(sheet_path) = project
             .sheet_paths
             .iter()
@@ -2342,148 +2343,45 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         else {
             continue;
         };
-        let Some(bus_entry) = subgraph.wire_items.iter().find(|item| item.is_bus_entry) else {
-            continue;
-        };
-        if !reduced_project_subgraph_has_non_bus_entry_owner(&subgraph) {
-            continue;
-        }
-        let entry_at = if bus_entry.start_is_wire_side {
-            [
-                f64::from_bits(bus_entry.end.0),
-                f64::from_bits(bus_entry.end.1),
-            ]
-        } else {
-            [
-                f64::from_bits(bus_entry.start.0),
-                f64::from_bits(bus_entry.start.1),
-            ]
-        };
-        let bus_connection =
-            crate::connectivity::reduced_project_connected_bus_subgraph_for_wire_item(
-                &graph, &subgraph, bus_entry,
-            )
-            .map(|bus_subgraph| &bus_subgraph.driver_connection)
-            .unwrap_or(&subgraph.driver_connection);
-        if !matches!(
-            bus_connection.connection_type,
-            crate::connectivity::ReducedProjectConnectionType::Bus
-                | crate::connectivity::ReducedProjectConnectionType::BusGroup
-        ) {
-            continue;
-        }
-        let bus_name = bus_connection.local_name.clone();
-        let bus_members = reduced_bus_member_full_local_names(&bus_connection.members);
-        if bus_members.is_empty() {
-            continue;
-        }
-        let mut test_names = Vec::new();
-        if let Some(non_bus_driver) = subgraph.drivers.iter().find(|driver| {
-            !crate::connectivity::reduced_project_strong_driver_full_name(driver).is_empty()
-                && crate::connectivity::reduced_project_strong_driver_full_name(driver)
-                    != bus_connection.full_local_name
-                && crate::connectivity::reduced_project_strong_driver_name(driver)
-                    != bus_connection.local_name
-        }) {
-            test_names.push(
-                crate::connectivity::reduced_project_strong_driver_full_name(non_bus_driver)
-                    .to_string(),
-            );
-        }
-        let driver_connection = &subgraph.driver_connection;
-        if driver_connection.connection_type
-            == crate::connectivity::ReducedProjectConnectionType::Net
-            && !driver_connection.full_local_name.is_empty()
-            && !bus_members
-                .iter()
-                .any(|member| member == &driver_connection.full_local_name)
-            && !test_names
-                .iter()
-                .any(|existing| existing == &driver_connection.full_local_name)
-        {
-            test_names.push(driver_connection.full_local_name.clone());
-        }
-        for connection in subgraph
-            .label_links
+        candidate
+            .test_names
+            .extend(reduced_connected_wire_label_full_names_at(
+                &project.schematics,
+                &project.sheet_paths,
+                sheet_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                candidate.entry_at,
+            ));
+        candidate.test_names.sort();
+        candidate.test_names.dedup();
+
+        if candidate
+            .test_names
             .iter()
-            .map(|link| &link.connection)
-            .chain(subgraph.hier_sheet_pins.iter().map(|pin| &pin.connection))
-            .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
-            .filter(|connection| {
-                connection.connection_type == crate::connectivity::ReducedProjectConnectionType::Net
-            })
-        {
-            if !test_names
-                .iter()
-                .any(|existing| existing == &connection.full_local_name)
-                && !bus_members
-                    .iter()
-                    .any(|member| member == &connection.full_local_name)
-            {
-                test_names.push(connection.full_local_name.clone());
-            }
-        }
-        if test_names.is_empty() {
-            test_names.extend(
-                subgraph
-                    .drivers
-                    .iter()
-                    .map(crate::connectivity::reduced_project_strong_driver_full_name)
-                    .map(str::to_string)
-                    .filter(|name| {
-                        !bus_members.iter().any(|member| member == name)
-                            && name != &bus_connection.full_local_name
-                            && name != &bus_connection.local_name
-                    }),
-            );
-        }
-        if test_names.is_empty() {
-            if !driver_connection.full_local_name.is_empty() {
-                test_names.push(driver_connection.full_local_name.clone());
-            }
-        }
-        test_names.extend(reduced_connected_wire_label_full_names_at(
-            &project.schematics,
-            &project.sheet_paths,
-            sheet_path,
-            project.project.as_ref(),
-            project.current_variant(),
-            entry_at,
-        ));
-        test_names.sort();
-        test_names.dedup();
-
-        let suppress_conflict =
-            crate::connectivity::reduced_project_subgraph_non_bus_driver_priority(&subgraph)
-                .is_some_and(|priority| priority >= 6);
-
-        if test_names
-            .iter()
-            .any(|name| bus_members.iter().any(|member| member == name))
+            .any(|name| candidate.bus_members.iter().any(|member| member == name))
         {
             continue;
         }
 
-        if suppress_conflict {
+        if candidate.suppress_conflict {
             continue;
         }
 
-        let net_name = test_names.first().cloned().unwrap_or_else(|| {
-            if !driver_connection.full_local_name.is_empty() {
-                return driver_connection.full_local_name.clone();
-            }
-
-            subgraph.driver_connection.name.clone()
-        });
+        let net_name = candidate
+            .test_names
+            .first()
+            .cloned()
+            .unwrap_or(candidate.fallback_net_name);
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             code: "erc-bus-entry-conflict",
             kind: crate::diagnostic::DiagnosticKind::Validation,
             message: format!(
-                "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
-                entry_at[0], entry_at[1]
+                "Net {net_name} is graphically connected to bus {} but is not a member of that bus at {}, {}",
+                candidate.bus_name, candidate.entry_at[0], candidate.entry_at[1]
             ),
-            path: Some(bus_entry.schematic_path.clone()),
+            path: Some(candidate.bus_entry_path),
             span: None,
             line: None,
             column: None,
