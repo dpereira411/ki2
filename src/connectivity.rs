@@ -5757,11 +5757,6 @@ fn recache_live_reduced_subgraph_name_handle_cache_from_handles(
         .push(subgraph_handle.clone());
 }
 
-// Upstream parity: reduced local analogue for the repeated bus-neighbor dirty propagation KiCad
-// gets by revisiting the same live subgraphs until bus-driven renames stop changing. This is still
-// not the final `m_dirty` / recursive `propagateToNeighbors()` engine, but it moves the repeat
-// loop itself onto the live bus-owner slices instead of leaving all multi-step bus propagation to
-// the reduced snapshot fixpoint.
 // Upstream parity: local bridge for the hierarchy-chain portion of live graph propagation on the
 // shared live subgraph owner. This still mutates reduced live carriers instead of full local
 // `CONNECTION_SUBGRAPH` objects, but the active recursive graph build now walks shared subgraph
