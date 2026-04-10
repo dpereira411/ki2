@@ -5,7 +5,8 @@ use crate::connectivity::{
     reduced_project_four_way_junction_points, reduced_project_hier_port_entries_in_sheet,
     reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
-    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_to_net_conflict,
+    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_to_bus_conflict,
+    reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain,
     reduced_project_subgraph_has_non_bus_entry_owner, reduced_project_subgraph_index,
@@ -2297,88 +2298,21 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
     let graph = project.reduced_project_net_graph(false);
 
     for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        let mut label_members = None::<Vec<String>>;
-        let mut port_members = None::<Vec<String>>;
-        let mut label_at = None::<[f64; 2]>;
-        let mut diagnostic_path = None::<std::path::PathBuf>;
-        if let Some(connection) = subgraph.label_links.iter().find_map(|label| {
-            matches!(
-                label.connection.connection_type,
-                crate::connectivity::ReducedProjectConnectionType::Bus
-                    | crate::connectivity::ReducedProjectConnectionType::BusGroup
-            )
-            .then_some(&label.connection)
-        }) {
-            label_members = Some(
-                connection
-                    .members
-                    .iter()
-                    .map(|member| member.name.clone())
-                    .collect(),
-            );
-        }
-        if let Some(connection) = subgraph
-            .hier_sheet_pins
-            .iter()
-            .map(|pin| &pin.connection)
-            .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
-            .find(|connection| {
-                matches!(
-                    connection.connection_type,
-                    crate::connectivity::ReducedProjectConnectionType::Bus
-                        | crate::connectivity::ReducedProjectConnectionType::BusGroup
-                )
-            })
-        {
-            port_members = Some(
-                connection
-                    .members
-                    .iter()
-                    .map(|member| member.name.clone())
-                    .collect(),
-            );
-        }
-        if label_members.is_some() {
-            label_at = subgraph.label_links.iter().find_map(|label| {
-                (matches!(
-                    label.connection.connection_type,
-                    crate::connectivity::ReducedProjectConnectionType::Bus
-                        | crate::connectivity::ReducedProjectConnectionType::BusGroup
-                ) && matches!(label.kind, LabelKind::Local | LabelKind::Global))
-                .then(|| {
-                    diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
-                    [f64::from_bits(label.at.0), f64::from_bits(label.at.1)]
-                })
+        if let Some(conflict) = reduced_project_subgraph_bus_to_bus_conflict(&subgraph) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                code: "erc-bus-to-bus-conflict",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: format!(
+                    "Bus label and port do not share members at {}, {}",
+                    conflict.label_at[0], conflict.label_at[1]
+                ),
+                path: conflict.diagnostic_path,
+                span: None,
+                line: None,
+                column: None,
             });
         }
-
-        let (Some(label_members), Some(port_members), Some(label_at)) =
-            (label_members, port_members, label_at)
-        else {
-            continue;
-        };
-
-        let has_match = label_members
-            .iter()
-            .any(|member| port_members.iter().any(|test| test == member));
-
-        if has_match {
-            continue;
-        }
-
-        diagnostics.push(Diagnostic {
-            severity: Severity::Error,
-            code: "erc-bus-to-bus-conflict",
-            kind: crate::diagnostic::DiagnosticKind::Validation,
-            message: format!(
-                "Bus label and port do not share members at {}, {}",
-                label_at[0], label_at[1]
-            ),
-            path: diagnostic_path,
-            span: None,
-            line: None,
-            column: None,
-        });
     }
 
     diagnostics

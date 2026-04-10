@@ -9891,6 +9891,12 @@ pub(crate) struct ReducedProjectBusToNetConflict {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectBusToBusConflict {
+    pub(crate) label_at: [f64; 2],
+    pub(crate) diagnostic_path: Option<std::path::PathBuf>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9952,6 +9958,64 @@ pub(crate) fn reduced_project_subgraph_bus_to_net_conflict(
     }
 
     (has_bus_item && has_net_item).then_some(ReducedProjectBusToNetConflict { diagnostic_path })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts label/port member comparison branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still compares reduced connection member names instead of live `SCH_CONNECTION`
+// member pointers and `CONNECTION_SUBGRAPH::m_items`
+// local_only_reason: keeps bus label/port owner selection on the shared graph owner instead of
+// duplicating reduced subgraph member scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` owner graph
+// remove_when: ERC can query live bus-to-bus conflict state directly from graph item links
+pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<ReducedProjectBusToBusConflict> {
+    let label_members = subgraph.label_links.iter().find_map(|label| {
+        reduced_connection_is_bus(label.connection.connection_type).then_some(
+            label
+                .connection
+                .members
+                .iter()
+                .map(|member| member.name.clone())
+                .collect::<Vec<_>>(),
+        )
+    })?;
+
+    let port_members = subgraph
+        .hier_sheet_pins
+        .iter()
+        .map(|pin| &pin.connection)
+        .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
+        .find(|connection| reduced_connection_is_bus(connection.connection_type))
+        .map(|connection| {
+            connection
+                .members
+                .iter()
+                .map(|member| member.name.clone())
+                .collect::<Vec<_>>()
+        })?;
+
+    let mut diagnostic_path = None::<std::path::PathBuf>;
+    let label_at = subgraph.label_links.iter().find_map(|label| {
+        (reduced_connection_is_bus(label.connection.connection_type)
+            && matches!(label.kind, LabelKind::Local | LabelKind::Global))
+        .then(|| {
+            diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
+            [f64::from_bits(label.at.0), f64::from_bits(label.at.1)]
+        })
+    })?;
+
+    let has_match = label_members
+        .iter()
+        .any(|member| port_members.iter().any(|test| test == member));
+
+    (!has_match).then_some(ReducedProjectBusToBusConflict {
+        label_at,
+        diagnostic_path,
+    })
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(
