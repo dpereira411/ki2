@@ -9932,6 +9932,17 @@ pub(crate) struct ReducedProjectLabelMultipleWires {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectLabelConnectivitySubgraph {
+    pub(crate) sheet_instance_path: String,
+    pub(crate) subgraph_code: usize,
+    pub(crate) net_name: String,
+    pub(crate) pin_count: usize,
+    pub(crate) has_no_connect: bool,
+    pub(crate) has_local_hierarchy: bool,
+    pub(crate) label_links: Vec<ReducedLabelLink>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10330,6 +10341,53 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
     }
 
     events
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckLabels label-subgraph setup branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still builds reduced label subgraph summaries instead of walking live
+// `CONNECTION_SUBGRAPH::m_items` and `SCH_TEXT::IsDangling()` state
+// local_only_reason: keeps label subgraph pin/no-connect/local-hierarchy summary ownership on the
+// shared graph owner instead of duplicating reduced subgraph scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live label-connectivity subgraph summaries directly from graph links
+pub(crate) fn reduced_project_label_connectivity_subgraphs(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectLabelConnectivitySubgraph> {
+    let mut label_subgraphs = Vec::new();
+
+    for subgraph in reduced_project_run_erc_subgraphs(graph) {
+        if subgraph.label_links.is_empty() {
+            continue;
+        }
+
+        let subgraph_index = reduced_project_subgraph_index(graph, &subgraph);
+
+        let pin_count = subgraph.base_pins.len();
+        let has_local_hierarchy = !subgraph.hier_sheet_pins.is_empty()
+            || !subgraph.hier_ports.is_empty()
+            || subgraph_index.is_some_and(|index| {
+                reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, index)
+            });
+        let has_no_connect = subgraph.has_no_connect
+            || subgraph_index.is_some_and(|index| {
+                reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
+            });
+
+        label_subgraphs.push(ReducedProjectLabelConnectivitySubgraph {
+            sheet_instance_path: subgraph.sheet_instance_path.clone(),
+            subgraph_code: subgraph.subgraph_code,
+            net_name: subgraph.driver_connection.name.clone(),
+            pin_count,
+            has_no_connect,
+            has_local_hierarchy,
+            label_links: subgraph.label_links.clone(),
+        });
+    }
+
+    label_subgraphs
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(

@@ -3,16 +3,14 @@ use crate::connectivity::{
     collect_reduced_project_subgraphs_by_name, reduced_connected_wire_label_full_names_at,
     reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
     reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
-    reduced_project_label_multiple_wire_events, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_run_erc_subgraphs, reduced_project_sheet_pin_is_dangling,
-    reduced_project_sheet_pin_names, reduced_project_subgraph_bus_entry_conflict_candidate,
+    reduced_project_label_connectivity_subgraphs, reduced_project_label_multiple_wire_events,
+    reduced_project_no_connect_pin_has_connected_owner, reduced_project_run_erc_subgraphs,
+    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
+    reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
     reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
-    reduced_project_subgraph_floating_wire,
-    reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
-    reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
-    reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
-    reduced_project_symbol_pin_net_name,
+    reduced_project_subgraph_floating_wire, reduced_project_subgraphs,
+    reduced_project_symbol_pin_inventories, reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
@@ -1856,62 +1854,24 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
-    let mut label_subgraphs = Vec::new();
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        if subgraph.label_links.is_empty() {
-            continue;
-        }
-
-        let subgraph_index = reduced_project_subgraph_index(&graph, &subgraph);
-
-        let pin_count = subgraph.base_pins.len();
-        let has_local_hierarchy = !subgraph.hier_sheet_pins.is_empty()
-            || !subgraph.hier_ports.is_empty()
-            || subgraph_index.is_some_and(|index| {
-                reduced_project_subgraph_has_local_hierarchy_via_bus_parents(&graph, index)
-            });
-        let has_no_connect = subgraph.has_no_connect
-            || subgraph_index.is_some_and(|index| {
-                reduced_project_subgraph_has_no_connect_via_parent_chain(&graph, index)
-            });
-
-        label_subgraphs.push((
-            subgraph.sheet_instance_path.clone(),
-            subgraph.subgraph_code,
-            subgraph.driver_connection.name.clone(),
-            pin_count,
-            has_no_connect,
-            has_local_hierarchy,
-            subgraph.label_links.clone(),
-        ));
-    }
-
-    for (
-        sheet_instance_path,
-        subgraph_code,
-        net_name,
-        pin_count,
-        subgraph_has_no_connect,
-        subgraph_has_local_hierarchy,
-        label_links,
-    ) in label_subgraphs
-    {
+    for label_subgraph in reduced_project_label_connectivity_subgraphs(&graph) {
         let Some(sheet_path) = project
             .sheet_paths
             .iter()
-            .find(|sheet_path| sheet_path.instance_path == sheet_instance_path)
+            .find(|sheet_path| sheet_path.instance_path == label_subgraph.sheet_instance_path)
         else {
             continue;
         };
 
-        let mut all_pins = pin_count;
-        let mut local_pins = pin_count;
-        let mut has_no_connect = subgraph_has_no_connect;
-        let mut has_local_hierarchy = subgraph_has_local_hierarchy;
+        let mut all_pins = label_subgraph.pin_count;
+        let mut local_pins = label_subgraph.pin_count;
+        let mut has_no_connect = label_subgraph.has_no_connect;
+        let mut has_local_hierarchy = label_subgraph.has_local_hierarchy;
 
-        if !net_name.is_empty() {
-            let neighbors = collect_reduced_project_subgraphs_by_name(&graph, &net_name);
+        if !label_subgraph.net_name.is_empty() {
+            let neighbors =
+                collect_reduced_project_subgraphs_by_name(&graph, &label_subgraph.net_name);
             for (
                 neighbor_sheet_instance_path,
                 neighbor_subgraph_code,
@@ -1930,8 +1890,8 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                     neighbor_has_local_hierarchy,
                 )
             }) {
-                if neighbor_sheet_instance_path == sheet_instance_path
-                    && neighbor_subgraph_code == subgraph_code
+                if neighbor_sheet_instance_path == label_subgraph.sheet_instance_path
+                    && neighbor_subgraph_code == label_subgraph.subgraph_code
                 {
                     continue;
                 }
@@ -1939,14 +1899,14 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 all_pins += neighbor_pin_count;
                 has_no_connect |= neighbor_has_no_connect;
 
-                if neighbor_sheet_instance_path == sheet_instance_path {
+                if neighbor_sheet_instance_path == label_subgraph.sheet_instance_path {
                     local_pins += neighbor_pin_count;
                     has_local_hierarchy |= neighbor_has_local_hierarchy;
                 }
             }
         }
 
-        for label in label_links {
+        for label in label_subgraph.label_links {
             if label.kind == LabelKind::Directive {
                 continue;
             }
