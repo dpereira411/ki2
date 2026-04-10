@@ -1,14 +1,14 @@
 use crate::connectivity::{
-    ReducedNetBasePinKey, ReducedProjectDriverKind, ReducedProjectSymbolPin,
-    collect_reduced_project_net_map, collect_reduced_project_subgraphs_by_name,
-    reduced_bus_member_full_local_names, reduced_connected_wire_label_full_names_at,
-    reduced_project_dangling_directive_label_links, reduced_project_four_way_junction_points,
-    reduced_project_hier_port_entries_in_sheet, reduced_project_hier_port_names_in_sheet,
-    reduced_project_no_connect_pin_has_connected_owner, reduced_project_sheet_pin_is_dangling,
-    reduced_project_sheet_pin_names, reduced_project_subgraph_by_index,
+    ReducedNetBasePinKey, ReducedProjectDriverKind, collect_reduced_project_net_map,
+    collect_reduced_project_subgraphs_by_name, reduced_bus_member_full_local_names,
+    reduced_connected_wire_label_full_names_at, reduced_project_dangling_directive_label_links,
+    reduced_project_four_way_junction_points, reduced_project_hier_port_entries_in_sheet,
+    reduced_project_hier_port_names_in_sheet, reduced_project_no_connect_pin_has_connected_owner,
+    reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
+    reduced_project_symbol_pin_net_name,
     reduced_project_wire_item_endpoint_has_connected_bus_owner,
 };
 use crate::core::SchematicProject;
@@ -479,16 +479,6 @@ fn pin_conflict(lhs: ReducedPinType, rhs: ReducedPinType) -> PinConflict {
     ];
 
     MAP[lhs as usize][rhs as usize]
-}
-
-fn reduced_project_symbol_pin_net_name(
-    graph: &crate::connectivity::ReducedProjectNetGraph,
-    pin: &ReducedProjectSymbolPin,
-) -> String {
-    pin.subgraph_index
-        .and_then(|index| reduced_project_subgraph_by_index(graph, index))
-        .map(|subgraph| subgraph.driver_connection.name.clone())
-        .unwrap_or_default()
 }
 
 // Upstream parity: reduced local helper for the generic connection-point net lookup that the

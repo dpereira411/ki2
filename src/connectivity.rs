@@ -9389,6 +9389,27 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::GetNetFromItem() for graph-owned symbol-pin inventory payload or
+// none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still resolves from a reduced pin inventory subgraph index instead of live
+// `SCH_PIN*` / `CONNECTION_SUBGRAPH*` ownership
+// local_only_reason: keeps graph-owned pin-inventory callers from reimplementing subgraph-index
+// dereferencing in ERC
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: production callers can query live pin connection names directly
+pub(crate) fn reduced_project_symbol_pin_net_name(
+    graph: &ReducedProjectNetGraph,
+    pin: &ReducedProjectSymbolPin,
+) -> String {
+    pin.subgraph_index
+        .and_then(|index| reduced_project_subgraph_by_index(graph, index))
+        .map(|subgraph| subgraph.driver_connection.name.clone())
+        .unwrap_or_default()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for the symbol-pin half of
 // `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
 // item map because the Rust tree still uses reduced projected pin identity instead of a live
