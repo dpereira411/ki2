@@ -2079,7 +2079,7 @@ impl LiveProjectBusMember {
             }
         }
 
-        self.kind != ReducedBusMemberKind::Bus && self.local_name == search.local_name
+        false
     }
 
     fn matches_connection_member(&self, search: &LiveProjectConnection) -> bool {
@@ -26916,13 +26916,56 @@ mod tests {
             net_code: 0,
             connection_type: ReducedProjectConnectionType::Net,
             name: "/PLAIN".to_string(),
-            local_name: "A0".to_string(),
+            local_name: "PLAIN".to_string(),
             full_local_name: "/PLAIN".to_string(),
             sheet_instance_path: String::new(),
             members: Vec::new(),
         };
 
         assert!(bus.find_member_for_connection(&search).is_none());
+    }
+
+    #[test]
+    fn live_vector_bus_member_without_vector_index_does_not_match_by_local_name() {
+        let bus = LiveProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Bus,
+            name: "A[0..1]".to_string(),
+            local_name: "A".to_string(),
+            full_local_name: "/A".to_string(),
+            sheet_instance_path: String::new(),
+            members: vec![
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A0".to_string(),
+                    local_name: "A0".to_string(),
+                    full_local_name: "/A0".to_string(),
+                    vector_index: Some(0),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                })),
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: "A1".to_string(),
+                    local_name: "A1".to_string(),
+                    full_local_name: "/A1".to_string(),
+                    vector_index: Some(1),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                })),
+            ],
+        };
+        let search = LiveProjectBusMember {
+            net_code: 0,
+            name: "PLAIN".to_string(),
+            local_name: "PLAIN".to_string(),
+            full_local_name: "/PLAIN".to_string(),
+            vector_index: None,
+            kind: ReducedBusMemberKind::Net,
+            members: Vec::new(),
+        };
+
+        assert!(bus.find_member_live(&search).is_none());
     }
 
     #[test]
