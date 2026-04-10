@@ -7773,7 +7773,6 @@ pub(crate) fn collect_reduced_project_net_graph(
     )
 }
 
-#[allow(dead_code)]
 // Upstream parity: reduced local analogue for the project-wide `CONNECTION_GRAPH::GetNetMap()`
 // consumer path used by KiCad's net exporters. This is not a 1:1 graph owner because the Rust
 // tree still lacks real `CONNECTION_SUBGRAPH` objects, graph-owned item identity, and the exact
