@@ -10905,7 +10905,9 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<ReducedProjectBusToBusConflict> {
     let label_members = subgraph.label_links.iter().find_map(|label| {
-        reduced_connection_is_bus(label.connection.connection_type).then_some(
+        (matches!(label.kind, LabelKind::Local | LabelKind::Global)
+            && reduced_connection_is_bus(label.connection.connection_type))
+        .then_some(
             label
                 .connection
                 .members
@@ -10966,7 +10968,9 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
     let label_members = subgraph.label_links.iter().find_map(|label| {
         let label = label.borrow();
         let connection = label.connection.borrow();
-        reduced_connection_is_bus(connection.connection_type).then(|| {
+        (matches!(label.kind, LabelKind::Local | LabelKind::Global)
+            && reduced_connection_is_bus(connection.connection_type))
+        .then(|| {
             connection
                 .members
                 .iter()
@@ -24771,6 +24775,91 @@ mod tests {
             !candidate.test_names.iter().any(|name| name == "ALT"),
             "live candidate should not collapse to bare local driver name: {:?}",
             candidate.test_names
+        );
+    }
+
+    #[test]
+    fn reduced_bus_to_bus_conflict_ignores_hierarchical_label_as_label_side() {
+        let bus_connection = test_bus_connection(
+            "/BUS",
+            "BUS",
+            "/BUS",
+            "",
+            vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+        );
+        let subgraph = super::ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/BUS".to_string(),
+            resolved_connection: bus_connection.clone(),
+            driver_connection: bus_connection.clone(),
+            chosen_driver_index: None,
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+                at: PointKey(10, 20),
+                kind: LabelKind::Hierarchical,
+                dangling: false,
+                non_endpoint_wire_segment_count: 0,
+                connection: bus_connection.clone(),
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(10, 20),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: bus_connection.clone(),
+            }],
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        };
+
+        assert!(super::reduced_project_subgraph_bus_to_bus_conflict(&subgraph).is_none());
+    }
+
+    #[test]
+    fn live_bus_to_bus_conflict_ignores_hierarchical_label_as_label_side() {
+        let bus_connection = test_bus_connection(
+            "/BUS",
+            "BUS",
+            "/BUS",
+            "",
+            vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+        );
+        let mut subgraph = test_net_subgraph(1, bus_connection.clone(), Vec::new(), "");
+        subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(10, 20),
+            kind: LabelKind::Hierarchical,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: bus_connection.clone(),
+        });
+        subgraph.hier_sheet_pins.push(ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(10, 20),
+            child_sheet_uuid: Some("child".to_string()),
+            connection: bus_connection,
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+
+        assert!(
+            super::live_reduced_subgraph_bus_to_bus_conflict(&graph.live_subgraphs[0]).is_none()
         );
     }
 
