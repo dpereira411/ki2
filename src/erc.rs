@@ -1570,10 +1570,10 @@ pub fn check_no_connect_pins(project: &SchematicProject) -> Vec<Diagnostic> {
 
     for pin in reduced_project_symbol_pin_inventories(&graph)
         .into_iter()
-        .flat_map(|inventory| inventory.pins.iter())
+        .flat_map(|inventory| inventory.pins.into_iter())
     {
         if pin.electrical_type.as_deref() != Some("no_connect")
-            || !reduced_project_no_connect_pin_has_connected_owner(&graph, pin)
+            || !reduced_project_no_connect_pin_has_connected_owner(&graph, &pin)
             || !seen.insert((pin.sheet_instance_path.clone(), pin.at))
         {
             continue;

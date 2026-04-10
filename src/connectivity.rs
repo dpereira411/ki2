@@ -9796,8 +9796,8 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
 // none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still resolves from a reduced pin inventory subgraph index instead of live
-// `SCH_PIN*` / `CONNECTION_SUBGRAPH*` ownership
+// divergence: still starts from reduced pin-inventory records for unconnected pins instead of live
+// `SCH_PIN*` owners, but connected-pin net names now project from the live base-pin owner
 // local_only_reason: keeps graph-owned pin-inventory callers from reimplementing subgraph-index
 // dereferencing in ERC
 // replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
@@ -9897,46 +9897,100 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     .and_then(|index| graph.subgraphs.get(index))
 }
 
+fn live_reduced_project_symbol_pin_snapshot(
+    graph: &ReducedProjectNetGraph,
+    pin: &ReducedProjectSymbolPin,
+) -> Option<ReducedProjectSymbolPin> {
+    let live_pin = graph
+        .live_subgraphs
+        .get(pin.subgraph_index?)
+        .and_then(|subgraph| {
+            subgraph.borrow().base_pins.iter().find_map(|candidate| {
+                let candidate = candidate.borrow();
+                (candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                    && candidate.pin.key.at == pin.at
+                    && candidate.pin.key.number == pin.number)
+                    .then(|| candidate.pin.clone())
+            })
+        })?;
+
+    Some(ReducedProjectSymbolPin {
+        schematic_path: live_pin.schematic_path,
+        sheet_instance_path: live_pin.key.sheet_instance_path,
+        at: live_pin.key.at,
+        name: live_pin.key.name,
+        number: live_pin.number,
+        electrical_type: live_pin.electrical_type,
+        visible: live_pin.visible,
+        reference: live_pin.reference,
+        is_power_symbol: live_pin.is_power_symbol,
+        subgraph_index: pin.subgraph_index,
+    })
+}
+
+fn project_reduced_project_symbol_pin_inventory(
+    graph: &ReducedProjectNetGraph,
+    inventory: &ReducedProjectSymbolPinInventory,
+) -> ReducedProjectSymbolPinInventory {
+    let mut projected = inventory.clone();
+
+    if graph.live_subgraphs.is_empty() {
+        return projected;
+    }
+
+    projected.pins = inventory
+        .pins
+        .iter()
+        .map(|pin| {
+            live_reduced_project_symbol_pin_snapshot(graph, pin).unwrap_or_else(|| pin.clone())
+        })
+        .collect();
+
+    projected
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still exposes reduced graph-owned symbol pin inventory instead of live `SCH_PIN*`
-// plus `SCH_SYMBOL*` owners
+// divergence: still keeps reduced inventory for immutable symbol metadata and unconnected pins,
+// but connected-pin payload now projects from live base-pin owners instead of stale reduced clones
 // local_only_reason: keeps ERC/net-name callers on one graph-owned per-symbol pin inventory with
 // exercised per-symbol metadata instead of re-walking symbol/lib state ad hoc
 // replaced_by: fuller live `SCH_PIN` / `SCH_SYMBOL` owner graph
 // remove_when: production callers can iterate live symbol/pin owners directly
-pub(crate) fn reduced_project_symbol_pin_inventory<'a>(
-    graph: &'a ReducedProjectNetGraph,
+pub(crate) fn reduced_project_symbol_pin_inventory(
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
-) -> Option<&'a ReducedProjectSymbolPinInventory> {
+) -> Option<ReducedProjectSymbolPinInventory> {
     graph
         .symbol_pins_by_symbol
         .get(&reduced_project_symbol_identity_key(sheet_path, symbol))
+        .map(|inventory| project_reduced_project_symbol_pin_inventory(graph, inventory))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::GetNetMap or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still iterates reduced graph-owned symbol pin inventories instead of live
-// `SCH_SYMBOL*` / `SCH_PIN*` owners
+// divergence: still iterates graph-owned symbol pin inventories instead of live `SCH_SYMBOL*` /
+// `SCH_PIN*` owners, but connected pins now project from live base-pin owners
 // local_only_reason: keeps ERC callers on shared graph-owned per-symbol pin inventories by sheet
 // instead of re-walking schematic items to rediscover which symbol owners the graph already knows
 // about
 // replaced_by: fuller live `SCH_SYMBOL` / `SCH_PIN` owner graph
 // remove_when: production callers can iterate live symbol/pin owners directly by sheet
-pub(crate) fn collect_reduced_project_symbol_pin_inventories_in_sheet<'a>(
-    graph: &'a ReducedProjectNetGraph,
+pub(crate) fn collect_reduced_project_symbol_pin_inventories_in_sheet(
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
-) -> Vec<&'a ReducedProjectSymbolPinInventory> {
+) -> Vec<ReducedProjectSymbolPinInventory> {
     graph
         .symbol_pins_by_symbol
         .iter()
         .filter_map(|(key, inventory)| {
-            (key.sheet_instance_path == sheet_path.instance_path).then_some(inventory)
+            (key.sheet_instance_path == sheet_path.instance_path)
+                .then(|| project_reduced_project_symbol_pin_inventory(graph, inventory))
         })
         .collect()
 }
@@ -9945,32 +9999,36 @@ pub(crate) fn collect_reduced_project_symbol_pin_inventories_in_sheet<'a>(
 // upstream: CONNECTION_GRAPH::GetNetMap or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still iterates reduced graph-owned symbol pin inventories instead of live
-// `SCH_SYMBOL*` / `SCH_PIN*` owners
+// divergence: still iterates graph-owned symbol pin inventories instead of live `SCH_SYMBOL*` /
+// `SCH_PIN*` owners, but connected pins now project from live base-pin owners
 // local_only_reason: keeps whole-project ERC callers on one graph-owned per-symbol pin inventory
 // instead of rediscovering symbol owners by sweeping loaded sheet paths
 // replaced_by: fuller live `SCH_SYMBOL` / `SCH_PIN` owner graph
 // remove_when: production callers can iterate live symbol/pin owners directly across the project
 pub(crate) fn reduced_project_symbol_pin_inventories(
     graph: &ReducedProjectNetGraph,
-) -> Vec<&ReducedProjectSymbolPinInventory> {
-    graph.symbol_pins_by_symbol.values().collect()
+) -> Vec<ReducedProjectSymbolPinInventory> {
+    graph
+        .symbol_pins_by_symbol
+        .values()
+        .map(|inventory| project_reduced_project_symbol_pin_inventory(graph, inventory))
+        .collect()
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for iterating a symbol's `SCH_PIN` owners through the
-// shared graph. This still projects reduced pin payload instead of exposing live `SCH_PIN*`
-// objects, but it keeps ERC/net-name callers on one graph-owned per-symbol pin inventory,
-// including unconnected pins, instead of re-projecting symbol pins ad hoc at each call site.
-// Remaining divergence is the fuller live pin object layer behind this reduced inventory.
-pub(crate) fn collect_reduced_project_symbol_pins<'a>(
-    graph: &'a ReducedProjectNetGraph,
+// shared graph. This still returns reduced pin payload instead of exposing live `SCH_PIN*`
+// objects, but connected pins now project from the live base-pin owner while unconnected pins stay
+// on the graph-owned fallback inventory instead of re-projecting symbol pins ad hoc at each call
+// site. Remaining divergence is the fuller live pin object layer behind this inventory boundary.
+pub(crate) fn collect_reduced_project_symbol_pins(
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
-) -> Vec<&'a ReducedProjectSymbolPin> {
+) -> Vec<ReducedProjectSymbolPin> {
     reduced_project_symbol_pin_inventory(graph, sheet_path, symbol)
         .into_iter()
-        .flat_map(|inventory| inventory.pins.iter())
+        .flat_map(|inventory| inventory.pins)
         .collect()
 }
 
@@ -19789,12 +19847,12 @@ mod tests {
         let pin =
             super::collect_reduced_project_symbol_pin_inventories_in_sheet(&graph, root_sheet)
                 .into_iter()
-                .flat_map(|inventory| inventory.pins.iter())
+                .flat_map(|inventory| inventory.pins.into_iter())
                 .find(|pin| pin.electrical_type.as_deref() == Some("no_connect"))
                 .expect("no-connect pin");
 
         assert!(super::reduced_project_no_connect_pin_has_connected_owner(
-            &graph, pin,
+            &graph, &pin,
         ));
 
         let _ = fs::remove_file(path);
@@ -20651,6 +20709,72 @@ mod tests {
         assert_ne!(connected_pin.subgraph_index, unconnected_pin.subgraph_index);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn live_symbol_pin_inventory_projects_live_base_pin_owner() {
+        let inventory = super::ReducedProjectSymbolPinInventory {
+            unit: Some(1),
+            unit_count: 1,
+            duplicate_pin_numbers_are_jumpers: false,
+            pins: vec![super::ReducedProjectSymbolPin {
+                schematic_path: std::path::PathBuf::from("stale.kicad_sch"),
+                sheet_instance_path: String::new(),
+                at: PointKey(10, 20),
+                name: Some("STALE".to_string()),
+                number: Some("1".to_string()),
+                electrical_type: Some("input".to_string()),
+                visible: false,
+                reference: Some("U_STALE".to_string()),
+                is_power_symbol: false,
+                subgraph_index: Some(0),
+            }],
+        };
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            Vec::new(),
+            "",
+        );
+        subgraph.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("live.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
+                at: PointKey(10, 20),
+                name: Some("LIVE".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("output".to_string()),
+            visible: true,
+            is_power_symbol: true,
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let mut graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.symbol_pins_by_symbol.insert(
+            super::ReducedProjectSymbolIdentityKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
+            },
+            inventory,
+        );
+
+        let projected = super::reduced_project_symbol_pin_inventories(&graph);
+        let pin = projected[0].pins.first().expect("projected pin");
+
+        assert_eq!(
+            pin.schematic_path,
+            std::path::PathBuf::from("live.kicad_sch")
+        );
+        assert_eq!(pin.name.as_deref(), Some("LIVE"));
+        assert_eq!(pin.reference.as_deref(), Some("U1"));
+        assert_eq!(pin.electrical_type.as_deref(), Some("output"));
+        assert!(pin.visible);
+        assert!(pin.is_power_symbol);
     }
 
     #[test]
