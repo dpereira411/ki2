@@ -6,7 +6,8 @@ use crate::connectivity::{
     reduced_project_hierarchical_sheet_events, reduced_project_label_connectivity_subgraphs,
     reduced_project_label_multiple_wire_events, reduced_project_named_label_entries,
     reduced_project_no_connect_events, reduced_project_no_connect_pin_has_connected_owner,
-    reduced_project_run_erc_subgraphs, reduced_project_subgraph_driver_conflict,
+    reduced_project_run_erc_subgraphs, reduced_project_same_local_global_label_conflicts,
+    reduced_project_single_global_labels, reduced_project_subgraph_driver_conflict,
     reduced_project_symbol_pin_inventories, reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
@@ -2376,34 +2377,15 @@ pub fn check_duplicate_pin_nets(project: &SchematicProject) -> Vec<Diagnostic> {
 // severity/default-ignore handling.
 pub fn check_single_global_labels(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    let mut label_data = BTreeMap::<String, (usize, Option<std::path::PathBuf>)>::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for label in reduced_project_named_label_entries(&graph)
-        .into_iter()
-        .filter(|label| label.kind == LabelKind::Global)
-    {
-        let entry = label_data
-            .entry(label.local_name)
-            .or_insert_with(|| (0, Some(label.schematic_path)));
-        entry.0 += 1;
-
-        if entry.0 > 1 {
-            entry.1 = None;
-        }
-    }
-
-    for (shown_text, (count, path)) in label_data {
-        if count != 1 {
-            continue;
-        }
-
+    for label in reduced_project_single_global_labels(&graph) {
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             code: "erc-single-global-label",
             kind: crate::diagnostic::DiagnosticKind::Validation,
-            message: format!("Global label '{}' appears only once", shown_text),
-            path,
+            message: format!("Global label '{}' appears only once", label.local_name),
+            path: Some(label.schematic_path),
             span: None,
             line: None,
             column: None,
@@ -2575,39 +2557,19 @@ pub fn check_similar_labels(project: &SchematicProject) -> Vec<Diagnostic> {
 // local-vs-global name collision rule across the loaded hierarchy. Remaining divergence is fuller
 // connection-graph ownership and marker sheet-path metadata.
 pub fn check_same_local_global_label(project: &SchematicProject) -> Vec<Diagnostic> {
-    let mut globals = BTreeMap::<String, std::path::PathBuf>::new();
-    let mut locals = BTreeMap::<String, std::path::PathBuf>::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for label in reduced_project_named_label_entries(&graph) {
-        match label.kind {
-            LabelKind::Global => {
-                globals
-                    .entry(label.local_name)
-                    .or_insert(label.schematic_path);
-            }
-            LabelKind::Local => {
-                locals
-                    .entry(label.local_name)
-                    .or_insert(label.schematic_path);
-            }
-            _ => {}
-        }
-    }
-
-    globals
+    reduced_project_same_local_global_label_conflicts(&graph)
         .into_iter()
-        .filter_map(|(shown_text, path)| {
-            locals.get(&shown_text).map(|_| Diagnostic {
-                severity: Severity::Error,
-                code: "erc-same-local-global-label",
-                kind: crate::diagnostic::DiagnosticKind::Validation,
-                message: "Local and global labels have same name".to_string(),
-                path: Some(path),
-                span: None,
-                line: None,
-                column: None,
-            })
+        .map(|conflict| Diagnostic {
+            severity: Severity::Error,
+            code: "erc-same-local-global-label",
+            kind: crate::diagnostic::DiagnosticKind::Validation,
+            message: "Local and global labels have same name".to_string(),
+            path: Some(conflict.diagnostic_path),
+            span: None,
+            line: None,
+            column: None,
         })
         .collect()
 }

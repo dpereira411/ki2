@@ -9964,6 +9964,17 @@ pub(crate) struct ReducedProjectNamedLabelEntry {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectSingleGlobalLabel {
+    pub(crate) local_name: String,
+    pub(crate) schematic_path: std::path::PathBuf,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectSameLocalGlobalLabelConflict {
+    pub(crate) diagnostic_path: std::path::PathBuf,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum ReducedProjectHierarchicalSheetEvent {
     RootHierLabel {
         name: String,
@@ -10631,6 +10642,85 @@ pub(crate) fn reduced_project_named_label_entries(
     }
 
     labels
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckSingleGlobalLabel() exercised label-count slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still counts reduced named label snapshots instead of live label item owners and
+// marker attachments
+// local_only_reason: keeps single-global label aggregation on the shared graph owner instead of
+// duplicating reduced label-entry scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live single-global label conflicts directly from graph item links
+pub(crate) fn reduced_project_single_global_labels(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectSingleGlobalLabel> {
+    let mut label_data = BTreeMap::<String, (usize, Option<std::path::PathBuf>)>::new();
+
+    for label in reduced_project_named_label_entries(graph)
+        .into_iter()
+        .filter(|label| label.kind == LabelKind::Global)
+    {
+        let entry = label_data
+            .entry(label.local_name)
+            .or_insert_with(|| (0, Some(label.schematic_path)));
+        entry.0 += 1;
+
+        if entry.0 > 1 {
+            entry.1 = None;
+        }
+    }
+
+    label_data
+        .into_iter()
+        .filter_map(|(local_name, (count, path))| {
+            (count == 1).then_some(ReducedProjectSingleGlobalLabel {
+                local_name,
+                schematic_path: path?,
+            })
+        })
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: ERC_TESTER::TestSameLocalGlobalLabel() exercised label-name collision slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still compares reduced named label snapshots instead of live marker-owned label items
+// local_only_reason: keeps local-vs-global label collision aggregation on the shared graph owner
+// instead of duplicating reduced label-entry scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live local-vs-global label conflicts directly from graph item links
+pub(crate) fn reduced_project_same_local_global_label_conflicts(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectSameLocalGlobalLabelConflict> {
+    let mut globals = BTreeMap::<String, std::path::PathBuf>::new();
+    let mut locals = BTreeSet::<String>::new();
+
+    for label in reduced_project_named_label_entries(graph) {
+        match label.kind {
+            LabelKind::Global => {
+                globals
+                    .entry(label.local_name)
+                    .or_insert(label.schematic_path);
+            }
+            LabelKind::Local => {
+                locals.insert(label.local_name);
+            }
+            _ => {}
+        }
+    }
+
+    globals
+        .into_iter()
+        .filter_map(|(local_name, diagnostic_path)| {
+            locals
+                .contains(&local_name)
+                .then_some(ReducedProjectSameLocalGlobalLabelConflict { diagnostic_path })
+        })
+        .collect()
 }
 
 fn reduced_project_child_sheet_path_for_sheet<'a>(
