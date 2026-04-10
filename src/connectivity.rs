@@ -3525,6 +3525,7 @@ struct LiveReducedSubgraph {
     hier_parent_handle: Option<Weak<RefCell<LiveReducedSubgraph>>>,
     hier_child_handles: Vec<Weak<RefCell<LiveReducedSubgraph>>>,
     label_links: Vec<LiveReducedLabelLinkHandle>,
+    no_connect_points: Vec<ReducedNoConnectPoint>,
     hier_sheet_pins: Vec<LiveReducedHierSheetPinLinkHandle>,
     hier_ports: Vec<LiveReducedHierPortLinkHandle>,
     bus_items: Vec<LiveReducedSubgraphWireItemHandle>,
@@ -5259,6 +5260,7 @@ impl PartialEq for LiveReducedSubgraph {
             && live_base_pin_handles_to_snapshots(&self.base_pins)
                 == live_base_pin_handles_to_snapshots(&other.base_pins)
             && self.label_links == other.label_links
+            && self.no_connect_points == other.no_connect_points
             && self.hier_sheet_pins == other.hier_sheet_pins
             && self.hier_ports == other.hier_ports
             && self.bus_items == other.bus_items
@@ -5522,6 +5524,7 @@ fn build_live_reduced_subgraph_handles(
                         }))
                     })
                     .collect(),
+                no_connect_points: subgraph.no_connect_points.clone(),
                 hier_sheet_pins: subgraph
                     .hier_sheet_pins
                     .iter()
@@ -10605,6 +10608,38 @@ pub(crate) fn reduced_project_subgraph_floating_wire(
     })
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckFloatingWires floating subgraph branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still checks reduced live item buckets instead of final `CONNECTION_SUBGRAPH::m_items`
+// and marker-owned floating-wire state
+// local_only_reason: moves floating-wire classification onto the active live subgraph owner while
+// the final wire/no-connect item graph is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / wire-item owner graph
+// remove_when: ERC can query final live floating-wire state directly from graph item links
+fn live_reduced_subgraph_floating_wire(
+    handle: &LiveReducedSubgraphHandle,
+) -> Option<ReducedProjectFloatingWire> {
+    let subgraph = handle.borrow();
+
+    if subgraph.wire_items.is_empty()
+        || !subgraph.base_pins.is_empty()
+        || !subgraph.hier_sheet_pins.is_empty()
+        || !subgraph.hier_ports.is_empty()
+        || !subgraph.label_links.is_empty()
+        || !subgraph.no_connect_points.is_empty()
+    {
+        return None;
+    }
+
+    Some(ReducedProjectFloatingWire {
+        diagnostic_path: subgraph
+            .wire_items
+            .first()
+            .map(|item| item.borrow().schematic_path.clone()),
+    })
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints endpoint dangling branch or none
 // parity_status: partial
@@ -11332,14 +11367,22 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
 // upstream: CONNECTION_GRAPH::ercCheckFloatingWires `RunERC()` slice or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still emits reduced floating-wire events instead of live subgraph/marker owners
-// local_only_reason: keeps floating-wire event collection on the shared graph owner instead of
-// duplicating `RunERC()` subgraph walks inside ERC
+// divergence: still emits reduced diagnostic events and falls back for hand-built reduced test
+// graphs, but production classification now reads the active live subgraph owner
+// local_only_reason: keeps floating-wire event collection on the shared graph owner and starts
+// retiring projected reduced item-bucket checks from ERC-facing paths
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / marker owner graph
 // remove_when: ERC can consume live floating-wire events directly from graph item links
 pub(crate) fn reduced_project_floating_wire_events(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectFloatingWire> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_run_erc_subgraph_handles(graph)
+            .into_iter()
+            .filter_map(|subgraph| live_reduced_subgraph_floating_wire(&subgraph))
+            .collect();
+    }
+
     reduced_project_run_erc_subgraphs(graph)
         .into_iter()
         .filter_map(|subgraph| reduced_project_subgraph_floating_wire(&subgraph))
@@ -18404,6 +18447,7 @@ mod tests {
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
                 label_links: Vec::new(),
+                no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
                 bus_items: Vec::new(),
@@ -18437,6 +18481,7 @@ mod tests {
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
                 label_links: Vec::new(),
+                no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
                 bus_items: Vec::new(),
@@ -18505,6 +18550,7 @@ mod tests {
             hier_parent_handle: None,
             hier_child_handles: Vec::new(),
             label_links: Vec::new(),
+            no_connect_points: Vec::new(),
             hier_sheet_pins: Vec::new(),
             hier_ports: Vec::new(),
             bus_items: Vec::new(),
@@ -18583,6 +18629,7 @@ mod tests {
             hier_parent_handle: None,
             hier_child_handles: Vec::new(),
             label_links: Vec::new(),
+            no_connect_points: Vec::new(),
             hier_sheet_pins: Vec::new(),
             hier_ports: Vec::new(),
             bus_items: Vec::new(),
@@ -18648,6 +18695,7 @@ mod tests {
             hier_parent_handle: None,
             hier_child_handles: Vec::new(),
             label_links: Vec::new(),
+            no_connect_points: Vec::new(),
             hier_sheet_pins: Vec::new(),
             hier_ports: Vec::new(),
             bus_items: Vec::new(),
@@ -20780,6 +20828,7 @@ mod tests {
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
                 label_links: Vec::new(),
+                no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
                 bus_items: Vec::new(),
@@ -20821,6 +20870,7 @@ mod tests {
                 hier_parent_handle: None,
                 hier_child_handles: Vec::new(),
                 label_links: Vec::new(),
+                no_connect_points: Vec::new(),
                 hier_sheet_pins: Vec::new(),
                 hier_ports: Vec::new(),
                 bus_items: Vec::new(),
