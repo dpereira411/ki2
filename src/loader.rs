@@ -7,8 +7,9 @@ use std::process::Command;
 use crate::connectivity::{
     ReducedProjectNetGraph, collect_reduced_project_net_graph, resolve_reduced_net_name_at,
     resolve_reduced_net_name_for_symbol_pin, resolve_reduced_netclass_at,
-    resolve_reduced_project_driver_name_at, resolve_reduced_project_driver_name_for_symbol_pin,
-    resolve_reduced_project_net_at, resolve_reduced_project_net_for_symbol_pin,
+    resolve_reduced_project_driver_name_at, resolve_reduced_project_driver_name_for_sheet_pin,
+    resolve_reduced_project_driver_name_for_symbol_pin, resolve_reduced_project_net_at,
+    resolve_reduced_project_net_for_sheet_pin, resolve_reduced_project_net_for_symbol_pin,
 };
 use crate::diagnostic::Diagnostic;
 use crate::error::Error;
@@ -542,11 +543,12 @@ impl LoadResult {
     }
 
     // Upstream parity: reduced local analogue for the drawing-sheet `DS_DRAW_ITEM_TEXT` list that
-    // `ERC_TESTER::TestTextVars()` walks. This is not 1:1 yet because the local tree only parses
-    // `tbtext` items and still lacks the full draw-item/styling model, but it now covers both the
-    // reduced built-in default worksheet text slice and custom/embedded worksheet text items,
-    // including the exercised first-page/subsequent-page filtering KiCad applies before draw items
-    // reach ERC.
+    // `ERC_TESTER::TestTextVars()` walks after `DS_DRAW_ITEM_LIST::BuildDrawItemsList()`. This is
+    // not 1:1 yet because the local tree still bypasses the full worksheet model and only parses
+    // reduced `tbtext` items, so non-text worksheet items and fuller draw-item/styling state are
+    // absent. It does cover both the reduced built-in default worksheet text slice and
+    // custom/embedded worksheet text items, including the exercised first-page/subsequent-page
+    // filtering KiCad applies before draw items reach ERC.
     pub fn current_drawing_sheet_text_items(&self) -> Result<Vec<WorksheetTextItem>, Error> {
         let Some(current) = self.current_schematic() else {
             return Ok(Vec::new());
@@ -4578,6 +4580,86 @@ pub(crate) fn resolve_point_connectivity_text_var(
     }
 }
 
+// Upstream parity: reduced local helper for the sheet-pin connection-backed branch inside
+// `SCH_SHEET_PIN::ResolveTextVar()` / `GetShownText()`. This is not a 1:1 sheet-pin item method
+// because the Rust tree still lacks live `SCH_SHEET_PIN` / `SCH_CONNECTION` objects, but it now
+// prefers the reduced project graph's sheet-pin identity owner for `NET_NAME` /
+// `SHORT_NET_NAME` / `NET_CLASS` before falling back to the older generic point path. Remaining
+// divergence is fuller live sheet-pin connection ownership beyond the current reduced graph.
+fn resolve_sheet_pin_connectivity_text_var(
+    schematics: &[Schematic],
+    sheet_paths: &[LoadedSheetPath],
+    parent_sheet_path: &LoadedSheetPath,
+    project: Option<&LoadedProjectSettings>,
+    current_variant: Option<&str>,
+    reduced_graph: Option<&ReducedProjectNetGraph>,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+    token_kind: SymbolPinTextVarKind,
+) -> Option<String> {
+    let graph_net = reduced_graph.and_then(|graph| {
+        resolve_reduced_project_net_for_sheet_pin(graph, parent_sheet_path, at, child_sheet_uuid)
+    });
+
+    match token_kind {
+        SymbolPinTextVarKind::NetName => {
+            graph_net.as_ref().map(|net| net.name.clone()).or_else(|| {
+                resolve_point_connectivity_text_var(
+                    schematics,
+                    sheet_paths,
+                    parent_sheet_path,
+                    project,
+                    current_variant,
+                    reduced_graph,
+                    at,
+                    token_kind,
+                )
+            })
+        }
+        SymbolPinTextVarKind::ShortNetName => graph_net
+            .as_ref()
+            .and_then(|_| {
+                reduced_graph.and_then(|graph| {
+                    resolve_reduced_project_driver_name_for_sheet_pin(
+                        graph,
+                        parent_sheet_path,
+                        at,
+                        child_sheet_uuid,
+                    )
+                })
+            })
+            .or_else(|| {
+                resolve_point_connectivity_text_var(
+                    schematics,
+                    sheet_paths,
+                    parent_sheet_path,
+                    project,
+                    current_variant,
+                    reduced_graph,
+                    at,
+                    token_kind,
+                )
+            }),
+        SymbolPinTextVarKind::NetClass => graph_net
+            .as_ref()
+            .map(|net| net.class.clone())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                resolve_point_connectivity_text_var(
+                    schematics,
+                    sheet_paths,
+                    parent_sheet_path,
+                    project,
+                    current_variant,
+                    reduced_graph,
+                    at,
+                    token_kind,
+                )
+            }),
+        SymbolPinTextVarKind::PinName => None,
+    }
+}
+
 // Upstream parity: reduced local helper for the symbol pin-function branch inside
 // `SCH_SYMBOL::ResolveTextVar()`. This is not a 1:1 KiCad pin/connection path because the Rust
 // tree still lacks live `SCH_PIN` objects and the full connection graph. It exists so shown-text
@@ -5526,7 +5608,7 @@ pub(crate) fn shown_sheet_pin_text(
 
             match token_upper.as_str() {
                 "NET_NAME" => {
-                    return resolve_point_connectivity_text_var(
+                    return resolve_sheet_pin_connectivity_text_var(
                         schematics,
                         sheet_paths,
                         parent_sheet_path,
@@ -5534,12 +5616,13 @@ pub(crate) fn shown_sheet_pin_text(
                         current_variant,
                         reduced_graph,
                         pin.at,
+                        child_sheet_path.sheet_uuid.as_deref(),
                         SymbolPinTextVarKind::NetName,
                     )
                     .or_else(|| Some(String::new()));
                 }
                 "SHORT_NET_NAME" => {
-                    return resolve_point_connectivity_text_var(
+                    return resolve_sheet_pin_connectivity_text_var(
                         schematics,
                         sheet_paths,
                         parent_sheet_path,
@@ -5547,12 +5630,13 @@ pub(crate) fn shown_sheet_pin_text(
                         current_variant,
                         reduced_graph,
                         pin.at,
+                        child_sheet_path.sheet_uuid.as_deref(),
                         SymbolPinTextVarKind::ShortNetName,
                     )
                     .or_else(|| Some(String::new()));
                 }
                 "NET_CLASS" => {
-                    return resolve_point_connectivity_text_var(
+                    return resolve_sheet_pin_connectivity_text_var(
                         schematics,
                         sheet_paths,
                         parent_sheet_path,
@@ -5560,6 +5644,7 @@ pub(crate) fn shown_sheet_pin_text(
                         current_variant,
                         reduced_graph,
                         pin.at,
+                        child_sheet_path.sheet_uuid.as_deref(),
                         SymbolPinTextVarKind::NetClass,
                     )
                     .or_else(|| Some(String::new()));

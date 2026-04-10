@@ -8276,6 +8276,43 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
         })
 }
 
+// Upstream parity: reduced local analogue for the sheet-pin half of
+// `CONNECTION_GRAPH::GetNetFromItem()` on the project graph path. This still returns reduced net
+// identity instead of a live `CONNECTION_SUBGRAPH`, but it now reports the sheet pin's net name
+// from the required sheet-pin identity owner instead of falling back to generic point identity at
+// the same coordinates. Remaining divergence is fuller live item identity and the still-missing
+// live `CONNECTION_SUBGRAPH` object.
+pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+) -> Option<ReducedProjectNetIdentity> {
+    resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid).map(
+        |subgraph| ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: subgraph.driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        },
+    )
+}
+
+// Upstream parity: reduced local analogue for the sheet-pin `Name(true)` path via
+// `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
+// Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the sheet pin's local
+// driver name from the required sheet-pin identity owner instead of generic point lookup.
+// Remaining divergence is fuller live connection-object caching and item ownership.
+pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+) -> Option<String> {
+    resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+        .map(|subgraph| subgraph.driver_connection.local_name.clone())
+}
+
 // Upstream parity: reduced local analogue for the connection-point `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but it now reads the shared reduced
@@ -12027,6 +12064,164 @@ mod tests {
 
         assert_eq!(by_sheet_pin.subgraph_code, 1);
         assert_eq!(by_point.subgraph_code, 2);
+    }
+
+    #[test]
+    fn shown_sheet_pin_text_prefers_sheet_pin_identity_over_generic_point_identity() {
+        let reduced = super::ReducedProjectNetGraph {
+            subgraphs: vec![
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 1,
+                    code: 1,
+                    name: "sheet-net".to_string(),
+                    resolved_connection: test_net_connection(
+                        "sheet-net",
+                        "SHEET_LOCAL",
+                        "/Child/SHEET_LOCAL",
+                        "",
+                    ),
+                    driver_connection: test_net_connection(
+                        "sheet-net",
+                        "SHEET_LOCAL",
+                        "/Child/SHEET_LOCAL",
+                        "",
+                    ),
+                    chosen_driver_index: None,
+                    drivers: Vec::new(),
+                    class: "SheetClass".to_string(),
+                    has_no_connect: false,
+                    sheet_instance_path: String::new(),
+                    anchor: PointKey(0, 0),
+                    points: vec![PointKey(0, 0)],
+                    nodes: Vec::new(),
+                    base_pins: Vec::new(),
+                    label_links: Vec::new(),
+                    no_connect_points: Vec::new(),
+                    hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("child-sheet".to_string()),
+                        connection: test_net_connection(
+                            "sheet-net",
+                            "SHEET_LOCAL",
+                            "/Child/SHEET_LOCAL",
+                            "",
+                        ),
+                    }],
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: Vec::new(),
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 2,
+                    code: 2,
+                    name: "point-net".to_string(),
+                    resolved_connection: test_net_connection(
+                        "point-net",
+                        "POINT_LOCAL",
+                        "/POINT_LOCAL",
+                        "",
+                    ),
+                    driver_connection: test_net_connection(
+                        "point-net",
+                        "POINT_LOCAL",
+                        "/POINT_LOCAL",
+                        "",
+                    ),
+                    chosen_driver_index: None,
+                    drivers: Vec::new(),
+                    class: "PointClass".to_string(),
+                    has_no_connect: false,
+                    sheet_instance_path: String::new(),
+                    anchor: PointKey(0, 0),
+                    points: vec![PointKey(0, 0)],
+                    nodes: Vec::new(),
+                    base_pins: Vec::new(),
+                    label_links: Vec::new(),
+                    no_connect_points: Vec::new(),
+                    hier_sheet_pins: Vec::new(),
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: Vec::new(),
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+            ],
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectPointIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: PointKey(0, 0),
+                },
+                1,
+            )]),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectSheetPinIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                },
+                0,
+            )]),
+        };
+        let parent_sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: String::new(),
+            sheet_uuid: None,
+            sheet_name: Some("Root".to_string()),
+            page: Some("1".to_string()),
+            sheet_number: 1,
+            sheet_count: 2,
+        };
+        let child_sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            instance_path: "/child-sheet".to_string(),
+            symbol_path: String::new(),
+            sheet_uuid: Some("child-sheet".to_string()),
+            sheet_name: Some("Child".to_string()),
+            page: Some("2".to_string()),
+            sheet_number: 2,
+            sheet_count: 2,
+        };
+        let sheet = crate::model::Sheet {
+            uuid: Some("child-sheet".to_string()),
+            ..crate::model::Sheet::new()
+        };
+        let pin = crate::model::SheetPin {
+            name: "${SHORT_NET_NAME}/${NET_CLASS}/${NET_NAME}".to_string(),
+            at: [0.0, 0.0],
+            ..crate::model::SheetPin::new("SIG".to_string(), &sheet)
+        };
+
+        let shown = crate::loader::shown_sheet_pin_text(
+            &[],
+            &[parent_sheet_path.clone(), child_sheet_path.clone()],
+            &parent_sheet_path,
+            &child_sheet_path,
+            None,
+            None,
+            Some(&reduced),
+            &pin,
+        );
+
+        assert_eq!(shown, "SHEET_LOCAL/SheetClass/sheet-net");
     }
 
     #[test]
