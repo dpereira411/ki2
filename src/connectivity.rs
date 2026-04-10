@@ -9062,12 +9062,36 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
     false
 }
 
+fn live_reduced_project_sheet_pin_names(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+    child_sheet_uuid: Option<&str>,
+) -> std::collections::BTreeSet<String> {
+    graph
+        .live_subgraphs
+        .iter()
+        .filter(|subgraph| subgraph.borrow().sheet_instance_path == sheet_instance_path)
+        .flat_map(|subgraph| {
+            let subgraph = subgraph.borrow();
+            subgraph
+                .hier_sheet_pins
+                .iter()
+                .filter_map(|pin| {
+                    let pin = pin.borrow();
+                    (pin.child_sheet_uuid.as_deref() == child_sheet_uuid)
+                        .then(|| pin.connection.borrow().local_name.clone())
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckHierSheets parent sheet-pin name matching branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still enumerates reduced hierarchy links and reduced shown-text payload instead of
-// live `SCH_SHEET_PIN*` owners
+// divergence: still falls back to reduced hierarchy-link snapshots for hand-built test graphs and
+// still lacks final live `SCH_SHEET_PIN*` item identity
 // local_only_reason: keeps exercised parent sheet-pin name ownership on the shared graph instead
 // of recomputing shown text by rescanning sheet items inside ERC
 // replaced_by: fuller live `SCH_SHEET_PIN` / `CONNECTION_SUBGRAPH` owner graph
@@ -9077,6 +9101,10 @@ pub(crate) fn reduced_project_sheet_pin_names(
     sheet_instance_path: &str,
     child_sheet_uuid: Option<&str>,
 ) -> std::collections::BTreeSet<String> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_sheet_pin_names(graph, sheet_instance_path, child_sheet_uuid);
+    }
+
     reduced_project_subgraphs(graph)
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
@@ -9086,13 +9114,38 @@ pub(crate) fn reduced_project_sheet_pin_names(
         .collect()
 }
 
+fn live_reduced_project_hier_port_entries_in_sheet(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+) -> Vec<(String, std::path::PathBuf)> {
+    graph
+        .live_subgraphs
+        .iter()
+        .filter(|subgraph| subgraph.borrow().sheet_instance_path == sheet_instance_path)
+        .flat_map(|subgraph| {
+            let subgraph = subgraph.borrow();
+            subgraph
+                .hier_ports
+                .iter()
+                .map(|port| {
+                    let port = port.borrow();
+                    (
+                        port.connection.borrow().local_name.clone(),
+                        port.schematic_path.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckHierSheets child hierarchical-label name matching branch or
 // none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still enumerates reduced hierarchy-port links and reduced shown-text payload instead
-// of live `SCH_HIERLABEL*` owners
+// divergence: still falls back to reduced hierarchy-port snapshots for hand-built test graphs and
+// still lacks final live `SCH_HIERLABEL*` item identity
 // local_only_reason: keeps exercised child hierarchical-label name ownership on the shared graph
 // instead of recomputing shown text by rescanning child schematics inside ERC
 // replaced_by: fuller live `SCH_HIERLABEL` / `CONNECTION_SUBGRAPH` owner graph
@@ -9123,6 +9176,10 @@ pub(crate) fn reduced_project_hier_port_entries_in_sheet(
     graph: &ReducedProjectNetGraph,
     sheet_instance_path: &str,
 ) -> Vec<(String, std::path::PathBuf)> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_hier_port_entries_in_sheet(graph, sheet_instance_path);
+    }
+
     reduced_project_subgraphs(graph)
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
@@ -20899,6 +20956,69 @@ mod tests {
         assert_eq!(pin.electrical_type.as_deref(), Some("output"));
         assert!(pin.visible);
         assert!(pin.is_power_symbol);
+    }
+
+    #[test]
+    fn hierarchy_name_helpers_read_live_hierarchy_owners() {
+        let mut parent = test_net_subgraph(
+            1,
+            test_net_connection("/PARENT", "PARENT", "/PARENT", ""),
+            Vec::new(),
+            "",
+        );
+        parent.sheet_instance_path = "/parent".to_string();
+        parent.hier_sheet_pins.push(ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("parent.kicad_sch"),
+            at: PointKey(10, 20),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/STALE_PIN", "STALE_PIN", "/STALE_PIN", "/parent"),
+        });
+
+        let mut child = test_net_subgraph(
+            2,
+            test_net_connection("/CHILD", "CHILD", "/CHILD", ""),
+            Vec::new(),
+            "",
+        );
+        child.sheet_instance_path = "/parent/child".to_string();
+        child.hier_ports.push(ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(30, 40),
+            connection: test_net_connection(
+                "/STALE_PORT",
+                "STALE_PORT",
+                "/STALE_PORT",
+                "/parent/child",
+            ),
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![parent, child]);
+        graph.live_subgraphs[0].borrow().hier_sheet_pins[0]
+            .borrow()
+            .connection
+            .borrow_mut()
+            .local_name = "LIVE_PIN".to_string();
+        graph.live_subgraphs[1].borrow().hier_ports[0]
+            .borrow()
+            .connection
+            .borrow_mut()
+            .local_name = "LIVE_PORT".to_string();
+
+        assert_eq!(
+            super::reduced_project_sheet_pin_names(&graph, "/parent", Some("child-sheet")),
+            BTreeSet::from(["LIVE_PIN".to_string()])
+        );
+        assert_eq!(
+            super::reduced_project_hier_port_names_in_sheet(&graph, "/parent/child"),
+            BTreeSet::from(["LIVE_PORT".to_string()])
+        );
+        assert_eq!(
+            super::reduced_project_hier_port_entries_in_sheet(&graph, "/parent/child"),
+            vec![(
+                "LIVE_PORT".to_string(),
+                std::path::PathBuf::from("child.kicad_sch"),
+            )]
+        );
     }
 
     #[test]
