@@ -8469,7 +8469,7 @@ fn reduced_seeded_symbol_pin_connection(
         members: Vec::new(),
     };
 
-    if reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref()) == Some(6) {
+    if reduced_power_pin_driver_priority(symbol, pin.electrical_type.as_deref()).is_some() {
         if let Some(name) = reduced_power_pin_driver_text(symbol, pin) {
             connection.name = name.clone();
             connection.local_name = name.clone();
@@ -11818,6 +11818,39 @@ mod tests {
         assert_eq!(connection.name, "Net-(U1-A)");
         assert_eq!(connection.local_name, "Net-(U1-A)");
         assert_eq!(connection.full_local_name, "Net-(U1-A)");
+    }
+
+    #[test]
+    fn reduced_seeded_symbol_pin_connection_uses_local_power_pin_name() {
+        let mut symbol = crate::model::Symbol::new();
+        let mut lib_symbol = crate::model::LibSymbol::new("power:LOCAL_PWR".to_string());
+        lib_symbol.power = true;
+        lib_symbol.local_power = true;
+        symbol.lib_symbol = Some(lib_symbol);
+        symbol.set_field_text(
+            crate::model::PropertyKind::SymbolReference,
+            "#PWR1".to_string(),
+        );
+
+        let pin = super::ProjectedSymbolPin {
+            at: [0.0, 0.0],
+            name: Some("LOCAL_PWR".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("power_in".to_string()),
+            visible: true,
+        };
+        let unit_pins = vec![pin.clone()];
+
+        let connection =
+            super::reduced_seeded_symbol_pin_connection(&symbol, &pin, &unit_pins, "/sheet/");
+
+        assert_eq!(
+            connection.connection_type,
+            super::ReducedProjectConnectionType::Net
+        );
+        assert_eq!(connection.name, "LOCAL_PWR");
+        assert_eq!(connection.local_name, "LOCAL_PWR");
+        assert_eq!(connection.full_local_name, "LOCAL_PWR");
     }
 
     #[test]
