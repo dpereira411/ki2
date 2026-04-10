@@ -765,7 +765,6 @@ pub(crate) struct ReducedProjectStrongDriver {
 type LiveProjectStrongDriverHandle = Rc<RefCell<LiveProjectStrongDriverOwner>>;
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 enum LiveProjectStrongDriverOwner {
     Floating {
         identity: Option<ReducedProjectDriverIdentity>,
