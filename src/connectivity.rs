@@ -247,6 +247,51 @@ impl ReducedProjectSubgraphEntry {
     }
 }
 
+// Upstream parity: reduced predicate for the `CONNECTION_GRAPH::processSubGraphs()` branch that
+// skips merge and bus-neighbor candidates without `CONNECTION_SUBGRAPH::m_strong_driver`. This is
+// still local-only-transitional because the Rust graph lacks the real mutable `m_strong_driver`
+// bit; it mirrors the exercised decision from reduced drivers and KiCad's unique sheet-pin
+// promotion branch until a fuller live `CONNECTION_SUBGRAPH` owner stores that state directly.
+fn reduced_project_subgraph_has_process_strong_driver(
+    subgraphs: &[ReducedProjectSubgraphEntry],
+    subgraphs_by_sheet_and_name: &BTreeMap<(String, String), Vec<usize>>,
+    subgraph_index: usize,
+) -> bool {
+    let Some(subgraph) = subgraphs.get(subgraph_index) else {
+        return false;
+    };
+
+    if subgraph
+        .drivers
+        .iter()
+        .any(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+    {
+        return true;
+    }
+
+    let chosen_driver = subgraph
+        .chosen_driver_index
+        .and_then(|index| subgraph.drivers.get(index))
+        .or_else(|| subgraph.drivers.first());
+
+    if !matches!(
+        chosen_driver.map(|driver| driver.kind),
+        Some(ReducedProjectDriverKind::SheetPin)
+    ) {
+        return false;
+    }
+
+    let driver_name = if !subgraph.driver_connection.full_local_name.is_empty() {
+        &subgraph.driver_connection.full_local_name
+    } else {
+        &subgraph.driver_connection.name
+    };
+
+    !subgraphs_by_sheet_and_name
+        .get(&(subgraph.sheet_instance_path.clone(), driver_name.clone()))
+        .is_some_and(|same_sheet| same_sheet.iter().any(|index| *index != subgraph_index))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ReducedProjectDriverIdentity {
     Label {
@@ -462,7 +507,9 @@ impl LiveProjectStrongDriverOwner {
         target.priority = self.priority();
         match self {
             LiveProjectStrongDriverOwner::Floating { connection, .. } => {
-                connection.borrow().project_onto_reduced(&mut target.connection);
+                connection
+                    .borrow()
+                    .project_onto_reduced(&mut target.connection);
             }
             LiveProjectStrongDriverOwner::Label { owner, .. } => {
                 owner
@@ -1268,7 +1315,9 @@ fn assign_reduced_bus_member_net_codes(
         }
     }
 
-    let mut queue = (0..members.len()).map(|index| vec![index]).collect::<Vec<_>>();
+    let mut queue = (0..members.len())
+        .map(|index| vec![index])
+        .collect::<Vec<_>>();
     let mut cursor = 0;
 
     while cursor < queue.len() {
@@ -4455,8 +4504,7 @@ impl LiveReducedSubgraph {
                         .name
                         .clone();
                     if old_candidate_name == old_name {
-                        let target_connection =
-                            candidate_handle.borrow().driver_connection.clone();
+                        let target_connection = candidate_handle.borrow().driver_connection.clone();
                         let changed = clone_live_connection_handle_from_handle_if_changed(
                             &target_connection,
                             &connection,
@@ -5353,7 +5401,10 @@ fn rebuild_reduced_project_graph_name_caches(
 
             for base_pin in &mut subgraph.base_pins {
                 assign_reduced_connection_net_codes(&mut base_pin.connection, &mut net_codes);
-                assign_reduced_connection_net_codes(&mut base_pin.driver_connection, &mut net_codes);
+                assign_reduced_connection_net_codes(
+                    &mut base_pin.driver_connection,
+                    &mut net_codes,
+                );
             }
 
             for driver in &mut subgraph.drivers {
@@ -7057,6 +7108,14 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             continue;
         }
 
+        if !reduced_project_subgraph_has_process_strong_driver(
+            &reduced_subgraphs,
+            &subgraphs_by_sheet_and_name,
+            parent_index,
+        ) {
+            continue;
+        }
+
         let Some(same_sheet_indexes) = subgraphs_by_sheet.get(&subgraph.sheet_instance_path) else {
             continue;
         };
@@ -7068,6 +7127,14 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             }
 
             let child = &reduced_subgraphs[*child_index];
+            if !reduced_project_subgraph_has_process_strong_driver(
+                &reduced_subgraphs,
+                &subgraphs_by_sheet_and_name,
+                *child_index,
+            ) {
+                continue;
+            }
+
             let mut child_names = child
                 .label_links
                 .iter()
@@ -16336,13 +16403,7 @@ mod tests {
         let mut graph = vec![
             test_net_subgraph(
                 1,
-                test_bus_connection(
-                    "/BUS",
-                    "BUS",
-                    "/BUS",
-                    "",
-                    vec![member_a, member_b],
-                ),
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member_a, member_b]),
                 Vec::new(),
                 "",
             ),
@@ -16707,7 +16768,10 @@ mod tests {
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(graph[1].driver_connection.full_local_name, "/PWR");
-        assert_eq!(graph[0].driver_connection.members[0].full_local_name, "/PWR");
+        assert_eq!(
+            graph[0].driver_connection.members[0].full_local_name,
+            "/PWR"
+        );
         assert_eq!(stale_members.len(), 1);
         assert_eq!(stale_members[0].borrow().full_local_name, "/PWR");
     }
@@ -17343,7 +17407,10 @@ mod tests {
             &mut stale_members,
         );
 
-        assert_eq!(live_subgraphs[1].borrow().driver_connection.borrow().name, "/PWR");
+        assert_eq!(
+            live_subgraphs[1].borrow().driver_connection.borrow().name,
+            "/PWR"
+        );
         assert_eq!(
             live_subgraphs[1]
                 .borrow()
@@ -18153,13 +18220,7 @@ mod tests {
             ),
             test_net_subgraph(
                 2,
-                test_bus_connection(
-                    "/BUS_B",
-                    "BUS_B",
-                    "/BUS_B",
-                    "",
-                    vec![old_member.clone()],
-                ),
+                test_bus_connection("/BUS_B", "BUS_B", "/BUS_B", "", vec![old_member.clone()]),
                 Vec::new(),
                 "",
             ),
@@ -18201,7 +18262,10 @@ mod tests {
             graph[0].driver_connection.members[0].full_local_name,
             "/UNRELATED"
         );
-        assert_eq!(graph[1].driver_connection.members[0].full_local_name, "/PWR");
+        assert_eq!(
+            graph[1].driver_connection.members[0].full_local_name,
+            "/PWR"
+        );
     }
 
     #[test]
@@ -18569,8 +18633,9 @@ mod tests {
 
     #[test]
     fn dynamic_power_hierarchy_preserves_text_driver_names_after_propagation() {
-        let root_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch");
+        let root_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch",
+        );
         let loaded = load_schematic_tree(&root_path).expect("load tree");
         let project = SchematicProject::from_load_result(loaded);
         let graph = project.reduced_project_net_graph(false);
@@ -18959,7 +19024,10 @@ mod tests {
         assert_eq!(graph[2].name, "PWR_ALT");
         assert_eq!(graph[2].driver_connection.name, "PWR_ALT");
         assert_eq!(graph[3].name, "PWR_ALT");
-        assert_eq!(graph[3].driver_connection.full_local_name, "/same-sheet/PWR_ALT");
+        assert_eq!(
+            graph[3].driver_connection.full_local_name,
+            "/same-sheet/PWR_ALT"
+        );
     }
 
     #[test]
@@ -20373,6 +20441,94 @@ mod tests {
             graph[0].driver_connection.members[0].full_local_name,
             "/child/BUS0"
         );
+    }
+
+    #[test]
+    fn reduced_process_subgraphs_strong_driver_gate_promotes_unique_sheet_pin_only() {
+        let sheet_pin_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::SheetPin,
+            priority: super::reduced_sheet_pin_driver_priority(),
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            identity: None,
+        };
+        let pin_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Pin,
+            priority: super::reduced_pin_driver_priority(),
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            identity: None,
+        };
+        let label_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Label,
+            priority: super::reduced_local_label_driver_priority(),
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            identity: None,
+        };
+
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![test_bus_member("SIG", "SIG", "/SIG")],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![pin_driver],
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![sheet_pin_driver],
+                "",
+            ),
+            test_net_subgraph(
+                4,
+                test_net_connection("/SIG", "SIG", "/SIG", ""),
+                vec![label_driver],
+                "",
+            ),
+        ];
+        subgraphs[2].chosen_driver_index = Some(0);
+        subgraphs[3].chosen_driver_index = Some(0);
+
+        let unique_sheet_pin_map =
+            BTreeMap::from([(("".to_string(), "/SIG".to_string()), vec![2])]);
+        assert!(!super::reduced_project_subgraph_has_process_strong_driver(
+            &subgraphs,
+            &unique_sheet_pin_map,
+            0
+        ));
+        assert!(!super::reduced_project_subgraph_has_process_strong_driver(
+            &subgraphs,
+            &unique_sheet_pin_map,
+            1
+        ));
+        assert!(super::reduced_project_subgraph_has_process_strong_driver(
+            &subgraphs,
+            &unique_sheet_pin_map,
+            2
+        ));
+        assert!(super::reduced_project_subgraph_has_process_strong_driver(
+            &subgraphs,
+            &unique_sheet_pin_map,
+            3
+        ));
+
+        let conflicting_sheet_pin_map =
+            BTreeMap::from([(("".to_string(), "/SIG".to_string()), vec![2, 3])]);
+        assert!(!super::reduced_project_subgraph_has_process_strong_driver(
+            &subgraphs,
+            &conflicting_sheet_pin_map,
+            2
+        ));
     }
 }
 impl PartialEq for LiveReducedLabelLink {
