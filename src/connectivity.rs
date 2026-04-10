@@ -664,7 +664,8 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             continue;
         }
 
-        for candidate_index in (parent_index + 1)..subgraphs.len() {
+        let mut candidate_index = parent_index + 1;
+        while candidate_index < subgraphs.len() {
             if absorbed[candidate_index]
                 || subgraphs[candidate_index].sheet_instance_path != parent_sheet
                 || subgraphs[candidate_index].driver_connection.connection_type != parent_type
@@ -684,10 +685,12 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
                     candidate_index,
                 )
             {
+                candidate_index += 1;
                 continue;
             }
 
             let candidate = subgraphs[candidate_index].clone();
+            reduced_project_absorb_push_secondary_test_names(&candidate, &mut parent_test_names);
             let parent = &mut subgraphs[parent_index];
             append_unique(&mut parent.points, candidate.points);
             append_unique(&mut parent.nodes, candidate.nodes);
@@ -706,6 +709,7 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             }
             reduced_project_resolve_absorbed_driver(parent);
             absorbed[candidate_index] = true;
+            candidate_index += 1;
         }
     }
 
@@ -11871,6 +11875,66 @@ mod tests {
                 .drivers
                 .iter()
                 .any(|driver| driver.connection.name == "/PWR")
+        );
+    }
+
+    #[test]
+    fn reduced_absorb_follows_absorbed_candidate_secondary_driver_names() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/CCC", "CCC", "/CCC", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/CCC", "CCC", "/CCC", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/CCC", "CCC", "/CCC", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+        subgraphs[2].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/CCC")
         );
     }
 
