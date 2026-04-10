@@ -876,8 +876,17 @@ impl LiveProjectStrongDriverOwner {
 }
 
 impl LiveProjectStrongDriverOwner {
-    fn full_name(&self) -> String {
-        self.connection_handle().borrow().name.clone()
+    // Upstream parity: local live-driver analogue for `CONNECTION_SUBGRAPH::GetNameForDriver()`
+    // comparisons. It intentionally reads shown/local driver text instead of the resolved
+    // connection name so secondary-driver promotion follows KiCad's driver-name matching branch.
+    fn driver_name(&self) -> String {
+        let connection = self.connection_handle();
+        let connection = connection.borrow();
+        if connection.local_name.is_empty() {
+            connection.name.clone()
+        } else {
+            connection.local_name.clone()
+        }
     }
 
     // Upstream parity: local live-driver analogue for reduced projection at the graph boundary.
@@ -4124,7 +4133,9 @@ impl LiveReducedSubgraph {
         let mut promoted = Vec::new();
 
         for secondary_driver in secondary_drivers {
-            if secondary_driver.borrow().full_name() == chosen_connection.borrow().name {
+            let secondary_name = secondary_driver.borrow().driver_name();
+
+            if secondary_name == chosen_connection.borrow().name {
                 continue;
             }
 
@@ -4141,7 +4152,7 @@ impl LiveReducedSubgraph {
                 }
 
                 if !handle.borrow().drivers.iter().any(|candidate_driver| {
-                    candidate_driver.borrow().full_name() == secondary_driver.borrow().full_name()
+                    candidate_driver.borrow().driver_name() == secondary_name
                 }) {
                     continue;
                 }
@@ -19338,20 +19349,16 @@ mod tests {
             .borrow_mut()
             .local_name = "OTHER".to_string();
 
-        let parent_component = LiveReducedSubgraph::collect_propagation_component_handles(
-            &handles[0],
-            &handles,
-        )
-        .into_iter()
-        .map(|handle| handle.borrow().source_index)
-        .collect::<Vec<_>>();
-        let child_component = LiveReducedSubgraph::collect_propagation_component_handles(
-            &handles[1],
-            &handles,
-        )
-        .into_iter()
-        .map(|handle| handle.borrow().source_index)
-        .collect::<Vec<_>>();
+        let parent_component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[0], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
+        let child_component =
+            LiveReducedSubgraph::collect_propagation_component_handles(&handles[1], &handles)
+                .into_iter()
+                .map(|handle| handle.borrow().source_index)
+                .collect::<Vec<_>>();
 
         assert_eq!(parent_component, vec![0]);
         assert_eq!(child_component, vec![1]);
@@ -19896,6 +19903,47 @@ mod tests {
         assert_eq!(promoted.len(), 1);
         assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
         assert!(!live_subgraphs[1].borrow().dirty);
+    }
+
+    #[test]
+    fn reduced_live_secondary_promotion_matches_driver_shown_names() {
+        let chosen_connection = test_net_connection("VCC", "VCC", "VCC", "");
+        let secondary_connection =
+            test_net_connection("/same/PWR_ALT", "PWR_ALT", "/same/PWR_ALT", "/same");
+        let candidate_connection = test_net_connection("PWR_ALT", "PWR_ALT", "PWR_ALT", "/same");
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                chosen_connection.clone(),
+                vec![
+                    test_power_driver(chosen_connection.clone()),
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: secondary_connection,
+                        identity: None,
+                    },
+                ],
+                "/same",
+            ),
+            test_net_subgraph(
+                2,
+                candidate_connection.clone(),
+                vec![test_power_driver(candidate_connection)],
+                "/same",
+            ),
+        ];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
+        let promoted = LiveReducedSubgraph::refresh_global_secondary_driver_promotions(
+            &live_subgraphs[0],
+            &global_subgraphs,
+        );
+
+        assert_eq!(promoted.len(), 1);
+        assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
     }
 
     #[test]
