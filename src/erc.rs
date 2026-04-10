@@ -2033,7 +2033,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
         let Some(sheet_path) = project
             .sheet_paths
             .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
+            .find(|sheet_path| sheet_path.instance_path == candidate.sheet_instance_path)
         else {
             continue;
         };

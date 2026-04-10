@@ -9898,6 +9898,7 @@ pub(crate) struct ReducedProjectBusToBusConflict {
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectBusEntryConflictCandidate {
+    pub(crate) sheet_instance_path: String,
     pub(crate) bus_entry_path: std::path::PathBuf,
     pub(crate) entry_at: [f64; 2],
     pub(crate) bus_name: String,
@@ -10207,6 +10208,7 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
         .is_some_and(|priority| priority >= 6);
 
     Some(ReducedProjectBusEntryConflictCandidate {
+        sheet_instance_path: subgraph.sheet_instance_path.clone(),
         bus_entry_path: bus_entry.schematic_path.clone(),
         entry_at,
         bus_name,
