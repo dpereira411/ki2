@@ -2565,19 +2565,22 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
         .into_iter()
         .filter(|subgraph| !subgraph.wire_items.iter().any(|item| item.is_bus_entry))
     {
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-        else {
-            continue;
-        };
         let mut has_bus_item = !subgraph.bus_items.is_empty();
         let mut has_net_item = !subgraph.wire_items.is_empty();
         let mut net_at = subgraph
             .wire_items
             .first()
             .map(|item| [f64::from_bits(item.start.0), f64::from_bits(item.start.1)]);
+        let mut diagnostic_path = subgraph
+            .wire_items
+            .first()
+            .map(|item| item.schematic_path.clone())
+            .or_else(|| {
+                subgraph
+                    .bus_items
+                    .first()
+                    .map(|item| item.schematic_path.clone())
+            });
 
         for label in &subgraph.label_links {
             if label.kind == LabelKind::Directive {
@@ -2593,6 +2596,7 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
             } else {
                 has_net_item = true;
                 net_at.get_or_insert([f64::from_bits(label.at.0), f64::from_bits(label.at.1)]);
+                diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
             }
         }
 
@@ -2606,6 +2610,7 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
             } else {
                 has_net_item = true;
                 net_at.get_or_insert([f64::from_bits(pin.at.0), f64::from_bits(pin.at.1)]);
+                diagnostic_path.get_or_insert_with(|| pin.schematic_path.clone());
             }
         }
 
@@ -2619,6 +2624,7 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
             } else {
                 has_net_item = true;
                 net_at.get_or_insert([f64::from_bits(port.at.0), f64::from_bits(port.at.1)]);
+                diagnostic_path.get_or_insert_with(|| port.schematic_path.clone());
             }
         }
 
@@ -2628,7 +2634,7 @@ pub fn check_bus_to_net_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                 code: "erc-bus-to-net-conflict",
                 kind: crate::diagnostic::DiagnosticKind::Validation,
                 message: "Invalid connection between bus and net items".to_string(),
-                path: Some(sheet_path.schematic_path.clone()),
+                path: diagnostic_path,
                 span: None,
                 line: None,
                 column: None,
@@ -2653,16 +2659,10 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
     let graph = project.reduced_project_net_graph(false);
 
     for subgraph in graph_run_erc_subgraphs(&graph) {
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == subgraph.sheet_instance_path)
-        else {
-            continue;
-        };
         let mut label_members = None::<Vec<String>>;
         let mut port_members = None::<Vec<String>>;
         let mut label_at = None::<[f64; 2]>;
+        let mut diagnostic_path = None::<std::path::PathBuf>;
         if let Some(connection) = subgraph.label_links.iter().find_map(|label| {
             matches!(
                 label.connection.connection_type,
@@ -2707,7 +2707,10 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                     crate::connectivity::ReducedProjectConnectionType::Bus
                         | crate::connectivity::ReducedProjectConnectionType::BusGroup
                 ) && matches!(label.kind, LabelKind::Local | LabelKind::Global))
-                .then_some([f64::from_bits(label.at.0), f64::from_bits(label.at.1)])
+                .then(|| {
+                    diagnostic_path.get_or_insert_with(|| label.schematic_path.clone());
+                    [f64::from_bits(label.at.0), f64::from_bits(label.at.1)]
+                })
             });
         }
 
@@ -2733,7 +2736,7 @@ pub fn check_bus_to_bus_conflicts(project: &SchematicProject) -> Vec<Diagnostic>
                 "Bus label and port do not share members at {}, {}",
                 label_at[0], label_at[1]
             ),
-            path: Some(sheet_path.schematic_path.clone()),
+            path: diagnostic_path,
             span: None,
             line: None,
             column: None,
@@ -2923,7 +2926,7 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
                 "Net {net_name} is graphically connected to bus {bus_name} but is not a member of that bus at {}, {}",
                 entry_at[0], entry_at[1]
             ),
-            path: Some(sheet_path.schematic_path.clone()),
+            path: Some(bus_entry.schematic_path.clone()),
             span: None,
             line: None,
             column: None,
