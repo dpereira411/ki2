@@ -8633,21 +8633,10 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
 // keeps the "no_connect pin has another owner at the same point" test on the shared graph owner
 // instead of rebuilding it from ERC-local connection-point snapshots. Remaining divergence is
 // fuller live `SCH_PIN` / item ownership and marker attachment.
-pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
-    graph: &ReducedProjectNetGraph,
+fn reduced_project_no_connect_pin_has_point_owner(
+    subgraph: &ReducedProjectSubgraphEntry,
     pin: &ReducedProjectSymbolPin,
 ) -> bool {
-    if pin.electrical_type.as_deref() != Some("no_connect") {
-        return false;
-    }
-
-    let Some(subgraph) = pin
-        .subgraph_index
-        .and_then(|index| graph.subgraphs.get(index))
-    else {
-        return false;
-    };
-
     subgraph.base_pins.iter().any(|base_pin| {
         base_pin.key.at == pin.at && base_pin.electrical_type.as_deref() != Some("no_connect")
     }) || subgraph
@@ -8664,6 +8653,72 @@ pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
             .iter()
             .any(|sheet_pin| sheet_pin.at == pin.at)
         || subgraph.hier_ports.iter().any(|port| port.at == pin.at)
+}
+
+// upstream: ERC_TESTER::TestNoConnectPins point-owner query or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still approximates connected-item ownership from reduced live subgraph payload
+// instead of final live `SCH_PIN` / `CONNECTION_SUBGRAPH` item links
+// local_only_reason: moves the exercised no-connect pin point-owner check onto the active live
+// subgraph owner while final pin item ownership is still reduced
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: no-connect pin checks can query live connected-item state directly
+fn live_reduced_no_connect_pin_has_point_owner(
+    subgraph: &LiveReducedSubgraph,
+    pin: &ReducedProjectSymbolPin,
+) -> bool {
+    subgraph.base_pins.iter().any(|base_pin| {
+        let base_pin = base_pin.borrow();
+        base_pin.pin.key.at == pin.at
+            && base_pin.pin.electrical_type.as_deref() != Some("no_connect")
+    }) || subgraph.wire_items.iter().any(|item| {
+        let item = item.borrow();
+        item.start == pin.at || item.end == pin.at
+    }) || subgraph.bus_items.iter().any(|item| {
+        let item = item.borrow();
+        item.start == pin.at || item.end == pin.at
+    }) || subgraph
+        .label_links
+        .iter()
+        .any(|label| label.borrow().at == pin.at)
+        || subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|sheet_pin| sheet_pin.borrow().at == pin.at)
+        || subgraph
+            .hier_ports
+            .iter()
+            .any(|port| port.borrow().at == pin.at)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// Upstream parity: reduced local analogue for the no-connect pin connectivity branch in
+// `ERC_TESTER::TestNoConnectPins()`. This is not a 1:1 connectable-item query because the Rust
+// graph still projects symbol pins and wire/label owners into reduced subgraph snapshots, but it
+// now prefers the active live subgraph owner for exercised point-owner checks instead of reading
+// only the reduced clone. Remaining divergence is fuller live `SCH_PIN` / item ownership and
+// marker attachment.
+pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
+    graph: &ReducedProjectNetGraph,
+    pin: &ReducedProjectSymbolPin,
+) -> bool {
+    if pin.electrical_type.as_deref() != Some("no_connect") {
+        return false;
+    }
+
+    let Some(index) = pin.subgraph_index else {
+        return false;
+    };
+
+    if let Some(subgraph) = graph.live_subgraphs.get(index) {
+        return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
+    }
+
+    graph
+        .subgraphs
+        .get(index)
+        .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(subgraph, pin))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -14131,7 +14186,7 @@ mod tests {
         ReducedNoConnectPoint, ReducedProjectBasePin, ReducedProjectBusNeighborLink,
         ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectDriverKind,
         ReducedProjectLabelNameCaches, ReducedProjectNetGraph, ReducedProjectStrongDriver,
-        ReducedProjectSubgraphEntry, ReducedSubgraphWireItem,
+        ReducedProjectSubgraphEntry, ReducedProjectSymbolPin, ReducedSubgraphWireItem,
         apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
         clone_reduced_connection_into_live_connection_owner,
@@ -19373,6 +19428,62 @@ mod tests {
         ));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn live_no_connect_pin_owner_reads_live_graph_point_owners() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            Vec::new(),
+            "",
+        );
+        subgraph.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
+                at: PointKey(0, 0),
+                name: Some("NC".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("no_connect".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0, 0),
+            end: PointKey(10, 0),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let mut graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.subgraphs[0].wire_items.clear();
+
+        let pin = ReducedProjectSymbolPin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: String::new(),
+            at: PointKey(0, 0),
+            name: Some("NC".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("no_connect".to_string()),
+            visible: true,
+            reference: Some("U1".to_string()),
+            is_power_symbol: false,
+            subgraph_index: Some(0),
+        };
+
+        assert!(super::reduced_project_no_connect_pin_has_connected_owner(
+            &graph, &pin,
+        ));
     }
 
     #[test]
