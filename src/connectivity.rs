@@ -4090,7 +4090,14 @@ impl LiveReducedSubgraph {
             };
 
             for driver in candidate_drivers {
-                let driver_connection = driver.borrow().connection_handle();
+                let driver = driver.borrow();
+                if !matches!(
+                    driver.kind(),
+                    ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+                ) {
+                    continue;
+                }
+                let driver_connection = driver.connection_handle();
                 if let Some(member) =
                     parent_connection.find_member_for_connection(&driver_connection.borrow())
                 {
@@ -15912,6 +15919,78 @@ mod tests {
 
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIG1");
         assert_eq!(graph[1].name, "/SIG1");
+        assert_eq!(recurse_targets.len(), 1);
+        assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_secondary_retry_skips_ordinary_pin_driver() {
+        let member_a = test_bus_member("SIGA", "SIGA", "/SIGA");
+        let member_b = test_bus_member("SIGB", "SIGB", "/SIGB");
+        let stale_link_member = test_bus_member("ALT", "ALT", "/ALT");
+        let pin_connection = test_net_connection("/SIGA", "SIGA", "/SIGA", "");
+        let label_connection = test_net_connection("/SIGB", "SIGB", "/SIGB", "");
+        let other_label_connection = test_net_connection("/OTHER", "OTHER", "/OTHER", "");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![member_a, member_b],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Pin,
+                        priority: super::reduced_pin_driver_priority(),
+                        connection: pin_connection,
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: label_connection,
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_hierarchical_label_driver_priority(),
+                        connection: other_label_connection,
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: stale_link_member.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member: stale_link_member,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        let recurse_targets = LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIGB");
         assert_eq!(recurse_targets.len(), 1);
         assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
     }
