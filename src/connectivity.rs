@@ -461,6 +461,110 @@ fn reduced_project_rename_weak_conflict_subgraphs(
     *subgraphs_by_sheet_and_name = rebuilt_by_sheet_and_name;
 }
 
+fn push_unique<T: PartialEq>(target: &mut Vec<T>, value: T) {
+    if !target.contains(&value) {
+        target.push(value);
+    }
+}
+
+fn append_unique<T: PartialEq>(target: &mut Vec<T>, values: Vec<T>) {
+    for value in values {
+        push_unique(target, value);
+    }
+}
+
+// Upstream parity: reduced local analogue for the same-sheet/same-type primary-driver slice of
+// `CONNECTION_SUBGRAPH::Absorb()` as called from `CONNECTION_GRAPH::processSubGraphs()`. This is
+// still partial because the Rust graph lacks `m_absorbed_by`, live item pointers, bus-entry
+// connected-bus ownership, and the full secondary-driver traversal before `ResolveDrivers()`, but
+// it now moves items from exact matching non-bus candidate subgraphs onto one reduced owner before
+// hierarchy, bus-link, ERC, or export lookups observe them. Bus-entry carriers are deliberately
+// skipped until the fuller live subgraph can preserve their connected-bus item topology while
+// absorbing; same-sheet bus-member names are also skipped for the same reason.
+fn reduced_project_absorb_primary_same_name_subgraphs(
+    subgraphs: &mut Vec<ReducedProjectSubgraphEntry>,
+) {
+    let mut absorbed = vec![false; subgraphs.len()];
+    let subgraphs_by_sheet_and_name = reduced_project_rebuild_process_name_indexes(subgraphs).1;
+
+    for parent_index in 0..subgraphs.len() {
+        if absorbed[parent_index]
+            || subgraphs[parent_index].driver_connection.connection_type
+                != ReducedProjectConnectionType::Net
+            || !subgraphs[parent_index].bus_items.is_empty()
+            || !reduced_project_subgraph_has_process_strong_driver(
+                subgraphs,
+                &subgraphs_by_sheet_and_name,
+                parent_index,
+            )
+        {
+            continue;
+        }
+
+        let parent_sheet = subgraphs[parent_index].sheet_instance_path.clone();
+        let parent_name = subgraphs[parent_index].driver_connection.name.clone();
+        if subgraphs.iter().any(|candidate| {
+            candidate.sheet_instance_path == parent_sheet
+                && candidate.bus_members.iter().any(|member| {
+                    reduced_bus_member_leaf_objects(std::slice::from_ref(member))
+                        .iter()
+                        .any(|leaf| leaf.full_local_name == parent_name || leaf.name == parent_name)
+                })
+        }) {
+            continue;
+        }
+
+        for candidate_index in (parent_index + 1)..subgraphs.len() {
+            if absorbed[candidate_index]
+                || subgraphs[candidate_index].sheet_instance_path != parent_sheet
+                || subgraphs[candidate_index].driver_connection.connection_type
+                    != ReducedProjectConnectionType::Net
+                || subgraphs[candidate_index].driver_connection.name != parent_name
+                || !subgraphs[candidate_index].bus_items.is_empty()
+                || !reduced_project_subgraph_has_process_strong_driver(
+                    subgraphs,
+                    &subgraphs_by_sheet_and_name,
+                    candidate_index,
+                )
+            {
+                continue;
+            }
+
+            let candidate = subgraphs[candidate_index].clone();
+            let parent = &mut subgraphs[parent_index];
+            append_unique(&mut parent.points, candidate.points);
+            append_unique(&mut parent.nodes, candidate.nodes);
+            append_unique(&mut parent.base_pins, candidate.base_pins);
+            append_unique(&mut parent.label_links, candidate.label_links);
+            append_unique(&mut parent.no_connect_points, candidate.no_connect_points);
+            append_unique(&mut parent.hier_sheet_pins, candidate.hier_sheet_pins);
+            append_unique(&mut parent.hier_ports, candidate.hier_ports);
+            append_unique(&mut parent.bus_members, candidate.bus_members);
+            append_unique(&mut parent.bus_items, candidate.bus_items);
+            append_unique(&mut parent.wire_items, candidate.wire_items);
+            append_unique(&mut parent.drivers, candidate.drivers);
+            parent.has_no_connect |= candidate.has_no_connect;
+            if parent.class.is_empty() {
+                parent.class = candidate.class;
+            }
+            absorbed[candidate_index] = true;
+        }
+    }
+
+    let mut next_code = 1;
+    subgraphs.retain_mut(|subgraph| {
+        let keep = !absorbed
+            .get(subgraph.subgraph_code.saturating_sub(1))
+            .copied()
+            .unwrap_or(false);
+        if keep {
+            subgraph.subgraph_code = next_code;
+            next_code += 1;
+        }
+        keep
+    });
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ReducedProjectDriverIdentity {
     Label {
@@ -7203,6 +7307,58 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
         &mut subgraphs_by_name,
         &mut subgraphs_by_sheet_and_name,
     );
+    reduced_project_absorb_primary_same_name_subgraphs(&mut reduced_subgraphs);
+    subgraphs_by_sheet_and_name =
+        reduced_project_rebuild_process_name_indexes(&reduced_subgraphs).1;
+
+    pin_subgraph_identities.clear();
+    pin_subgraph_identities_by_location.clear();
+    point_subgraph_identities.clear();
+    label_subgraph_identities.clear();
+    no_connect_subgraph_identities.clear();
+
+    for (index, subgraph) in reduced_subgraphs.iter().enumerate() {
+        for base_pin in &subgraph.base_pins {
+            pin_subgraph_identities.insert(base_pin.key.clone(), index);
+            pin_subgraph_identities_by_location.insert(
+                ReducedProjectPinIdentityKey {
+                    sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
+                    symbol_uuid: base_pin.key.symbol_uuid.clone(),
+                    at: base_pin.key.at,
+                    number: base_pin.key.number.clone(),
+                },
+                index,
+            );
+        }
+        for point in &subgraph.points {
+            point_subgraph_identities.insert(
+                ReducedProjectPointIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: *point,
+                },
+                index,
+            );
+        }
+        for label in &subgraph.label_links {
+            label_subgraph_identities.insert(
+                ReducedProjectLabelIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: label.at,
+                    kind: reduced_label_kind_sort_key(label.kind),
+                },
+                index,
+            );
+        }
+        for point in &subgraph.no_connect_points {
+            no_connect_subgraph_identities.insert(
+                ReducedProjectNoConnectIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: *point,
+                },
+                index,
+            );
+        }
+    }
 
     let subgraphs_by_sheet = reduced_subgraphs.iter().enumerate().fold(
         BTreeMap::<String, Vec<usize>>::new(),
@@ -11258,7 +11414,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_project_subgraph_lookup_keeps_first_same_sheet_duplicate_name() {
+    fn reduced_project_subgraph_lookup_absorbs_same_sheet_duplicate_name() {
         let path = env::temp_dir().join(format!(
             "ki2_connectivity_duplicate_sheet_name_{}.kicad_sch",
             SystemTime::now()
@@ -11294,7 +11450,18 @@ mod tests {
             .expect("first point subgraph");
         let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("second point subgraph");
-        assert_ne!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        assert!(
+            first_by_point
+                .points
+                .contains(&super::point_key([10.0, 0.0]))
+        );
+        assert!(
+            first_by_point
+                .points
+                .contains(&super::point_key([10.0, 20.0]))
+        );
+
         let by_name =
             find_reduced_project_subgraph_by_name(&graph, &first_by_point.name, root_sheet)
                 .expect("same-sheet lookup");
@@ -11302,6 +11469,10 @@ mod tests {
             .expect("global same-name lookup");
         assert_eq!(by_name.subgraph_code, first_by_point.subgraph_code);
         assert_eq!(by_first.subgraph_code, first_by_point.subgraph_code);
+        assert_eq!(
+            super::collect_reduced_project_subgraphs_by_name(&graph, &first_by_point.name).len(),
+            1
+        );
 
         let _ = fs::remove_file(path);
     }
