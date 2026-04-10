@@ -1848,47 +1848,10 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
             continue;
         };
 
-        let mut all_pins = label_subgraph.pin_count;
-        let mut local_pins = label_subgraph.pin_count;
-        let mut has_no_connect = label_subgraph.has_no_connect;
-        let mut has_local_hierarchy = label_subgraph.has_local_hierarchy;
-
-        if !label_subgraph.net_name.is_empty() {
-            let neighbors =
-                collect_reduced_project_subgraphs_by_name(&graph, &label_subgraph.net_name);
-            for (
-                neighbor_sheet_instance_path,
-                neighbor_subgraph_code,
-                neighbor_pin_count,
-                neighbor_has_no_connect,
-                neighbor_has_local_hierarchy,
-            ) in neighbors.into_iter().map(|neighbor| {
-                let neighbor_has_local_hierarchy =
-                    !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
-
-                (
-                    neighbor.sheet_instance_path.clone(),
-                    neighbor.subgraph_code,
-                    neighbor.base_pins.len(),
-                    neighbor.has_no_connect,
-                    neighbor_has_local_hierarchy,
-                )
-            }) {
-                if neighbor_sheet_instance_path == label_subgraph.sheet_instance_path
-                    && neighbor_subgraph_code == label_subgraph.subgraph_code
-                {
-                    continue;
-                }
-
-                all_pins += neighbor_pin_count;
-                has_no_connect |= neighbor_has_no_connect;
-
-                if neighbor_sheet_instance_path == label_subgraph.sheet_instance_path {
-                    local_pins += neighbor_pin_count;
-                    has_local_hierarchy |= neighbor_has_local_hierarchy;
-                }
-            }
-        }
+        let all_pins = label_subgraph.all_pins;
+        let local_pins = label_subgraph.local_pins;
+        let has_no_connect = label_subgraph.has_no_connect;
+        let has_local_hierarchy = label_subgraph.has_local_hierarchy;
 
         for label in label_subgraph.label_links {
             if label.kind == LabelKind::Directive {

@@ -9934,9 +9934,8 @@ pub(crate) struct ReducedProjectLabelMultipleWires {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectLabelConnectivitySubgraph {
     pub(crate) sheet_instance_path: String,
-    pub(crate) subgraph_code: usize,
-    pub(crate) net_name: String,
-    pub(crate) pin_count: usize,
+    pub(crate) all_pins: usize,
+    pub(crate) local_pins: usize,
     pub(crate) has_no_connect: bool,
     pub(crate) has_local_hierarchy: bool,
     pub(crate) label_links: Vec<ReducedLabelLink>,
@@ -10381,14 +10380,41 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             || subgraph_index.is_some_and(|index| {
                 reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
             });
+        let mut all_pins = pin_count;
+        let mut local_pins = pin_count;
+        let mut aggregate_has_no_connect = has_no_connect;
+        let mut aggregate_has_local_hierarchy = has_local_hierarchy;
+
+        if !subgraph.driver_connection.name.is_empty() {
+            for neighbor in
+                collect_reduced_project_subgraphs_by_name(graph, &subgraph.driver_connection.name)
+            {
+                if neighbor.sheet_instance_path == subgraph.sheet_instance_path
+                    && neighbor.subgraph_code == subgraph.subgraph_code
+                {
+                    continue;
+                }
+
+                let neighbor_pin_count = neighbor.base_pins.len();
+                let neighbor_has_local_hierarchy =
+                    !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
+
+                all_pins += neighbor_pin_count;
+                aggregate_has_no_connect |= neighbor.has_no_connect;
+
+                if neighbor.sheet_instance_path == subgraph.sheet_instance_path {
+                    local_pins += neighbor_pin_count;
+                    aggregate_has_local_hierarchy |= neighbor_has_local_hierarchy;
+                }
+            }
+        }
 
         label_subgraphs.push(ReducedProjectLabelConnectivitySubgraph {
             sheet_instance_path: subgraph.sheet_instance_path.clone(),
-            subgraph_code: subgraph.subgraph_code,
-            net_name: subgraph.driver_connection.name.clone(),
-            pin_count,
-            has_no_connect,
-            has_local_hierarchy,
+            all_pins,
+            local_pins,
+            has_no_connect: aggregate_has_no_connect,
+            has_local_hierarchy: aggregate_has_local_hierarchy,
             label_links: subgraph.label_links.clone(),
         });
     }
