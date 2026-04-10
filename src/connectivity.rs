@@ -473,6 +473,14 @@ fn append_unique<T: PartialEq>(target: &mut Vec<T>, values: Vec<T>) {
     }
 }
 
+// Upstream parity: CONNECTION_GRAPH::processSubGraphs invalidated-subgraph ResolveDrivers tail
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: reranks reduced strong-driver snapshots instead of invoking live
+// `CONNECTION_SUBGRAPH::ResolveDrivers()` on pointer-owned items after `Absorb()`
+// local_only_reason: the reduced graph still stores absorbed item/driver data in snapshot vectors
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with real `m_drivers` / `m_driver`
+// remove_when: absorbed subgraph mutation and driver resolution run on live subgraph objects
 fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraphEntry) {
     let Some((index, driver)) =
         subgraph
@@ -494,11 +502,28 @@ fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraph
     subgraph.sync_boundary_state_from_driver_owner();
 }
 
+// Upstream parity: CONNECTION_GRAPH::processSubGraphs candidate driver name comparison
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: compares reduced projected `name` / `full_local_name` strings instead of
+// `SCH_CONNECTION::Name( true )`
+// local_only_reason: reduced connections are not yet live `SCH_CONNECTION` objects
+// replaced_by: fuller live `SCH_CONNECTION` analogue with `Name(true)` semantics
+// remove_when: processSubGraphs candidate matching uses live connection objects
 fn reduced_project_driver_match_name(connection: &ReducedProjectConnection, name: &str) -> bool {
     connection.name == name
         || (!connection.full_local_name.is_empty() && connection.full_local_name == name)
 }
 
+// Upstream parity: CONNECTION_GRAPH::processSubGraphs candidate primary/secondary-driver match branch
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: evaluates reduced label/power driver records and skips sheet pins, but still lacks
+// full `SCH_ITEM*` default-connection ownership and absorbed-pointer traversal
+// local_only_reason: same-type reduced absorption needs a graph-owned match predicate before the
+// fuller live subgraph owner exists
+// replaced_by: fuller `CONNECTION_SUBGRAPH` candidate loop using `getDefaultConnection()`
+// remove_when: processSubGraphs matching runs on live `CONNECTION_SUBGRAPH` item sets
 fn reduced_project_absorb_candidate_matches_name(
     candidate: &ReducedProjectSubgraphEntry,
     name: &str,
