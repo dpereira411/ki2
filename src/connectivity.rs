@@ -9920,6 +9920,12 @@ pub(crate) struct ReducedProjectFloatingWire {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectDanglingWireEndpoint {
+    pub(crate) is_bus_entry: bool,
+    pub(crate) diagnostic_path: std::path::PathBuf,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::ercCheckBusToNetConflicts bus/net item classification branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -10240,6 +10246,53 @@ pub(crate) fn reduced_project_subgraph_floating_wire(
             .first()
             .map(|item| item.schematic_path.clone()),
     })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints endpoint dangling branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still derives dangling state from reduced endpoint ownership rather than live
+// `SCH_LINE::IsStartDangling()` / `SCH_BUS_WIRE_ENTRY::IsStartDangling()` flags
+// local_only_reason: keeps endpoint ownership and same-endpoint wire counting on the shared graph
+// owner instead of duplicating reduced wire-item scans inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / line and bus-entry owner graph
+// remove_when: ERC can query live dangling endpoint state directly from graph item links
+pub(crate) fn reduced_project_subgraph_dangling_wire_endpoints(
+    graph: &ReducedProjectNetGraph,
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Vec<ReducedProjectDanglingWireEndpoint> {
+    let mut endpoints = Vec::new();
+
+    for wire_item in &subgraph.wire_items {
+        for endpoint in [wire_item.start, wire_item.end] {
+            let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+            let endpoint_matches = |point: PointKey| {
+                points_equal(
+                    endpoint_at,
+                    [f64::from_bits(point.0), f64::from_bits(point.1)],
+                )
+            };
+            let endpoint_has_owner =
+                reduced_project_wire_endpoint_has_graph_owner(graph, subgraph, wire_item, endpoint);
+            let endpoint_wire_count = subgraph
+                .wire_items
+                .iter()
+                .filter(|other| endpoint_matches(other.start) || endpoint_matches(other.end))
+                .count();
+
+            if endpoint_has_owner || endpoint_wire_count > 1 {
+                continue;
+            }
+
+            endpoints.push(ReducedProjectDanglingWireEndpoint {
+                is_bus_entry: wire_item.is_bus_entry,
+                diagnostic_path: wire_item.schematic_path.clone(),
+            });
+        }
+    }
+
+    endpoints
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(

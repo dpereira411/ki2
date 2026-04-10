@@ -7,19 +7,19 @@ use crate::connectivity::{
     reduced_project_sheet_pin_is_dangling, reduced_project_sheet_pin_names,
     reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_bus_to_bus_conflict, reduced_project_subgraph_bus_to_net_conflict,
-    reduced_project_subgraph_driver_conflict, reduced_project_subgraph_floating_wire,
+    reduced_project_subgraph_dangling_wire_endpoints, reduced_project_subgraph_driver_conflict,
+    reduced_project_subgraph_floating_wire,
     reduced_project_subgraph_has_local_hierarchy_via_bus_parents,
     reduced_project_subgraph_has_no_connect_via_parent_chain, reduced_project_subgraph_index,
     reduced_project_subgraphs, reduced_project_symbol_pin_inventories,
-    reduced_project_symbol_pin_net_name, reduced_project_wire_endpoint_has_graph_owner,
+    reduced_project_symbol_pin_net_name,
 };
 use crate::core::SchematicProject;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::loader::{
-    LoadedErcSeverity, points_equal, resolve_cross_reference_text_var,
-    resolve_label_connectivity_text_var, resolve_label_text_token_without_connectivity,
-    resolve_sheet_text_var, resolve_text_variables, resolved_sheet_text_state,
-    resolved_symbol_text_state,
+    LoadedErcSeverity, resolve_cross_reference_text_var, resolve_label_connectivity_text_var,
+    resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
+    resolved_sheet_text_state, resolved_symbol_text_state,
 };
 use crate::model::{LabelKind, Property, PropertyKind, SchItem};
 use std::collections::{BTreeMap, BTreeSet};
@@ -2048,47 +2048,22 @@ pub fn check_dangling_wire_endpoints(project: &SchematicProject) -> Vec<Diagnost
 
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph)
-        .into_iter()
-        .filter(|subgraph| !subgraph.wire_items.is_empty())
-    {
-        for wire_item in &subgraph.wire_items {
-            for endpoint in [wire_item.start, wire_item.end] {
-                let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
-                let endpoint_matches = |point: crate::connectivity::PointKey| {
-                    points_equal(
-                        endpoint_at,
-                        [f64::from_bits(point.0), f64::from_bits(point.1)],
-                    )
-                };
-                let endpoint_has_owner = reduced_project_wire_endpoint_has_graph_owner(
-                    &graph, subgraph, wire_item, endpoint,
-                );
-                let endpoint_wire_count = subgraph
-                    .wire_items
-                    .iter()
-                    .filter(|other| endpoint_matches(other.start) || endpoint_matches(other.end))
-                    .count();
-
-                if endpoint_has_owner || endpoint_wire_count > 1 {
-                    continue;
-                }
-
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    code: "erc-unconnected-wire-endpoint",
-                    kind: crate::diagnostic::DiagnosticKind::Validation,
-                    message: if wire_item.is_bus_entry {
-                        "Unconnected wire to bus entry".to_string()
-                    } else {
-                        "Unconnected wire endpoint".to_string()
-                    },
-                    path: Some(wire_item.schematic_path.clone()),
-                    span: None,
-                    line: None,
-                    column: None,
-                });
-            }
+    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
+        for endpoint in reduced_project_subgraph_dangling_wire_endpoints(&graph, &subgraph) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "erc-unconnected-wire-endpoint",
+                kind: crate::diagnostic::DiagnosticKind::Validation,
+                message: if endpoint.is_bus_entry {
+                    "Unconnected wire to bus entry".to_string()
+                } else {
+                    "Unconnected wire endpoint".to_string()
+                },
+                path: Some(endpoint.diagnostic_path),
+                span: None,
+                line: None,
+                column: None,
+            });
         }
     }
 
