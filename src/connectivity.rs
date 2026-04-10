@@ -9120,7 +9120,8 @@ where
 //   pin number so stacked same-position pins stay distinct through reduced candidate ranking
 // - reduced power-pin drivers now prefer the projected pin shown name before the symbol value so
 //   multi-pin power symbols keep per-pin driver text through reduced ranking
-// - ordinary pins whose library-symbol reference starts with `#` are skipped like upstream
+// - ordinary pins outside the netlist/board, or whose library-symbol reference starts with `#`,
+//   are skipped like upstream
 // Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
 // driver ownership.
 fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
@@ -9217,7 +9218,10 @@ where
                                 })
                             })
                             .or_else(|| {
-                                if reduced_symbol_lib_reference_starts_with_hash(symbol) {
+                                if !symbol.in_netlist
+                                    || !symbol.on_board
+                                    || reduced_symbol_lib_reference_starts_with_hash(symbol)
+                                {
                                     return None;
                                 }
 
@@ -12199,6 +12203,67 @@ mod tests {
 
         assert!(candidate.is_none());
         assert!(drivers.is_empty());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_driver_name_candidate_skips_ordinary_pin_outside_netlist() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_non_netlist_pin_driver_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:NoNetlist"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "NoNetlist" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "NoNetlist_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "device:NoNetlist")
+    (uuid "73050000-0000-0000-0000-000000000622")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "NoNetlist" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0))))"##,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let symbol = schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) => Some(symbol),
+                _ => None,
+            })
+            .expect("symbol");
+        let component =
+            super::connection_component_for_symbol_pin(&schematic, symbol, [0.0, 0.0], Some("1"))
+                .expect("component");
+
+        let candidate = super::resolve_reduced_driver_name_candidate_on_component(
+            &schematic,
+            &component,
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        );
+
+        assert!(candidate.is_none());
 
         let _ = fs::remove_file(path);
     }
