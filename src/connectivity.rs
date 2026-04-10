@@ -27527,6 +27527,125 @@ mod tests {
             Some(&vec![0])
         );
     }
+
+    #[test]
+    fn dynamic_power_fixture_child_hier_labels_resolve_param_per_instance() {
+        let root_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch",
+        );
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let child_paths = loaded
+            .sheet_paths
+            .iter()
+            .filter(|sheet_path| {
+                sheet_path
+                    .schematic_path
+                    .ends_with("erc_test_dynamic_power_symbol_subsheet.kicad_sch")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let child_schematic = loaded
+            .schematics
+            .iter()
+            .find(|schematic| {
+                schematic
+                    .path
+                    .ends_with("erc_test_dynamic_power_symbol_subsheet.kicad_sch")
+            })
+            .expect("child schematic");
+        let param_label = child_schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Label(label) if label.text == "${param}" => Some(label),
+                _ => None,
+            })
+            .expect("param hier label");
+
+        let mut shown = child_paths
+            .iter()
+            .map(|sheet_path| {
+                crate::loader::shown_label_text_without_connectivity(
+                    &loaded.schematics,
+                    &loaded.sheet_paths,
+                    sheet_path,
+                    loaded.project.as_ref(),
+                    None,
+                    param_label,
+                )
+            })
+            .collect::<Vec<_>>();
+        shown.sort();
+
+        assert_eq!(
+            shown,
+            vec![
+                "param_subsheet".to_string(),
+                "param_subsheet_1".to_string(),
+                "param_subsheet_2".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn dynamic_power_fixture_child_local_power_value_uses_sheet_number_text() {
+        let root_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../ki/tests/fixtures/erc_upstream_qa/projects/ERC_dynamic_power_symbol_test.kicad_sch",
+        );
+        let loaded = load_schematic_tree(&root_path).expect("load tree");
+        let child_paths = loaded
+            .sheet_paths
+            .iter()
+            .filter(|sheet_path| {
+                sheet_path
+                    .schematic_path
+                    .ends_with("erc_test_dynamic_power_symbol_subsheet.kicad_sch")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let child_schematic = loaded
+            .schematics
+            .iter()
+            .find(|schematic| {
+                schematic
+                    .path
+                    .ends_with("erc_test_dynamic_power_symbol_subsheet.kicad_sch")
+            })
+            .expect("child schematic");
+        let local_power = child_schematic
+            .screen
+            .items
+            .iter()
+            .find_map(|item| match item {
+                SchItem::Symbol(symbol) if symbol.lib_id == ".Project_Library:REF${#}" => {
+                    Some(symbol)
+                }
+                _ => None,
+            })
+            .expect("local power symbol");
+
+        let mut shown = child_paths
+            .iter()
+            .map(|sheet_path| {
+                crate::loader::resolved_symbol_text_property_value(
+                    &loaded.schematics,
+                    sheet_path,
+                    loaded.project.as_ref(),
+                    None,
+                    local_power,
+                    "Value",
+                )
+                .expect("resolved local power value")
+            })
+            .collect::<Vec<_>>();
+        shown.sort();
+
+        assert_eq!(
+            shown,
+            vec!["REF2".to_string(), "REF3".to_string(), "REF4".to_string()]
+        );
+    }
 }
 impl PartialEq for LiveReducedLabelLink {
     fn eq(&self, other: &Self) -> bool {

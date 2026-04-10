@@ -6017,8 +6017,27 @@ pub(crate) fn resolve_sheet_text_var(
         return None;
     }
 
-    let state = resolved_sheet_text_state(schematics, sheet_paths, loaded_path, current_variant)?;
     let token_upper = token.to_ascii_uppercase();
+
+    match token {
+        "#" => {
+            return Some(
+                loaded_path
+                    .page
+                    .clone()
+                    .unwrap_or_else(|| loaded_path.sheet_number.to_string()),
+            );
+        }
+        "##" => {
+            return Some(loaded_path.sheet_count.to_string());
+        }
+        "SHEETPATH" => {
+            return Some(loaded_path.instance_path.clone());
+        }
+        _ => {}
+    }
+
+    let state = resolved_sheet_text_state(schematics, sheet_paths, loaded_path, current_variant)?;
 
     if let Some(property) = state
         .properties
@@ -6043,20 +6062,6 @@ pub(crate) fn resolve_sheet_text_var(
     }
 
     match token {
-        "#" => {
-            return Some(
-                loaded_path
-                    .page
-                    .clone()
-                    .unwrap_or_else(|| loaded_path.sheet_number.to_string()),
-            );
-        }
-        "##" => {
-            return Some(loaded_path.sheet_count.to_string());
-        }
-        "SHEETPATH" => {
-            return Some(loaded_path.instance_path.clone());
-        }
         "EXCLUDE_FROM_BOM" => {
             return Some(if state.in_bom {
                 String::new()
