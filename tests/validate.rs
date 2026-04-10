@@ -6048,6 +6048,45 @@ fn erc_reports_local_labels_not_connected_to_pins() {
 }
 
 #[test]
+fn erc_reports_individually_dangling_label_even_when_same_name_neighbor_has_pin() {
+    let path = temp_schematic(
+        "erc_label_dangling_with_same_name_pin_neighbor",
+        r#"(kicad_sch
+  (version 20260306)
+  (generator "eeschema")
+  (uuid "73926000-0000-0000-0000-000000000111")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:IN"
+      (symbol "IN_1_1"
+        (pin input line
+          (at 0 0 180)
+          (length 2.54)
+          (name "IN")
+          (number "1")))))
+  (symbol
+    (lib_id "Device:IN")
+    (at 30 0 0)
+    (uuid "73926000-0000-0000-0000-000000000112"))
+  (global_label "SIG" (shape input) (at 0 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 20 0) (xy 30 0)))
+  (global_label "SIG" (shape input) (at 20 0 0) (effects (font (size 1 1)))))"#,
+    );
+
+    let load = load_schematic_tree(&path).expect("load tree");
+    let project = SchematicProject::from_load_result(load);
+    let diagnostics = erc::run(&project)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code == "erc-label-dangling")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].message, "Label not connected");
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn erc_reports_conflicting_pin_types_on_same_net() {
     let path = temp_schematic(
         "erc_pin_to_pin_conflict",

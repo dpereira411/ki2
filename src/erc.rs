@@ -1693,9 +1693,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            let graph_has_pins = all_pins > 0;
-
-            if (label.dangling && !graph_has_pins)
+            if label.dangling
                 || (label.kind == LabelKind::Local
                     && local_pins == 0
                     && all_pins > 1
