@@ -5911,6 +5911,12 @@ fn build_live_reduced_name_handle_caches_from_handles(
     (subgraphs_by_name, subgraphs_by_sheet_and_name)
 }
 
+fn live_reduced_subgraphs_by_name(
+    graph: &ReducedProjectNetGraph,
+) -> BTreeMap<String, Vec<LiveReducedSubgraphHandle>> {
+    build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0
+}
+
 // Upstream parity: local bridge for same-name recache on the shared live subgraph owner. This
 // still keys by reduced resolved names instead of full live `CONNECTION_SUBGRAPH` identity, but it
 // keeps recache/update tied to the shared active graph object graph. Like KiCad's
@@ -11997,8 +12003,7 @@ fn live_reduced_project_label_connectivity_subgraphs(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectLabelConnectivitySubgraph> {
     let mut label_subgraphs = Vec::new();
-    let subgraphs_by_name =
-        build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0;
+    let subgraphs_by_name = live_reduced_subgraphs_by_name(graph);
 
     for subgraph_handle in live_reduced_project_run_erc_subgraph_handles(graph) {
         let subgraph = subgraph_handle.borrow();
@@ -12573,8 +12578,7 @@ fn live_reduced_project_no_connect_marker_outcomes(
 ) -> Vec<ReducedProjectNoConnectMarkerOutcome> {
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
-    let subgraphs_by_name =
-        build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0;
+    let subgraphs_by_name = live_reduced_subgraphs_by_name(graph);
 
     for subgraph_handle in live_reduced_project_run_erc_subgraph_handles_without_driver_dedup(graph)
         .into_iter()
@@ -12877,8 +12881,7 @@ fn live_reduced_project_pin_not_connected_candidates(
     label_name_caches: &ReducedProjectLabelNameCaches,
 ) -> Vec<ReducedProjectPinNotConnectedCandidate> {
     let mut candidates = Vec::new();
-    let subgraphs_by_name =
-        build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0;
+    let subgraphs_by_name = live_reduced_subgraphs_by_name(graph);
 
     for subgraph_handle in &graph.live_subgraphs {
         let subgraph = subgraph_handle.borrow();
