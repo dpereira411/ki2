@@ -1,5 +1,5 @@
 use crate::connectivity::{
-    collect_reduced_project_net_map, reduced_connected_wire_label_full_names_at,
+    collect_reduced_project_net_map, reduced_project_bus_entry_conflicts,
     reduced_project_bus_to_bus_conflicts, reduced_project_bus_to_net_conflicts,
     reduced_project_dangling_directive_label_links, reduced_project_dangling_wire_endpoint_events,
     reduced_project_floating_wire_events, reduced_project_four_way_junction_points,
@@ -8,7 +8,6 @@ use crate::connectivity::{
     reduced_project_named_label_entries, reduced_project_no_connect_marker_outcomes,
     reduced_project_no_connect_pin_has_connected_owner,
     reduced_project_pin_not_connected_candidates, reduced_project_run_erc_subgraphs,
-    reduced_project_subgraph_bus_entry_conflict_candidate,
     reduced_project_subgraph_driver_conflict, reduced_project_symbol_pin_inventories,
     reduced_project_symbol_pin_net_name,
 };
@@ -1977,58 +1976,17 @@ pub fn check_bus_to_bus_entry_conflicts(project: &SchematicProject) -> Vec<Diagn
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
 
-    for subgraph in reduced_project_run_erc_subgraphs(&graph) {
-        let Some(mut candidate) =
-            reduced_project_subgraph_bus_entry_conflict_candidate(&graph, &subgraph)
-        else {
-            continue;
-        };
-        let Some(sheet_path) = project
-            .sheet_paths
-            .iter()
-            .find(|sheet_path| sheet_path.instance_path == candidate.sheet_instance_path)
-        else {
-            continue;
-        };
-        candidate
-            .test_names
-            .extend(reduced_connected_wire_label_full_names_at(
-                &project.schematics,
-                &project.sheet_paths,
-                sheet_path,
-                project.project.as_ref(),
-                project.current_variant(),
-                candidate.entry_at,
-            ));
-        candidate.test_names.sort();
-        candidate.test_names.dedup();
-
-        if candidate
-            .test_names
-            .iter()
-            .any(|name| candidate.bus_members.iter().any(|member| member == name))
-        {
-            continue;
-        }
-
-        if candidate.suppress_conflict {
-            continue;
-        }
-
-        let net_name = candidate
-            .test_names
-            .first()
-            .cloned()
-            .unwrap_or(candidate.fallback_net_name);
+    for conflict in reduced_project_bus_entry_conflicts(project, &graph) {
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,
             code: "erc-bus-entry-conflict",
             kind: crate::diagnostic::DiagnosticKind::Validation,
             message: format!(
                 "Net {net_name} is graphically connected to bus {} but is not a member of that bus at {}, {}",
-                candidate.bus_name, candidate.entry_at[0], candidate.entry_at[1]
+                conflict.bus_name, conflict.entry_at[0], conflict.entry_at[1],
+                net_name = conflict.net_name
             ),
-            path: Some(candidate.bus_entry_path),
+            path: Some(conflict.bus_entry_path),
             span: None,
             line: None,
             column: None,

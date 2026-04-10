@@ -9909,6 +9909,14 @@ pub(crate) struct ReducedProjectBusEntryConflictCandidate {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ReducedProjectBusEntryConflict {
+    pub(crate) bus_entry_path: std::path::PathBuf,
+    pub(crate) entry_at: [f64; 2],
+    pub(crate) bus_name: String,
+    pub(crate) net_name: String,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectDriverConflict {
     pub(crate) primary_name: String,
     pub(crate) secondary_name: String,
@@ -10232,6 +10240,9 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
     let suppress_conflict = reduced_project_subgraph_non_bus_driver_priority(subgraph)
         .is_some_and(|priority| priority >= 6);
 
+    test_names.sort();
+    test_names.dedup();
+
     Some(ReducedProjectBusEntryConflictCandidate {
         sheet_instance_path: subgraph.sheet_instance_path.clone(),
         bus_entry_path: bus_entry.schematic_path.clone(),
@@ -10242,6 +10253,79 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
         fallback_net_name,
         suppress_conflict,
     })
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts exercised name resolution slice or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still supplements reduced bus-entry candidates with reduced connected-wire-label
+// names instead of live `SCH_CONNECTION` member/name ownership
+// local_only_reason: keeps bus-entry candidate completion on the shared graph owner instead of
+// stitching project graph and loaded-sheet context together inside ERC
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` / bus-entry owner graph
+// remove_when: ERC can consume fully-resolved live bus-entry conflict events directly from graph
+pub(crate) fn reduced_project_bus_entry_conflicts(
+    project: &SchematicProject,
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectBusEntryConflict> {
+    let mut conflicts = Vec::new();
+
+    for subgraph in reduced_project_run_erc_subgraphs(graph) {
+        let Some(mut candidate) =
+            reduced_project_subgraph_bus_entry_conflict_candidate(graph, &subgraph)
+        else {
+            continue;
+        };
+
+        if candidate.suppress_conflict {
+            continue;
+        }
+
+        let Some(sheet_path) = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path == candidate.sheet_instance_path)
+        else {
+            continue;
+        };
+
+        candidate
+            .test_names
+            .extend(reduced_connected_wire_label_full_names_at(
+                &project.schematics,
+                &project.sheet_paths,
+                sheet_path,
+                project.project.as_ref(),
+                project.current_variant(),
+                candidate.entry_at,
+            ));
+        candidate.test_names.sort();
+        candidate.test_names.dedup();
+
+        if candidate
+            .test_names
+            .iter()
+            .any(|name| candidate.bus_members.iter().any(|member| member == name))
+        {
+            continue;
+        }
+
+        let net_name = candidate
+            .test_names
+            .first()
+            .cloned()
+            .unwrap_or(candidate.fallback_net_name);
+
+        conflicts.push(ReducedProjectBusEntryConflict {
+            bus_entry_path: candidate.bus_entry_path,
+            entry_at: candidate.entry_at,
+            bus_name: candidate.bus_name,
+            net_name,
+        });
+    }
+
+    conflicts
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
