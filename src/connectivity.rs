@@ -494,6 +494,40 @@ fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraph
     subgraph.sync_boundary_state_from_driver_owner();
 }
 
+fn reduced_project_driver_match_name(connection: &ReducedProjectConnection, name: &str) -> bool {
+    connection.name == name
+        || (!connection.full_local_name.is_empty() && connection.full_local_name == name)
+}
+
+fn reduced_project_absorb_candidate_matches_name(
+    candidate: &ReducedProjectSubgraphEntry,
+    name: &str,
+) -> bool {
+    if reduced_project_driver_match_name(&candidate.driver_connection, name) {
+        return true;
+    }
+
+    if candidate
+        .drivers
+        .iter()
+        .filter(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+        .count()
+        < 2
+    {
+        return false;
+    }
+
+    candidate.drivers.iter().enumerate().any(|(index, driver)| {
+        Some(index) != candidate.chosen_driver_index
+            && matches!(
+                driver.kind,
+                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+            )
+            && driver.connection.connection_type == candidate.driver_connection.connection_type
+            && reduced_project_driver_match_name(&driver.connection, name)
+    })
+}
+
 // Upstream parity: reduced local analogue for the same-sheet/same-type primary-driver slice of
 // `CONNECTION_SUBGRAPH::Absorb()` as called from `CONNECTION_GRAPH::processSubGraphs()`. This is
 // still partial because the Rust graph lacks `m_absorbed_by`, live item pointers, bus-entry
@@ -551,7 +585,10 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             if absorbed[candidate_index]
                 || subgraphs[candidate_index].sheet_instance_path != parent_sheet
                 || subgraphs[candidate_index].driver_connection.connection_type != parent_type
-                || subgraphs[candidate_index].driver_connection.name != parent_name
+                || !reduced_project_absorb_candidate_matches_name(
+                    &subgraphs[candidate_index],
+                    &parent_name,
+                )
                 || subgraphs[candidate_index]
                     .bus_items
                     .iter()
@@ -11601,6 +11638,56 @@ mod tests {
             super::collect_reduced_project_subgraphs_by_name(&graph, &first_by_point.name).len(),
             1
         );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_absorb_uses_candidate_secondary_driver_names() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_secondary_absorb_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000203")
+  (paper "A4")
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "PWR" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 0 20) (xy 20 20)))
+  (global_label "AAA" (shape input) (at 0 20 0) (effects (font (size 1 1))))
+  (global_label "PWR" (shape input) (at 20 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("first net subgraph");
+        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [20.0, 20.0])
+            .expect("second net subgraph");
+
+        assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        assert_eq!(first_by_point.driver_connection.name, "AAA");
+        assert_eq!(
+            super::collect_reduced_project_subgraphs_by_name(&graph, "AAA").len(),
+            1
+        );
+        assert!(super::collect_reduced_project_subgraphs_by_name(&graph, "PWR").is_empty());
 
         let _ = fs::remove_file(path);
     }
