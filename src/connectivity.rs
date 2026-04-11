@@ -12250,8 +12250,8 @@ pub(crate) fn reduced_project_subgraph_driver_conflict(
 // upstream: CONNECTION_GRAPH::ercCheckMultipleDrivers conflicting-driver selection branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still selects from reduced live driver snapshots instead of final
-// `CONNECTION_SUBGRAPH::m_drivers` item pointers and `m_multiple_drivers`
+// divergence: still selects from attached live driver-owner handles instead of final
+// `CONNECTION_SUBGRAPH::m_drivers` item pointers
 // local_only_reason: moves multiple-driver conflict selection onto the active live subgraph owner
 // while preserving projected shown driver names for hierarchical labels and sheet pins
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` driver owner graph
@@ -12263,33 +12263,35 @@ fn live_reduced_subgraph_driver_conflict(
     if !live_reduced_subgraph_has_multiple_drivers(&subgraph) {
         return None;
     }
-    let drivers = live_strong_driver_handles_to_snapshots(&subgraph.drivers);
     let primary_driver = subgraph
         .chosen_driver
-        .as_ref()
-        .map(|driver| driver.borrow().snapshot())
-        .or_else(|| drivers.first().cloned())?;
-    let secondary_driver = drivers.iter().find(|driver| {
+        .clone()
+        .or_else(|| subgraph.drivers.first().cloned())?;
+    let primary_snapshot = primary_driver.borrow().snapshot();
+    let primary_name = reduced_project_strong_driver_name(&primary_snapshot).to_string();
+    let secondary_driver = subgraph.drivers.iter().find(|driver| {
+        let driver = driver.borrow().snapshot();
         matches!(
             driver.kind,
             ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
-        ) && reduced_project_strong_driver_name(driver)
-            != reduced_project_strong_driver_name(&primary_driver)
+        ) && reduced_project_strong_driver_name(&driver) != primary_name
     })?;
 
-    let driver_identity_schematic_path =
-        |driver: &ReducedProjectStrongDriver| match driver.identity.as_ref() {
+    let driver_identity_schematic_path = |driver: &LiveProjectStrongDriverHandle| {
+        match driver.borrow().identity().as_ref() {
             Some(ReducedProjectDriverIdentity::Label { schematic_path, .. })
             | Some(ReducedProjectDriverIdentity::SheetPin { schematic_path, .. })
             | Some(ReducedProjectDriverIdentity::SymbolPin { schematic_path, .. }) => {
                 Some(schematic_path.clone())
             }
             None => None,
-        };
+        }
+    };
 
     Some(ReducedProjectDriverConflict {
-        primary_name: reduced_project_strong_driver_name(&primary_driver).to_string(),
-        secondary_name: reduced_project_strong_driver_name(secondary_driver).to_string(),
+        primary_name,
+        secondary_name: reduced_project_strong_driver_name(&secondary_driver.borrow().snapshot())
+            .to_string(),
         diagnostic_path: driver_identity_schematic_path(&primary_driver)
             .or_else(|| driver_identity_schematic_path(secondary_driver)),
     })
