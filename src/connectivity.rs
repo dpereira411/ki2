@@ -23781,6 +23781,139 @@ mod tests {
     }
 
     #[test]
+    fn collect_reduced_strong_drivers_prefers_global_then_local_power_over_regular_pin() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_power_driver_precedence_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r##"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "power:GND" (power)
+      (property "Reference" "#PWR" (at 0 -6.35 0)
+        (effects (font (size 1.27 1.27)) hide)
+      )
+      (property "Value" "GND" (at 0 -3.81 0)
+        (effects (font (size 1.27 1.27)))
+      )
+      (property "ki_keywords" "global power" (at 0 0 0)
+        (effects (font (size 1.27 1.27)) hide)
+      )
+      (symbol "GND_1_1"
+        (pin power_in line (at 0 0 270) (length 0) hide
+          (name "GND" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27))))
+        )
+      )
+    )
+    (symbol "power:REF_LOCAL" (power local)
+      (property "Reference" "#PWR" (at 0 -6.35 0)
+        (effects (font (size 1.27 1.27)) hide)
+      )
+      (property "Value" "REF_LOCAL" (at 0 -3.81 0)
+        (effects (font (size 1.27 1.27)))
+      )
+      (property "ki_keywords" "local power" (at 0 0 0)
+        (effects (font (size 1.27 1.27)) hide)
+      )
+      (symbol "REF_LOCAL_1_1"
+        (pin power_in line (at 0 0 270) (length 0) hide
+          (name "REF_LOCAL" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27))))
+        )
+      )
+    )
+    (symbol "Device:OutPin"
+      (property "Reference" "U" (at 0 0 0)
+        (effects (font (size 1 1)))
+      )
+      (property "Value" "OutPin" (at 0 0 0)
+        (effects (font (size 1 1)))
+      )
+      (symbol "OutPin_1_1"
+        (pin output line (at 0 0 180) (length 2.54)
+          (name "P" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))
+        )
+      )
+    )
+  )
+  (symbol
+    (lib_id "power:GND")
+    (uuid "73050000-0000-0000-0000-000000000801")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR01" (at 0 0 0)
+      (effects (font (size 1 1)))
+    )
+    (property "Value" "GND" (at 0 0 0)
+      (effects (font (size 1 1)))
+    ))
+  (symbol
+    (lib_id "power:REF_LOCAL")
+    (uuid "73050000-0000-0000-0000-000000000802")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "#PWR02" (at 0 0 0)
+      (effects (font (size 1 1)))
+    )
+    (property "Value" "REF_LOCAL" (at 0 0 0)
+      (effects (font (size 1 1)))
+    ))
+  (symbol
+    (lib_id "Device:OutPin")
+    (uuid "73050000-0000-0000-0000-000000000803")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0)
+      (effects (font (size 1 1)))
+    )
+    (property "Value" "OutPin" (at 0 0 0)
+      (effects (font (size 1 1)))
+    ))
+  (wire (pts (xy 0 0) (xy 10 0))))"##,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let component = super::connection_component_at(&schematic, [0.0, 0.0]).expect("component");
+        let drivers = super::collect_reduced_strong_drivers(
+            &schematic,
+            &path,
+            "",
+            &component,
+            "",
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
+        );
+
+        assert_eq!(drivers.len(), 2);
+        assert_eq!(drivers[0].kind, ReducedProjectDriverKind::PowerPin);
+        assert_eq!(
+            drivers[0].priority,
+            super::reduced_global_power_pin_driver_priority()
+        );
+        assert_eq!(drivers[0].connection.local_name, "GND");
+        assert_eq!(drivers[1].kind, ReducedProjectDriverKind::PowerPin);
+        assert_eq!(
+            drivers[1].priority,
+            super::reduced_local_power_pin_driver_priority()
+        );
+        assert_eq!(drivers[1].connection.local_name, "REF_LOCAL");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn collect_connection_components_links_duplicate_jumper_pin_numbers() {
         let path = env::temp_dir().join(format!(
             "ki2_connectivity_duplicate_jumper_pin_numbers_{}.kicad_sch",
