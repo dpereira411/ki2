@@ -32517,6 +32517,134 @@ mod tests {
     }
 
     #[test]
+    fn reduced_live_hierarchy_chain_prefers_local_power_over_hierarchical_label() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/mid/HIER_NET", "HIER_NET", "/mid/HIER_NET", "/mid"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/mid/HIER_NET",
+                        "HIER_NET",
+                        "/mid/HIER_NET",
+                        "/mid",
+                    ),
+                    identity: None,
+                }],
+                "/mid",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/mid/child/REF4", "REF4", "/mid/child/REF4", "/mid/child"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_local_power_pin_driver_priority(),
+                    connection: test_net_connection(
+                        "/mid/child/REF4",
+                        "REF4",
+                        "/mid/child/REF4",
+                        "/mid/child",
+                    ),
+                    identity: None,
+                }],
+                "/mid/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("mid.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/mid/REF_NODE", "REF_NODE", "/mid/REF_NODE", "/mid"),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/mid/child/REF_NODE",
+                "REF_NODE",
+                "/mid/child/REF_NODE",
+                "/mid/child",
+            ),
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            true,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].name, "/mid/child/REF4");
+        assert_eq!(graph[1].name, "/mid/child/REF4");
+    }
+
+    #[test]
+    fn reduced_live_hierarchy_chain_prefers_global_power_over_local_power() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/mid/REF4", "REF4", "/mid/REF4", "/mid"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_local_power_pin_driver_priority(),
+                    connection: test_net_connection("/mid/REF4", "REF4", "/mid/REF4", "/mid"),
+                    identity: None,
+                }],
+                "/mid",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("GND", "GND", "GND", "/mid/child"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("GND", "GND", "GND", "/mid/child"),
+                    identity: None,
+                }],
+                "/mid/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("mid.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/mid/REF_NODE", "REF_NODE", "/mid/REF_NODE", "/mid"),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/mid/child/REF_NODE",
+                "REF_NODE",
+                "/mid/child/REF_NODE",
+                "/mid/child",
+            ),
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            true,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].name, "GND");
+        assert_eq!(graph[1].name, "GND");
+    }
+
+    #[test]
     fn reduced_live_selected_clean_hierarchy_root_stays_dirty_for_forced_pass() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut graph = vec![test_net_subgraph(1, connection.clone(), Vec::new(), "")];
