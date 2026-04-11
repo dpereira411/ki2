@@ -8330,6 +8330,22 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             } else if !driver_connection.name.is_empty() {
                 child_names.push(driver_connection.name.clone());
             }
+            for base_pin in &child.base_pins {
+                if base_pin.driver_connection.connection_type != ReducedProjectConnectionType::Net
+                    || reduced_project_driver_match_name(
+                        &base_pin.driver_connection,
+                        &child.driver_connection.name,
+                    )
+                {
+                    continue;
+                }
+
+                if !base_pin.driver_connection.full_local_name.is_empty() {
+                    child_names.push(base_pin.driver_connection.full_local_name.clone());
+                } else if !base_pin.driver_connection.name.is_empty() {
+                    child_names.push(base_pin.driver_connection.name.clone());
+                }
+            }
             if child
                 .drivers
                 .iter()
@@ -24365,6 +24381,78 @@ mod tests {
         }));
         assert!(net.bus_parent_links.iter().any(|link| {
             link.member.local_name == "PWR"
+                && link.member.full_local_name == "AAA"
+                && link.subgraph_index == bus.subgraph_code - 1
+        }));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_bus_links_use_base_pin_default_names_when_pin_is_not_a_driver() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_base_pin_driver_links_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:OnePin"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "OnePin" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "OnePin_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (bus (pts (xy 0 0) (xy 10 0)))
+  (global_label "{Net-(U1-A)}" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (symbol
+    (lib_id "device:OnePin")
+    (uuid "73050000-0000-0000-0000-000000000708")
+    (at 0 20 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 20 0) (effects (font (size 1 1))))
+    (property "Value" "OnePin" (at 0 22 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 20) (xy 10 20)))
+  (global_label "AAA" (shape input) (at 10 20 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("bus subgraph");
+        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+            .expect("net subgraph");
+
+        assert_eq!(net.driver_connection.full_local_name, "AAA");
+        assert!(
+            net.base_pins
+                .iter()
+                .any(|base_pin| base_pin.driver_connection.name == "Net-(U1-A)")
+        );
+        assert!(bus.bus_neighbor_links.iter().any(|link| {
+            link.member.local_name == "Net-(U1-A)"
+                && link.member.full_local_name == "AAA"
+                && link.subgraph_index == net.subgraph_code - 1
+        }));
+        assert!(net.bus_parent_links.iter().any(|link| {
+            link.member.local_name == "Net-(U1-A)"
                 && link.member.full_local_name == "AAA"
                 && link.subgraph_index == bus.subgraph_code - 1
         }));
