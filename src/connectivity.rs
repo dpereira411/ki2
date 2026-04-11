@@ -9256,6 +9256,26 @@ fn live_reduced_no_connect_pin_has_point_owner(
             .any(|port| port.borrow().at == pin.at)
 }
 
+// upstream: ERC_TESTER::TestNoConnectPins point-owner query or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still answers from projected subgraph snapshots instead of final live item ownership
+// local_only_reason: keeps no-connect point-owner queries on one graph-owned helper while live item ownership is incomplete
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: no-connect pin checks can query live connected-item state directly
+fn reduced_project_no_connect_pin_has_connected_owner_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+    pin: &ReducedProjectSymbolPin,
+) -> bool {
+    if let Some(subgraph) = graph.live_subgraphs.get(index) {
+        return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
+    }
+
+    projected_reduced_project_subgraph_by_index(graph, index)
+        .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(&subgraph, pin))
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for the no-connect pin connectivity branch in
 // `ERC_TESTER::TestNoConnectPins()`. This is not a 1:1 connectable-item query because the Rust
@@ -9275,14 +9295,7 @@ pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
         return false;
     };
 
-    if let Some(subgraph) = graph.live_subgraphs.get(index) {
-        return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
-    }
-
-    graph
-        .subgraphs
-        .get(index)
-        .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(subgraph, pin))
+    reduced_project_no_connect_pin_has_connected_owner_by_index(graph, index, pin)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -10344,17 +10357,8 @@ pub(crate) fn reduced_project_symbol_pin_net_name(
     pin: &ReducedProjectSymbolPin,
 ) -> String {
     pin.subgraph_index
-        .and_then(|index| {
-            graph
-                .live_subgraphs
-                .get(index)
-                .map(|subgraph| subgraph.borrow().driver_connection.borrow().name.clone())
-        })
-        .or_else(|| {
-            pin.subgraph_index
-                .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
-                .map(|subgraph| subgraph.driver_connection.name.clone())
-        })
+        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
+        .map(|net| net.name)
         .unwrap_or_default()
 }
 
