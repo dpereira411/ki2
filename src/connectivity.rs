@@ -637,14 +637,13 @@ fn reduced_project_resolve_absorbed_driver(subgraph: &mut ReducedProjectSubgraph
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs candidate driver name comparison
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: compares reduced projected `name` / `full_local_name` strings instead of
+// divergence: compares reduced projected `name` strings instead of live
 // `SCH_CONNECTION::Name( true )`
 // local_only_reason: reduced connections are not yet live `SCH_CONNECTION` objects
 // replaced_by: fuller live `SCH_CONNECTION` analogue with `Name(true)` semantics
 // remove_when: processSubGraphs candidate matching uses live connection objects
 fn reduced_project_driver_match_name(connection: &ReducedProjectConnection, name: &str) -> bool {
     connection.name == name
-        || (!connection.full_local_name.is_empty() && connection.full_local_name == name)
 }
 
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs candidate primary/secondary-driver match branch
@@ -19531,6 +19530,26 @@ mod tests {
     }
 
     #[test]
+    fn reduced_absorb_candidate_matches_only_driver_name_not_full_local_name() {
+        let candidate = test_net_subgraph(
+            1,
+            test_net_connection("SIGA", "SIGA", "/child/SIGA", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: test_net_connection("SIGA", "SIGA", "/child/SIGA", ""),
+                identity: None,
+            }],
+            "",
+        );
+
+        assert!(!super::reduced_project_absorb_candidate_matches_name(
+            &candidate,
+            "/child/SIGA"
+        ));
+    }
+
+    #[test]
     fn reduced_absorb_follows_absorbed_candidate_secondary_driver_names() {
         let mut subgraphs = vec![
             test_net_subgraph(
@@ -19587,6 +19606,54 @@ mod tests {
                 .drivers
                 .iter()
                 .any(|driver| driver.connection.name == "/CCC")
+        );
+    }
+
+    #[test]
+    fn reduced_absorb_secondary_name_skip_uses_driver_name_not_full_local_name() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/ROOT", "ROOT", "/ROOT", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/ROOT", "ROOT", "/ROOT", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/ALT", "ALT", "/ROOT", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/ALT", "ALT", "/ALT", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/ALT")
         );
     }
 
