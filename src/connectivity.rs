@@ -651,7 +651,8 @@ fn reduced_project_driver_match_name(connection: &ReducedProjectConnection, name
 // parity_status: partial
 // local_kind: local-only-transitional
 // divergence: evaluates reduced label/power driver records instead of live `SCH_ITEM*` default
-// connections, and still lacks absorbed-pointer traversal
+// connections, and still lacks absorbed-pointer traversal, but now keeps the upstream
+// `m_multiple_drivers` gate before consulting secondary driver names
 // local_only_reason: same-type reduced absorption needs a graph-owned match predicate before the
 // fuller live subgraph owner exists
 // replaced_by: fuller `CONNECTION_SUBGRAPH` candidate loop using `getDefaultConnection()`
@@ -662,6 +663,10 @@ fn reduced_project_absorb_candidate_matches_name(
 ) -> bool {
     if reduced_project_driver_match_name(&candidate.driver_connection, name) {
         return true;
+    }
+
+    if !reduced_project_subgraph_has_multiple_drivers(candidate) {
+        return false;
     }
 
     let chosen_driver_index = reduced_project_chosen_driver_index(candidate);
@@ -19512,6 +19517,27 @@ mod tests {
         assert!(!super::reduced_project_absorb_candidate_matches_name(
             &candidate,
             "Net-(U1-Pad1)"
+        ));
+    }
+
+    #[test]
+    fn reduced_absorb_candidate_skips_secondary_name_without_multiple_strong_drivers() {
+        let candidate = test_net_subgraph(
+            1,
+            test_net_connection("/RESOLVED", "RESOLVED", "/RESOLVED", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALIAS", "ALIAS", "/ALIAS", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        assert!(!super::reduced_project_absorb_candidate_matches_name(
+            &candidate, "/ALIAS"
         ));
     }
 
