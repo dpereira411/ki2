@@ -8997,8 +8997,13 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
+    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at).and_then(|index| {
+        graph
+            .live_subgraphs
+            .get(index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
+    })
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
@@ -9371,7 +9376,15 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
     child_sheet_uuid: Option<&str>,
 ) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
+        .and_then(|index| {
+            graph
+                .live_subgraphs
+                .get(index)
+                .and_then(|handle| {
+                    projected_reduced_project_subgraph_from_live_handle(graph, handle)
+                })
+                .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
+        })
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live sheet-pin lookup or none
@@ -21252,6 +21265,44 @@ mod tests {
     }
 
     #[test]
+    fn point_query_projects_live_owner_over_stale_reduced_subgraph_payload() {
+        let graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            Vec::new(),
+            "",
+        )];
+        let graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .points
+            .push(PointKey(0, 0));
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let subgraph = super::resolve_reduced_project_subgraph_at(&graph, &sheet_path, [0.0, 0.0])
+            .expect("live projected point owner");
+
+        assert_eq!(subgraph.name, "/LIVE");
+        assert_eq!(subgraph.driver_connection.name, "/LIVE");
+    }
+
+    #[test]
     fn label_query_prefers_live_subgraph_labels_over_stale_identity_map() {
         let graph = vec![
             test_net_subgraph(
@@ -21487,6 +21538,61 @@ mod tests {
         .expect("live sheet-pin owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn sheet_pin_query_projects_live_owner_over_stale_reduced_subgraph_payload() {
+        let graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            Vec::new(),
+            "",
+        )];
+        let graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .hier_sheet_pins
+            .push(Rc::new(RefCell::new(super::LiveReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver_connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver: None,
+                shown_text_local_name: "LIVE".to_string(),
+            })));
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
+            &graph,
+            &sheet_path,
+            [0.0, 0.0],
+            Some("child"),
+        )
+        .expect("live projected sheet-pin owner");
+
+        assert_eq!(subgraph.name, "/LIVE");
+        assert_eq!(subgraph.driver_connection.name, "/LIVE");
     }
 
     #[test]
