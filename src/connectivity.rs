@@ -4660,7 +4660,7 @@ impl LiveReducedSubgraph {
             );
 
             let target_connection = target.borrow().driver_connection.clone();
-            if target_connection.borrow().full_local_name != member.borrow().full_local_name {
+            if target_connection.borrow().name != member.borrow().name {
                 clone_live_connection_owner_into_live_bus_member(
                     &mut member.borrow_mut(),
                     &target_connection.borrow(),
@@ -4851,7 +4851,7 @@ impl LiveReducedSubgraph {
                         neighbor_connection.clone(),
                     )
                 };
-                if neighbor_name == parent_member.borrow().full_local_name {
+                if neighbor_name == parent_member.borrow().name {
                     continue;
                 }
 
@@ -30222,6 +30222,58 @@ mod tests {
         assert!(recurse_targets.is_empty());
         assert_eq!(graph[1].driver_connection.full_local_name, "/SIGA");
         assert_eq!(graph[1].driver_connection.local_name, "RENAMED");
+    }
+
+    #[test]
+    fn reduced_live_bus_neighbors_skip_matching_member_name_with_different_full_local_name() {
+        let mut member = test_bus_member("SIGA", "SIGA", "/parent/SIGA");
+        member.vector_index = Some(1);
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "SIGA".to_string(),
+                    local_name: "SIGA".to_string(),
+                    full_local_name: "/child/SIGA".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: Vec::new(),
+                },
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        let recurse_targets = LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert!(recurse_targets.is_empty());
+        assert!(stale_members.is_empty());
+        assert_eq!(graph[1].driver_connection.name, "SIGA");
+        assert_eq!(graph[1].driver_connection.full_local_name, "/child/SIGA");
     }
 
     #[test]
