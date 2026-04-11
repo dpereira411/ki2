@@ -31641,6 +31641,62 @@ mod tests {
     }
 
     #[test]
+    fn replay_reduced_live_stale_bus_members_match_by_vector_index_before_name() {
+        let mut member0 = test_bus_member("SIG0", "SIG0", "/SIG0");
+        member0.vector_index = Some(0);
+        let mut member1 = test_bus_member("SIG1", "SIG1", "/SIG1");
+        member1.vector_index = Some(1);
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member0, member1.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member1.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member: member1,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = vec![Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            ReducedBusMember {
+                net_code: 0,
+                name: "RENAMED1".to_string(),
+                local_name: "RENAMED1".to_string(),
+                full_local_name: "/RENAMED1".to_string(),
+                vector_index: Some(1),
+                kind: ReducedBusMemberKind::Net,
+                members: Vec::new(),
+            },
+        )))];
+
+        LiveReducedSubgraph::replay_stale_bus_members(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].driver_connection.members[0].full_local_name, "/SIG0");
+        assert_eq!(graph[0].driver_connection.members[1].full_local_name, "/RENAMED1");
+        assert_eq!(graph[1].driver_connection.full_local_name, "/RENAMED1");
+    }
+
+    #[test]
     fn replay_reduced_live_stale_net_member_without_vector_index_skips_bus_update() {
         let mut graph = vec![
             test_net_subgraph(
