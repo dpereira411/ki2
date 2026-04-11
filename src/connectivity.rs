@@ -532,18 +532,28 @@ fn reduced_project_absorbed_driver_cmp(
 ) -> Ordering {
     let lhs_name = reduced_project_strong_driver_name(lhs);
     let rhs_name = reduced_project_strong_driver_name(rhs);
+    let lhs_sheet_pin_rank = reduced_project_sheet_pin_driver_rank(lhs);
+    let rhs_sheet_pin_rank = reduced_project_sheet_pin_driver_rank(rhs);
     let lhs_low_quality_name = lhs_name.contains("-Pad");
     let rhs_low_quality_name = rhs_name.contains("-Pad");
 
     lhs.priority
         .cmp(&rhs.priority)
         .then_with(|| reduced_connection_bus_subset_cmp(&lhs.connection, &rhs.connection))
+        .then_with(|| lhs_sheet_pin_rank.cmp(&rhs_sheet_pin_rank))
         .then_with(|| rhs_low_quality_name.cmp(&lhs_low_quality_name))
         .then_with(|| rhs_name.cmp(lhs_name))
         .then_with(|| {
             reduced_project_strong_driver_full_name(rhs)
                 .cmp(reduced_project_strong_driver_full_name(lhs))
         })
+}
+
+fn reduced_project_sheet_pin_driver_rank(driver: &ReducedProjectStrongDriver) -> i32 {
+    match driver.identity.as_ref() {
+        Some(ReducedProjectDriverIdentity::SheetPin { sheet_pin_rank, .. }) => *sheet_pin_rank,
+        _ => 0,
+    }
 }
 
 fn reduced_connection_bus_subset_cmp(
@@ -866,6 +876,7 @@ pub(crate) enum ReducedProjectDriverIdentity {
         schematic_path: std::path::PathBuf,
         at: PointKey,
         child_sheet_uuid: Option<String>,
+        sheet_pin_rank: i32,
     },
     SymbolPin {
         schematic_path: std::path::PathBuf,
@@ -1012,6 +1023,7 @@ impl LiveProjectStrongDriverOwner {
                     schematic_path: owner.schematic_path.clone(),
                     at: owner.at,
                     child_sheet_uuid: owner.child_sheet_uuid.clone(),
+                    sheet_pin_rank: 0,
                 }
             }),
             LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner.upgrade().map(|owner| {
@@ -14772,6 +14784,7 @@ where
                                 schematic_path: schematic_path.to_path_buf(),
                                 at: point_key(pin.at),
                                 child_sheet_uuid: sheet.uuid.clone(),
+                                sheet_pin_rank: reduced_sheet_pin_driver_rank(pin.shape),
                             }),
                         },
                         reduced_sheet_pin_driver_rank(pin.shape),
@@ -15432,7 +15445,7 @@ mod tests {
     };
     use crate::core::SchematicProject;
     use crate::loader::load_schematic_tree;
-    use crate::model::{LabelKind, SchItem, Schematic, Screen};
+    use crate::model::{LabelKind, SchItem, Schematic, Screen, SheetPinShape};
     use crate::parser::parse_schematic_file;
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -19290,6 +19303,9 @@ mod tests {
                             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                             at: PointKey(0, 0),
                             child_sheet_uuid: Some("sheet".to_string()),
+                            sheet_pin_rank: super::reduced_sheet_pin_driver_rank(
+                                SheetPinShape::Output
+                            ),
                         }),
                     },
                 ],
@@ -19926,6 +19942,48 @@ mod tests {
 
         assert_eq!(subgraph.driver_connection.local_name, "AAA");
         assert_eq!(subgraph.driver_connection.name, "/AAA");
+    }
+
+    #[test]
+    fn reduced_absorb_resolve_prefers_output_sheet_pin_for_equal_priority() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/AAA", "AAA", "/AAA", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: super::reduced_sheet_pin_driver_priority(),
+                    connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                    identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("child-a".to_string()),
+                        sheet_pin_rank: super::reduced_sheet_pin_driver_rank(
+                            SheetPinShape::Input
+                        ),
+                    }),
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: super::reduced_sheet_pin_driver_priority(),
+                    connection: test_net_connection("/ZZZ", "ZZZ", "/ZZZ", ""),
+                    identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(10, 0),
+                        child_sheet_uuid: Some("child-b".to_string()),
+                        sheet_pin_rank: super::reduced_sheet_pin_driver_rank(
+                            SheetPinShape::Output
+                        ),
+                    }),
+                },
+            ],
+            "",
+        );
+
+        super::reduced_project_resolve_absorbed_driver(&mut subgraph);
+
+        assert_eq!(subgraph.driver_connection.local_name, "ZZZ");
+        assert_eq!(subgraph.driver_connection.name, "/ZZZ");
     }
 
     #[test]
@@ -23958,6 +24016,7 @@ mod tests {
                 schematic_path: sheet_path.schematic_path.clone(),
                 at: super::point_key([0.0, 5.0]),
                 child_sheet_uuid: Some("73050000-0000-0000-0000-000000000511".to_string()),
+                sheet_pin_rank: super::reduced_sheet_pin_driver_rank(SheetPinShape::Output),
             })
         );
 
@@ -25890,6 +25949,7 @@ mod tests {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(10, 20),
                     child_sheet_uuid: Some("child".to_string()),
+                    sheet_pin_rank: 0,
                 }),
             }],
             class: String::new(),
@@ -26012,6 +26072,7 @@ mod tests {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(10, 20),
                     child_sheet_uuid: Some("sheet-a".to_string()),
+                    sheet_pin_rank: 0,
                 }),
             }],
             class: String::new(),
@@ -32017,6 +32078,7 @@ mod tests {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
             at: PointKey(10, 0),
             child_sheet_uuid: Some("child-sheet".to_string()),
+            sheet_pin_rank: 0,
         };
         let subgraph = ReducedProjectSubgraphEntry {
             subgraph_code: 1,
@@ -35135,6 +35197,7 @@ mod tests {
                         schematic_path: std::path::PathBuf::from("child.kicad_sch"),
                         at: PointKey(1, 0),
                         child_sheet_uuid: Some("child".to_string()),
+                        sheet_pin_rank: 0,
                     }),
                 }],
                 "",
