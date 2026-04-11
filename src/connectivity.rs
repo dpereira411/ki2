@@ -5725,10 +5725,7 @@ fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 
 fn live_reduced_subgraph_driver_identity(
     subgraph: &LiveReducedSubgraph,
 ) -> Option<ReducedProjectDriverIdentity> {
-    subgraph
-        .chosen_driver
-        .as_ref()
-        .and_then(|driver| driver.borrow().identity())
+    live_reduced_subgraph_primary_driver(subgraph).and_then(|driver| driver.borrow().identity())
 }
 
 fn live_subgraph_is_self_driven_symbol_pin(subgraph: &LiveReducedSubgraph) -> bool {
@@ -20717,6 +20714,90 @@ mod tests {
         assert_eq!(subgraphs.len(), 1);
         assert_eq!(subgraphs[0].name, "/LIVE");
         assert_eq!(subgraphs[0].driver_connection.name, "/LIVE");
+    }
+
+    #[test]
+    fn live_run_erc_subgraph_handles_dedup_ranked_driver_identity_when_chosen_missing() {
+        let driver_identity = super::ReducedProjectDriverIdentity::Label {
+            schematic_path: std::path::PathBuf::from("shared.kicad_sch"),
+            at: PointKey(5, 5),
+            kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+        };
+        let graph = test_graph_with_live_subgraphs(vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: Some(0),
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_global_label_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: Some(driver_identity.clone()),
+                }],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/a".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: Some(0),
+                drivers: vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_global_label_driver_priority(),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    identity: Some(driver_identity),
+                }],
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/b".to_string(),
+                anchor: PointKey(10, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ]);
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+        graph.live_subgraphs[1].borrow_mut().chosen_driver = None;
+
+        let handles = super::live_reduced_project_run_erc_subgraph_handles(&graph);
+
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].borrow().sheet_instance_path, "/b");
     }
 
     #[test]
