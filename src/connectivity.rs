@@ -12708,10 +12708,15 @@ fn live_reduced_project_named_label_entries(
             let label = label.borrow();
             match label.kind {
                 LabelKind::Local | LabelKind::Global | LabelKind::Hierarchical => {
+                    let local_name = if label.shown_text_local_name.is_empty() {
+                        label.connection.borrow().local_name.clone()
+                    } else {
+                        label.shown_text_local_name.clone()
+                    };
                     labels.push(ReducedProjectNamedLabelEntry {
                         kind: label.kind,
                         sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                        local_name: label.connection.borrow().local_name.clone(),
+                        local_name,
                         schematic_path: label.schematic_path.clone(),
                     });
                 }
@@ -33766,6 +33771,75 @@ mod tests {
         assert!(
             reduced_project_pin_not_connected_candidates(&graph, &caches).is_empty(),
             "issue12814 drive fixture should only keep the root-sheet hierarchical label warning",
+        );
+    }
+
+    #[test]
+    fn live_label_name_caches_use_shown_text_names() {
+        let connection = test_net_connection("/NET", "RESOLVED", "/NET", "");
+        let mut subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Global,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection,
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.live_subgraphs[0].borrow_mut().label_links[0]
+            .borrow_mut()
+            .shown_text_local_name = "SHOWN".to_string();
+
+        let caches = super::reduced_project_label_name_caches(&graph);
+
+        assert!(caches.global_names.contains("SHOWN"));
+        assert!(!caches.global_names.contains("RESOLVED"));
+    }
+
+    #[test]
+    fn live_same_local_global_label_conflicts_use_shown_text_names() {
+        let mut global_subgraph =
+            test_net_subgraph(1, test_net_connection("/G", "G", "/G", ""), Vec::new(), "");
+        global_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Global,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: test_net_connection("/G", "G", "/G", ""),
+        });
+
+        let mut local_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/L", "L", "/L", "/child"),
+            Vec::new(),
+            "/child",
+        );
+        local_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(3, 4),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: test_net_connection("/L", "L", "/L", "/child"),
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![global_subgraph, local_subgraph]);
+        graph.live_subgraphs[0].borrow_mut().label_links[0]
+            .borrow_mut()
+            .shown_text_local_name = "MATCH".to_string();
+        graph.live_subgraphs[1].borrow_mut().label_links[0]
+            .borrow_mut()
+            .shown_text_local_name = "MATCH".to_string();
+
+        let conflicts = super::reduced_project_same_local_global_label_conflicts(&graph);
+
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(
+            conflicts[0].diagnostic_path,
+            std::path::PathBuf::from("root.kicad_sch")
         );
     }
 }
