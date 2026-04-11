@@ -3939,12 +3939,14 @@ impl LiveReducedSubgraph {
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
         chosen_connection: &LiveProjectConnectionHandle,
     ) {
-        let is_chosen_driver = chosen_driver
-            .map(|chosen| Rc::ptr_eq(driver, chosen))
-            .unwrap_or_else(|| {
-                let driver_connection = driver.borrow().connection_handle();
-                *driver_connection.borrow() == *chosen_connection.borrow()
-            });
+        let is_chosen_driver = if let Some(chosen) = chosen_driver {
+            Rc::ptr_eq(driver, chosen)
+        } else if self.chosen_driver.is_some() {
+            false
+        } else {
+            let driver_connection = driver.borrow().connection_handle();
+            *driver_connection.borrow() == *chosen_connection.borrow()
+        };
 
         if is_chosen_driver {
             self.chosen_driver = Some(driver.clone());
@@ -28643,6 +28645,103 @@ mod tests {
         assert_eq!(owner.borrow().shown_text_local_name, "ITEM");
         assert!(subgraph.chosen_driver.is_some());
         assert_eq!(subgraph.driver_connection.borrow().name, "/SIG");
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_ranked_chosen_owner_without_explicit_index() {
+        let chosen = ReducedProjectConnection {
+            net_code: 1,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "GND".to_string(),
+            local_name: "GND".to_string(),
+            full_local_name: "GND".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "GND".to_string(),
+            resolved_connection: chosen.clone(),
+            driver_connection: chosen.clone(),
+            chosen_driver_index: None,
+            drivers: vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_global_label_driver_priority(),
+                    connection: chosen.clone(),
+                    identity: Some(super::ReducedProjectDriverIdentity::Label {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(9, 10),
+                        kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+                    }),
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: chosen.clone(),
+                    identity: Some(super::ReducedProjectDriverIdentity::Label {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(5, 6),
+                        kind: super::reduced_label_kind_sort_key(LabelKind::Local),
+                    }),
+                },
+            ],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(5, 6),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![
+                ReducedLabelLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(5, 6),
+                    kind: LabelKind::Local,
+                    dangling: false,
+                    non_endpoint_wire_segment_count: 0,
+                    connection: chosen.clone(),
+                },
+                ReducedLabelLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(9, 10),
+                    kind: LabelKind::Global,
+                    dangling: false,
+                    non_endpoint_wire_segment_count: 0,
+                    connection: chosen.clone(),
+                },
+            ],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        let subgraph = handles[0].borrow();
+        let chosen_driver = subgraph
+            .chosen_driver
+            .as_ref()
+            .expect("ranked chosen driver")
+            .clone();
+
+        match &*chosen_driver.borrow() {
+            super::LiveProjectStrongDriverOwner::Label { owner, priority, .. } => {
+                let owner = owner.upgrade().expect("global label owner");
+                assert_eq!(*priority, super::reduced_global_label_driver_priority());
+                assert_eq!(owner.borrow().at, PointKey(9, 10));
+            }
+            other => panic!("expected chosen label owner, got {other:?}"),
+        }
     }
 
     #[test]
