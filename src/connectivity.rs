@@ -3817,17 +3817,16 @@ struct LiveReducedSubgraph {
 }
 
 impl LiveReducedSubgraph {
-    // Upstream parity: local live-subgraph analogue for the exercised build-time attachment KiCad
-    // performs while constructing one live `CONNECTION_SUBGRAPH`. The active handle path now lets
-    // the shared subgraph owner attach its own topology, strong drivers, initial pin refresh, and
-    // parent item handles instead of sequencing those steps through free functions after handle
-    // allocation. Strong-driver owner attachment on the active path now also reads identity/kind/
-    // priority from the live driver owners themselves instead of zipping back through reduced
-    // strong-driver records during build, and chosen-driver binding now follows the reduced chosen
-    // driver slot directly onto the live driver handle list instead of re-deriving chosen
-    // identity from the reduced strong-driver vector. Remaining divergence is the still-missing
-    // fuller live driver-item graph, not reduced strong-driver metadata on the active attachment
-    // path.
+    // upstream: CONNECTION_GRAPH build-time `CONNECTION_SUBGRAPH` attachment or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: still attaches reduced live owners instead of real `SCH_ITEM*` / `SCH_CONNECTION`
+    // graph objects; explicit reduced chosen-driver slots bind directly and implicit same-connection
+    // fallback still exists for reduced test/build paths without a stored chosen slot
+    // local_only_reason: current active graph still uses reduced live owners while the fuller live
+    // `CONNECTION_SUBGRAPH` / driver-item graph is being ported
+    // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with real item/driver pointers
+    // remove_when: active graph build attaches final live KiCad-shaped owners directly
     fn attach_from_reduced(
         &mut self,
         reduced_subgraph: &ReducedProjectSubgraphEntry,
@@ -3920,19 +3919,16 @@ impl LiveReducedSubgraph {
         }
     }
 
-    // Upstream parity: local live-subgraph analogue for binding one exercised strong driver onto
-    // the shared subgraph owner during driver resolution. This still seeds from reduced projected
-    // identities instead of a fuller live `ResolveDrivers()` object graph, but the subgraph owner
-    // now owns chosen-driver adoption and chosen-driver-connection attachment instead of leaving
-    // that branch open-coded in the surrounding builder. Symbol-pin and text-item branches now
-    // compare through attached live owner-side driver connections against the already-seeded live
-    // subgraph driver handle. Active build now follows the reduced chosen-driver slot onto the
-    // live driver handle list directly instead of re-deriving chosen identity from reduced strong
-    // drivers during owner attachment. Chosen symbol-pin owners now also alias their item
-    // connection onto that chosen driver handle, while chosen text-item owners still keep split
-    // item-vs-driver connections and preserve shown-text ownership explicitly on the item owner.
-    // Remaining divergence is the still-missing fuller live driver-item object graph, not reduced
-    // chosen-driver matching on the active path.
+    // upstream: CONNECTION_SUBGRAPH::ResolveDrivers chosen `m_driver` / `m_driver_connection` or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: still compares reduced live owner connections instead of final live item pointers;
+    // when no explicit chosen handle exists it keeps the first same-connection implicit match rather
+    // than storing a true final `m_driver`
+    // local_only_reason: active build still needs one owner-side chosen-driver attachment point
+    // before the fuller live driver-item graph exists
+    // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with final `m_driver` / `m_driver_connection`
+    // remove_when: chosen-driver attachment reads the final live owner graph directly
     fn attach_strong_driver(
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
@@ -12317,26 +12313,16 @@ pub(crate) fn reduced_project_subgraph_driver_conflict(
 // upstream: CONNECTION_SUBGRAPH::ResolveDrivers chosen-driver fallback or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still ranks reduced strong-driver snapshots instead of reading final live `m_driver`
-// directly, but now uses the same highest-ranked fallback when the reduced chosen-driver slot is
-// absent instead of taking driver index 0 positionally
+// divergence: still reads the reduced shared chosen-driver helper instead of final live `m_driver`,
+// but no longer reimplements a separate ranked fallback just for ERC conflict selection
 // local_only_reason: reduced ERC conflict selection still needs one graph-owned primary-driver
-// query while some reduced test/build paths leave `chosen_driver_index` unset
+// query while the reduced/shared chosen-driver owner remains transitional
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored final `m_driver`
 // remove_when: reduced ERC conflict selection is removed in favor of the live owner path
 fn reduced_project_conflict_primary_driver_index(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<usize> {
-    subgraph.chosen_driver_index.or_else(|| {
-        subgraph
-            .drivers
-            .iter()
-            .enumerate()
-            .max_by(|(_lhs_index, lhs), (_rhs_index, rhs)| {
-                reduced_project_absorbed_driver_cmp(lhs, rhs)
-            })
-            .map(|(index, _driver)| index)
-    })
+    reduced_project_chosen_driver_index(subgraph)
 }
 
 // upstream: CONNECTION_GRAPH::ercCheckMultipleDrivers secondary-driver iteration branch or none
