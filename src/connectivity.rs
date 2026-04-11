@@ -3348,7 +3348,11 @@ impl LiveReducedBasePin {
         if Rc::ptr_eq(&self.connection, &self.driver_connection) {
             return;
         }
-        let driver_connection = self.driver_connection.clone();
+        let driver_connection = self
+            .driver
+            .as_ref()
+            .map(|driver| driver.borrow().connection_handle())
+            .unwrap_or_else(|| self.driver_connection.clone());
         clone_live_connection_owner_into_live_base_pin_connection_owner(
             &mut self.connection.borrow_mut(),
             &driver_connection.borrow(),
@@ -4320,15 +4324,15 @@ impl LiveReducedSubgraph {
             live_subgraph_is_self_driven_symbol_pin(&subgraph)
                 && subgraph.driver_connection.borrow().name.contains("Net-(")
         } {
-            let chosen_driver = {
+            let primary_driver = {
                 let subgraph = handle.borrow();
                 subgraph
                     .driver_connection
                     .borrow_mut()
                     .force_no_connect_name();
-                subgraph.chosen_driver.clone()
+                live_reduced_subgraph_primary_driver(&subgraph)
             };
-            if let Some(driver) = chosen_driver {
+            if let Some(driver) = primary_driver {
                 if let LiveProjectStrongDriverOwner::SymbolPin { owner, .. } = &*driver.borrow() {
                     if let Some(base_pin) = owner.upgrade() {
                         base_pin.borrow_mut().refresh_from_owned_driver_connection();
