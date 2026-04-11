@@ -9068,8 +9068,13 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
+    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label).and_then(|index| {
+        graph
+            .live_subgraphs
+            .get(index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
+    })
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live label-owner lookup or none
@@ -9182,8 +9187,13 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
+    resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at).and_then(|index| {
+        graph
+            .live_subgraphs
+            .get(index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
+    })
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live no-connect lookup or none
@@ -21306,6 +21316,65 @@ mod tests {
                 .expect("live label owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn label_query_projects_live_owner_over_stale_reduced_subgraph_payload() {
+        let graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            Vec::new(),
+            "",
+        )];
+        let graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let label = crate::model::Label {
+            kind: LabelKind::Global,
+            text: "LIVE".to_string(),
+            at: [0.0, 0.0],
+            ..crate::model::Label::new(LabelKind::Global, String::new())
+        };
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .label_links
+            .push(Rc::new(RefCell::new(super::LiveReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                kind: LabelKind::Global,
+                dangling: false,
+                non_endpoint_wire_segment_count: 0,
+                connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver_connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver: None,
+                shown_text_local_name: "LIVE".to_string(),
+            })));
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let subgraph =
+            super::resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, &label)
+                .expect("live projected label owner");
+
+        assert_eq!(subgraph.name, "/LIVE");
+        assert_eq!(subgraph.driver_connection.name, "/LIVE");
     }
 
     #[test]
