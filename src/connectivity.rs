@@ -9614,6 +9614,14 @@ pub(crate) fn reduced_project_sheet_pin_names(
         return live_reduced_project_sheet_pin_names(graph, sheet_instance_path, child_sheet_uuid);
     }
 
+    reduced_project_sheet_pin_names_in_reduced_graph(graph, sheet_instance_path, child_sheet_uuid)
+}
+
+fn reduced_project_sheet_pin_names_in_reduced_graph(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+    child_sheet_uuid: Option<&str>,
+) -> std::collections::BTreeSet<String> {
     reduced_project_subgraphs(graph)
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
@@ -9687,6 +9695,13 @@ pub(crate) fn reduced_project_hier_port_entries_in_sheet(
         return live_reduced_project_hier_port_entries_in_sheet(graph, sheet_instance_path);
     }
 
+    reduced_project_hier_port_entries_in_reduced_graph(graph, sheet_instance_path)
+}
+
+fn reduced_project_hier_port_entries_in_reduced_graph(
+    graph: &ReducedProjectNetGraph,
+    sheet_instance_path: &str,
+) -> Vec<(String, std::path::PathBuf)> {
     reduced_project_subgraphs(graph)
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
@@ -12604,20 +12619,15 @@ pub(crate) fn reduced_project_label_name_caches(
             }
         }
     } else {
-        for subgraph in reduced_project_subgraphs(graph) {
-            for label in &subgraph.label_links {
-                match label.kind {
-                    LabelKind::Global => {
-                        global_names.insert(label.connection.name.clone());
-                    }
-                    LabelKind::Local | LabelKind::Hierarchical => {
-                        local_names_by_sheet.insert((
-                            subgraph.sheet_instance_path.clone(),
-                            label.connection.local_name.clone(),
-                        ));
-                    }
-                    LabelKind::Directive => {}
+        for label in reduced_project_named_label_entries_in_reduced_graph(graph) {
+            match label.kind {
+                LabelKind::Global => {
+                    global_names.insert(label.local_name);
                 }
+                LabelKind::Local | LabelKind::Hierarchical => {
+                    local_names_by_sheet.insert((label.sheet_instance_path, label.local_name));
+                }
+                LabelKind::Directive => {}
             }
         }
     }
@@ -12654,23 +12664,9 @@ fn live_reduced_project_named_label_entries(
     labels
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: assorted `ERC_TESTER` label-name scans or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still falls back to reduced named label snapshots for hand-built test graphs and
-// still lacks final `SCH_LABEL_BASE` marker attachment
-// local_only_reason: keeps named label ownership on the shared graph owner and starts retiring
-// projected reduced label-link flatmaps from ERC-facing paths
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
-// remove_when: ERC can query live named label items directly from graph item links
-pub(crate) fn reduced_project_named_label_entries(
+fn reduced_project_named_label_entries_in_reduced_graph(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectNamedLabelEntry> {
-    if !graph.live_subgraphs.is_empty() {
-        return live_reduced_project_named_label_entries(graph);
-    }
-
     let mut labels = Vec::new();
 
     for subgraph in reduced_project_subgraphs(graph) {
@@ -12689,6 +12685,26 @@ pub(crate) fn reduced_project_named_label_entries(
     }
 
     labels
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+// upstream: assorted `ERC_TESTER` label-name scans or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still falls back to reduced named label snapshots for hand-built test graphs and
+// still lacks final `SCH_LABEL_BASE` marker attachment
+// local_only_reason: keeps named label ownership on the shared graph owner and starts retiring
+// projected reduced label-link flatmaps from ERC-facing paths
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / label item owner graph
+// remove_when: ERC can query live named label items directly from graph item links
+pub(crate) fn reduced_project_named_label_entries(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectNamedLabelEntry> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_named_label_entries(graph);
+    }
+
+    reduced_project_named_label_entries_in_reduced_graph(graph)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
