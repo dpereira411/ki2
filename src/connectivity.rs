@@ -5709,6 +5709,16 @@ fn live_reduced_subgraph_has_multiple_drivers(subgraph: &LiveReducedSubgraph) ->
     live_subgraph_strong_driver_count(subgraph) > 1
 }
 
+// upstream: CONNECTION_SUBGRAPH::m_local_driver after ResolveDrivers()
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still derives locality from reduced live driver-owner priorities instead of final
+// `m_drivers`, and intentionally uses the highest available driver priority instead of the chosen
+// driver because upstream `m_local_driver` tracks candidate-set strength, not final name choice
+// local_only_reason: secondary-driver promotion still needs the upstream-shaped global-vs-local
+// gate before the fuller live `CONNECTION_SUBGRAPH` owner stores `m_local_driver`
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored `m_local_driver`
+// remove_when: secondary promotion reads final `m_local_driver` directly from the live owner
 fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
     live_reduced_subgraph_highest_driver_priority(subgraph)
         < reduced_global_power_pin_driver_priority()
@@ -5718,6 +5728,16 @@ fn live_subgraph_base_pin_count(subgraph: &LiveReducedSubgraph) -> usize {
     subgraph.base_pins.len()
 }
 
+// upstream: CONNECTION_SUBGRAPH::ResolveDrivers highest-priority candidate scan or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still scans reduced live driver owners instead of final `m_drivers`, but remains
+// separate from chosen-driver fallback because some post-ResolveDrivers gates key off the highest
+// candidate priority rather than the final `m_driver`
+// local_only_reason: keeps candidate-set priority available for `m_local_driver`-shaped decisions
+// while final live subgraph state is still transitional
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored candidate-set flags
+// remove_when: candidate-set queries read final live `m_local_driver` / related state directly
 fn live_reduced_subgraph_highest_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
     subgraph
         .drivers
@@ -36427,6 +36447,143 @@ mod tests {
         );
         assert_eq!(connection.borrow().name, "/LOCAL");
         assert_eq!(connection.borrow().local_name, "LOCAL");
+    }
+
+    #[test]
+    fn live_primary_driver_fallback_prefers_output_sheet_pin_for_equal_priority() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/AAA".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/AAA".to_string(),
+                local_name: "AAA".to_string(),
+                full_local_name: "/AAA".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/AAA".to_string(),
+                local_name: "AAA".to_string(),
+                full_local_name: "/AAA".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            chosen_driver_index: None,
+            drivers: vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: super::reduced_sheet_pin_driver_priority(),
+                    connection: ReducedProjectConnection {
+                        net_code: 1,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/AAA".to_string(),
+                        local_name: "AAA".to_string(),
+                        full_local_name: "/AAA".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(0, 0),
+                        child_sheet_uuid: Some("child-a".to_string()),
+                        sheet_pin_rank: super::reduced_sheet_pin_driver_rank(
+                            SheetPinShape::Input,
+                        ),
+                    }),
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: super::reduced_sheet_pin_driver_priority(),
+                    connection: ReducedProjectConnection {
+                        net_code: 1,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ZZZ".to_string(),
+                        local_name: "ZZZ".to_string(),
+                        full_local_name: "/ZZZ".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        at: PointKey(10, 0),
+                        child_sheet_uuid: Some("child-b".to_string()),
+                        sheet_pin_rank: super::reduced_sheet_pin_driver_rank(
+                            SheetPinShape::Output,
+                        ),
+                    }),
+                },
+            ],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![
+                ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-a".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 9,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/AAA".to_string(),
+                        local_name: "AAA".to_string(),
+                        full_local_name: "/AAA".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                },
+                ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(10, 0),
+                    child_sheet_uuid: Some("child-b".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 9,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/ZZZ".to_string(),
+                        local_name: "ZZZ".to_string(),
+                        full_local_name: "/ZZZ".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                },
+            ],
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        handles[0].borrow_mut().chosen_driver = None;
+
+        let primary = super::live_reduced_subgraph_primary_driver(&handles[0].borrow())
+            .expect("ranked primary driver");
+        let snapshot = primary.borrow().snapshot();
+
+        assert_eq!(snapshot.connection.local_name, "ZZZ");
+        assert_eq!(snapshot.connection.name, "/ZZZ");
+        assert!(matches!(
+            snapshot.identity,
+            Some(super::ReducedProjectDriverIdentity::SheetPin {
+                sheet_pin_rank,
+                ..
+            }) if sheet_pin_rank == super::reduced_sheet_pin_driver_rank(SheetPinShape::Output)
+        ));
     }
 
     #[test]
