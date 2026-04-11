@@ -922,6 +922,7 @@ enum LiveProjectStrongDriverOwner {
         owner: Weak<RefCell<LiveReducedHierSheetPinLink>>,
         kind: ReducedProjectDriverKind,
         priority: i32,
+        sheet_pin_rank: i32,
     },
     HierPort {
         owner: Weak<RefCell<LiveReducedHierPortLink>>,
@@ -1017,13 +1018,17 @@ impl LiveProjectStrongDriverOwner {
                     kind: reduced_label_kind_sort_key(owner.kind),
                 }
             }),
-            LiveProjectStrongDriverOwner::SheetPin { owner, .. } => owner.upgrade().map(|owner| {
+            LiveProjectStrongDriverOwner::SheetPin {
+                owner,
+                sheet_pin_rank,
+                ..
+            } => owner.upgrade().map(|owner| {
                 let owner = owner.borrow();
                 ReducedProjectDriverIdentity::SheetPin {
                     schematic_path: owner.schematic_path.clone(),
                     at: owner.at,
                     child_sheet_uuid: owner.child_sheet_uuid.clone(),
-                    sheet_pin_rank: 0,
+                    sheet_pin_rank: *sheet_pin_rank,
                 }
             }),
             LiveProjectStrongDriverOwner::HierPort { owner, .. } => owner.upgrade().map(|owner| {
@@ -3108,6 +3113,7 @@ impl LiveReducedHierSheetPinLink {
         driver: &LiveProjectStrongDriverHandle,
         kind: ReducedProjectDriverKind,
         priority: i32,
+        sheet_pin_rank: i32,
     ) -> LiveProjectStrongDriverOwner {
         self.driver = Some(driver.clone());
         clone_live_connection_owner_into_live_connection_owner(
@@ -3118,6 +3124,7 @@ impl LiveReducedHierSheetPinLink {
             owner: Rc::downgrade(owner),
             kind,
             priority,
+            sheet_pin_rank,
         }
     }
 
@@ -3942,6 +3949,7 @@ impl LiveReducedSubgraph {
             Some(ReducedProjectDriverIdentity::SheetPin {
                 at,
                 child_sheet_uuid,
+                sheet_pin_rank,
                 ..
             }) => self
                 .hier_sheet_pins
@@ -3957,6 +3965,7 @@ impl LiveReducedSubgraph {
                         driver,
                         driver_kind,
                         priority,
+                        sheet_pin_rank,
                     )
                 })
                 .unwrap_or_else(|| {
@@ -25949,7 +25958,7 @@ mod tests {
                     schematic_path: std::path::PathBuf::from("root.kicad_sch"),
                     at: PointKey(10, 20),
                     child_sheet_uuid: Some("child".to_string()),
-                    sheet_pin_rank: 0,
+                    sheet_pin_rank: super::reduced_sheet_pin_driver_rank(SheetPinShape::Output),
                 }),
             }],
             class: String::new(),
@@ -26022,9 +26031,11 @@ mod tests {
                         schematic_path,
                         at: PointKey(10, 20),
                         child_sheet_uuid,
-                        ..
+                        sheet_pin_rank,
                     }) if schematic_path == std::path::PathBuf::from("root.kicad_sch")
                         && child_sheet_uuid.as_deref() == Some("child")
+                        && sheet_pin_rank
+                            == super::reduced_sheet_pin_driver_rank(SheetPinShape::Output)
                 ));
             }
             _ => panic!("expected sheet pin strong-driver owner"),
