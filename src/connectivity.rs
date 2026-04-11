@@ -598,8 +598,8 @@ fn reduced_project_driver_match_name(connection: &ReducedProjectConnection, name
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs candidate primary/secondary-driver match branch
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: evaluates reduced driver records instead of live `SCH_ITEM*` default connections,
-// and still lacks absorbed-pointer traversal
+// divergence: evaluates reduced label/power driver records instead of live `SCH_ITEM*` default
+// connections, and still lacks absorbed-pointer traversal
 // local_only_reason: same-type reduced absorption needs a graph-owned match predicate before the
 // fuller live subgraph owner exists
 // replaced_by: fuller `CONNECTION_SUBGRAPH` candidate loop using `getDefaultConnection()`
@@ -617,10 +617,7 @@ fn reduced_project_absorb_candidate_matches_name(
         Some(index) != chosen_driver_index
             && matches!(
                 driver.kind,
-                ReducedProjectDriverKind::Label
-                    | ReducedProjectDriverKind::SheetPin
-                    | ReducedProjectDriverKind::Pin
-                    | ReducedProjectDriverKind::PowerPin
+                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
             )
             && reduced_project_driver_match_name(&driver.connection, name)
     })
@@ -648,10 +645,7 @@ fn reduced_project_absorb_push_secondary_test_names(
             || driver.connection.connection_type != parent_type
             || !matches!(
                 driver.kind,
-                ReducedProjectDriverKind::Label
-                    | ReducedProjectDriverKind::SheetPin
-                    | ReducedProjectDriverKind::Pin
-                    | ReducedProjectDriverKind::PowerPin
+                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
             )
             || reduced_project_driver_match_name(
                 &driver.connection,
@@ -677,24 +671,6 @@ fn reduced_project_absorb_push_secondary_test_names(
         }
     }
 
-    for base_pin in &subgraph.base_pins {
-        if base_pin.driver_connection.connection_type != parent_type
-            || reduced_project_driver_match_name(
-                &base_pin.driver_connection,
-                &subgraph.driver_connection.name,
-            )
-        {
-            continue;
-        }
-
-        push_unique(test_names, base_pin.driver_connection.name.clone());
-        if !base_pin.driver_connection.full_local_name.is_empty() {
-            push_unique(
-                test_names,
-                base_pin.driver_connection.full_local_name.clone(),
-            );
-        }
-    }
 }
 
 // Upstream parity: reduced local analogue for the same-sheet/same-type primary-driver slice of
@@ -8359,22 +8335,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 child_names.push(driver_connection.full_local_name.clone());
             } else if !driver_connection.name.is_empty() {
                 child_names.push(driver_connection.name.clone());
-            }
-            for base_pin in &child.base_pins {
-                if base_pin.driver_connection.connection_type != ReducedProjectConnectionType::Net
-                    || reduced_project_driver_match_name(
-                        &base_pin.driver_connection,
-                        &child.driver_connection.name,
-                    )
-                {
-                    continue;
-                }
-
-                if !base_pin.driver_connection.full_local_name.is_empty() {
-                    child_names.push(base_pin.driver_connection.full_local_name.clone());
-                } else if !base_pin.driver_connection.name.is_empty() {
-                    child_names.push(base_pin.driver_connection.name.clone());
-                }
             }
             if child
                 .drivers
@@ -19393,7 +19353,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_absorb_candidate_matches_secondary_pin_default_names() {
+    fn reduced_absorb_candidate_skips_secondary_pin_default_names() {
         let candidate = test_net_subgraph(
             1,
             test_net_connection("/RESOLVED", "RESOLVED", "/RESOLVED", ""),
@@ -19425,7 +19385,7 @@ mod tests {
             "",
         );
 
-        assert!(super::reduced_project_absorb_candidate_matches_name(
+        assert!(!super::reduced_project_absorb_candidate_matches_name(
             &candidate,
             "Net-(U1-Pad1)"
         ));
@@ -19540,7 +19500,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_absorb_uses_parent_secondary_pin_default_names() {
+    fn reduced_absorb_skips_parent_secondary_pin_default_names() {
         let mut subgraphs = vec![
             test_net_subgraph(
                 1,
@@ -19594,17 +19554,11 @@ mod tests {
 
         super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
 
-        assert_eq!(subgraphs.len(), 1);
-        assert!(
-            subgraphs[0]
-                .drivers
-                .iter()
-                .any(|driver| driver.connection.name == "Net-(U1-Pad1)")
-        );
+        assert_eq!(subgraphs.len(), 2);
     }
 
     #[test]
-    fn reduced_absorb_uses_parent_base_pin_default_names_when_pin_is_not_a_driver() {
+    fn reduced_absorb_skips_parent_base_pin_default_names_when_pin_is_not_a_driver() {
         let path = env::temp_dir().join(format!(
             "ki2_connectivity_parent_base_pin_secondary_absorb_{}.kicad_sch",
             SystemTime::now()
@@ -19655,20 +19609,16 @@ mod tests {
         let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [40.0, 0.0])
             .expect("second net subgraph");
 
-        assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        assert_ne!(first_by_point.subgraph_code, second_by_point.subgraph_code);
         assert_eq!(first_by_point.driver_connection.name, "AAA");
-        assert!(
-            first_by_point
-                .base_pins
-                .iter()
-                .any(|base_pin| base_pin.driver_connection.name == "Net-(U1-A)")
-        );
+        assert_eq!(second_by_point.driver_connection.name, "Net-(U1-A)");
         assert_eq!(
             super::collect_reduced_project_subgraphs_by_name(&graph, "AAA").len(),
             1
         );
-        assert!(
-            super::collect_reduced_project_subgraphs_by_name(&graph, "Net-(U1-A)").is_empty()
+        assert_eq!(
+            super::collect_reduced_project_subgraphs_by_name(&graph, "Net-(U1-A)").len(),
+            1
         );
 
         let _ = fs::remove_file(path);
@@ -24554,7 +24504,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_project_bus_links_use_base_pin_default_names_when_pin_is_not_a_driver() {
+    fn reduced_project_bus_links_skip_base_pin_default_names_when_pin_is_not_a_driver() {
         let path = env::temp_dir().join(format!(
             "ki2_connectivity_bus_base_pin_driver_links_{}.kicad_sch",
             SystemTime::now()
@@ -24611,14 +24561,12 @@ mod tests {
                 .iter()
                 .any(|base_pin| base_pin.driver_connection.name == "Net-(U1-A)")
         );
-        assert!(bus.bus_neighbor_links.iter().any(|link| {
+        assert!(!bus.bus_neighbor_links.iter().any(|link| {
             link.member.local_name == "Net-(U1-A)"
-                && link.member.full_local_name == "AAA"
                 && link.subgraph_index == net.subgraph_code - 1
         }));
-        assert!(net.bus_parent_links.iter().any(|link| {
+        assert!(!net.bus_parent_links.iter().any(|link| {
             link.member.local_name == "Net-(U1-A)"
-                && link.member.full_local_name == "AAA"
                 && link.subgraph_index == bus.subgraph_code - 1
         }));
 
