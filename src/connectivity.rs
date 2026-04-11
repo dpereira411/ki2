@@ -607,6 +607,48 @@ fn reduced_project_absorb_candidate_matches_name(
     })
 }
 
+// upstream: CONNECTION_GRAPH::processSubGraphs power-pin secondary add_connections_to_check guard
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: infers multi-pin power-symbol spread from reduced base-pin identity across reduced
+// subgraphs instead of walking live `SCH_PIN` / `SCH_SYMBOL` item ownership
+// local_only_reason: reduced absorption still runs before the fuller live pin/subgraph owner exists
+// replaced_by: fuller processSubGraphs loop over live item ownership and getDefaultConnection()
+// remove_when: secondary power-pin expansion runs on live symbol/pin owners directly
+fn reduced_project_skip_secondary_multi_pin_power_name(
+    subgraphs: &[ReducedProjectSubgraphEntry],
+    subgraph_index: usize,
+    driver: &ReducedProjectStrongDriver,
+) -> bool {
+    let ReducedProjectStrongDriver {
+        kind: ReducedProjectDriverKind::PowerPin,
+        identity:
+            Some(ReducedProjectDriverIdentity::SymbolPin {
+                sheet_instance_path,
+                symbol_uuid: Some(symbol_uuid),
+                pin_number,
+                ..
+            }),
+        ..
+    } = driver
+    else {
+        return false;
+    };
+
+    subgraphs
+        .iter()
+        .enumerate()
+        .any(|(candidate_index, candidate)| {
+            candidate_index != subgraph_index
+                && candidate.base_pins.iter().any(|base_pin| {
+                    base_pin.is_power_symbol
+                        && base_pin.key.sheet_instance_path == *sheet_instance_path
+                        && base_pin.key.symbol_uuid.as_deref() == Some(symbol_uuid.as_str())
+                        && base_pin.key.number != *pin_number
+                })
+        })
+}
+
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs `add_connections_to_check()` slice
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -618,6 +660,8 @@ fn reduced_project_absorb_candidate_matches_name(
 // replaced_by: fuller processSubGraphs loop over live subgraph items and default connections
 // remove_when: reduced same-name absorption is replaced by live `CONNECTION_SUBGRAPH::Absorb()`
 fn reduced_project_absorb_push_secondary_test_names(
+    subgraphs: &[ReducedProjectSubgraphEntry],
+    subgraph_index: usize,
     subgraph: &ReducedProjectSubgraphEntry,
     test_names: &mut Vec<String>,
 ) {
@@ -629,6 +673,11 @@ fn reduced_project_absorb_push_secondary_test_names(
             || !matches!(
                 driver.kind,
                 ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+            )
+            || reduced_project_skip_secondary_multi_pin_power_name(
+                subgraphs,
+                subgraph_index,
+                driver,
             )
             || reduced_project_driver_match_name(
                 &driver.connection,
@@ -704,6 +753,8 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             }
         }
         reduced_project_absorb_push_secondary_test_names(
+            subgraphs,
+            parent_index,
             &subgraphs[parent_index],
             &mut parent_test_names,
         );
@@ -748,7 +799,12 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
             }
 
             let candidate = subgraphs[candidate_index].clone();
-            reduced_project_absorb_push_secondary_test_names(&candidate, &mut parent_test_names);
+            reduced_project_absorb_push_secondary_test_names(
+                subgraphs,
+                candidate_index,
+                &candidate,
+                &mut parent_test_names,
+            );
             let parent = &mut subgraphs[parent_index];
             append_unique(&mut parent.points, candidate.points);
             append_unique(&mut parent.nodes, candidate.nodes);
@@ -17634,6 +17690,27 @@ mod tests {
             .expect("root sheet path");
         let project = SchematicProject::from_load_result(loaded);
         let graph = project.reduced_project_net_graph(false);
+        for (index, subgraph) in graph.subgraphs.iter().enumerate() {
+            println!(
+                "sg[{index}] name={} driver={} local={} pins={}",
+                subgraph.name,
+                subgraph.driver_connection.name,
+                subgraph.driver_connection.local_name,
+                subgraph.base_pins.len()
+            );
+            for base_pin in &subgraph.base_pins {
+                println!(
+                    "  pin name={:?} num={:?} at=({}, {}) conn={} drv={} keep_local={}",
+                    base_pin.key.name,
+                    base_pin.key.number,
+                    base_pin.key.at.0,
+                    base_pin.key.at.1,
+                    base_pin.connection.name,
+                    base_pin.driver_connection.name,
+                    base_pin.preserve_local_name_on_refresh
+                );
+            }
+        }
         let schematic = project
             .schematic(&sheet_path.schematic_path)
             .expect("root schematic");
