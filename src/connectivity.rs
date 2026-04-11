@@ -10627,7 +10627,13 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
-    .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
+    .and_then(|index| {
+        graph
+            .live_subgraphs
+            .get(index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
+    })
 }
 
 fn live_reduced_project_symbol_pin_snapshot(
@@ -21852,6 +21858,70 @@ mod tests {
             .as_deref(),
             Some("LIVE")
         );
+    }
+
+    #[test]
+    fn symbol_pin_query_projects_live_owner_over_stale_reduced_subgraph_payload() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("sym".to_string());
+
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            Vec::new(),
+            "",
+        );
+        subgraph.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: symbol.uuid.clone(),
+                at: PointKey(0, 0),
+                name: Some("PIN".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            driver_connection: test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            preserve_local_name_on_refresh: false,
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let subgraph = super::resolve_reduced_project_subgraph_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            &symbol,
+            [0.0, 0.0],
+            Some("PIN"),
+            Some("1"),
+        )
+        .expect("live projected symbol-pin owner");
+
+        assert_eq!(subgraph.name, "/LIVE");
+        assert_eq!(subgraph.driver_connection.name, "/LIVE");
     }
 
     #[test]
