@@ -304,9 +304,35 @@ fn reduced_project_subgraph_has_process_strong_driver(
         &subgraph.driver_connection.name
     };
 
-    !subgraphs_by_sheet_and_name
+    if subgraphs_by_sheet_and_name
         .get(&(subgraph.sheet_instance_path.clone(), driver_name.clone()))
         .is_some_and(|same_sheet| same_sheet.iter().any(|index| *index != subgraph_index))
+    {
+        return false;
+    }
+
+    let driver_global_name = if !subgraph.driver_connection.local_name.is_empty() {
+        subgraph.driver_connection.local_name.as_str()
+    } else {
+        subgraph.driver_connection.name.as_str()
+    };
+
+    !subgraphs.iter().enumerate().any(|(index, candidate)| {
+        index != subgraph_index
+            && candidate.sheet_instance_path == subgraph.sheet_instance_path
+            && candidate
+                .drivers
+                .iter()
+                .any(|driver| driver.priority >= reduced_global_power_pin_driver_priority())
+            && {
+                let candidate_global_name = if !candidate.driver_connection.local_name.is_empty() {
+                    candidate.driver_connection.local_name.as_str()
+                } else {
+                    candidate.driver_connection.name.as_str()
+                };
+                candidate_global_name == driver_global_name
+            }
+    })
 }
 
 // Upstream parity: reduced cache rebuild for the name maps `processSubGraphs()` consults while it
@@ -33064,6 +33090,49 @@ mod tests {
             &subgraphs,
             &conflicting_sheet_pin_map,
             2
+        ));
+    }
+
+    #[test]
+    fn reduced_process_subgraphs_sheet_pin_promotion_blocks_same_sheet_global_name_conflict() {
+        let sheet_pin_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::SheetPin,
+            priority: super::reduced_sheet_pin_driver_priority(),
+            connection: test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child"),
+            identity: None,
+        };
+        let label_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Label,
+            priority: super::reduced_global_label_driver_priority(),
+            connection: test_net_connection("SIG", "SIG", "SIG", "/child"),
+            identity: None,
+        };
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child"),
+                vec![sheet_pin_driver],
+                "/child",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("SIG", "SIG", "SIG", "/child"),
+                vec![label_driver],
+                "/child",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+
+        let by_sheet_and_name = BTreeMap::from([
+            (("/child".to_string(), "/child/SIG".to_string()), vec![0]),
+            (("/child".to_string(), "SIG".to_string()), vec![1]),
+        ]);
+
+        assert!(!super::reduced_project_subgraph_has_process_strong_driver(
+            &subgraphs,
+            &by_sheet_and_name,
+            0
         ));
     }
 
