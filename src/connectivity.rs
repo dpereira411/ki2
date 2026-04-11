@@ -5066,6 +5066,9 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for replaying stale bus members across the
     // active recursive live graph after neighbor and parent refresh mutate bus members in place.
+    // The live path now relies only on `matchBusMember()`-shaped member lookup through the live
+    // connection owner instead of a local "first plain member" fallback, so stale replay no longer
+    // rewrites unrelated vectorless bus members that upstream would leave untouched.
     fn replay_stale_bus_members(
         live_subgraphs: &[LiveReducedSubgraphHandle],
         component: &[LiveReducedSubgraphHandle],
@@ -5091,18 +5094,7 @@ impl LiveReducedSubgraph {
                     let subgraph = handle.borrow();
                     let mut connection = subgraph.driver_connection.borrow_mut();
                     let stale_member_ref = stale_member.borrow();
-                    let member = connection
-                        .find_member_mut_live(&stale_member_ref)
-                        .or_else(|| {
-                            (connection.connection_type == ReducedProjectConnectionType::Bus
-                                && stale_member_ref.vector_index.is_none()
-                                && connection
-                                    .members
-                                    .iter()
-                                    .all(|member| member.borrow().vector_index.is_none()))
-                            .then(|| connection.members.first().cloned())
-                            .flatten()
-                        });
+                    let member = connection.find_member_mut_live(&stale_member_ref);
                     drop(stale_member_ref);
                     let Some(member) = member else {
                         continue;
@@ -30773,7 +30765,7 @@ mod tests {
     }
 
     #[test]
-    fn replay_reduced_live_stale_net_member_keeps_same_parent_bus_preservation() {
+    fn replay_reduced_live_stale_net_member_without_vector_index_skips_bus_update() {
         let mut graph = vec![
             test_net_subgraph(
                 1,
@@ -30832,11 +30824,74 @@ mod tests {
         );
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
-        assert_eq!(
-            graph[0].driver_connection.members[0].full_local_name,
-            "/RENAMED"
+        assert_eq!(graph[0].driver_connection.members[0].full_local_name, "/SIG0");
+        assert_eq!(graph[0].driver_connection.members[1].full_local_name, "/SIG1");
+        assert_eq!(graph[1].driver_connection.full_local_name, "/OLD");
+    }
+
+    #[test]
+    fn replay_reduced_live_stale_plain_member_skips_unmatched_bus_member() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![
+                        test_bus_member("SIG0", "SIG0", "/SIG0"),
+                        test_bus_member("SIG1", "SIG1", "/SIG1"),
+                    ],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG0", "SIG0", "/SIG0"),
+                subgraph_index: 1,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 1,
+            },
+        ];
+        graph[1].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG0", "SIG0", "/SIG0"),
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 0,
+            },
+        ];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = vec![Rc::new(RefCell::new(super::LiveProjectBusMember::from(
+            test_bus_member("RENAMED", "RENAMED", "/RENAMED"),
+        )))];
+
+        LiveReducedSubgraph::replay_stale_bus_members(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
         );
-        assert_eq!(graph[1].driver_connection.full_local_name, "/RENAMED");
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].driver_connection.members[0].full_local_name, "/SIG0");
+        assert_eq!(graph[0].driver_connection.members[1].full_local_name, "/SIG1");
+        assert_eq!(graph[1].driver_connection.full_local_name, "/OLD");
     }
 
     #[test]
