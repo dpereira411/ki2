@@ -9079,6 +9079,9 @@ fn projected_reduced_project_subgraph_by_index(
     if let Some(live) = graph.live_subgraphs.get(index) {
         live.borrow()
             .project_onto_reduced(&mut subgraph, &graph.live_subgraphs);
+    } else {
+        subgraph.driver_connection = reduced_project_effective_driver_connection(&subgraph).clone();
+        subgraph.sync_boundary_state_from_driver_owner();
     }
 
     Some(subgraph)
@@ -9436,9 +9439,10 @@ pub(crate) fn resolve_reduced_project_net_for_label(
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
+                let driver_connection = reduced_project_effective_driver_connection(&subgraph);
                 ReducedProjectNetIdentity {
                     code: subgraph.code,
-                    name: subgraph.driver_connection.name.clone(),
+                    name: driver_connection.name.clone(),
                     class: subgraph.class.clone(),
                     has_no_connect: subgraph.has_no_connect,
                 }
@@ -9460,7 +9464,11 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_label(graph, sheet_path, label)
-                .map(|subgraph| subgraph.driver_connection.local_name.clone())
+                .map(|subgraph| {
+                    reduced_project_effective_driver_connection(&subgraph)
+                        .local_name
+                        .clone()
+                })
         })
 }
 
@@ -9749,11 +9757,14 @@ pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-                .map(|subgraph| ReducedProjectNetIdentity {
-                    code: subgraph.code,
-                    name: subgraph.driver_connection.name.clone(),
-                    class: subgraph.class.clone(),
-                    has_no_connect: subgraph.has_no_connect,
+                .map(|subgraph| {
+                    let driver_connection = reduced_project_effective_driver_connection(&subgraph);
+                    ReducedProjectNetIdentity {
+                        code: subgraph.code,
+                        name: driver_connection.name.clone(),
+                        class: subgraph.class.clone(),
+                        has_no_connect: subgraph.has_no_connect,
+                    }
                 })
         })
 }
@@ -9773,7 +9784,11 @@ pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-                .map(|subgraph| subgraph.driver_connection.local_name.clone())
+                .map(|subgraph| {
+                    reduced_project_effective_driver_connection(&subgraph)
+                        .local_name
+                        .clone()
+                })
         })
 }
 
@@ -10117,7 +10132,11 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_at(graph, sheet_path, at)
-                .map(|subgraph| subgraph.driver_connection.local_name.clone())
+                .map(|subgraph| {
+                    reduced_project_effective_driver_connection(&subgraph)
+                        .local_name
+                        .clone()
+                })
         })
 }
 
@@ -11174,9 +11193,10 @@ pub(crate) fn resolve_reduced_project_net_at(
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
+                let driver_connection = reduced_project_effective_driver_connection(&subgraph);
                 ReducedProjectNetIdentity {
                     code: subgraph.code,
-                    name: subgraph.driver_connection.name.clone(),
+                    name: driver_connection.name.clone(),
                     class: subgraph.class.clone(),
                     has_no_connect: subgraph.has_no_connect,
                 }
@@ -19631,6 +19651,138 @@ mod tests {
 
         assert_eq!(by_sheet_pin.subgraph_code, 1);
         assert_eq!(by_point.subgraph_code, 2);
+    }
+
+    #[test]
+    fn reduced_item_queries_use_ranked_primary_names_when_chosen_missing() {
+        let reduced = super::ReducedProjectNetGraph {
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            live_subgraphs: Vec::new(),
+            subgraphs: vec![{
+                let mut subgraph = test_net_subgraph(
+                    1,
+                    test_net_connection("/STALE", "STALE", "/STALE", ""),
+                    vec![ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: reduced_global_label_driver_priority(),
+                        connection: test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                        identity: Some(ReducedProjectDriverIdentity::Label {
+                            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                            at: PointKey(0, 0),
+                            kind: 2,
+                        }),
+                    }],
+                    "",
+                );
+                subgraph.label_links.push(ReducedLabelLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    kind: LabelKind::Global,
+                    dangling: false,
+                    non_endpoint_wire_segment_count: 0,
+                    connection: test_net_connection("/STALE", "STALE", "/STALE", ""),
+                });
+                subgraph.hier_sheet_pins.push(ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: test_net_connection("/STALE", "STALE", "/STALE", ""),
+                });
+                subgraph.points.push(PointKey(0, 0));
+                subgraph.chosen_driver_index = None;
+                subgraph
+            }],
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectPointIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: PointKey(0, 0),
+                },
+                0,
+            )]),
+            label_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectLabelIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: PointKey(0, 0),
+                    kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+                },
+                0,
+            )]),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectSheetPinIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                },
+                0,
+            )]),
+        };
+        let sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: String::new(),
+            sheet_uuid: None,
+            sheet_name: Some("Root".to_string()),
+            page: Some("1".to_string()),
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let label = crate::model::Label {
+            kind: LabelKind::Global,
+            text: "LIVE".to_string(),
+            at: [0.0, 0.0],
+            ..crate::model::Label::new(LabelKind::Global, String::new())
+        };
+
+        assert_eq!(
+            resolve_reduced_project_net_for_label(&reduced, &sheet_path, &label)
+                .expect("label net")
+                .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            resolve_reduced_project_driver_name_for_label(&reduced, &sheet_path, &label)
+                .expect("label driver"),
+            "LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_net_for_sheet_pin(
+                &reduced,
+                &sheet_path,
+                [0.0, 0.0],
+                Some("child-sheet"),
+            )
+            .expect("sheet pin net")
+            .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_sheet_pin(
+                &reduced,
+                &sheet_path,
+                [0.0, 0.0],
+                Some("child-sheet"),
+            )
+            .expect("sheet pin driver"),
+            "LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_net_at(&reduced, &sheet_path, [0.0, 0.0])
+                .expect("point net")
+                .name,
+            "/LIVE"
+        );
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_at(&reduced, &sheet_path, [0.0, 0.0])
+                .expect("point driver"),
+            "LIVE"
+        );
     }
 
     #[test]
