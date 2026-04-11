@@ -8787,6 +8787,27 @@ fn projected_reduced_project_subgraph_from_live_handle(
     Some(subgraph)
 }
 
+// upstream: CONNECTION_GRAPH::GetNetFromItem live subgraph-to-connection summary branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a reduced net summary instead of exposing the live `SCH_CONNECTION`
+// local_only_reason: `GetNetFromItem` callers still consume reduced `ReducedProjectNetIdentity` payloads
+// replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` summary access once reduced net identities are retired
+// remove_when: item net queries can consume live connection/subgraph owners directly
+fn projected_reduced_project_net_identity_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+) -> Option<ReducedProjectNetIdentity> {
+    projected_reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
+        ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: subgraph.driver_connection.name,
+            class: subgraph.class,
+            has_no_connect: subgraph.has_no_connect,
+        }
+    })
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
 // graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
@@ -9029,32 +9050,20 @@ fn resolve_reduced_project_subgraph_index_for_label(
         })
 }
 
-// Upstream parity: reduced local analogue for the label half of
-// `CONNECTION_GRAPH::GetNetFromItem()` on the project graph path. This still returns reduced net
-// identity instead of a live `CONNECTION_SUBGRAPH`, but it now reports the label's net name from
-// the required label identity owner instead of generic point identity at the same coordinates.
-// Remaining divergence is fuller live item identity and the still-missing live
-// `CONNECTION_SUBGRAPH` object.
+// upstream: CONNECTION_GRAPH::GetNetFromItem label branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a reduced net summary instead of a live `CONNECTION_SUBGRAPH`
+// local_only_reason: label net queries still consume reduced `ReducedProjectNetIdentity` payloads
+// replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` label-owner lookup
+// remove_when: label net queries can consume live connection/subgraph owners directly
 pub(crate) fn resolve_reduced_project_net_for_label(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<ReducedProjectNetIdentity> {
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| {
-            graph.live_subgraphs.get(index).map(|subgraph| {
-                let subgraph = subgraph.borrow();
-                let reduced = graph.subgraphs.get(index);
-                ReducedProjectNetIdentity {
-                    code: reduced.map_or(0, |subgraph| subgraph.code),
-                    name: subgraph.driver_connection.borrow().name.clone(),
-                    class: reduced
-                        .map(|subgraph| subgraph.class.clone())
-                        .unwrap_or_default(),
-                    has_no_connect: subgraph.has_no_connect,
-                }
-            })
-        })
+        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
                 ReducedProjectNetIdentity {
@@ -9336,12 +9345,13 @@ fn resolve_reduced_project_subgraph_index_for_sheet_pin(
         })
 }
 
-// Upstream parity: reduced local analogue for the sheet-pin half of
-// `CONNECTION_GRAPH::GetNetFromItem()` on the project graph path. This still returns reduced net
-// identity instead of a live `CONNECTION_SUBGRAPH`, but it now reports the sheet pin's net name
-// from the required sheet-pin identity owner instead of falling back to generic point identity at
-// the same coordinates. Remaining divergence is fuller live item identity and the still-missing
-// live `CONNECTION_SUBGRAPH` object.
+// upstream: CONNECTION_GRAPH::GetNetFromItem sheet-pin branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a reduced net summary instead of a live `CONNECTION_SUBGRAPH`
+// local_only_reason: sheet-pin net queries still consume reduced `ReducedProjectNetIdentity` payloads
+// replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` sheet-pin-owner lookup
+// remove_when: sheet-pin net queries can consume live connection/subgraph owners directly
 pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -9349,20 +9359,7 @@ pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
     child_sheet_uuid: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| {
-            graph.live_subgraphs.get(index).map(|subgraph| {
-                let subgraph = subgraph.borrow();
-                let reduced = graph.subgraphs.get(index);
-                ReducedProjectNetIdentity {
-                    code: reduced.map_or(0, |subgraph| subgraph.code),
-                    name: subgraph.driver_connection.borrow().name.clone(),
-                    class: reduced
-                        .map(|subgraph| subgraph.class.clone())
-                        .unwrap_or_default(),
-                    has_no_connect: subgraph.has_no_connect,
-                }
-            })
-        })
+        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
                 .map(|subgraph| ReducedProjectNetIdentity {
@@ -10317,11 +10314,13 @@ fn reduced_project_base_pin_key(
 // pin-to-subgraph owner instead of keeping a second pin-to-net side map. Remaining divergence is
 // fuller item identity for non-pin items and the still-missing `CONNECTION_SUBGRAPH` object.
 // Upstream parity: reduced local analogue for the symbol-pin half of
-// `CONNECTION_GRAPH::GetNetFromItem()` on the project graph path. This still returns reduced net
-// identity instead of a live `CONNECTION_SUBGRAPH`, but it now reports the symbol pin's net name
-// from the required reduced `driver_connection` owner instead of a parallel reduced subgraph
-// `name` field. Remaining divergence is fuller item identity and the still-missing live
-// `CONNECTION_SUBGRAPH` object.
+// upstream: CONNECTION_GRAPH::GetNetFromItem symbol-pin branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a reduced net summary instead of a live `CONNECTION_SUBGRAPH`
+// local_only_reason: symbol-pin net queries still consume reduced `ReducedProjectNetIdentity` payloads
+// replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` symbol-pin-owner lookup
+// remove_when: symbol-pin net queries can consume live connection/subgraph owners directly
 pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
@@ -10333,20 +10332,7 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
-    .and_then(|index| {
-        graph.live_subgraphs.get(index).map(|subgraph| {
-            let subgraph = subgraph.borrow();
-            let reduced = graph.subgraphs.get(index);
-            ReducedProjectNetIdentity {
-                code: reduced.map_or(0, |subgraph| subgraph.code),
-                name: subgraph.driver_connection.borrow().name.clone(),
-                class: reduced
-                    .map(|subgraph| subgraph.class.clone())
-                    .unwrap_or_default(),
-                has_no_connect: subgraph.has_no_connect,
-            }
-        })
-    })
+    .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
     .or_else(|| {
         resolve_reduced_project_subgraph_for_symbol_pin(
             graph, sheet_path, symbol, at, pin_name, pin_number,
@@ -10757,27 +10743,20 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
 // but it now reports the graph-owned subgraph name from the required reduced driver owner instead
 // of re-deriving the point net name from reduced connection boundary state or treating
 // `subgraph.name` as a second owner. Remaining divergence is fuller item identity for labels,
-// wires, and markers plus the still-missing `CONNECTION_SUBGRAPH` object.
+// upstream: CONNECTION_GRAPH::GetNetFromItem connection-point branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a reduced net summary instead of a live `CONNECTION_SUBGRAPH`
+// local_only_reason: point net queries still consume reduced `ReducedProjectNetIdentity` payloads
+// replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` point-owner lookup
+// remove_when: point net queries can consume live connection/subgraph owners directly
 pub(crate) fn resolve_reduced_project_net_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectNetIdentity> {
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| {
-            graph.live_subgraphs.get(index).map(|subgraph| {
-                let subgraph = subgraph.borrow();
-                let reduced = graph.subgraphs.get(index);
-                ReducedProjectNetIdentity {
-                    code: reduced.map_or(0, |subgraph| subgraph.code),
-                    name: subgraph.driver_connection.borrow().name.clone(),
-                    class: reduced
-                        .map(|subgraph| subgraph.class.clone())
-                        .unwrap_or_default(),
-                    has_no_connect: subgraph.has_no_connect,
-                }
-            })
-        })
+        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
                 ReducedProjectNetIdentity {
