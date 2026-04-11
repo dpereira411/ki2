@@ -598,8 +598,8 @@ fn reduced_project_driver_match_name(connection: &ReducedProjectConnection, name
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs candidate primary/secondary-driver match branch
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: evaluates reduced label/power driver records and skips sheet pins, but still lacks
-// full `SCH_ITEM*` default-connection ownership and absorbed-pointer traversal
+// divergence: evaluates reduced driver records instead of live `SCH_ITEM*` default connections,
+// and still lacks absorbed-pointer traversal
 // local_only_reason: same-type reduced absorption needs a graph-owned match predicate before the
 // fuller live subgraph owner exists
 // replaced_by: fuller `CONNECTION_SUBGRAPH` candidate loop using `getDefaultConnection()`
@@ -612,22 +612,15 @@ fn reduced_project_absorb_candidate_matches_name(
         return true;
     }
 
-    if candidate
-        .drivers
-        .iter()
-        .filter(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
-        .count()
-        < 2
-    {
-        return false;
-    }
-
     let chosen_driver_index = reduced_project_chosen_driver_index(candidate);
     candidate.drivers.iter().enumerate().any(|(index, driver)| {
         Some(index) != chosen_driver_index
             && matches!(
                 driver.kind,
-                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+                ReducedProjectDriverKind::Label
+                    | ReducedProjectDriverKind::SheetPin
+                    | ReducedProjectDriverKind::Pin
+                    | ReducedProjectDriverKind::PowerPin
             )
             && reduced_project_driver_match_name(&driver.connection, name)
     })
@@ -656,6 +649,7 @@ fn reduced_project_absorb_push_secondary_test_names(
             || !matches!(
                 driver.kind,
                 ReducedProjectDriverKind::Label
+                    | ReducedProjectDriverKind::SheetPin
                     | ReducedProjectDriverKind::Pin
                     | ReducedProjectDriverKind::PowerPin
             )
@@ -19355,6 +19349,45 @@ mod tests {
         ));
         assert!(super::reduced_project_absorb_candidate_matches_name(
             &candidate, "/OTHER"
+        ));
+    }
+
+    #[test]
+    fn reduced_absorb_candidate_matches_secondary_pin_default_names() {
+        let candidate = test_net_subgraph(
+            1,
+            test_net_connection("/RESOLVED", "RESOLVED", "/RESOLVED", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/RESOLVED", "RESOLVED", "/RESOLVED", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Pin,
+                    priority: super::reduced_pin_driver_priority(),
+                    connection: test_net_connection(
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "",
+                    ),
+                    identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("u1".to_string()),
+                        at: PointKey(0, 0),
+                        pin_number: Some("1".to_string()),
+                    }),
+                },
+            ],
+            "",
+        );
+
+        assert!(super::reduced_project_absorb_candidate_matches_name(
+            &candidate,
+            "Net-(U1-Pad1)"
         ));
     }
 
