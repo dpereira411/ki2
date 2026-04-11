@@ -1403,8 +1403,34 @@ fn connection_component_for_symbol_pin(
         })
 }
 
+// upstream: SCH_ITEM::GetPosition() integer-coordinate identity or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: local coordinates still travel as `f64`, so this helper snaps epsilon-equivalent
+// values before graph keying instead of carrying KiCad's integer coordinate owner end-to-end
+// local_only_reason: keeps graph point identity consistent with the existing `points_equal()`
+// tolerance until schematic item coordinates move to an upstream-shaped integer carrier
+// replaced_by: integer schematic coordinate ownership on loaded items and graph members
+// remove_when: graph point keys can be formed directly from shared integer item coordinates
+fn normalized_point_coord(coord: f64) -> f64 {
+    let snapped = (coord / 1e-9).round() * 1e-9;
+
+    if snapped.abs() < 5e-10 { 0.0 } else { snapped }
+}
+
+// upstream: CONNECTION_GRAPH point-keyed owner identity or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still hashes snapped `f64` coordinates instead of KiCad's integer positions
+// local_only_reason: centralizes the reduced graph's point identity policy so epsilon-equal item
+// projections do not split ownership buckets
+// replaced_by: integer schematic coordinate ownership on loaded items and graph members
+// remove_when: graph point keys can be formed directly from shared integer item coordinates
 fn point_key(at: [f64; 2]) -> PointKey {
-    PointKey(at[0].to_bits(), at[1].to_bits())
+    PointKey(
+        normalized_point_coord(at[0]).to_bits(),
+        normalized_point_coord(at[1]).to_bits(),
+    )
 }
 
 fn rotate_point(point: [f64; 2], angle_degrees: f64) -> [f64; 2] {
@@ -7388,12 +7414,14 @@ where
                         pin,
                         &unit_pins,
                         sheet_instance_path,
+                        shown_reference.as_deref(),
                     ),
                     driver_connection: reduced_seeded_symbol_pin_connection(
                         symbol,
                         pin,
                         &unit_pins,
                         sheet_instance_path,
+                        shown_reference.as_deref(),
                     ),
                     preserve_local_name_on_refresh: reduced_power_pin_driver_priority(
                         symbol,
@@ -7664,6 +7692,16 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                             inputs.current_variant,
                             None,
                             pin,
+                        )
+                    },
+                    |symbol| {
+                        resolved_symbol_text_property_value(
+                            inputs.schematics,
+                            sheet_path,
+                            inputs.project,
+                            inputs.current_variant,
+                            symbol,
+                            "Reference",
                         )
                     },
                 );
@@ -12137,10 +12175,9 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
         let has_local_hierarchy =
             !subgraph.hier_sheet_pins.is_empty() || !subgraph.hier_ports.is_empty();
         let has_local_hierarchy = has_local_hierarchy
-            || (has_local_hierarchy
-                && subgraph_index.is_some_and(|index| {
-                    reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, index)
-                }));
+            || subgraph_index.is_some_and(|index| {
+                reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, index)
+            });
         let has_no_connect = subgraph.has_no_connect
             || subgraph_index.is_some_and(|index| {
                 reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
@@ -12317,8 +12354,7 @@ fn live_reduced_project_label_connectivity_subgraphs(
         let has_local_hierarchy =
             !subgraph.hier_sheet_pins.is_empty() || !subgraph.hier_ports.is_empty();
         let has_local_hierarchy = has_local_hierarchy
-            || (has_local_hierarchy
-                && live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph_handle));
+            || live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph_handle);
         let has_no_connect = subgraph.has_no_connect
             || live_reduced_subgraph_has_no_connect_via_parent_chain(&subgraph_handle);
         let mut all_pins = pin_count;
@@ -12992,8 +13028,10 @@ fn live_reduced_project_no_connect_marker_outcomes(
 // remove_when: pin-not-connected checks can query per-pin live connected-item state directly
 fn reduced_project_pin_has_point_local_connection(
     subgraph: &ReducedProjectSubgraphEntry,
-    at: PointKey,
+    pin: &ReducedProjectBasePin,
 ) -> bool {
+    let at = pin.key.at;
+
     subgraph
         .wire_items
         .iter()
@@ -13009,6 +13047,9 @@ fn reduced_project_pin_has_point_local_connection(
             .any(|point| point.at == at)
         || subgraph.hier_sheet_pins.iter().any(|pin| pin.at == at)
         || subgraph.hier_ports.iter().any(|port| port.at == at)
+        || subgraph.base_pins.iter().any(|other_pin| {
+            other_pin.key.at == at && !reduced_base_pins_are_stacked(other_pin, pin)
+        })
 }
 
 // upstream: CONNECTION_GRAPH::ercCheckNoConnects multi-pin power-symbol connected-items branch or
@@ -13023,8 +13064,10 @@ fn reduced_project_pin_has_point_local_connection(
 // remove_when: pin-not-connected checks can query per-pin live connected-item state directly
 fn live_reduced_pin_has_point_local_connection(
     subgraph: &LiveReducedSubgraph,
-    at: PointKey,
+    pin: &ReducedProjectBasePin,
 ) -> bool {
+    let at = pin.key.at;
+
     subgraph.wire_items.iter().any(|item| {
         let item = item.borrow();
         item.start == at || item.end == at
@@ -13047,6 +13090,15 @@ fn live_reduced_pin_has_point_local_connection(
             .hier_ports
             .iter()
             .any(|port| port.borrow().at == at)
+        || subgraph.base_pins.iter().any(|other_pin| {
+            let other_pin = other_pin.borrow();
+            other_pin.pin.key.at == at
+                && !(other_pin.pin.key.sheet_instance_path == pin.key.sheet_instance_path
+                    && other_pin.pin.key.symbol_uuid == pin.key.symbol_uuid
+                    && other_pin.pin.key.name == pin.key.name
+                    && other_pin.pin.electrical_type == pin.electrical_type
+                    && other_pin.pin.key.at == pin.key.at)
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -13155,7 +13207,7 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
                 if test_pin.is_power_symbol
                     && test_pin.electrical_type.as_deref() != Some("no_connect")
                     && test_pin.electrical_type.as_deref() != Some("not_connected")
-                    && !reduced_project_pin_has_point_local_connection(subgraph, test_pin.key.at)
+                    && !reduced_project_pin_has_point_local_connection(subgraph, test_pin)
                 {
                     candidates.push(ReducedProjectPinNotConnectedCandidate {
                         pin_schematic_path: test_pin.schematic_path.clone(),
@@ -13275,7 +13327,7 @@ fn live_reduced_project_pin_not_connected_candidates(
                 if test_pin.is_power_symbol
                     && test_pin.electrical_type.as_deref() != Some("no_connect")
                     && test_pin.electrical_type.as_deref() != Some("not_connected")
-                    && !live_reduced_pin_has_point_local_connection(&subgraph, test_pin.key.at)
+                    && !live_reduced_pin_has_point_local_connection(&subgraph, test_pin)
                 {
                     candidates.push(ReducedProjectPinNotConnectedCandidate {
                         pin_schematic_path: test_pin.schematic_path.clone(),
@@ -14018,6 +14070,7 @@ fn reduced_seeded_symbol_pin_connection(
     pin: &ProjectedSymbolPin,
     unit_pins: &[ProjectedSymbolPin],
     sheet_instance_path: &str,
+    resolved_reference: Option<&str>,
 ) -> ReducedProjectConnection {
     let mut connection = ReducedProjectConnection {
         net_code: 0,
@@ -14035,7 +14088,13 @@ fn reduced_seeded_symbol_pin_connection(
             connection.local_name = name.clone();
             connection.full_local_name = name;
         }
-    } else if let Some(name) = reduced_symbol_pin_default_net_name(symbol, pin, unit_pins, false) {
+    } else if let Some(name) = reduced_symbol_pin_default_net_name(
+        symbol,
+        pin,
+        unit_pins,
+        false,
+        resolved_reference,
+    ) {
         connection.name = name.clone();
         connection.local_name = name.clone();
         connection.full_local_name = name;
@@ -14054,8 +14113,11 @@ fn reduced_symbol_pin_default_net_name(
     pin: &ProjectedSymbolPin,
     unit_pins: &[ProjectedSymbolPin],
     force_no_connect: bool,
+    resolved_reference: Option<&str>,
 ) -> Option<String> {
-    let reference = symbol_reference_text(symbol)?;
+    let reference = resolved_reference
+        .map(str::to_string)
+        .or_else(|| symbol_reference_text(symbol))?;
     let pin_number = pin.number.as_deref()?;
     let effective_pad_number = reduced_effective_pad_number(pin_number);
 
@@ -14273,6 +14335,7 @@ fn collect_reduced_strong_drivers<FLabel, FSheet>(
     sheet_path_prefix: &str,
     mut shown_label_text: FLabel,
     mut shown_sheet_pin_text: FSheet,
+    mut shown_symbol_reference: impl FnMut(&Symbol) -> Option<String>,
 ) -> Vec<ReducedProjectStrongDriver>
 where
     FLabel: FnMut(&Label) -> String,
@@ -14360,6 +14423,7 @@ where
             }
             SchItem::Symbol(symbol) => {
                 let unit_pins = projected_symbol_pin_info(symbol);
+                let shown_reference = shown_symbol_reference(symbol);
 
                 for pin in unit_pins.iter().filter(|pin| {
                     connected_component.members.iter().any(|member| {
@@ -14408,9 +14472,13 @@ where
                         && symbol.on_board
                         && !reduced_symbol_lib_reference_starts_with_hash(symbol)
                     {
-                        if let Some(text) =
-                            reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
-                        {
+                        if let Some(text) = reduced_symbol_pin_default_net_name(
+                            symbol,
+                            pin,
+                            &unit_pins,
+                            false,
+                            shown_reference.as_deref(),
+                        ) {
                             drivers.push((
                                 ReducedProjectStrongDriver {
                                     kind: ReducedProjectDriverKind::Pin,
@@ -14508,6 +14576,7 @@ fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
     connected_component: &ConnectionComponent,
     mut shown_label_text: FLabel,
     mut shown_sheet_pin_text: FSheet,
+    mut shown_symbol_reference: impl FnMut(&Symbol) -> Option<String>,
 ) -> Option<ReducedDriverNameCandidate>
 where
     FLabel: FnMut(&Label) -> String,
@@ -14563,6 +14632,7 @@ where
             }
             SchItem::Symbol(symbol) => {
                 let unit_pins = projected_symbol_pin_info(symbol);
+                let shown_reference = shown_symbol_reference(symbol);
 
                 for pin in unit_pins.iter().filter(|pin| {
                     connected_component.members.iter().any(|member| {
@@ -14604,7 +14674,13 @@ where
                                     return None;
                                 }
 
-                                reduced_symbol_pin_default_net_name(symbol, pin, &unit_pins, false)
+                                reduced_symbol_pin_default_net_name(
+                                    symbol,
+                                    pin,
+                                    &unit_pins,
+                                    false,
+                                    shown_reference.as_deref(),
+                                )
                                     .map(|text| ReducedDriverNameCandidate {
                                         priority: reduced_pin_driver_priority(),
                                         sheet_pin_rank: 0,
@@ -14674,6 +14750,7 @@ where
         connected_component,
         shown_label_text,
         shown_sheet_pin_text,
+        |symbol| symbol_reference_text(symbol),
     )
     .map(|candidate| {
         if let Some(prefix) = sheet_path_prefix {
@@ -15465,6 +15542,12 @@ mod tests {
             connection: child_connection,
         });
         label_subgraph.bus_parent_indexes.push(1);
+        label_subgraph
+            .bus_parent_links
+            .push(ReducedProjectBusNeighborLink {
+                member: test_bus_member("BUS", "BUS", "/BUS"),
+                subgraph_index: 1,
+            });
 
         let mut parent_subgraph = test_net_subgraph(
             2,
@@ -15482,7 +15565,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_label_connectivity_subgraphs_require_local_hierarchy_before_parent_exemption() {
+    fn reduced_label_connectivity_subgraphs_inherit_bus_parent_local_hierarchy() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
         label_subgraph.label_links.push(ReducedLabelLink {
@@ -15494,6 +15577,12 @@ mod tests {
             connection,
         });
         label_subgraph.bus_parent_indexes.push(1);
+        label_subgraph
+            .bus_parent_links
+            .push(ReducedProjectBusNeighborLink {
+                member: test_bus_member("BUS", "BUS", "/BUS"),
+                subgraph_index: 1,
+            });
 
         let mut parent_subgraph = test_net_subgraph(
             2,
@@ -15529,11 +15618,11 @@ mod tests {
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
-        assert!(!label_subgraphs[0].has_local_hierarchy);
+        assert!(label_subgraphs[0].has_local_hierarchy);
     }
 
     #[test]
-    fn live_label_connectivity_subgraphs_require_local_hierarchy_before_parent_exemption() {
+    fn live_label_connectivity_subgraphs_inherit_bus_parent_local_hierarchy() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
         label_subgraph.label_links.push(ReducedLabelLink {
@@ -15565,7 +15654,7 @@ mod tests {
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
-        assert!(!label_subgraphs[0].has_local_hierarchy);
+        assert!(label_subgraphs[0].has_local_hierarchy);
     }
 
     #[test]
@@ -21624,8 +21713,9 @@ mod tests {
             },
         ];
 
-        let name = super::reduced_symbol_pin_default_net_name(&symbol, &pin, &unit_pins, false)
-            .expect("default net name");
+        let name =
+            super::reduced_symbol_pin_default_net_name(&symbol, &pin, &unit_pins, false, None)
+                .expect("default net name");
 
         assert_eq!(name, "Net-(U1-A-Pad2)");
     }
@@ -21648,7 +21738,13 @@ mod tests {
         };
         let unit_pins = vec![pin.clone()];
 
-        let connection = super::reduced_seeded_symbol_pin_connection(&symbol, &pin, &unit_pins, "");
+        let connection = super::reduced_seeded_symbol_pin_connection(
+            &symbol,
+            &pin,
+            &unit_pins,
+            "",
+            None,
+        );
 
         assert_eq!(
             connection.connection_type,
@@ -21680,8 +21776,13 @@ mod tests {
         };
         let unit_pins = vec![pin.clone()];
 
-        let connection =
-            super::reduced_seeded_symbol_pin_connection(&symbol, &pin, &unit_pins, "/sheet/");
+        let connection = super::reduced_seeded_symbol_pin_connection(
+            &symbol,
+            &pin,
+            &unit_pins,
+            "/sheet/",
+            None,
+        );
 
         assert_eq!(
             connection.connection_type,
@@ -21760,6 +21861,7 @@ mod tests {
             &component,
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
         )
         .expect("driver candidate");
 
@@ -21830,6 +21932,7 @@ mod tests {
             &component,
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
         );
         let drivers = super::collect_reduced_strong_drivers(
             &schematic,
@@ -21839,6 +21942,7 @@ mod tests {
             "",
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
         );
 
         assert!(candidate.is_none());
@@ -21901,6 +22005,7 @@ mod tests {
             &component,
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
         );
 
         assert!(candidate.is_none());
@@ -22032,6 +22137,7 @@ mod tests {
             &component,
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
         )
         .expect("driver candidate");
 
@@ -22112,6 +22218,7 @@ mod tests {
             "",
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |symbol| super::symbol_reference_text(symbol),
         );
 
         assert_eq!(drivers.len(), 2);
@@ -32620,6 +32727,37 @@ mod tests {
             vec!["REF2".to_string(), "REF3".to_string(), "REF4".to_string()]
         );
     }
+
+    #[test]
+    fn issue12814_usage_fixture_has_no_plain_pin_not_connected_candidates() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_2.kicad_sch");
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let caches = super::reduced_project_label_name_caches(&graph);
+
+        assert!(
+            reduced_project_pin_not_connected_candidates(&graph, &caches).is_empty(),
+            "issue12814 usage fixture should only keep the root-sheet hierarchical label warning",
+        );
+    }
+
+    #[test]
+    fn issue12814_drive_fixture_has_no_plain_pin_not_connected_candidates() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_1.kicad_sch");
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let caches = super::reduced_project_label_name_caches(&graph);
+
+        assert!(
+            reduced_project_pin_not_connected_candidates(&graph, &caches).is_empty(),
+            "issue12814 drive fixture should only keep the root-sheet hierarchical label warning",
+        );
+    }
+
 }
 impl PartialEq for LiveReducedLabelLink {
     fn eq(&self, other: &Self) -> bool {
