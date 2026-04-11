@@ -8557,7 +8557,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
             }
 
             let child = &reduced_subgraphs[*child_index];
-            if child.driver_connection.connection_type != ReducedProjectConnectionType::Net {
+            let child_driver_connection = reduced_project_effective_driver_connection(child);
+            if child_driver_connection.connection_type != ReducedProjectConnectionType::Net {
                 continue;
             }
 
@@ -8580,11 +8581,10 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .map(|connection| connection.full_local_name.clone())
                 .collect::<Vec<_>>();
 
-            let driver_connection = &child.driver_connection;
-            if !driver_connection.full_local_name.is_empty() {
-                child_names.push(driver_connection.full_local_name.clone());
-            } else if !driver_connection.name.is_empty() {
-                child_names.push(driver_connection.name.clone());
+            if !child_driver_connection.full_local_name.is_empty() {
+                child_names.push(child_driver_connection.full_local_name.clone());
+            } else if !child_driver_connection.name.is_empty() {
+                child_names.push(child_driver_connection.name.clone());
             }
             if child
                 .drivers
@@ -8600,10 +8600,11 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     ) {
                         continue;
                     }
-                    if driver.connection.connection_type != driver_connection.connection_type {
+                    if driver.connection.connection_type != child_driver_connection.connection_type {
                         continue;
                     }
-                    if driver.connection.full_local_name == driver_connection.full_local_name {
+                    if driver.connection.full_local_name == child_driver_connection.full_local_name
+                    {
                         continue;
                     }
                     if !driver.connection.full_local_name.is_empty() {
@@ -11958,8 +11959,8 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
 
     let bus_connection =
         reduced_project_connected_bus_subgraph_for_wire_item(graph, subgraph, bus_entry)
-            .map(|bus_subgraph| &bus_subgraph.driver_connection)
-            .unwrap_or(&subgraph.driver_connection);
+            .map(reduced_project_effective_driver_connection)
+            .unwrap_or_else(|| reduced_project_effective_driver_connection(subgraph));
 
     if !reduced_connection_is_bus(bus_connection.connection_type) {
         return None;
@@ -11987,7 +11988,7 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
         test_names.push(driver_name.to_string());
     }
 
-    let driver_connection = &subgraph.driver_connection;
+    let driver_connection = reduced_project_effective_driver_connection(subgraph);
 
     if driver_connection.connection_type == ReducedProjectConnectionType::Net
         && !driver_connection.full_local_name.is_empty()
@@ -12055,7 +12056,7 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
     let fallback_net_name = if !driver_connection.full_local_name.is_empty() {
         driver_connection.full_local_name.clone()
     } else {
-        subgraph.driver_connection.name.clone()
+        driver_connection.name.clone()
     };
 
     if test_names.is_empty() && !driver_connection.full_local_name.is_empty() {
@@ -28588,6 +28589,87 @@ mod tests {
         .expect("bus-entry conflict candidate");
 
         assert!(!candidate.suppress_conflict);
+    }
+
+    #[test]
+    fn reduced_bus_entry_conflict_candidate_uses_ranked_primary_fallback_name_when_chosen_missing() {
+        let bus_connection = test_bus_connection(
+            "/BUS",
+            "BUS",
+            "/BUS",
+            "",
+            vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+        );
+        let mut bus_subgraph = test_net_subgraph(1, bus_connection.clone(), Vec::new(), "");
+        bus_subgraph.bus_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0f64.to_bits(), 0f64.to_bits()),
+            end: PointKey(10f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let mut subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("LIVE", "LIVE", "LIVE", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+        subgraph.chosen_driver_index = None;
+        subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(20f64.to_bits(), 10f64.to_bits()),
+            end: PointKey(5f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: true,
+            start_is_wire_side: true,
+            connected_bus_subgraph_index: Some(0),
+        });
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-net",
+            PointKey(20f64.to_bits(), 10f64.to_bits()),
+            "1",
+            "input",
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+        ));
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![bus_subgraph, subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let candidate = super::reduced_project_subgraph_bus_entry_conflict_candidate(
+            &graph,
+            &graph.subgraphs[1],
+        )
+        .expect("bus-entry conflict candidate");
+
+        assert_eq!(candidate.fallback_net_name, "LIVE");
     }
 
     #[test]
