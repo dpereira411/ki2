@@ -8842,12 +8842,12 @@ pub(crate) fn collect_reduced_project_subgraphs_by_name<'a>(
 // directly to whole-net identity. Remaining divergence is fuller item ownership for labels, wires,
 // and markers plus the still-missing live `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| graph.subgraphs.get(index))
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
@@ -8913,12 +8913,12 @@ fn resolve_reduced_project_subgraph_index_at(
 // fuller item identity for overlapping same-kind labels plus the still-missing live
 // `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     label: &Label,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| graph.subgraphs.get(index))
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live label-owner lookup or none
@@ -9048,12 +9048,12 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
 // ERC infer marker ownership from subgraph point sets. Remaining divergence is fuller marker item
 // identity for overlapping markers plus the still-missing live `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
-        .and_then(|index| graph.subgraphs.get(index))
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live no-connect lookup or none
@@ -9212,13 +9212,13 @@ pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
 // Remaining divergence is fuller sheet-pin item identity and the still-missing live
 // `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| graph.subgraphs.get(index))
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live sheet-pin lookup or none
@@ -10477,17 +10477,17 @@ fn reduced_project_base_pin_for_symbol_pin<'a>(
 // graph owner sees them. Remaining divergence is fuller item ownership for non-pin items and the
 // still-missing live `CONNECTION_SUBGRAPH` object.
 pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
-    graph: &'a ReducedProjectNetGraph,
+    graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
     at: [f64; 2],
     pin_name: Option<&str>,
     pin_number: Option<&str>,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
-    .and_then(|index| graph.subgraphs.get(index))
+    .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 fn live_reduced_project_symbol_pin_snapshot(
@@ -10684,7 +10684,7 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
         )
         .map(|subgraph| {
             reduced_project_base_pin_for_symbol_pin(
-                subgraph, sheet_path, symbol, at, pin_name, pin_number,
+                &subgraph, sheet_path, symbol, at, pin_name, pin_number,
             )
             .and_then(|base_pin| {
                 base_pin
@@ -23226,7 +23226,7 @@ mod tests {
             .connected_bus_subgraph_index
             .expect("connected bus owner index");
         let connected_bus =
-            super::reduced_project_connected_bus_subgraph_for_wire_item(&graph, entry, bus_entry)
+            super::reduced_project_connected_bus_subgraph_for_wire_item(&graph, &entry, bus_entry)
                 .expect("connected bus subgraph");
         assert_eq!(
             super::reduced_project_subgraph_index(&graph, connected_bus)
@@ -23236,7 +23236,7 @@ mod tests {
         assert!(
             super::reduced_project_wire_item_endpoint_has_connected_bus_owner(
                 &graph,
-                entry,
+                &entry,
                 bus_entry,
                 bus_entry.end,
             )
@@ -23244,7 +23244,7 @@ mod tests {
         assert!(
             !super::reduced_project_wire_item_endpoint_has_connected_bus_owner(
                 &graph,
-                entry,
+                &entry,
                 bus_entry,
                 bus_entry.start,
             )
