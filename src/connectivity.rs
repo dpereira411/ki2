@@ -19574,6 +19574,73 @@ mod tests {
     }
 
     #[test]
+    fn reduced_absorb_follows_absorbed_candidate_secondary_sheet_pin_names() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::SheetPin,
+                        priority: super::reduced_sheet_pin_driver_priority(),
+                        connection: test_net_connection("/PORT", "PORT", "/PORT", ""),
+                        identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                            at: PointKey(10, 0),
+                            child_sheet_uuid: Some("child".to_string()),
+                            sheet_pin_rank: super::reduced_sheet_pin_driver_rank(
+                                SheetPinShape::Output
+                            ),
+                        }),
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/PORT", "PORT", "/PORT", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/PORT", "PORT", "/PORT", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+        subgraphs[2].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/PORT")
+        );
+    }
+
+    #[test]
     fn reduced_absorb_uses_parent_secondary_power_pin_names() {
         let mut subgraphs = vec![
             test_net_subgraph(
