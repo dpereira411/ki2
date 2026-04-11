@@ -5631,17 +5631,22 @@ fn live_reduced_subgraph_highest_driver_priority(subgraph: &LiveReducedSubgraph)
         .unwrap_or(0)
 }
 
+// upstream: CONNECTION_SUBGRAPH::GetDriverPriority / ResolveDrivers chosen-driver priority
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still reads reduced live driver owners instead of final `m_driver`, but now falls
+// back to the highest attached driver priority when no chosen driver is bound instead of using the
+// first attached snapshot
+// local_only_reason: propagation/suppression branches still need a graph-owned priority query
+// before the fuller live `CONNECTION_SUBGRAPH` owner stores final `m_driver`
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with final chosen-driver state
+// remove_when: propagation reads final `m_driver` priority directly from the live subgraph owner
 fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
     subgraph
         .chosen_driver
         .as_ref()
         .map(|driver| driver.borrow().priority())
-        .or_else(|| {
-            subgraph
-                .drivers
-                .first()
-                .map(|driver| driver.borrow().priority())
-        })
+        .or_else(|| (!subgraph.drivers.is_empty()).then(|| live_reduced_subgraph_highest_driver_priority(subgraph)))
         .or_else(|| {
             (!matches!(
                 subgraph.driver_connection.borrow().connection_type,
@@ -27175,6 +27180,39 @@ mod tests {
         assert_eq!(
             super::live_reduced_subgraph_driver_priority(&subgraph),
             super::reduced_local_label_driver_priority()
+        );
+        assert!(!super::live_subgraph_has_local_driver(&subgraph));
+    }
+
+    #[test]
+    fn live_reduced_subgraph_driver_priority_falls_back_to_highest_when_chosen_missing() {
+        let graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("GLOBAL", "GLOBAL", "GLOBAL", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        )];
+
+        let handles = build_live_reduced_subgraph_handles(&graph);
+        handles[0].borrow_mut().chosen_driver = None;
+        let subgraph = handles[0].borrow();
+
+        assert_eq!(
+            super::live_reduced_subgraph_driver_priority(&subgraph),
+            super::reduced_global_power_pin_driver_priority()
         );
         assert!(!super::live_subgraph_has_local_driver(&subgraph));
     }
