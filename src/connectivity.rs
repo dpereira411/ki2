@@ -4794,8 +4794,8 @@ impl LiveReducedSubgraph {
                 left.borrow()
                     .member
                     .borrow()
-                    .full_local_name
-                    .cmp(&right.borrow().member.borrow().full_local_name)
+                    .name
+                    .cmp(&right.borrow().member.borrow().name)
                     .then(
                         live_subgraph_link_index(live_subgraphs, left)
                             .cmp(&live_subgraph_link_index(live_subgraphs, right)),
@@ -30290,7 +30290,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_live_bus_neighbors_sort_by_resolved_member_name() {
+    fn reduced_live_bus_neighbors_sort_by_member_name() {
         let first_by_display = test_bus_member("A", "A", "/Z");
         let first_by_resolved = test_bus_member("Z", "Z", "/A");
         let mut graph = vec![
