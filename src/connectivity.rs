@@ -6057,6 +6057,12 @@ fn live_reduced_subgraphs_by_name(
     build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).0
 }
 
+fn live_reduced_subgraphs_by_sheet_and_name(
+    graph: &ReducedProjectNetGraph,
+) -> BTreeMap<(String, String), Vec<LiveReducedSubgraphHandle>> {
+    build_live_reduced_name_handle_caches_from_handles(&graph.live_subgraphs).1
+}
+
 // Upstream parity: local bridge for same-name recache on the shared live subgraph owner. This
 // still keys by reduced resolved names instead of full live `CONNECTION_SUBGRAPH` identity, but it
 // keeps recache/update tied to the shared active graph object graph. Like KiCad's
@@ -8798,16 +8804,27 @@ pub(crate) fn reduced_project_subgraph_index(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::FindSubgraphByName()`. This is
-// not a 1:1 graph lookup because the Rust tree still lacks live `CONNECTION_SUBGRAPH` ownership,
-// but it now preserves KiCad's `(sheet instance path, resolved net name)` lookup boundary and
-// same-name multi-subgraph list shape instead of the old repo-local short-driver key. Remaining
-// divergence is the fuller subgraph object model and exact driver-connection caching.
+// upstream: CONNECTION_GRAPH::FindSubgraphByName or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still projects a reduced snapshot instead of returning the live `CONNECTION_SUBGRAPH*`
+// local_only_reason: downstream readers still consume reduced subgraph entries
+// replaced_by: live `CONNECTION_SUBGRAPH` sheet-qualified lookup once reduced snapshot readers are retired
+// remove_when: sheet-qualified same-name consumers can use the shared live graph owner directly
 pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
     graph: &ReducedProjectNetGraph,
     net_name: &str,
     sheet_path: &LoadedSheetPath,
 ) -> Option<ReducedProjectSubgraphEntry> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_subgraphs_by_sheet_and_name(graph)
+            .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
+            .into_iter()
+            .flat_map(|handles| handles.iter())
+            .find_map(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .filter(|subgraph| subgraph.driver_connection.name == net_name);
+    }
+
     graph
         .subgraphs_by_sheet_and_name
         .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
@@ -8816,17 +8833,24 @@ pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::FindFirstSubgraphByName()`. This
-// is not a 1:1 global lookup because the Rust tree still stores reduced subgraphs in the shared
-// project graph instead of live `CONNECTION_SUBGRAPH*` objects, but it restores the owner
-// boundary where graph/export/ERC callers can ask for the first resolved subgraph by full net name
-// instead of flattening to whole-net facts only. It now also preserves KiCad's exercised vector
-// bus `prefix[]` alias entries beside the full resolved bus name. Remaining divergence is the
-// fuller subgraph object model and graph-owned resolved-name caches.
+// upstream: CONNECTION_GRAPH::FindFirstSubgraphByName or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still projects a reduced snapshot instead of returning the live `CONNECTION_SUBGRAPH*`
+// local_only_reason: graph/export/ERC readers still consume reduced subgraph entries
+// replaced_by: live `CONNECTION_SUBGRAPH` first-by-name lookup once reduced snapshot readers are retired
+// remove_when: same-name readers can use the shared live graph owner directly
 pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
     graph: &ReducedProjectNetGraph,
     net_name: &str,
 ) -> Option<ReducedProjectSubgraphEntry> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_subgraphs_by_name(graph)
+            .get(net_name)
+            .and_then(|handles| handles.first())
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle));
+    }
+
     graph
         .subgraphs_by_name
         .get(net_name)
@@ -21145,6 +21169,91 @@ mod tests {
         assert_eq!(subgraphs.len(), 1);
         assert_eq!(subgraphs[0].subgraph_code, 1);
         assert_eq!(subgraphs[0].name, "/LIVE");
+    }
+
+    #[test]
+    fn first_same_name_lookup_prefers_live_subgraph_name_cache_over_stale_reduced_index() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+        graph.subgraphs_by_name = BTreeMap::from([
+            ("/OLD".to_string(), vec![0]),
+            ("/LIVE".to_string(), vec![1]),
+        ]);
+
+        let subgraph =
+            super::find_first_reduced_project_subgraph_by_name(&graph, "/LIVE").expect("live name");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+        assert_eq!(subgraph.name, "/LIVE");
+    }
+
+    #[test]
+    fn sheet_same_name_lookup_prefers_live_subgraph_name_cache_over_stale_reduced_index() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "/child",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: "/child".to_string(),
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("child-sheet".to_string()),
+            sheet_name: Some("Child".to_string()),
+            page: Some("2".to_string()),
+            sheet_number: 2,
+            sheet_count: 2,
+        };
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", "/child"),
+        );
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+        graph.subgraphs_by_sheet_and_name =
+            BTreeMap::from([(("/child".to_string(), "/LIVE".to_string()), vec![1])]);
+
+        let subgraph = super::find_reduced_project_subgraph_by_name(&graph, "/LIVE", &sheet_path)
+            .expect("live sheet-local name");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+        assert_eq!(subgraph.sheet_instance_path, "/child");
+        assert_eq!(subgraph.name, "/LIVE");
     }
 
     #[test]
