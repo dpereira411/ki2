@@ -6718,13 +6718,19 @@ fn rebuild_reduced_project_graph_name_caches(
     let mut subgraphs_by_sheet_and_name = BTreeMap::<(String, String), Vec<usize>>::new();
 
     for (index, subgraph) in reduced_subgraphs.iter_mut().enumerate() {
-        let owner_name = subgraph.driver_connection.name.clone();
+        let owner_name = reduced_project_effective_driver_connection(subgraph)
+            .name
+            .clone();
 
         if !owner_name.is_empty() {
             let next_code = net_codes.len() + 1;
             let code = *net_codes.entry(owner_name.clone()).or_insert(next_code);
             subgraph.code = code;
-            assign_reduced_connection_net_codes(&mut subgraph.driver_connection, &mut net_codes);
+            assign_reduced_connection_net_codes(
+                reduced_project_effective_driver_connection_mut(subgraph),
+                &mut net_codes,
+            );
+            subgraph.driver_connection = reduced_project_effective_driver_connection(subgraph).clone();
             subgraph.sync_boundary_state_from_driver_owner();
 
             for link in &mut subgraph.label_links {
@@ -22971,6 +22977,40 @@ mod tests {
         assert_eq!(subgraph.drivers[0].connection.net_code, 1);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_project_graph_name_caches_assign_net_codes_to_ranked_primary_when_chosen_missing() {
+        let mut subgraphs = vec![test_net_subgraph(
+            1,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                identity: None,
+            }],
+            "",
+        )];
+        subgraphs[0].chosen_driver_index = None;
+
+        let (by_name, by_sheet_and_name) = super::rebuild_reduced_project_graph_name_caches(
+            &mut subgraphs,
+        );
+
+        assert_eq!(subgraphs[0].code, 1);
+        assert_eq!(subgraphs[0].name, "/SIG");
+        assert_eq!(subgraphs[0].driver_connection.name, "/SIG");
+        assert_eq!(subgraphs[0].driver_connection.net_code, 1);
+        assert_eq!(subgraphs[0].resolved_connection.net_code, 1);
+        assert_eq!(subgraphs[0].drivers[0].connection.name, "/SIG");
+        assert_eq!(subgraphs[0].drivers[0].connection.net_code, 1);
+        assert_eq!(by_name.get("/SIG"), Some(&vec![0]));
+        assert_eq!(
+            by_sheet_and_name.get(&("".to_string(), "/SIG".to_string())),
+            Some(&vec![0])
+        );
+        assert!(!by_name.contains_key("/STALE"));
     }
 
     #[test]
