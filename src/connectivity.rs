@@ -4256,9 +4256,16 @@ impl LiveReducedSubgraph {
 
                 let matching_hier_port = parent.hier_sheet_pins.iter().any(|pin| {
                     let pin = pin.borrow();
+                    let pin_shown = live_hierarchy_link_shown_text_local_name(
+                        &pin.shown_text_local_name,
+                        &pin.connection,
+                    );
                     child.hier_ports.iter().any(|port| {
-                        port.borrow().connection.borrow().local_name
-                            == pin.connection.borrow().local_name
+                        let port = port.borrow();
+                        live_hierarchy_link_shown_text_local_name(
+                            &port.shown_text_local_name,
+                            &port.connection,
+                        ) == pin_shown
                     })
                 });
 
@@ -5627,6 +5634,17 @@ fn live_subgraph_is_self_driven_sheet_pin(subgraph: &LiveReducedSubgraph) -> boo
                 .and_then(Weak::upgrade)
                 .is_some()
             || !subgraph.hier_child_handles.is_empty())
+}
+
+fn live_hierarchy_link_shown_text_local_name(
+    shown_text_local_name: &str,
+    connection: &LiveProjectConnectionHandle,
+) -> String {
+    if shown_text_local_name.is_empty() {
+        connection.borrow().local_name.clone()
+    } else {
+        shown_text_local_name.to_string()
+    }
 }
 
 // Upstream parity: local bridge toward shared mutable `CONNECTION_SUBGRAPH` ownership during live
@@ -31455,6 +31473,172 @@ mod tests {
         assert!(wire_item_connection.borrow().members.is_empty());
         assert_eq!(
             graph[0].driver_connection.connection_type,
+            ReducedProjectConnectionType::Bus
+        );
+    }
+
+    #[test]
+    fn live_post_propagation_sheet_pin_bus_promotion_uses_shown_text_names() {
+        let graph = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/BUS".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/BUS".to_string(),
+                    local_name: "RENAMED_PIN".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/BUS".to_string(),
+                    local_name: "RENAMED_PIN".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/BUS".to_string(),
+                        local_name: "PIN_SHOWN".to_string(),
+                        full_local_name: "/BUS".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                }],
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: vec![1],
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/BUS".to_string(),
+                resolved_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "RENAMED_PORT".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "BUS0".to_string(),
+                        local_name: "BUS0".to_string(),
+                        full_local_name: "/child/BUS0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                driver_connection: ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::Bus,
+                    name: "/BUS".to_string(),
+                    local_name: "RENAMED_PORT".to_string(),
+                    full_local_name: "/BUS".to_string(),
+                    sheet_instance_path: "/child".to_string(),
+                    members: vec![ReducedBusMember {
+                        net_code: 0,
+                        name: "BUS0".to_string(),
+                        local_name: "BUS0".to_string(),
+                        full_local_name: "/child/BUS0".to_string(),
+                        vector_index: Some(0),
+                        kind: ReducedBusMemberKind::Net,
+                        members: Vec::new(),
+                    }],
+                },
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: "/child".to_string(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+                    at: PointKey(0, 0),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Bus,
+                        name: "/BUS".to_string(),
+                        local_name: "PORT_SHOWN".to_string(),
+                        full_local_name: "/BUS".to_string(),
+                        sheet_instance_path: "/child".to_string(),
+                        members: Vec::new(),
+                    },
+                }],
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: Some(0),
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        {
+            let parent = live_subgraphs[0].borrow();
+            parent.hier_sheet_pins[0].borrow_mut().shown_text_local_name = "MATCH".to_string();
+            parent.hier_sheet_pins[0]
+                .borrow()
+                .connection
+                .borrow_mut()
+                .local_name = "RENAMED_PIN".to_string();
+        }
+        {
+            let child = live_subgraphs[1].borrow();
+            child.hier_ports[0].borrow_mut().shown_text_local_name = "MATCH".to_string();
+            child.hier_ports[0]
+                .borrow()
+                .connection
+                .borrow_mut()
+                .local_name = "RENAMED_PORT".to_string();
+        }
+
+        LiveReducedSubgraph::refresh_post_propagation_item_connections(&live_subgraphs[0]);
+
+        assert_eq!(
+            live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow()
+                .connection_type,
             ReducedProjectConnectionType::Bus
         );
     }
