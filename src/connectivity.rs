@@ -633,13 +633,13 @@ fn reduced_project_absorb_candidate_matches_name(
     })
 }
 
-// Upstream parity: CONNECTION_GRAPH::processSubGraphs `add_connections_to_check()` slice
+// upstream: CONNECTION_GRAPH::processSubGraphs `add_connections_to_check()` slice
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: derives secondary label connections from reduced strong-driver records instead of
-// iterating full `m_items` through `getDefaultConnection()`
-// local_only_reason: reduced absorption still runs before a fuller live `CONNECTION_SUBGRAPH`
-// item set exists
+// divergence: derives secondary default names from reduced strong-driver snapshots instead of
+// iterating live `m_items` through `getDefaultConnection()` before `Absorb()`
+// local_only_reason: reduced same-name absorption still runs before a fuller live
+// `CONNECTION_SUBGRAPH` owns item/default-connection traversal
 // replaced_by: fuller processSubGraphs loop over live subgraph items and default connections
 // remove_when: reduced same-name absorption is replaced by live `CONNECTION_SUBGRAPH::Absorb()`
 fn reduced_project_absorb_push_secondary_test_names(
@@ -655,7 +655,9 @@ fn reduced_project_absorb_push_secondary_test_names(
             || driver.connection.connection_type != parent_type
             || !matches!(
                 driver.kind,
-                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+                ReducedProjectDriverKind::Label
+                    | ReducedProjectDriverKind::Pin
+                    | ReducedProjectDriverKind::PowerPin
             )
             || reduced_project_driver_match_name(
                 &driver.connection,
@@ -19392,6 +19394,70 @@ mod tests {
     }
 
     #[test]
+    fn reduced_absorb_uses_parent_secondary_pin_default_names() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Pin,
+                        priority: super::reduced_pin_driver_priority(),
+                        connection: test_net_connection(
+                            "Net-(U1-Pad1)",
+                            "Net-(U1-Pad1)",
+                            "Net-(U1-Pad1)",
+                            "",
+                        ),
+                        identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                            sheet_instance_path: String::new(),
+                            symbol_uuid: Some("u1".to_string()),
+                            at: PointKey(0, 0),
+                            pin_number: Some("1".to_string()),
+                        }),
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("Net-(U1-Pad1)", "Net-(U1-Pad1)", "Net-(U1-Pad1)", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection(
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "Net-(U1-Pad1)",
+                        "",
+                    ),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "Net-(U1-Pad1)")
+        );
+    }
+
+    #[test]
     fn reduced_absorb_follows_secondary_power_pin_name_even_with_other_power_pin_on_symbol() {
         let mut parent = test_net_subgraph(
             1,
@@ -33935,6 +34001,69 @@ mod tests {
             by_sheet_and_name.get(&("".to_string(), "/SIG_1".to_string())),
             Some(&vec![0])
         );
+    }
+
+    #[test]
+    fn reduced_process_subgraphs_renames_prefixless_weak_bus_groups_with_bus_prefix() {
+        let bus_group_driver = ReducedProjectStrongDriver {
+            kind: ReducedProjectDriverKind::Pin,
+            priority: super::reduced_pin_driver_priority(),
+            connection: ReducedProjectConnection {
+                net_code: 0,
+                connection_type: ReducedProjectConnectionType::BusGroup,
+                name: "{A B}".to_string(),
+                local_name: "{A B}".to_string(),
+                full_local_name: "{A B}".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            identity: None,
+        };
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::BusGroup,
+                    name: "{A B}".to_string(),
+                    local_name: "{A B}".to_string(),
+                    full_local_name: "{A B}".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                vec![bus_group_driver.clone()],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                ReducedProjectConnection {
+                    net_code: 0,
+                    connection_type: ReducedProjectConnectionType::BusGroup,
+                    name: "{A B}".to_string(),
+                    local_name: "{A B}".to_string(),
+                    full_local_name: "{A B}".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                vec![bus_group_driver],
+                "",
+            ),
+        ];
+        let (mut by_name, mut by_sheet_and_name) =
+            super::reduced_project_rebuild_process_name_indexes(&subgraphs);
+
+        super::reduced_project_rename_weak_conflict_subgraphs(
+            &mut subgraphs,
+            &mut by_name,
+            &mut by_sheet_and_name,
+        );
+
+        assert_eq!(subgraphs[0].driver_connection.name, "BUS_1{A B}");
+        assert_eq!(subgraphs[0].driver_connection.local_name, "BUS_1{A B}");
+        assert_eq!(subgraphs[0].driver_connection.full_local_name, "BUS_1{A B}");
+        assert_eq!(subgraphs[1].driver_connection.name, "{A B}");
+        assert_eq!(by_name.get("BUS_1{A B}"), Some(&vec![0]));
+        assert_eq!(by_name.get("{A B}"), Some(&vec![1]));
     }
 
     #[test]
