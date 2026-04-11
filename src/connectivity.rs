@@ -12255,7 +12255,7 @@ pub(crate) fn reduced_project_subgraph_driver_conflict(
         return None;
     }
 
-    let primary_driver_index = reduced_project_chosen_driver_index(subgraph)?;
+    let primary_driver_index = reduced_project_conflict_primary_driver_index(subgraph)?;
     let primary_driver = subgraph.drivers.get(primary_driver_index)?;
     let secondary_driver = subgraph
         .drivers
@@ -12287,6 +12287,31 @@ pub(crate) fn reduced_project_subgraph_driver_conflict(
         secondary_name: reduced_project_strong_driver_name(secondary_driver).to_string(),
         diagnostic_path: driver_identity_schematic_path(primary_driver)
             .or_else(|| driver_identity_schematic_path(secondary_driver)),
+    })
+}
+
+// upstream: CONNECTION_SUBGRAPH::ResolveDrivers chosen-driver fallback or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still ranks reduced strong-driver snapshots instead of reading final live `m_driver`
+// directly, but now uses the same highest-ranked fallback when the reduced chosen-driver slot is
+// absent instead of taking driver index 0 positionally
+// local_only_reason: reduced ERC conflict selection still needs one graph-owned primary-driver
+// query while some reduced test/build paths leave `chosen_driver_index` unset
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored final `m_driver`
+// remove_when: reduced ERC conflict selection is removed in favor of the live owner path
+fn reduced_project_conflict_primary_driver_index(
+    subgraph: &ReducedProjectSubgraphEntry,
+) -> Option<usize> {
+    subgraph.chosen_driver_index.or_else(|| {
+        subgraph
+            .drivers
+            .iter()
+            .enumerate()
+            .max_by(|(_lhs_index, lhs), (_rhs_index, rhs)| {
+                reduced_project_absorbed_driver_cmp(lhs, rhs)
+            })
+            .map(|(index, _driver)| index)
     })
 }
 
@@ -20456,6 +20481,35 @@ mod tests {
         subgraph.chosen_driver_index = Some(0);
 
         assert!(super::reduced_project_subgraph_driver_conflict(&subgraph).is_none());
+    }
+
+    #[test]
+    fn reduced_driver_conflict_falls_back_to_highest_ranked_driver_when_chosen_missing() {
+        let subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/LOCAL", "LOCAL", "/LOCAL", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("GND", "GND", "GND", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        let conflict =
+            super::reduced_project_subgraph_driver_conflict(&subgraph).expect("driver conflict");
+
+        assert_eq!(conflict.primary_name, "GND");
+        assert_eq!(conflict.secondary_name, "LOCAL");
     }
 
     #[test]
