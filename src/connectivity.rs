@@ -633,61 +633,18 @@ fn reduced_project_absorb_candidate_matches_name(
     })
 }
 
-// upstream: CONNECTION_GRAPH::processSubGraphs power-pin secondary add_connections_to_check guard
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: infers multi-pin power-symbol spread from reduced base-pin identity across reduced
-// subgraphs instead of walking live `SCH_PIN` / `SCH_SYMBOL` item ownership
-// local_only_reason: reduced absorption still runs before the fuller live pin/subgraph owner exists
-// replaced_by: fuller processSubGraphs loop over live item ownership and getDefaultConnection()
-// remove_when: secondary power-pin expansion runs on live symbol/pin owners directly
-fn reduced_project_skip_secondary_multi_pin_power_name(
-    subgraphs: &[ReducedProjectSubgraphEntry],
-    subgraph_index: usize,
-    driver: &ReducedProjectStrongDriver,
-) -> bool {
-    let ReducedProjectStrongDriver {
-        kind: ReducedProjectDriverKind::PowerPin,
-        identity:
-            Some(ReducedProjectDriverIdentity::SymbolPin {
-                sheet_instance_path,
-                symbol_uuid: Some(symbol_uuid),
-                pin_number,
-                ..
-            }),
-        ..
-    } = driver
-    else {
-        return false;
-    };
-
-    subgraphs
-        .iter()
-        .enumerate()
-        .any(|(candidate_index, candidate)| {
-            candidate_index != subgraph_index
-                && candidate.base_pins.iter().any(|base_pin| {
-                    base_pin.is_power_symbol
-                        && base_pin.key.sheet_instance_path == *sheet_instance_path
-                        && base_pin.key.symbol_uuid.as_deref() == Some(symbol_uuid.as_str())
-                        && base_pin.key.number != *pin_number
-                })
-        })
-}
-
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs `add_connections_to_check()` slice
 // parity_status: partial
 // local_kind: local-only-transitional
 // divergence: derives secondary label connections from reduced strong-driver records instead of
-// iterating full `m_items` through `getDefaultConnection()`; power-pin secondary expansion remains
-// blocked on fuller live pin ownership for multi-pin power symbols
+// iterating full `m_items` through `getDefaultConnection()`
 // local_only_reason: reduced absorption still runs before a fuller live `CONNECTION_SUBGRAPH`
 // item set exists
 // replaced_by: fuller processSubGraphs loop over live subgraph items and default connections
 // remove_when: reduced same-name absorption is replaced by live `CONNECTION_SUBGRAPH::Absorb()`
 fn reduced_project_absorb_push_secondary_test_names(
-    subgraphs: &[ReducedProjectSubgraphEntry],
-    subgraph_index: usize,
+    _subgraphs: &[ReducedProjectSubgraphEntry],
+    _subgraph_index: usize,
     subgraph: &ReducedProjectSubgraphEntry,
     test_names: &mut Vec<String>,
 ) {
@@ -699,11 +656,6 @@ fn reduced_project_absorb_push_secondary_test_names(
             || !matches!(
                 driver.kind,
                 ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
-            )
-            || reduced_project_skip_secondary_multi_pin_power_name(
-                subgraphs,
-                subgraph_index,
-                driver,
             )
             || reduced_project_driver_match_name(
                 &driver.connection,
@@ -19440,6 +19392,117 @@ mod tests {
     }
 
     #[test]
+    fn reduced_absorb_follows_secondary_power_pin_name_even_with_other_power_pin_on_symbol() {
+        let mut parent = test_net_subgraph(
+            1,
+            test_net_connection("/AAA", "AAA", "/AAA", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_local_power_pin_driver_priority(),
+                    connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                    identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        sheet_instance_path: String::new(),
+                        symbol_uuid: Some("sym".to_string()),
+                        at: PointKey(0, 0),
+                        pin_number: Some("1".to_string()),
+                    }),
+                },
+            ],
+            "",
+        );
+        parent.chosen_driver_index = Some(0);
+
+        let mut power_target = test_net_subgraph(
+            2,
+            test_net_connection("/PWR", "PWR", "/PWR", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::PowerPin,
+                priority: super::reduced_local_power_pin_driver_priority(),
+                connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(10, 0),
+                    pin_number: Some("1".to_string()),
+                }),
+            }],
+            "",
+        );
+        power_target.chosen_driver_index = Some(0);
+
+        let mut sibling_power_pin = test_net_subgraph(
+            3,
+            test_net_connection("/OTHER", "OTHER", "/OTHER", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::PowerPin,
+                priority: super::reduced_local_power_pin_driver_priority(),
+                connection: test_net_connection("/OTHER", "OTHER", "/OTHER", ""),
+                identity: Some(ReducedProjectDriverIdentity::SymbolPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    sheet_instance_path: String::new(),
+                    symbol_uuid: Some("sym".to_string()),
+                    at: PointKey(20, 0),
+                    pin_number: Some("2".to_string()),
+                }),
+            }],
+            "",
+        );
+        sibling_power_pin.chosen_driver_index = Some(0);
+        sibling_power_pin.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
+                at: PointKey(20, 0),
+                name: Some("PWR2".to_string()),
+                number: Some("2".to_string()),
+            },
+            reference: Some("#PWR1".to_string()),
+            number: Some("2".to_string()),
+            electrical_type: Some("power_in".to_string()),
+            visible: true,
+            is_power_symbol: true,
+            connection: test_net_connection("/OTHER", "OTHER", "/OTHER", ""),
+            driver_connection: test_net_connection("/OTHER", "OTHER", "/OTHER", ""),
+            preserve_local_name_on_refresh: true,
+        });
+
+        let mut subgraphs = vec![parent, power_target, sibling_power_pin];
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 2);
+        let merged = subgraphs
+            .iter()
+            .find(|subgraph| {
+                subgraph
+                    .drivers
+                    .iter()
+                    .any(|driver| driver.connection.name == "/AAA")
+                    && subgraph
+                        .drivers
+                        .iter()
+                        .any(|driver| driver.connection.name == "/PWR")
+            })
+            .expect("merged subgraph");
+        assert_eq!(merged.driver_connection.name, "/PWR");
+        assert!(
+            merged
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/PWR")
+        );
+    }
+
+    #[test]
     fn reduced_absorb_resolve_drops_weak_drivers_after_strong_merge() {
         let mut subgraph = test_net_subgraph(
             1,
@@ -21209,8 +21272,8 @@ mod tests {
         )
         .expect("agnd pin graph identity");
 
-        assert_eq!(gnd_pin.name, "VCC");
-        assert_eq!(agnd_pin.name, "VCC");
+        assert_eq!(gnd_pin.name, "GND");
+        assert_eq!(agnd_pin.name, "GND");
 
         let _ = fs::remove_file(path);
     }
