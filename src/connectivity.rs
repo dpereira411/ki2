@@ -4524,7 +4524,10 @@ impl LiveReducedSubgraph {
             }
         }
 
-        let chosen_connection = best_handle.borrow().driver_connection.clone();
+        let chosen_connection = {
+            let best = best_handle.borrow();
+            live_reduced_subgraph_effective_driver_connection(&best)
+        };
         let chosen_is_bus = matches!(
             chosen_connection.borrow().connection_type,
             ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
@@ -4631,7 +4634,10 @@ impl LiveReducedSubgraph {
             return Vec::new();
         }
 
-        let chosen_connection = start.borrow().driver_connection.clone();
+        let chosen_connection = {
+            let start_ref = start.borrow();
+            live_reduced_subgraph_effective_driver_connection(&start_ref)
+        };
         let chosen_driver = {
             let start_ref = start.borrow();
             live_reduced_subgraph_primary_driver(&start_ref)
@@ -12442,6 +12448,27 @@ fn live_reduced_subgraph_primary_driver(
             })
             .cloned()
     })
+}
+
+// upstream: CONNECTION_SUBGRAPH::m_driver_connection after ResolveDrivers or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still projects the effective chosen connection from reduced live driver-owner
+// handles instead of reading a final live `m_driver_connection`, but it now centralizes the
+// ranked-primary fallback so propagation branches stop cloning stale subgraph driver connections
+// when the explicit chosen-driver handle is absent
+// local_only_reason: live propagation still needs one graph-owned chosen-connection query before
+// the fuller live `CONNECTION_SUBGRAPH` owner stores final `m_driver` and `m_driver_connection`
+// directly
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with final chosen-driver connection state
+// remove_when: propagation branches read final `m_driver_connection` directly from the live owner
+fn live_reduced_subgraph_effective_driver_connection(
+    subgraph: &LiveReducedSubgraph,
+) -> LiveProjectConnectionHandle {
+    live_reduced_subgraph_primary_driver(subgraph)
+        .as_ref()
+        .map(|driver| driver.borrow().connection_handle())
+        .unwrap_or_else(|| subgraph.driver_connection.clone())
 }
 
 // upstream: CONNECTION_GRAPH::ercCheckMultipleDrivers secondary-driver iteration branch or none
@@ -34028,6 +34055,56 @@ mod tests {
     }
 
     #[test]
+    fn reduced_live_secondary_promotion_uses_ranked_primary_connection_when_chosen_missing() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("VCC", "VCC", "VCC", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: super::reduced_global_power_pin_driver_priority(),
+                        connection: test_net_connection("GND", "GND", "GND", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: super::reduced_global_power_pin_driver_priority(),
+                        connection: test_net_connection("VCC", "VCC", "VCC", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("VCC", "VCC", "VCC", "/other"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("VCC", "VCC", "VCC", "/other"),
+                    identity: None,
+                }],
+                "/other",
+            ),
+        ];
+        graph[0].chosen_driver_index = Some(0);
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[0].borrow_mut().chosen_driver = None;
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
+        let promoted = LiveReducedSubgraph::refresh_global_secondary_driver_promotions(
+            &live_subgraphs[0],
+            &global_subgraphs,
+        );
+
+        assert_eq!(promoted.len(), 1);
+        assert!(Rc::ptr_eq(&promoted[0], &live_subgraphs[1]));
+        assert_eq!(live_subgraphs[1].borrow().driver_connection.borrow().name, "GND");
+    }
+
+    #[test]
     fn reduced_live_secondary_promotion_matches_driver_shown_names() {
         let chosen_connection = test_net_connection("VCC", "VCC", "VCC", "");
         let secondary_connection =
@@ -34418,6 +34495,70 @@ mod tests {
         assert_eq!(graph[0].name, "/left/Z_NET");
         assert_eq!(graph[1].name, "/left/Z_NET");
         assert_eq!(graph[2].name, "/left/Z_NET");
+    }
+
+    #[test]
+    fn reduced_live_hierarchy_chain_uses_ranked_primary_connection_when_chosen_missing() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/ROOT_NET", "ROOT_NET", "/ROOT_NET", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection("/ROOT_NET", "ROOT_NET", "/ROOT_NET", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/child/VCC", "VCC", "/child/VCC", "/child"),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: super::reduced_local_power_pin_driver_priority(),
+                        connection: test_net_connection("/child/VCC", "VCC", "/child/VCC", "/child"),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::PowerPin,
+                        priority: super::reduced_global_power_pin_driver_priority(),
+                        connection: test_net_connection("GND", "GND", "GND", "/child"),
+                        identity: None,
+                    },
+                ],
+                "/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/SHARED", "SHARED", "/SHARED", ""),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection("/child/SHARED", "SHARED", "/child/SHARED", "/child"),
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[1].borrow_mut().chosen_driver = None;
+
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            true,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].name, "GND");
+        assert_eq!(graph[1].name, "GND");
     }
 
     #[test]
