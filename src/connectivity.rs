@@ -3837,10 +3837,6 @@ impl LiveReducedSubgraph {
         let live_drivers = self.drivers.clone();
         let chosen_driver = reduced_project_chosen_driver_index(reduced_subgraph)
             .and_then(|index| live_drivers.get(index).cloned());
-        let chosen_connection = chosen_driver
-            .as_ref()
-            .map(|driver| driver.borrow().connection_handle())
-            .unwrap_or_else(|| self.driver_connection.clone());
 
         for driver in &live_drivers {
             let driver_ref = driver.borrow();
@@ -3863,7 +3859,7 @@ impl LiveReducedSubgraph {
             *driver_ref = owner;
             drop(driver_ref);
 
-            self.attach_strong_driver(driver, chosen_driver.as_ref(), &chosen_connection);
+            self.attach_strong_driver(driver, chosen_driver.as_ref());
         }
 
         self.refresh_base_pin_connections_from_driver(false);
@@ -3924,9 +3920,9 @@ impl LiveReducedSubgraph {
     // upstream: CONNECTION_SUBGRAPH::ResolveDrivers chosen `m_driver` / `m_driver_connection` or none
     // parity_status: partial
     // local_kind: local-only-transitional
-    // divergence: still compares reduced live owner connections instead of final live item pointers;
-    // when no explicit chosen handle exists it keeps the first same-connection implicit match rather
-    // than storing a true final `m_driver`
+    // divergence: still compares reduced live owner handles instead of final live item pointers,
+    // but chosen-driver attachment now depends entirely on the ranked reduced chosen-owner seed
+    // instead of a second same-connection fallback rule during attachment
     // local_only_reason: active build still needs one owner-side chosen-driver attachment point
     // before the fuller live driver-item graph exists
     // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with final `m_driver` / `m_driver_connection`
@@ -3935,16 +3931,8 @@ impl LiveReducedSubgraph {
         &mut self,
         driver: &LiveProjectStrongDriverHandle,
         chosen_driver: Option<&LiveProjectStrongDriverHandle>,
-        chosen_connection: &LiveProjectConnectionHandle,
     ) {
-        let is_chosen_driver = if let Some(chosen) = chosen_driver {
-            Rc::ptr_eq(driver, chosen)
-        } else if self.chosen_driver.is_some() {
-            false
-        } else {
-            let driver_connection = driver.borrow().connection_handle();
-            *driver_connection.borrow() == *chosen_connection.borrow()
-        };
+        let is_chosen_driver = chosen_driver.is_some_and(|chosen| Rc::ptr_eq(driver, chosen));
 
         if is_chosen_driver {
             self.chosen_driver = Some(driver.clone());
