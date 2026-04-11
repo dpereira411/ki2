@@ -9629,8 +9629,12 @@ fn live_reduced_project_sheet_pin_names(
                 .iter()
                 .filter_map(|pin| {
                     let pin = pin.borrow();
-                    (pin.child_sheet_uuid.as_deref() == child_sheet_uuid)
-                        .then(|| pin.connection.borrow().local_name.clone())
+                    (pin.child_sheet_uuid.as_deref() == child_sheet_uuid).then(|| {
+                        live_hierarchy_link_shown_text_local_name(
+                            &pin.shown_text_local_name,
+                            &pin.connection,
+                        )
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -9699,7 +9703,10 @@ fn live_reduced_project_hier_port_entries_in_sheet(
                 .map(|port| {
                     let port = port.borrow();
                     (
-                        port.connection.borrow().local_name.clone(),
+                        live_hierarchy_link_shown_text_local_name(
+                            &port.shown_text_local_name,
+                            &port.connection,
+                        ),
                         port.schematic_path.clone(),
                     )
                 })
@@ -22368,16 +22375,12 @@ mod tests {
         });
 
         let graph = test_graph_with_live_subgraphs(vec![parent, child]);
-        graph.live_subgraphs[0].borrow().hier_sheet_pins[0]
-            .borrow()
-            .connection
+        graph.live_subgraphs[0].borrow_mut().hier_sheet_pins[0]
             .borrow_mut()
-            .local_name = "LIVE_PIN".to_string();
-        graph.live_subgraphs[1].borrow().hier_ports[0]
-            .borrow()
-            .connection
+            .shown_text_local_name = "LIVE_PIN".to_string();
+        graph.live_subgraphs[1].borrow_mut().hier_ports[0]
             .borrow_mut()
-            .local_name = "LIVE_PORT".to_string();
+            .shown_text_local_name = "LIVE_PORT".to_string();
 
         assert_eq!(
             super::reduced_project_sheet_pin_names(&graph, "/parent", Some("child-sheet")),
