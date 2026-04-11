@@ -8440,7 +8440,7 @@ pub(crate) fn collect_reduced_project_net_map(
     let subgraphs = if graph.live_subgraphs.is_empty() {
         graph.subgraphs
     } else {
-        live_reduced_project_net_map_subgraphs(&graph)
+        projected_reduced_project_subgraphs(&graph)
     };
     let mut grouped = BTreeMap::<
         (usize, String),
@@ -8593,25 +8593,19 @@ pub(crate) fn collect_reduced_project_net_map(
 // upstream: CONNECTION_GRAPH::GetNetMap export/net-map subgraph iteration or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still emits reduced whole-net records and keeps immutable exporter fields from the
-// reduced graph entry, but mutable driver and item connection state is projected from the active
-// live subgraph owner
-// local_only_reason: moves the exercised export/net-map read boundary onto retained live
-// subgraph handles without inventing a second exporter-owned connectivity scan
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with exporter-visible code/class/node
-// storage
-// remove_when: export/net-map code can iterate final live subgraph storage directly
-fn live_reduced_project_net_map_subgraphs(
+// divergence: still returns reduced cloned subgraph snapshots instead of live `CONNECTION_SUBGRAPH*`
+// local_only_reason: centralizes whole-graph live-to-reduced projection on one shared graph-owned helper
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with exporter-visible code/class/node storage
+// remove_when: export/ERC/query code can iterate final live subgraph storage directly
+fn projected_reduced_project_subgraphs(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectSubgraphEntry> {
-    let mut subgraphs = graph.subgraphs.clone();
-
-    for (reduced, live) in subgraphs.iter_mut().zip(graph.live_subgraphs.iter()) {
-        live.borrow()
-            .project_onto_reduced(reduced, &graph.live_subgraphs);
-    }
-
-    subgraphs
+    graph
+        .subgraphs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, _)| projected_reduced_project_subgraph_by_index(graph, index))
+        .collect()
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -16438,7 +16432,7 @@ mod tests {
             );
         }
 
-        let projected = super::live_reduced_project_net_map_subgraphs(&graph);
+        let projected = super::projected_reduced_project_subgraphs(&graph);
 
         assert_eq!(projected[0].driver_connection.name, "/LIVE");
         assert_eq!(projected[0].base_pins[0].connection.name, "/LIVE");
