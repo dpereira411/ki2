@@ -4915,7 +4915,9 @@ impl LiveReducedSubgraph {
     // inside `CONNECTION_GRAPH::propagateToNeighbors()`. KiCad re-runs `matchBusMember()` using
     // each secondary driver's default connection when the cached bus-member link is stale; the
     // reduced owner still matches by live connection/member carriers instead of full
-    // `SCH_ITEM*`/`SCH_CONNECTION*` objects.
+    // `SCH_ITEM*`/`SCH_CONNECTION*` objects, but it now retries every net-typed secondary driver
+    // instead of only label/power subsets so ordinary-pin default names can rematch stale bus
+    // links like upstream.
     fn find_bus_neighbor_member_from_secondary_drivers(
         live_subgraphs: &[LiveReducedSubgraphHandle],
         sorted_links: &[LiveReducedSubgraphLinkHandle],
@@ -4945,17 +4947,18 @@ impl LiveReducedSubgraph {
             };
 
             for driver in candidate_drivers {
-                let driver = driver.borrow();
-                if !matches!(
-                    driver.kind(),
-                    ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
-                ) {
+                let driver_connection = {
+                    let driver = driver.borrow();
+                    driver.connection_handle()
+                };
+                if driver_connection.borrow().connection_type
+                    != ReducedProjectConnectionType::Net
+                {
                     continue;
                 }
-                let driver_connection = driver.connection_handle();
-                if let Some(member) =
-                    parent_connection.find_member_for_connection(&driver_connection.borrow())
-                {
+                if let Some(member) = parent_connection.find_member_for_connection(
+                    &driver_connection.borrow(),
+                ) {
                     return Some(member);
                 }
             }
@@ -28678,7 +28681,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_live_bus_neighbors_secondary_retry_skips_ordinary_pin_driver() {
+    fn reduced_live_bus_neighbors_secondary_retry_uses_ordinary_pin_driver() {
         let member_a = test_bus_member("SIGA", "SIGA", "/SIGA");
         let member_b = test_bus_member("SIGB", "SIGB", "/SIGB");
         let stale_link_member = test_bus_member("ALT", "ALT", "/ALT");
@@ -28738,7 +28741,7 @@ mod tests {
         );
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
-        assert_eq!(graph[1].driver_connection.full_local_name, "/SIGB");
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIGA");
         assert_eq!(recurse_targets.len(), 1);
         assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
     }
