@@ -8808,6 +8808,34 @@ fn projected_reduced_project_net_identity_by_index(
     })
 }
 
+// upstream: SCH_CONNECTION::Name(true) through CONNECTION_GRAPH::GetSubgraphForItem or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`
+// local_only_reason: item driver-name queries still consume `String` snapshots
+// replaced_by: live `SCH_CONNECTION` owner lookups once driver-name queries stop using reduced snapshots
+// remove_when: production callers can read `Name(true)` directly from live connection owners
+fn projected_reduced_project_driver_local_name_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+) -> Option<String> {
+    graph
+        .live_subgraphs
+        .get(index)
+        .map(|subgraph| {
+            subgraph
+                .borrow()
+                .driver_connection
+                .borrow()
+                .local_name
+                .clone()
+        })
+        .or_else(|| {
+            projected_reduced_project_subgraph_by_index(graph, index)
+                .map(|subgraph| subgraph.driver_connection.local_name)
+        })
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
 // graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
@@ -9087,16 +9115,7 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
     label: &Label,
 ) -> Option<String> {
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| {
-            graph.live_subgraphs.get(index).map(|subgraph| {
-                subgraph
-                    .borrow()
-                    .driver_connection
-                    .borrow()
-                    .local_name
-                    .clone()
-            })
-        })
+        .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_label(graph, sheet_path, label)
                 .map(|subgraph| subgraph.driver_connection.local_name.clone())
@@ -9383,16 +9402,7 @@ pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
     child_sheet_uuid: Option<&str>,
 ) -> Option<String> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| {
-            graph.live_subgraphs.get(index).map(|subgraph| {
-                subgraph
-                    .borrow()
-                    .driver_connection
-                    .borrow()
-                    .local_name
-                    .clone()
-            })
-        })
+        .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
                 .map(|subgraph| subgraph.driver_connection.local_name.clone())
@@ -9694,16 +9704,7 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
     at: [f64; 2],
 ) -> Option<String> {
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| {
-            graph.live_subgraphs.get(index).map(|subgraph| {
-                subgraph
-                    .borrow()
-                    .driver_connection
-                    .borrow()
-                    .local_name
-                    .clone()
-            })
-        })
+        .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
             resolve_reduced_project_subgraph_at(graph, sheet_path, at)
                 .map(|subgraph| subgraph.driver_connection.local_name.clone())
