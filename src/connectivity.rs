@@ -8674,8 +8674,8 @@ fn projected_reduced_project_subgraphs(
 // remove_when: production callers can iterate live `CONNECTION_SUBGRAPH` owners directly
 pub(crate) fn reduced_project_subgraphs(
     graph: &ReducedProjectNetGraph,
-) -> &[ReducedProjectSubgraphEntry] {
-    &graph.subgraphs
+) -> Vec<ReducedProjectSubgraphEntry> {
+    projected_reduced_project_subgraphs(graph)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -13503,7 +13503,7 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
                 if test_pin.is_power_symbol
                     && test_pin.electrical_type.as_deref() != Some("no_connect")
                     && test_pin.electrical_type.as_deref() != Some("not_connected")
-                    && !reduced_project_pin_has_point_local_connection(subgraph, test_pin)
+                    && !reduced_project_pin_has_point_local_connection(&subgraph, test_pin)
                 {
                     candidates.push(ReducedProjectPinNotConnectedCandidate {
                         pin_schematic_path: test_pin.schematic_path.clone(),
@@ -19503,6 +19503,31 @@ mod tests {
         graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
 
         let subgraphs = super::reduced_project_run_erc_subgraphs(&graph);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].name, "/LIVE");
+        assert_eq!(subgraphs[0].driver_connection.name, "/LIVE");
+    }
+
+    #[test]
+    fn reduced_project_subgraphs_project_live_owner_over_stale_reduced_payload() {
+        let graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            Vec::new(),
+            "",
+        )];
+        let graph = test_graph_with_live_subgraphs(graph);
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let subgraphs = super::reduced_project_subgraphs(&graph);
 
         assert_eq!(subgraphs.len(), 1);
         assert_eq!(subgraphs[0].name, "/LIVE");
