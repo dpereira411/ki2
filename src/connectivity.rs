@@ -11367,7 +11367,10 @@ fn live_same_sheet_named_neighbor_endpoint_has_owner(
     endpoint: PointKey,
 ) -> bool {
     let subgraph = subgraph_handle.borrow();
-    let name = subgraph.driver_connection.borrow().name.clone();
+    let name = live_reduced_subgraph_effective_driver_connection(&subgraph)
+        .borrow()
+        .name
+        .clone();
     if name.is_empty() {
         return false;
     }
@@ -12989,7 +12992,10 @@ fn live_reduced_project_label_connectivity_subgraphs(
         let mut local_pins = pin_count;
         let mut aggregate_has_no_connect = has_no_connect;
         let mut aggregate_has_local_hierarchy = has_local_hierarchy;
-        let driver_name = subgraph.driver_connection.borrow().name.clone();
+        let driver_name = live_reduced_subgraph_effective_driver_connection(&subgraph)
+            .borrow()
+            .name
+            .clone();
 
         if !driver_name.is_empty() {
             for neighbor_handle in subgraphs_by_name.get(&driver_name).into_iter().flatten() {
@@ -13588,7 +13594,10 @@ fn live_reduced_project_no_connect_marker_outcomes(
                 continue;
             }
 
-            let driver_name = subgraph.driver_connection.borrow().name.clone();
+            let driver_name = live_reduced_subgraph_effective_driver_connection(&subgraph)
+                .borrow()
+                .name
+                .clone();
             let (unique_pin_count, unique_label_count) = if driver_name.is_empty() {
                 (
                     reduced_unique_stacked_pin_count(local_unique_pins.iter()),
@@ -13922,7 +13931,10 @@ fn live_reduced_project_pin_not_connected_candidates(
             }
         }
 
-        let driver_name = subgraph.driver_connection.borrow().name.clone();
+        let driver_name = live_reduced_subgraph_effective_driver_connection(&subgraph)
+            .borrow()
+            .name
+            .clone();
         let same_name_has_no_connect_sibling = (driver_name.starts_with("Net-(")
             || driver_name.starts_with("unconnected-("))
             && subgraphs_by_name
@@ -16159,6 +16171,56 @@ mod tests {
         assert_eq!(label_subgraphs[0].local_pins, 2);
         assert_eq!(label_subgraphs[0].label_links.len(), 1);
         assert_eq!(label_subgraphs[0].label_links[0].connection.name, "/SIG");
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_aggregate_ranked_primary_name_when_chosen_missing() {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection.clone(),
+        });
+        label_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-a",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection,
+        ));
+
+        let mut same_name_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_hierarchical_label_driver_priority(),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                identity: None,
+            }],
+            "",
+        );
+        same_name_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-b",
+            PointKey(30, 40),
+            "1",
+            "input",
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, same_name_subgraph]);
+        graph.live_subgraphs[1].borrow_mut().chosen_driver = None;
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert_eq!(label_subgraphs[0].all_pins, 2);
+        assert_eq!(label_subgraphs[0].local_pins, 2);
     }
 
     #[test]
