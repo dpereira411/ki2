@@ -8690,16 +8690,17 @@ pub(crate) fn reduced_project_subgraphs(
 // remove_when: ERC runs directly over live graph-owned ERC subgraph traversal
 pub(crate) fn reduced_project_run_erc_subgraphs(
     graph: &ReducedProjectNetGraph,
-) -> Vec<&ReducedProjectSubgraphEntry> {
+) -> Vec<ReducedProjectSubgraphEntry> {
+    let projected = projected_reduced_project_subgraphs(graph);
     let mut seen_driver_identities = std::collections::BTreeSet::new();
-    let mut subgraphs = graph
-        .subgraphs
+    let mut subgraphs = projected
         .iter()
         .rev()
         .filter(|subgraph| {
             reduced_project_subgraph_driver_identity(subgraph)
                 .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
         })
+        .cloned()
         .collect::<Vec<_>>();
 
     subgraphs.reverse();
@@ -8718,8 +8719,8 @@ pub(crate) fn reduced_project_run_erc_subgraphs(
 // remove_when: no-connect and similar item-owned ERC rules iterate final live graph storage directly
 fn reduced_project_run_erc_subgraphs_without_driver_dedup(
     graph: &ReducedProjectNetGraph,
-) -> Vec<&ReducedProjectSubgraphEntry> {
-    graph.subgraphs.iter().collect()
+) -> Vec<ReducedProjectSubgraphEntry> {
+    projected_reduced_project_subgraphs(graph)
 }
 
 // upstream: CONNECTION_GRAPH::RunERC live subgraph iteration or none
@@ -12211,7 +12212,7 @@ pub(crate) fn reduced_project_driver_conflicts(
 
     reduced_project_run_erc_subgraphs(graph)
         .into_iter()
-        .filter_map(reduced_project_subgraph_driver_conflict)
+        .filter_map(|subgraph| reduced_project_subgraph_driver_conflict(&subgraph))
         .collect()
 }
 
@@ -19475,6 +19476,37 @@ mod tests {
 
         assert_eq!(conflict.primary_name, "PWR_ALT");
         assert_eq!(conflict.secondary_name, "PWR");
+    }
+
+    #[test]
+    fn run_erc_subgraphs_project_live_owner_over_stale_reduced_payload() {
+        let graph = vec![test_net_subgraph(
+            1,
+            test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_global_label_driver_priority(),
+                connection: test_net_connection("/REDUCED", "REDUCED", "/REDUCED", ""),
+                identity: None,
+            }],
+            "",
+        )];
+        let graph = test_graph_with_live_subgraphs(graph);
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+
+        let subgraphs = super::reduced_project_run_erc_subgraphs(&graph);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].name, "/LIVE");
+        assert_eq!(subgraphs[0].driver_connection.name, "/LIVE");
     }
 
     #[test]
