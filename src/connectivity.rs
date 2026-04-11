@@ -725,7 +725,6 @@ fn reduced_project_absorb_push_secondary_test_names(
         ) {
             for member in reduced_bus_member_leaf_objects(&driver.connection.members) {
                 push_unique(test_names, member.full_local_name);
-                push_unique(test_names, member.name);
             }
         }
     }
@@ -777,7 +776,6 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
         ) {
             for member in reduced_bus_member_leaf_objects(&subgraphs[parent_index].bus_members) {
                 push_unique(&mut parent_test_names, member.full_local_name);
-                push_unique(&mut parent_test_names, member.name);
             }
         }
         reduced_project_absorb_push_secondary_test_names(
@@ -792,9 +790,7 @@ fn reduced_project_absorb_primary_same_name_subgraphs(
                     && candidate.bus_members.iter().any(|member| {
                         reduced_bus_member_leaf_objects(std::slice::from_ref(member))
                             .iter()
-                            .any(|leaf| {
-                                leaf.full_local_name == parent_name || leaf.name == parent_name
-                            })
+                            .any(|leaf| leaf.full_local_name == parent_name)
                     })
             })
         {
@@ -19654,6 +19650,78 @@ mod tests {
                 .drivers
                 .iter()
                 .any(|driver| driver.connection.name == "/ALT")
+        );
+    }
+
+    #[test]
+    fn reduced_absorb_bus_member_guard_uses_full_member_name_not_local_name() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("ROOT", "ROOT", "/ROOT", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("ROOT", "ROOT", "/ROOT", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("ALT", "ALT", "/ALT", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![test_bus_member("ROOT", "ROOT", "/child/ROOT")],
+                ),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_bus_connection(
+                        "/BUS",
+                        "BUS",
+                        "/BUS",
+                        "",
+                        vec![test_bus_member("ROOT", "ROOT", "/child/ROOT")],
+                    ),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("ALT", "ALT", "/ALT", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+        subgraphs[2].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 2);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "ALT")
         );
     }
 
