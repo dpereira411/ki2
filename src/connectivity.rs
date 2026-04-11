@@ -9425,26 +9425,7 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
     };
 
     let pin_point = point_key(at);
-    if let Some(subgraph) = graph.live_subgraphs.get(index) {
-        let subgraph = subgraph.borrow();
-        return subgraph.base_pins.is_empty()
-            && subgraph.label_links.is_empty()
-            && subgraph.no_connect_points.is_empty()
-            && subgraph.wire_items.is_empty()
-            && subgraph.bus_items.is_empty()
-            && subgraph
-                .hier_sheet_pins
-                .iter()
-                .filter(|pin| pin.borrow().at == pin_point)
-                .count()
-                <= 1
-            && !subgraph
-                .hier_sheet_pins
-                .iter()
-                .any(|pin| pin.borrow().at != pin_point);
-    }
-
-    let Some(subgraph) = graph.subgraphs.get(index) else {
+    let Some(subgraph) = projected_reduced_project_subgraph_by_index(graph, index) else {
         return true;
     };
 
