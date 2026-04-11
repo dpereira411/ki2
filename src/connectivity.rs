@@ -669,7 +669,8 @@ fn reduced_project_absorb_candidate_matches_name(
 // parity_status: partial
 // local_kind: local-only-transitional
 // divergence: derives secondary default names from reduced strong-driver snapshots instead of
-// iterating live `m_items` through `getDefaultConnection()` before `Absorb()`
+// iterating live `m_items` through `getDefaultConnection()` before `Absorb()`, and still omits
+// fuller live item/default-connection ownership beyond label/power/sheet-pin cases
 // local_only_reason: reduced same-name absorption still runs before a fuller live
 // `CONNECTION_SUBGRAPH` owns item/default-connection traversal
 // replaced_by: fuller processSubGraphs loop over live subgraph items and default connections
@@ -687,7 +688,9 @@ fn reduced_project_absorb_push_secondary_test_names(
             || driver.connection.connection_type != parent_type
             || !matches!(
                 driver.kind,
-                ReducedProjectDriverKind::Label | ReducedProjectDriverKind::PowerPin
+                ReducedProjectDriverKind::Label
+                    | ReducedProjectDriverKind::PowerPin
+                    | ReducedProjectDriverKind::SheetPin
             )
             || reduced_project_driver_match_name(
                 &driver.connection,
@@ -19264,6 +19267,58 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_absorb_uses_parent_secondary_sheet_pin_names() {
+        let mut subgraphs = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/AAA", "AAA", "/AAA", ""),
+                vec![
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_local_label_driver_priority(),
+                        connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                        identity: None,
+                    },
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::SheetPin,
+                        priority: super::reduced_sheet_pin_driver_priority(),
+                        connection: test_net_connection("/PORT", "PORT", "/PORT", ""),
+                        identity: Some(ReducedProjectDriverIdentity::SheetPin {
+                            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                            at: PointKey(0, 0),
+                            child_sheet_uuid: Some("sheet".to_string()),
+                        }),
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/PORT", "PORT", "/PORT", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/PORT", "PORT", "/PORT", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+        ];
+        subgraphs[0].chosen_driver_index = Some(0);
+        subgraphs[1].chosen_driver_index = Some(0);
+
+        super::reduced_project_absorb_primary_same_name_subgraphs(&mut subgraphs);
+
+        assert_eq!(subgraphs.len(), 1);
+        assert!(
+            subgraphs[0]
+                .drivers
+                .iter()
+                .any(|driver| driver.connection.name == "/PORT")
+        );
     }
 
     #[test]
