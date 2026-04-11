@@ -32352,6 +32352,171 @@ mod tests {
     }
 
     #[test]
+    fn reduced_live_hierarchy_chain_prefers_shorter_path_for_equal_strong_priority() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/mid/PARENT_NET", "PARENT_NET", "/mid/PARENT_NET", "/mid"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/mid/PARENT_NET",
+                        "PARENT_NET",
+                        "/mid/PARENT_NET",
+                        "/mid",
+                    ),
+                    identity: None,
+                }],
+                "/mid",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection(
+                    "/mid/child/CHILD_NET",
+                    "CHILD_NET",
+                    "/mid/child/CHILD_NET",
+                    "/mid/child",
+                ),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/mid/child/CHILD_NET",
+                        "CHILD_NET",
+                        "/mid/child/CHILD_NET",
+                        "/mid/child",
+                    ),
+                    identity: None,
+                }],
+                "/mid/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("mid.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("/mid/SHARED", "SHARED", "/mid/SHARED", "/mid"),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/mid/child/SHARED",
+                "SHARED",
+                "/mid/child/SHARED",
+                "/mid/child",
+            ),
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[1],
+            &live_subgraphs,
+            true,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].name, "/mid/PARENT_NET");
+        assert_eq!(graph[1].name, "/mid/PARENT_NET");
+    }
+
+    #[test]
+    fn reduced_live_hierarchy_chain_prefers_alphabetical_full_name_for_equal_depth_strong_children(
+    ) {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: super::reduced_sheet_pin_driver_priority(),
+                    connection: test_net_connection("/ROOT_SIG", "ROOT_SIG", "/ROOT_SIG", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/left/Z_NET", "Z_NET", "/left/Z_NET", "/left"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/left/Z_NET",
+                        "Z_NET",
+                        "/left/Z_NET",
+                        "/left",
+                    ),
+                    identity: None,
+                }],
+                "/left",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/right/A_NET", "A_NET", "/right/A_NET", "/right"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/right/A_NET",
+                        "A_NET",
+                        "/right/A_NET",
+                        "/right",
+                    ),
+                    identity: None,
+                }],
+                "/right",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1, 2];
+        graph[0].hier_sheet_pins = vec![
+            ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("left-sheet".to_string()),
+                connection: test_net_connection("/SHARED", "SHARED", "/SHARED", ""),
+            },
+            ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(10, 0),
+                child_sheet_uuid: Some("right-sheet".to_string()),
+                connection: test_net_connection("/SHARED", "SHARED", "/SHARED", ""),
+            },
+        ];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("left.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection("/left/SHARED", "SHARED", "/left/SHARED", "/left"),
+        }];
+        graph[2].hier_parent_index = Some(0);
+        graph[2].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("right.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection("/right/SHARED", "SHARED", "/right/SHARED", "/right"),
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let mut stale_members = Vec::new();
+        LiveReducedSubgraph::propagate_hierarchy_chain(
+            &live_subgraphs[0],
+            &live_subgraphs,
+            true,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[0].name, "/left/Z_NET");
+        assert_eq!(graph[1].name, "/left/Z_NET");
+        assert_eq!(graph[2].name, "/left/Z_NET");
+    }
+
+    #[test]
     fn reduced_live_selected_clean_hierarchy_root_stays_dirty_for_forced_pass() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut graph = vec![test_net_subgraph(1, connection.clone(), Vec::new(), "")];
