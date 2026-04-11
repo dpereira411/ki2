@@ -10651,6 +10651,66 @@ pub(crate) fn collect_reduced_project_symbol_pins(
         .collect()
 }
 
+// upstream: SCH_CONNECTION::Name(true) through symbol-pin `GetSubgraphForItem()` owner lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`
+// local_only_reason: symbol-pin driver-name queries still bridge preserved per-pin local-name state across live and reduced owners
+// replaced_by: live `SCH_PIN` / `SCH_CONNECTION` owner lookups once symbol-pin name queries stop using reduced snapshots
+// remove_when: production callers can read per-pin `Name(true)` directly from live pin/subgraph owners
+fn reduced_project_driver_name_for_symbol_pin_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+    pin_number: Option<&str>,
+) -> Option<String> {
+    if let Some(subgraph) = graph.live_subgraphs.get(index) {
+        let subgraph = subgraph.borrow();
+        return pin_name
+            .and_then(|pin_name| {
+                subgraph.base_pins.iter().find(|base_pin| {
+                    base_pin.borrow().pin.key
+                        == reduced_project_base_pin_key(
+                            sheet_path, symbol, at, pin_name, pin_number,
+                        )
+                })
+            })
+            .or_else(|| {
+                subgraph.base_pins.iter().find(|base_pin| {
+                    let base_pin = base_pin.borrow();
+                    base_pin.pin.key.symbol_uuid == symbol.uuid
+                        && base_pin.pin.key.at == point_key(at)
+                        && (pin_number.is_none()
+                            || base_pin.pin.key.number.as_deref() == pin_number)
+                })
+            })
+            .and_then(|base_pin| {
+                let base_pin = base_pin.borrow();
+                base_pin
+                    .preserved_local_name
+                    .as_ref()
+                    .is_some()
+                    .then(|| base_pin.driver_connection.borrow().local_name.clone())
+            })
+            .or_else(|| Some(subgraph.driver_connection.borrow().local_name.clone()));
+    }
+
+    projected_reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
+        reduced_project_base_pin_for_symbol_pin(
+            &subgraph, sheet_path, symbol, at, pin_name, pin_number,
+        )
+        .and_then(|base_pin| {
+            base_pin
+                .preserve_local_name_on_refresh
+                .then(|| base_pin.driver_connection.local_name.clone())
+        })
+        .unwrap_or_else(|| subgraph.driver_connection.local_name.clone())
+    })
+}
+
 // Upstream parity: reduced local analogue for the symbol-pin `Name(true)` path via
 // `CONNECTION_GRAPH::GetSubgraphForItem()`. This is not a 1:1 KiCad connection object because the
 // Rust tree still lacks live `SCH_CONNECTION` instances, but the project graph now preserves
@@ -10673,52 +10733,9 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
     .and_then(|index| {
-        graph.live_subgraphs.get(index).and_then(|subgraph| {
-            let subgraph = subgraph.borrow();
-            pin_name
-                .and_then(|pin_name| {
-                    subgraph.base_pins.iter().find(|base_pin| {
-                        base_pin.borrow().pin.key
-                            == reduced_project_base_pin_key(
-                                sheet_path, symbol, at, pin_name, pin_number,
-                            )
-                    })
-                })
-                .or_else(|| {
-                    subgraph.base_pins.iter().find(|base_pin| {
-                        let base_pin = base_pin.borrow();
-                        base_pin.pin.key.symbol_uuid == symbol.uuid
-                            && base_pin.pin.key.at == point_key(at)
-                            && (pin_number.is_none()
-                                || base_pin.pin.key.number.as_deref() == pin_number)
-                    })
-                })
-                .and_then(|base_pin| {
-                    let base_pin = base_pin.borrow();
-                    base_pin
-                        .preserved_local_name
-                        .as_ref()
-                        .is_some()
-                        .then(|| base_pin.driver_connection.borrow().local_name.clone())
-                })
-                .or_else(|| Some(subgraph.driver_connection.borrow().local_name.clone()))
-        })
-    })
-    .or_else(|| {
-        resolve_reduced_project_subgraph_for_symbol_pin(
-            graph, sheet_path, symbol, at, pin_name, pin_number,
+        reduced_project_driver_name_for_symbol_pin_by_index(
+            graph, index, sheet_path, symbol, at, pin_name, pin_number,
         )
-        .map(|subgraph| {
-            reduced_project_base_pin_for_symbol_pin(
-                &subgraph, sheet_path, symbol, at, pin_name, pin_number,
-            )
-            .and_then(|base_pin| {
-                base_pin
-                    .preserve_local_name_on_refresh
-                    .then(|| base_pin.driver_connection.local_name.clone())
-            })
-            .unwrap_or_else(|| subgraph.driver_connection.local_name.clone())
-        })
     })
 }
 
