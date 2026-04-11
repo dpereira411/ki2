@@ -15144,11 +15144,16 @@ where
 {
     let mut assignments = BTreeMap::<String, BTreeSet<String>>::new();
 
-    for (net_name, subgraph_indexes) in &graph.subgraphs_by_name {
-        let subgraphs = subgraph_indexes
-            .iter()
-            .filter_map(|index| graph.subgraphs.get(*index))
-            .collect::<Vec<_>>();
+    let net_names = if graph.live_subgraphs.is_empty() {
+        graph.subgraphs_by_name.keys().cloned().collect::<Vec<_>>()
+    } else {
+        live_reduced_subgraphs_by_name(graph)
+            .into_keys()
+            .collect::<Vec<_>>()
+    };
+
+    for net_name in net_names {
+        let subgraphs = collect_reduced_project_subgraphs_by_name(graph, &net_name);
         if subgraphs.is_empty() {
             continue;
         }
