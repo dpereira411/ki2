@@ -12352,7 +12352,7 @@ fn live_reduced_subgraph_driver_conflict(
     if !live_reduced_subgraph_has_multiple_drivers(&subgraph) {
         return None;
     }
-    let primary_driver = live_reduced_subgraph_conflict_primary_driver(&subgraph)?;
+    let primary_driver = live_reduced_subgraph_primary_driver(&subgraph)?;
     let primary_snapshot = primary_driver.borrow().snapshot();
     let primary_name = reduced_project_strong_driver_name(&primary_snapshot).to_string();
     let secondary_driver = live_reduced_subgraph_conflict_secondary_driver(&subgraph, &primary_name)?;
@@ -12387,7 +12387,7 @@ fn live_reduced_subgraph_driver_conflict(
 // the live subgraph owner can temporarily lose its explicit chosen-driver binding
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored final `m_driver`
 // remove_when: live conflict selection reads the final chosen driver directly from the live owner
-fn live_reduced_subgraph_conflict_primary_driver(
+fn live_reduced_subgraph_primary_driver(
     subgraph: &LiveReducedSubgraph,
 ) -> Option<LiveProjectStrongDriverHandle> {
     subgraph.chosen_driver.clone().or_else(|| {
@@ -12507,7 +12507,7 @@ fn live_reduced_subgraph_floating_wire(
 ) -> Option<ReducedProjectFloatingWire> {
     let subgraph = handle.borrow();
 
-    if subgraph.chosen_driver.is_some()
+    if live_reduced_subgraph_primary_driver(&subgraph).is_some()
         || subgraph.wire_items.is_empty()
         || !subgraph.base_pins.is_empty()
         || !subgraph.hier_sheet_pins.is_empty()
@@ -20797,6 +20797,35 @@ mod tests {
         });
 
         let handles = build_live_reduced_subgraph_handles(&reduced);
+
+        assert!(super::live_reduced_subgraph_floating_wire(&handles[0]).is_none());
+    }
+
+    #[test]
+    fn live_floating_wire_skips_subgraph_with_ranked_driver_when_chosen_missing() {
+        let mut reduced = vec![test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_global_label_driver_priority(),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                identity: None,
+            }],
+            "",
+        )];
+        reduced[0].chosen_driver_index = Some(0);
+        reduced[0].wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0, 0),
+            end: PointKey(10, 0),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        handles[0].borrow_mut().chosen_driver = None;
 
         assert!(super::live_reduced_subgraph_floating_wire(&handles[0]).is_none());
     }
