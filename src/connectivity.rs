@@ -3515,15 +3515,22 @@ impl LiveReducedSubgraphWireItem {
 
     // Upstream parity: local wire/bus-item analogue for the exercised item loop inside
     // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still refreshes reduced wire geometry
-    // owners instead of real `SCH_LINE*` item connections, but each live item now keeps its own
-    // connection owner and clones the chosen subgraph driver into that owner with the same
-    // bus/net mismatch guard KiCad applies before item mutation. Remaining divergence is the
-    // still-missing fuller live item pointer graph, not shared-driver aliasing on this item path.
+    // owners instead of real `SCH_LINE*` item connections, and exercised wire/bus items still
+    // keep their split compatibility owners until the fuller live item graph lands. The refresh
+    // path now explicitly no-ops when a caller already points the item at the shared subgraph
+    // connection handle, so future live-owner convergence does not self-clone through one
+    // `RefCell`. The bus/net mismatch guard stays aligned with the upstream mutation gate.
+    // Remaining divergence is the still-missing fuller live item pointer graph beyond these
+    // direct owner handles.
     fn refresh_from_driver_connection(
         &mut self,
         driver_connection: &LiveProjectConnectionHandle,
         driver_connection_type: ReducedProjectConnectionType,
     ) {
+        if Rc::ptr_eq(&self.connection, driver_connection) {
+            return;
+        }
+
         if reduced_connection_kind_mismatch(
             driver_connection_type,
             self.connection.borrow().connection_type,
@@ -26301,6 +26308,33 @@ mod tests {
         assert!(Rc::ptr_eq(&bus_neighbor, &handles[1]));
         assert!(Rc::ptr_eq(&net_parent, &handles[0]));
         assert_eq!(net.bus_parent_handles.len(), 1);
+    }
+
+    #[test]
+    fn live_wire_item_refresh_skips_same_connection_handle() {
+        let connection = Rc::new(RefCell::new(LiveProjectConnection::from(
+            test_bus_connection(
+                "/BUS",
+                "BUS",
+                "/BUS",
+                "",
+                vec![test_bus_member("SIG0", "SIG0", "/SIG0")],
+            ),
+        )));
+        let mut item = super::LiveReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0, 0),
+            end: PointKey(10, 0),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connection: connection.clone(),
+            connected_bus_connection_handle: None,
+        };
+
+        item.refresh_from_driver_connection(&connection, ReducedProjectConnectionType::Bus);
+
+        assert!(Rc::ptr_eq(&item.connection, &connection));
+        assert_eq!(item.connection.borrow().full_local_name, "/BUS");
     }
 
     #[test]
