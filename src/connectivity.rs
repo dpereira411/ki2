@@ -8762,6 +8762,25 @@ fn projected_reduced_project_subgraph_by_index(
     Some(subgraph)
 }
 
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() live `CONNECTION_SUBGRAPH*` projection branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still projects through reduced snapshots instead of returning the live subgraph owner directly
+// local_only_reason: callers still consume reduced subgraph entries while live-owner parity work is in flight
+// replaced_by: live `CONNECTION_SUBGRAPH` ownership once downstream readers stop requiring reduced snapshots
+// remove_when: connection-graph readers can consume live subgraph owners without reduced reprojection
+fn projected_reduced_project_subgraph_from_live_handle(
+    graph: &ReducedProjectNetGraph,
+    handle: &LiveReducedSubgraphHandle,
+) -> Option<ReducedProjectSubgraphEntry> {
+    let index = live_subgraph_projection_index(&graph.live_subgraphs, handle);
+    let mut subgraph = graph.subgraphs.get(index)?.clone();
+    handle
+        .borrow()
+        .project_onto_reduced(&mut subgraph, &graph.live_subgraphs);
+    Some(subgraph)
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
 // graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
@@ -8816,15 +8835,26 @@ pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for `CONNECTION_GRAPH::GetAllSubgraphs()`. This is not
-// a 1:1 shared cache because the Rust tree still stores cloned reduced subgraphs instead of live
-// `CONNECTION_SUBGRAPH*` objects, but it preserves the graph-owned "all resolved subgraphs for one
-// name" lookup boundary so ERC/export callers do not rebuild per-net neighbor lists locally.
-// Remaining divergence is the fuller subgraph object model and graph-owned cache lifetime.
+// upstream: CONNECTION_GRAPH::GetAllSubgraphs or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns reduced snapshots instead of live `CONNECTION_SUBGRAPH*` owners
+// local_only_reason: downstream ERC/export readers still consume reduced subgraph entries
+// replaced_by: live `CONNECTION_SUBGRAPH` graph-owned enumeration once reduced readers are retired
+// remove_when: same-name subgraph consumers read the shared live graph owners directly
 pub(crate) fn collect_reduced_project_subgraphs_by_name<'a>(
     graph: &ReducedProjectNetGraph,
     net_name: &str,
 ) -> Vec<ReducedProjectSubgraphEntry> {
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_subgraphs_by_name(graph)
+            .get(net_name)
+            .into_iter()
+            .flat_map(|handles| handles.iter())
+            .filter_map(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .collect();
+    }
+
     graph
         .subgraphs_by_name
         .get(net_name)
@@ -21077,6 +21107,44 @@ mod tests {
         .expect("live sheet-pin owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn same_name_collection_prefers_live_subgraph_name_cache_over_stale_reduced_index() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/OLD", "OLD", "/OLD", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+        graph.subgraphs_by_name = BTreeMap::from([
+            ("/OLD".to_string(), vec![0]),
+            ("/LIVE".to_string(), vec![1]),
+        ]);
+
+        let subgraphs = super::collect_reduced_project_subgraphs_by_name(&graph, "/LIVE");
+
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].subgraph_code, 1);
+        assert_eq!(subgraphs[0].name, "/LIVE");
     }
 
     #[test]
