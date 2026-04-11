@@ -371,14 +371,27 @@ fn reduced_project_rebuild_process_name_indexes(
     (subgraphs_by_name, subgraphs_by_sheet_and_name)
 }
 
-// Upstream parity: reduced analogue for `CONNECTION_SUBGRAPH::m_driver` identity in
-// `processSubGraphs()` secondary-driver loops. The reduced graph normally stores this explicitly,
-// but unresolved transitional carriers still follow the graph-build invariant that the first strong
-// driver is chosen until a fuller live `CONNECTION_SUBGRAPH` owns the pointer directly.
+// upstream: CONNECTION_SUBGRAPH::ResolveDrivers chosen-driver fallback or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still ranks reduced strong-driver snapshots instead of reading final live `m_driver`
+// directly, but now uses the same highest-ranked fallback when the reduced chosen-driver slot is
+// absent instead of taking driver index 0 positionally
+// local_only_reason: reduced graph readers still need one shared chosen-driver query while the
+// fuller live `CONNECTION_SUBGRAPH` owner remains incomplete
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored final `m_driver`
+// remove_when: reduced chosen-driver queries are retired in favor of live owner reads
 fn reduced_project_chosen_driver_index(subgraph: &ReducedProjectSubgraphEntry) -> Option<usize> {
-    subgraph
-        .chosen_driver_index
-        .or_else(|| (!subgraph.drivers.is_empty()).then_some(0))
+    subgraph.chosen_driver_index.or_else(|| {
+        subgraph
+            .drivers
+            .iter()
+            .enumerate()
+            .max_by(|(_lhs_index, lhs), (_rhs_index, rhs)| {
+                reduced_project_absorbed_driver_cmp(lhs, rhs)
+            })
+            .map(|(index, _driver)| index)
+    })
 }
 
 // Upstream parity: reduced helper for `processSubGraphs()` weak-name suffix generation. This is a
@@ -1165,16 +1178,20 @@ pub(crate) fn reduced_project_strong_driver_full_name(driver: &ReducedProjectStr
     &driver.connection.name
 }
 
-// Upstream parity: reduced project-side owner for the chosen `CONNECTION_SUBGRAPH` driver item
-// identity after `ResolveDrivers()`. This now derives that identity through the chosen reduced
-// driver owner stored on the subgraph instead of duplicating the identity as parallel subgraph
-// side state, which is closer to KiCad's chosen-driver ownership even though the Rust tree still
-// lacks the fuller live driver object graph behind that owner.
+// upstream: CONNECTION_SUBGRAPH chosen-driver identity after `ResolveDrivers()` or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still reads reduced driver snapshots instead of final live driver item pointers, but
+// now falls back to the same ranked chosen-driver selection when the explicit chosen-driver slot
+// is absent
+// local_only_reason: reduced graph/query consumers still need chosen-driver identity before the
+// fuller live `CONNECTION_SUBGRAPH` owner is authoritative everywhere
+// replaced_by: direct live chosen-driver identity on the fuller `CONNECTION_SUBGRAPH` owner
+// remove_when: reduced subgraph driver identity queries are retired in favor of live owners
 pub(crate) fn reduced_project_subgraph_driver_identity(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<&ReducedProjectDriverIdentity> {
-    subgraph
-        .chosen_driver_index
+    reduced_project_chosen_driver_index(subgraph)
         .and_then(|index| subgraph.drivers.get(index))
         .and_then(|driver| driver.identity.as_ref())
 }
@@ -33306,6 +33323,83 @@ mod tests {
         assert_eq!(
             super::reduced_project_subgraph_driver_identity(&subgraph),
             Some(&sheet_pin_identity)
+        );
+    }
+
+    #[test]
+    fn reduced_project_subgraph_driver_identity_falls_back_to_ranked_driver_when_chosen_missing() {
+        let global_identity = super::ReducedProjectDriverIdentity::Label {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(10, 0),
+            kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+        };
+        let local_identity = super::ReducedProjectDriverIdentity::Label {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            kind: super::reduced_label_kind_sort_key(LabelKind::Local),
+        };
+        let chosen_connection = ReducedProjectConnection {
+            net_code: 0,
+            connection_type: ReducedProjectConnectionType::Net,
+            name: "GND".to_string(),
+            local_name: "GND".to_string(),
+            full_local_name: "GND".to_string(),
+            sheet_instance_path: String::new(),
+            members: Vec::new(),
+        };
+        let subgraph = ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "GND".to_string(),
+            resolved_connection: chosen_connection.clone(),
+            driver_connection: chosen_connection.clone(),
+            chosen_driver_index: None,
+            drivers: vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: ReducedProjectConnection {
+                        net_code: 0,
+                        connection_type: ReducedProjectConnectionType::Net,
+                        name: "/SIG".to_string(),
+                        local_name: "SIG".to_string(),
+                        full_local_name: "/SIG".to_string(),
+                        sheet_instance_path: String::new(),
+                        members: Vec::new(),
+                    },
+                    identity: Some(local_identity),
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_global_label_driver_priority(),
+                    connection: chosen_connection,
+                    identity: Some(global_identity.clone()),
+                },
+            ],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        };
+
+        assert_eq!(
+            super::reduced_project_subgraph_driver_identity(&subgraph),
+            Some(&global_identity)
         );
     }
 
