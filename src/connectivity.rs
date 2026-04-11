@@ -2354,11 +2354,73 @@ fn reduced_connection_vector_index_guess(connection: &LiveProjectConnection) -> 
     trailing_digits(&connection.local_name).or_else(|| trailing_digits(&connection.name))
 }
 
+fn reduced_live_bus_members_from_label_text(
+    text: &str,
+    local_prefix: &str,
+) -> Vec<LiveProjectBusMemberHandle> {
+    if let Some(members) = reduced_bus_vector_members(text) {
+        return members
+            .into_iter()
+            .enumerate()
+            .map(|(index, member)| {
+                Rc::new(RefCell::new(LiveProjectBusMember {
+                    net_code: 0,
+                    name: member.clone(),
+                    local_name: format!("{local_prefix}{member}"),
+                    full_local_name: format!("{local_prefix}{member}"),
+                    vector_index: Some(index),
+                    kind: ReducedBusMemberKind::Net,
+                    members: Vec::new(),
+                }))
+            })
+            .collect();
+    }
+
+    if let Some(inner) = text
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+    {
+        return split_reduced_bus_group_members(inner)
+            .into_iter()
+            .filter(|member| !member.is_empty())
+            .flat_map(|member| reduced_live_bus_members_from_label_text(&member, local_prefix))
+            .collect();
+    }
+
+    if let Some((prefix, suffix)) = text.split_once('{')
+        && let Some(inner) = suffix.strip_suffix('}')
+    {
+        let child_prefix = if prefix.is_empty() {
+            local_prefix.to_string()
+        } else {
+            format!("{local_prefix}{prefix}.")
+        };
+
+        return split_reduced_bus_group_members(inner)
+            .into_iter()
+            .filter(|member| !member.is_empty())
+            .flat_map(|member| reduced_live_bus_members_from_label_text(&member, &child_prefix))
+            .collect();
+    }
+
+    let local_name = format!("{local_prefix}{text}");
+    vec![Rc::new(RefCell::new(LiveProjectBusMember {
+        net_code: 0,
+        name: text.to_string(),
+        local_name: local_name.clone(),
+        full_local_name: local_name,
+        vector_index: None,
+        kind: ReducedBusMemberKind::Net,
+        members: Vec::new(),
+    }))]
+}
+
 // upstream: CONNECTION_GRAPH::propagateToNeighbors same-parent bus preservation branch
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: constructs a reduced live connection from the current neighbor name instead of
-// `SCH_CONNECTION temp( nullptr, sheet ); temp.ConfigureFromLabel( neighbor_name )`
+// divergence: still builds a reduced live connection instead of a mutable `SCH_CONNECTION`, but
+// now also materializes direct vector/group members like `ConfigureFromLabel()` instead of only
+// inferring the top-level type from punctuation
 // local_only_reason: current propagation still carries reduced connection fields rather than a
 // full mutable SCH_CONNECTION object
 // replaced_by: live SCH_CONNECTION analogue with ConfigureFromLabel semantics
@@ -2367,11 +2429,12 @@ fn reduced_live_net_connection_from_label_name(
     name: &str,
     sheet_instance_path: &str,
 ) -> LiveProjectConnection {
-    let connection_type = if name.is_empty() {
+    let local_name = name.rsplit('/').next().unwrap_or(name).to_string();
+    let connection_type = if local_name.is_empty() {
         ReducedProjectConnectionType::None
-    } else if name.contains('{') || name.contains('}') {
+    } else if local_name.contains('{') || local_name.contains('}') {
         ReducedProjectConnectionType::BusGroup
-    } else if name.contains('[') || name.contains(']') {
+    } else if local_name.contains('[') || local_name.contains(']') {
         ReducedProjectConnectionType::Bus
     } else {
         ReducedProjectConnectionType::Net
@@ -2380,10 +2443,10 @@ fn reduced_live_net_connection_from_label_name(
         net_code: 0,
         connection_type,
         name: name.to_string(),
-        local_name: reduced_short_net_name(name),
+        local_name: local_name.clone(),
         full_local_name: name.to_string(),
         sheet_instance_path: sheet_instance_path.to_string(),
-        members: Vec::new(),
+        members: reduced_live_bus_members_from_label_text(&local_name, ""),
     }
 }
 
@@ -35876,10 +35939,31 @@ mod tests {
 
         assert_eq!(net.connection_type, ReducedProjectConnectionType::Net);
         assert_eq!(bus.connection_type, ReducedProjectConnectionType::Bus);
+        assert_eq!(bus.members.len(), 4);
+        assert_eq!(bus.members[0].borrow().name, "BUS0");
+        assert_eq!(bus.members[0].borrow().vector_index, Some(0));
         assert_eq!(
             group.connection_type,
             ReducedProjectConnectionType::BusGroup
         );
+        assert_eq!(group.members.len(), 2);
+        assert_eq!(group.members[0].borrow().local_name, "BUS.A");
+        assert_eq!(group.members[1].borrow().local_name, "BUS.B");
+    }
+
+    #[test]
+    fn reduced_live_net_connection_from_label_name_preserves_nested_group_leaf_names() {
+        let group = super::reduced_live_net_connection_from_label_name("USB{PAIR{DP DM} AUX}", "");
+
+        assert_eq!(group.connection_type, ReducedProjectConnectionType::BusGroup);
+        let member_names = group
+            .members
+            .iter()
+            .map(|member| member.borrow().local_name.clone())
+            .collect::<Vec<_>>();
+        assert!(member_names.iter().any(|name| name == "USB.PAIR.DP"));
+        assert!(member_names.iter().any(|name| name == "USB.PAIR.DM"));
+        assert!(member_names.iter().any(|name| name == "USB.AUX"));
     }
 
     #[test]
