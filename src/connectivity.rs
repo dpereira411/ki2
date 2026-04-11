@@ -5737,19 +5737,17 @@ fn live_reduced_subgraph_highest_driver_priority(subgraph: &LiveReducedSubgraph)
 // upstream: CONNECTION_SUBGRAPH::GetDriverPriority / ResolveDrivers chosen-driver priority
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still reads reduced live driver owners instead of final `m_driver`, but now falls
-// back to the highest attached driver priority when no chosen driver is bound instead of using the
-// first attached snapshot
+// divergence: still reads reduced live driver owners instead of final `m_driver`, but now uses the
+// same shared chosen-driver fallback owner as the rest of the live graph instead of open-coding a
+// separate chosen-vs-highest-priority branch here
 // local_only_reason: propagation/suppression branches still need a graph-owned priority query
 // before the fuller live `CONNECTION_SUBGRAPH` owner stores final `m_driver`
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with final chosen-driver state
 // remove_when: propagation reads final `m_driver` priority directly from the live subgraph owner
 fn live_reduced_subgraph_driver_priority(subgraph: &LiveReducedSubgraph) -> i32 {
-    subgraph
-        .chosen_driver
+    live_reduced_subgraph_primary_driver(subgraph)
         .as_ref()
         .map(|driver| driver.borrow().priority())
-        .or_else(|| (!subgraph.drivers.is_empty()).then(|| live_reduced_subgraph_highest_driver_priority(subgraph)))
         .or_else(|| {
             (!matches!(
                 subgraph.driver_connection.borrow().connection_type,
