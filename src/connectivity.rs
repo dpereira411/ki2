@@ -11284,14 +11284,16 @@ fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
     subgraph: &ReducedProjectSubgraphEntry,
     endpoint: PointKey,
 ) -> bool {
-    if subgraph.driver_connection.name.is_empty() {
+    let driver_connection = reduced_project_effective_driver_connection(subgraph);
+
+    if driver_connection.name.is_empty() {
         return false;
     }
 
     let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
     let endpoint_matches = |point: PointKey| point_key_matches(point, endpoint_at);
 
-    collect_reduced_project_subgraphs_by_name(graph, &subgraph.driver_connection.name)
+    collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
         .into_iter()
         .filter(|neighbor| {
             neighbor.sheet_instance_path == subgraph.sheet_instance_path
@@ -12901,9 +12903,11 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
         let mut aggregate_has_no_connect = has_no_connect;
         let mut aggregate_has_local_hierarchy = has_local_hierarchy;
 
-        if !subgraph.driver_connection.name.is_empty() {
+        let driver_connection = reduced_project_effective_driver_connection(&subgraph);
+
+        if !driver_connection.name.is_empty() {
             for neighbor in
-                collect_reduced_project_subgraphs_by_name(graph, &subgraph.driver_connection.name)
+                collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
             {
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path
                     && neighbor.subgraph_code == subgraph.subgraph_code
@@ -13556,8 +13560,9 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                 continue;
             }
 
-            let (unique_pin_count, unique_label_count) =
-                if subgraph.driver_connection.name.is_empty() {
+            let (unique_pin_count, unique_label_count) = {
+                let driver_connection = reduced_project_effective_driver_connection(&subgraph);
+                if driver_connection.name.is_empty() {
                     (
                         reduced_unique_stacked_pin_count(subgraph.base_pins.iter()),
                         local_unique_labels.len(),
@@ -13565,7 +13570,7 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                 } else {
                     let neighbors = collect_reduced_project_subgraphs_by_name(
                         graph,
-                        &subgraph.driver_connection.name,
+                        &driver_connection.name,
                     )
                     .into_iter()
                     .collect::<Vec<_>>();
@@ -13589,7 +13594,8 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                             .collect::<BTreeSet<_>>()
                             .len();
                     (unique_pin_count, unique_label_count)
-                };
+                }
+            };
 
             if unique_pin_count <= 1 {
                 if unique_pin_count == 0 && unique_label_count == 0 {
@@ -13889,12 +13895,10 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
             }
         }
 
-        let same_name_has_no_connect_sibling = (subgraph
-            .driver_connection
-            .name
-            .starts_with("Net-(")
-            || subgraph.driver_connection.name.starts_with("unconnected-("))
-            && collect_reduced_project_subgraphs_by_name(graph, &subgraph.driver_connection.name)
+        let driver_connection = reduced_project_effective_driver_connection(&subgraph);
+        let same_name_has_no_connect_sibling = (driver_connection.name.starts_with("Net-(")
+            || driver_connection.name.starts_with("unconnected-("))
+            && collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
                 .iter()
                 .any(|neighbor| {
                     neighbor.subgraph_code != subgraph.subgraph_code
@@ -15998,6 +16002,65 @@ mod tests {
     }
 
     #[test]
+    fn reduced_pin_not_connected_candidates_honor_ranked_same_name_no_connect_sibling() {
+        let connection = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "");
+        let mut pin_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        pin_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection.clone(),
+        ));
+
+        let mut nc_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: connection,
+                identity: None,
+            }],
+            "",
+        );
+        nc_subgraph.has_no_connect = true;
+        nc_subgraph.no_connect_points.push(ReducedNoConnectPoint {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(30, 40),
+        });
+        nc_subgraph.chosen_driver_index = None;
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![pin_subgraph, nc_subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("unconnected-(R1-Pad1)".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([(
+                (String::new(), "unconnected-(R1-Pad1)".to_string()),
+                vec![0, 1],
+            )]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+        let label_name_caches = ReducedProjectLabelNameCaches {
+            global_names: BTreeSet::new(),
+            local_names_by_sheet: BTreeSet::new(),
+        };
+
+        let candidates = reduced_project_pin_not_connected_candidates(&graph, &label_name_caches);
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
     fn reduced_pin_not_connected_candidates_honor_cross_sheet_no_connect_sibling() {
         let connection_a = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "/a");
         let connection_b = test_net_connection("unconnected-(R1-Pad1)", "Pad1", "Pad1", "/b");
@@ -16290,6 +16353,73 @@ mod tests {
 
         let graph = test_graph_with_live_subgraphs(vec![label_subgraph, same_name_subgraph]);
         graph.live_subgraphs[1].borrow_mut().chosen_driver = None;
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert_eq!(label_subgraphs[0].all_pins, 2);
+        assert_eq!(label_subgraphs[0].local_pins, 2);
+    }
+
+    #[test]
+    fn reduced_label_connectivity_subgraphs_aggregate_ranked_primary_name_when_chosen_missing() {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection.clone(),
+        });
+        label_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-a",
+            PointKey(10, 20),
+            "1",
+            "input",
+            connection,
+        ));
+
+        let mut same_name_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_hierarchical_label_driver_priority(),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                identity: None,
+            }],
+            "",
+        );
+        same_name_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-b",
+            PointKey(30, 40),
+            "1",
+            "input",
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+        ));
+        same_name_subgraph.chosen_driver_index = None;
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![label_subgraph, same_name_subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([(
+                (String::new(), "/SIG".to_string()),
+                vec![0, 1],
+            )]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
