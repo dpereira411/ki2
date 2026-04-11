@@ -1184,6 +1184,16 @@ pub(crate) fn reduced_project_subgraph_driver_identity(
         .and_then(|driver| driver.identity.as_ref())
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusEntryConflicts chosen-driver suppression branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still reads reduced chosen-driver snapshots instead of final driver item pointers,
+// but now keys suppression only from the chosen driver like upstream instead of falling back to
+// other non-bus drivers on the subgraph
+// local_only_reason: keeps bus-entry conflict suppression on the shared reduced graph owner while
+// final driver item ownership is still reduced
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` driver owner graph
+// remove_when: ERC can query final live chosen-driver priority directly from subgraph drivers
 pub(crate) fn reduced_project_subgraph_non_bus_driver_priority(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<i32> {
