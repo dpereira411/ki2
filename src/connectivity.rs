@@ -8735,7 +8735,7 @@ pub(crate) fn reduced_project_four_way_junction_points(
     &graph.four_way_junction_points
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[allow(dead_code)]
 // Upstream parity: reduced local analogue for indexing into `CONNECTION_GRAPH` subgraph storage.
 // This is not a 1:1 pointer owner because the Rust tree still stores cloned reduced subgraphs
 // instead of live `CONNECTION_SUBGRAPH*`, but it keeps parent/child relation consumers on the
@@ -9432,12 +9432,13 @@ pub(crate) fn reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
         return live_reduced_subgraph_has_local_hierarchy_via_bus_parents(subgraph);
     }
 
-    let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+    let Some(subgraph) = projected_reduced_project_subgraph_by_index(graph, subgraph_index) else {
         return false;
     };
 
     subgraph.bus_parent_links.iter().any(|parent_link| {
-        let Some(parent) = reduced_project_subgraph_by_index(graph, parent_link.subgraph_index)
+        let Some(parent) =
+            projected_reduced_project_subgraph_by_index(graph, parent_link.subgraph_index)
         else {
             return false;
         };
@@ -9465,7 +9466,7 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
         return live_reduced_subgraph_has_no_connect_via_parent_chain(subgraph);
     }
 
-    let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+    let Some(subgraph) = projected_reduced_project_subgraph_by_index(graph, subgraph_index) else {
         return false;
     };
     let mut pending = subgraph
@@ -9480,7 +9481,7 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
             continue;
         }
 
-        let Some(parent) = reduced_project_subgraph_by_index(graph, parent_index) else {
+        let Some(parent) = projected_reduced_project_subgraph_by_index(graph, parent_index) else {
             continue;
         };
 
@@ -9495,7 +9496,8 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
                 break;
             }
 
-            let Some(hier_parent) = reduced_project_subgraph_by_index(graph, index) else {
+            let Some(hier_parent) = projected_reduced_project_subgraph_by_index(graph, index)
+            else {
                 break;
             };
 
@@ -10328,7 +10330,7 @@ pub(crate) fn reduced_project_symbol_pin_net_name(
         })
         .or_else(|| {
             pin.subgraph_index
-                .and_then(|index| reduced_project_subgraph_by_index(graph, index))
+                .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
                 .map(|subgraph| subgraph.driver_connection.name.clone())
         })
         .unwrap_or_default()
