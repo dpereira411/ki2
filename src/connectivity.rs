@@ -4152,17 +4152,22 @@ impl LiveReducedSubgraph {
         }
     }
 
-    // Upstream parity: local live-subgraph analogue for the exercised pin portion of
-    // `CONNECTION_SUBGRAPH::UpdateItemConnections()`. This still mutates reduced live pin owners
-    // instead of real `SCH_PIN`s, but the shared live subgraph owner now drives the current pin
-    // refresh flow for both active and compatibility paths.
+    // upstream: CONNECTION_SUBGRAPH::UpdateItemConnections or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: still mutates reduced live pin owners instead of real `SCH_PIN*`, but now uses
+    // the same ranked-primary driver fallback when the explicit chosen-driver handle is absent
+    // local_only_reason: keeps exercised pin refresh on the shared live subgraph owner until the
+    // fuller live driver-item graph exists
+    // replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_PIN` owner graph
+    // remove_when: live pin refresh runs directly on final item owners without reduced carriers
     fn refresh_base_pin_connections_from_driver(
         &mut self,
         refresh_attached_strong_driver_pins: bool,
     ) {
         let driver_connection = self.driver_connection.clone();
         let driver_connection_type = driver_connection.borrow().connection_type;
-        let chosen_driver = self.chosen_driver.clone();
+        let chosen_driver = live_reduced_subgraph_primary_driver(self);
 
         for base_pin in &self.base_pins {
             base_pin.borrow_mut().refresh_from_driver_connection(
@@ -4174,14 +4179,20 @@ impl LiveReducedSubgraph {
         }
     }
 
-    // Upstream parity: local live-subgraph analogue for the exercised
-    // `CONNECTION_SUBGRAPH::UpdateItemConnections()` item refresh. This still mutates reduced live
-    // item owners instead of real `SCH_ITEM*`, but the shared live subgraph owner now drives the
-    // label/sheet-pin/hier-port/base-pin refresh flow for both active and compatibility paths.
+    // upstream: CONNECTION_SUBGRAPH::UpdateItemConnections or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: still mutates reduced live item owners instead of real `SCH_ITEM*`, but now
+    // follows the same ranked-primary driver fallback when the explicit chosen-driver handle is
+    // absent
+    // local_only_reason: keeps exercised item refresh on the shared live subgraph owner until the
+    // fuller live driver-item graph exists
+    // replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_ITEM` owner graph
+    // remove_when: live item refresh runs directly on final item owners without reduced carriers
     fn refresh_item_connections_from_driver(&mut self) {
         let driver_connection = self.driver_connection.clone();
         let driver_connection_type = driver_connection.borrow().connection_type;
-        let chosen_driver = self.chosen_driver.clone();
+        let chosen_driver = live_reduced_subgraph_primary_driver(self);
 
         for link in &self.label_links {
             link.borrow_mut().refresh_from_driver_connection(
@@ -35922,6 +35933,197 @@ mod tests {
         super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
 
         let connection = handles[0].borrow().label_links[0]
+            .borrow()
+            .connection
+            .clone();
+
+        assert_eq!(
+            connection.borrow().connection_type,
+            ReducedProjectConnectionType::Net
+        );
+        assert_eq!(connection.borrow().name, "/LOCAL");
+        assert_eq!(connection.borrow().local_name, "LOCAL");
+    }
+
+    #[test]
+    fn live_item_connection_refresh_skips_ranked_primary_driver_item_when_chosen_missing() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            chosen_driver_index: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::Label {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    kind: super::reduced_label_kind_sort_key(LabelKind::Local),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: vec![ReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                kind: LabelKind::Local,
+                dangling: false,
+                non_endpoint_wire_segment_count: 0,
+                connection: ReducedProjectConnection {
+                    net_code: 9,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/LOCAL".to_string(),
+                    local_name: "LOCAL".to_string(),
+                    full_local_name: "/LOCAL".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        handles[0].borrow_mut().chosen_driver = None;
+        super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
+
+        let connection = handles[0].borrow().label_links[0]
+            .borrow()
+            .connection
+            .clone();
+
+        assert_eq!(
+            connection.borrow().connection_type,
+            ReducedProjectConnectionType::Net
+        );
+        assert_eq!(connection.borrow().name, "/LOCAL");
+        assert_eq!(connection.borrow().local_name, "LOCAL");
+    }
+
+    #[test]
+    fn live_item_connection_refresh_skips_ranked_primary_sheet_pin_when_chosen_missing() {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/SIG".to_string(),
+                local_name: "SIG".to_string(),
+                full_local_name: "/SIG".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            chosen_driver_index: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::SheetPin,
+                priority: super::reduced_sheet_pin_driver_priority(),
+                connection: ReducedProjectConnection {
+                    net_code: 1,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/SIG".to_string(),
+                    local_name: "SIG".to_string(),
+                    full_local_name: "/SIG".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::SheetPin {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(0, 0),
+                    child_sheet_uuid: Some("child-sheet".to_string()),
+                    sheet_pin_rank: 0,
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(0, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("child-sheet".to_string()),
+                connection: ReducedProjectConnection {
+                    net_code: 9,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/LOCAL".to_string(),
+                    local_name: "LOCAL".to_string(),
+                    full_local_name: "/LOCAL".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+            }],
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        handles[0].borrow_mut().chosen_driver = None;
+        super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
+
+        let connection = handles[0].borrow().hier_sheet_pins[0]
             .borrow()
             .connection
             .clone();
