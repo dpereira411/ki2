@@ -8847,6 +8847,18 @@ fn projected_reduced_project_net_identity_by_index(
     graph: &ReducedProjectNetGraph,
     index: usize,
 ) -> Option<ReducedProjectNetIdentity> {
+    if let Some(handle) = graph.live_subgraphs.get(index) {
+        let subgraph = graph.subgraphs.get(index)?;
+        let live = handle.borrow();
+        let driver_connection = live.driver_connection.borrow();
+        return Some(ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: live.has_no_connect,
+        });
+    }
+
     projected_reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
         ReducedProjectNetIdentity {
             code: subgraph.code,
@@ -16772,6 +16784,32 @@ mod tests {
 
         assert_eq!(projected[0].driver_connection.name, "/LIVE");
         assert_eq!(projected[0].base_pins[0].connection.name, "/LIVE");
+    }
+
+    #[test]
+    fn projected_net_identity_reads_live_owner_over_stale_reduced_payload() {
+        let reduced_connection = test_net_connection("/REDUCED", "REDUCED", "/REDUCED", "");
+        let live_connection = test_net_connection("/LIVE", "LIVE", "/LIVE", "");
+        let mut subgraph = test_net_subgraph(1, reduced_connection, Vec::new(), "");
+        subgraph.class = "Default".to_string();
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        {
+            let live_subgraph = graph.live_subgraphs[0].borrow();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut live_subgraph.driver_connection.borrow_mut(),
+                &live_connection,
+            );
+        }
+        graph.live_subgraphs[0].borrow_mut().has_no_connect = true;
+
+        let identity =
+            super::projected_reduced_project_net_identity_by_index(&graph, 0).expect("identity");
+
+        assert_eq!(identity.code, 1);
+        assert_eq!(identity.name, "/LIVE");
+        assert_eq!(identity.class, "Default");
+        assert!(identity.has_no_connect);
     }
 
     #[test]
