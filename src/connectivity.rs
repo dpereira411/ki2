@@ -4462,7 +4462,7 @@ impl LiveReducedSubgraph {
         global_subgraphs: &[LiveReducedSubgraphHandle],
     ) -> Vec<LiveReducedSubgraphHandle> {
         if live_subgraph_has_local_driver(&start.borrow())
-            || live_subgraph_strong_driver_count(&start.borrow()) < 2
+            || !live_reduced_subgraph_has_multiple_drivers(&start.borrow())
         {
             return Vec::new();
         }
@@ -4910,7 +4910,7 @@ impl LiveReducedSubgraph {
             };
             let candidate_drivers = {
                 let candidate = candidate_handle.borrow();
-                if live_subgraph_strong_driver_count(&candidate) < 2 {
+                if !live_reduced_subgraph_has_multiple_drivers(&candidate) {
                     continue;
                 }
                 candidate.drivers.clone()
