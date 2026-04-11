@@ -682,6 +682,25 @@ fn reduced_project_absorb_push_secondary_test_names(
             }
         }
     }
+
+    for base_pin in &subgraph.base_pins {
+        if base_pin.driver_connection.connection_type != parent_type
+            || reduced_project_driver_match_name(
+                &base_pin.driver_connection,
+                &subgraph.driver_connection.name,
+            )
+        {
+            continue;
+        }
+
+        push_unique(test_names, base_pin.driver_connection.name.clone());
+        if !base_pin.driver_connection.full_local_name.is_empty() {
+            push_unique(
+                test_names,
+                base_pin.driver_connection.full_local_name.clone(),
+            );
+        }
+    }
 }
 
 // Upstream parity: reduced local analogue for the same-sheet/same-type primary-driver slice of
@@ -19455,6 +19474,77 @@ mod tests {
                 .iter()
                 .any(|driver| driver.connection.name == "Net-(U1-Pad1)")
         );
+    }
+
+    #[test]
+    fn reduced_absorb_uses_parent_base_pin_default_names_when_pin_is_not_a_driver() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_parent_base_pin_secondary_absorb_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "device:OnePin"
+      (property "Reference" "U" (id 0) (at 0 0 0) (effects (font (size 1 1))))
+      (property "Value" "OnePin" (id 1) (at 0 0 0) (effects (font (size 1 1))))
+      (symbol "OnePin_1_1"
+        (pin passive line (at 0 0 180) (length 2.54)
+          (name "A" (effects (font (size 1 1))))
+          (number "1" (effects (font (size 1 1))))))))
+  (symbol
+    (lib_id "device:OnePin")
+    (uuid "73050000-0000-0000-0000-000000000701")
+    (at 0 0 0)
+    (unit 1)
+    (property "Reference" "U1" (at 0 0 0) (effects (font (size 1 1))))
+    (property "Value" "OnePin" (at 0 0 0) (effects (font (size 1 1)))))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (global_label "AAA" (shape input) (at 10 0 0) (effects (font (size 1 1))))
+  (wire (pts (xy 30 0) (xy 40 0)))
+  (global_label "Net-(U1-A)" (shape input) (at 40 0 0) (effects (font (size 1 1)))))"#,
+        )
+        .expect("write schematic");
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let root_sheet = project
+            .sheet_paths
+            .iter()
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .expect("root sheet path");
+        let graph = project.reduced_project_net_graph(false);
+
+        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+            .expect("first net subgraph");
+        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [40.0, 0.0])
+            .expect("second net subgraph");
+
+        assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
+        assert_eq!(first_by_point.driver_connection.name, "AAA");
+        assert!(
+            first_by_point
+                .base_pins
+                .iter()
+                .any(|base_pin| base_pin.driver_connection.name == "Net-(U1-A)")
+        );
+        assert_eq!(
+            super::collect_reduced_project_subgraphs_by_name(&graph, "AAA").len(),
+            1
+        );
+        assert!(
+            super::collect_reduced_project_subgraphs_by_name(&graph, "Net-(U1-A)").is_empty()
+        );
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
