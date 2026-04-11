@@ -5417,14 +5417,11 @@ impl LiveReducedSubgraph {
                 continue;
             }
 
-            let connection = {
-                let subgraph = subgraph_handle.borrow();
-                let connection = subgraph.driver_connection.borrow();
-                if connection.connection_type != ReducedProjectConnectionType::Net {
-                    continue;
-                }
-                subgraph.driver_connection.clone()
-            };
+            let connection =
+                live_reduced_subgraph_effective_driver_connection_from_handle(subgraph_handle);
+            if connection.borrow().connection_type != ReducedProjectConnectionType::Net {
+                continue;
+            }
 
             for link in bus_parent_links {
                 let Some(parent_handle) = live_subgraph_handle_for_link(live_subgraphs, &link)
@@ -5432,8 +5429,11 @@ impl LiveReducedSubgraph {
                     continue;
                 };
                 let old_names = {
-                    let parent = parent_handle.borrow();
-                    let mut parent_connection = parent.driver_connection.borrow_mut();
+                    let parent_connection =
+                        live_reduced_subgraph_effective_driver_connection_from_handle(
+                            &parent_handle,
+                        );
+                    let mut parent_connection = parent_connection.borrow_mut();
                     let link_member = link.borrow().member.clone();
                     let Some(member) =
                         parent_connection.find_member_mut_live(&link_member.borrow())
@@ -5469,14 +5469,12 @@ impl LiveReducedSubgraph {
                 candidate_handles.dedup_by(|left, right| Rc::ptr_eq(left, right));
 
                 for candidate_handle in candidate_handles {
-                    let old_candidate_name = candidate_handle
-                        .borrow()
-                        .driver_connection
-                        .borrow()
-                        .name
-                        .clone();
+                    let old_candidate_name = candidate_handle.borrow().cache_name();
                     if old_names.iter().any(|name| name == &old_candidate_name) {
-                        let target_connection = candidate_handle.borrow().driver_connection.clone();
+                        let target_connection =
+                            live_reduced_subgraph_effective_driver_connection_from_handle(
+                                &candidate_handle,
+                            );
                         let changed = clone_live_connection_handle_from_handle_if_changed(
                             &target_connection,
                             &connection,
@@ -5497,10 +5495,14 @@ impl LiveReducedSubgraph {
 
     // Upstream parity: local live-subgraph analogue for the same-name cache keys KiCad rebuilds
     // around propagated `CONNECTION_SUBGRAPH`s. The graph still keeps reduced cache maps instead
-    // of full live subgraph objects, but the shared live subgraph owner now decides which name and
-    // prefix entries belong in those caches instead of free helpers rebuilding keys around it.
+    // of full live subgraph objects, but the shared live subgraph owner now decides which
+    // effective chosen-driver name and prefix entries belong in those caches instead of free
+    // helpers rebuilding keys around stale subgraph snapshots.
     fn cache_name(&self) -> String {
-        self.driver_connection.borrow().name.clone()
+        live_reduced_subgraph_effective_driver_connection(self)
+            .borrow()
+            .name
+            .clone()
     }
 
     fn cache_prefix_name(&self) -> Option<String> {
@@ -32944,6 +32946,73 @@ mod tests {
             live_subgraphs[3].borrow().driver_connection.borrow().name,
             "PWR_ALT"
         );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(graph[3].name, "PWR_ALT");
+        assert_eq!(graph[3].driver_connection.name, "PWR_ALT");
+        assert_eq!(graph[3].driver_connection.full_local_name, "/same/PWR_ALT");
+    }
+
+    #[test]
+    fn reduced_live_multiple_bus_parent_names_recaches_ranked_primary_name_when_chosen_missing() {
+        let member = test_bus_member("OLD", "OLD", "/same/OLD");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection(
+                    "/BUS_A",
+                    "BUS_A",
+                    "/BUS_A",
+                    "",
+                    vec![test_bus_member("PWR_ALT", "PWR_ALT", "/same/PWR_ALT")],
+                ),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_bus_connection("/BUS_B", "BUS_B", "/BUS_B", "", vec![member.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/same/STALE", "STALE", "/same/STALE", "/same"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "PWR_ALT",
+                        "PWR_ALT",
+                        "/same/PWR_ALT",
+                        "/same",
+                    ),
+                    identity: None,
+                }],
+                "/same",
+            ),
+            test_net_subgraph(
+                4,
+                test_net_connection("OLD", "OLD", "/same/OLD", "/same"),
+                Vec::new(),
+                "/same",
+            ),
+        ];
+        graph[2].bus_parent_links = vec![
+            ReducedProjectBusNeighborLink {
+                member: member.clone(),
+                subgraph_index: 0,
+            },
+            ReducedProjectBusNeighborLink {
+                member: member.clone(),
+                subgraph_index: 1,
+            },
+        ];
+        graph[2].bus_parent_indexes = vec![0, 1];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[2].borrow_mut().chosen_driver = None;
+        LiveReducedSubgraph::refresh_multiple_bus_parent_names(&live_subgraphs);
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(graph[3].name, "PWR_ALT");
