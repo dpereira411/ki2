@@ -4952,8 +4952,21 @@ impl LiveReducedSubgraph {
                 let matched = {
                     let subgraph = handle.borrow();
                     let mut connection = subgraph.driver_connection.borrow_mut();
-                    let Some(member) = connection.find_member_mut_live(&stale_member.borrow())
-                    else {
+                    let stale_member_ref = stale_member.borrow();
+                    let member = connection
+                        .find_member_mut_live(&stale_member_ref)
+                        .or_else(|| {
+                            (connection.connection_type == ReducedProjectConnectionType::Bus
+                                && stale_member_ref.vector_index.is_none()
+                                && connection
+                                    .members
+                                    .iter()
+                                    .all(|member| member.borrow().vector_index.is_none()))
+                            .then(|| connection.members.first().cloned())
+                            .flatten()
+                        });
+                    drop(stale_member_ref);
+                    let Some(member) = member else {
                         continue;
                     };
                     if !Rc::ptr_eq(&member, stale_member) {
@@ -6177,6 +6190,100 @@ fn refresh_reduced_project_subgraph_classes_from_inputs(
             })
             .unwrap_or_default();
     }
+}
+
+// upstream: CONNECTION_GRAPH::Recalculate recache stage after live subgraph mutation or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: rebuilds reduced identity-key maps from projected reduced subgraphs instead of
+// recaching KiCad's live item/subgraph pointer tables directly
+// local_only_reason: current project graph still serves reduced identity-key lookups to callers
+// that have not moved onto full live item ownership
+// replaced_by: graph-owned live item/subgraph lookup tables keyed by fuller `SCH_ITEM` /
+// `SCH_CONNECTION` analogues
+// remove_when: symbol/point/label/no-connect/sheet-pin queries resolve directly from live owners
+fn rebuild_reduced_project_identity_caches(
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
+) -> (
+    BTreeMap<ReducedNetBasePinKey, usize>,
+    BTreeMap<ReducedProjectPinIdentityKey, usize>,
+    BTreeMap<ReducedProjectPointIdentityKey, usize>,
+    BTreeMap<ReducedProjectLabelIdentityKey, usize>,
+    BTreeMap<ReducedProjectNoConnectIdentityKey, usize>,
+    BTreeMap<ReducedProjectSheetPinIdentityKey, usize>,
+) {
+    let mut pin_subgraph_identities = BTreeMap::new();
+    let mut pin_subgraph_identities_by_location = BTreeMap::new();
+    let mut point_subgraph_identities = BTreeMap::new();
+    let mut label_subgraph_identities = BTreeMap::new();
+    let mut no_connect_subgraph_identities = BTreeMap::new();
+    let mut sheet_pin_subgraph_identities = BTreeMap::new();
+
+    for (index, subgraph) in reduced_subgraphs.iter().enumerate() {
+        for base_pin in &subgraph.base_pins {
+            pin_subgraph_identities.insert(base_pin.key.clone(), index);
+            pin_subgraph_identities_by_location.insert(
+                ReducedProjectPinIdentityKey {
+                    sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
+                    symbol_uuid: base_pin.key.symbol_uuid.clone(),
+                    at: base_pin.key.at,
+                    number: base_pin.key.number.clone(),
+                },
+                index,
+            );
+        }
+
+        for point in &subgraph.points {
+            point_subgraph_identities.insert(
+                ReducedProjectPointIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: *point,
+                },
+                index,
+            );
+        }
+
+        for label in &subgraph.label_links {
+            label_subgraph_identities.insert(
+                ReducedProjectLabelIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: label.at,
+                    kind: reduced_label_kind_sort_key(label.kind),
+                },
+                index,
+            );
+        }
+
+        for point in &subgraph.no_connect_points {
+            no_connect_subgraph_identities.insert(
+                ReducedProjectNoConnectIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: point.at,
+                },
+                index,
+            );
+        }
+
+        for pin in &subgraph.hier_sheet_pins {
+            sheet_pin_subgraph_identities.insert(
+                ReducedProjectSheetPinIdentityKey {
+                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
+                    at: pin.at,
+                    child_sheet_uuid: pin.child_sheet_uuid.clone(),
+                },
+                index,
+            );
+        }
+    }
+
+    (
+        pin_subgraph_identities,
+        pin_subgraph_identities_by_location,
+        point_subgraph_identities,
+        label_subgraph_identities,
+        no_connect_subgraph_identities,
+        sheet_pin_subgraph_identities,
+    )
 }
 
 // Upstream parity: reduced local analogue for the global-secondary-driver promotion branch in
@@ -7966,66 +8073,6 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     subgraphs_by_sheet_and_name =
         reduced_project_rebuild_process_name_indexes(&reduced_subgraphs).1;
 
-    pin_subgraph_identities.clear();
-    pin_subgraph_identities_by_location.clear();
-    point_subgraph_identities.clear();
-    label_subgraph_identities.clear();
-    no_connect_subgraph_identities.clear();
-    sheet_pin_subgraph_identities.clear();
-
-    for (index, subgraph) in reduced_subgraphs.iter().enumerate() {
-        for base_pin in &subgraph.base_pins {
-            pin_subgraph_identities.insert(base_pin.key.clone(), index);
-            pin_subgraph_identities_by_location.insert(
-                ReducedProjectPinIdentityKey {
-                    sheet_instance_path: base_pin.key.sheet_instance_path.clone(),
-                    symbol_uuid: base_pin.key.symbol_uuid.clone(),
-                    at: base_pin.key.at,
-                    number: base_pin.key.number.clone(),
-                },
-                index,
-            );
-        }
-        for point in &subgraph.points {
-            point_subgraph_identities.insert(
-                ReducedProjectPointIdentityKey {
-                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                    at: *point,
-                },
-                index,
-            );
-        }
-        for label in &subgraph.label_links {
-            label_subgraph_identities.insert(
-                ReducedProjectLabelIdentityKey {
-                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                    at: label.at,
-                    kind: reduced_label_kind_sort_key(label.kind),
-                },
-                index,
-            );
-        }
-        for point in &subgraph.no_connect_points {
-            no_connect_subgraph_identities.insert(
-                ReducedProjectNoConnectIdentityKey {
-                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                    at: point.at,
-                },
-                index,
-            );
-        }
-        for pin in &subgraph.hier_sheet_pins {
-            sheet_pin_subgraph_identities.insert(
-                ReducedProjectSheetPinIdentityKey {
-                    sheet_instance_path: subgraph.sheet_instance_path.clone(),
-                    at: pin.at,
-                    child_sheet_uuid: pin.child_sheet_uuid.clone(),
-                },
-                index,
-            );
-        }
-    }
-
     let subgraphs_by_sheet = reduced_subgraphs.iter().enumerate().fold(
         BTreeMap::<String, Vec<usize>>::new(),
         |mut acc, (index, subgraph)| {
@@ -8211,6 +8258,14 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
     let live_subgraphs =
         refresh_reduced_live_graph_propagation_with_handles(&mut reduced_subgraphs);
     refresh_reduced_project_subgraph_classes_from_inputs(&mut reduced_subgraphs, &inputs);
+    (
+        pin_subgraph_identities,
+        pin_subgraph_identities_by_location,
+        point_subgraph_identities,
+        label_subgraph_identities,
+        no_connect_subgraph_identities,
+        sheet_pin_subgraph_identities,
+    ) = rebuild_reduced_project_identity_caches(&reduced_subgraphs);
     let (subgraphs_by_name, subgraphs_by_sheet_and_name) =
         rebuild_reduced_project_graph_name_caches(&mut reduced_subgraphs);
     let symbol_pins_by_symbol =
@@ -10100,11 +10155,8 @@ fn resolve_reduced_project_subgraph_index_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<usize> {
-    live_reduced_project_subgraph_index_for_symbol_pin(
-        graph, sheet_path, symbol, at, pin_name, pin_number,
-    )
-    .or_else(|| {
-        pin_name.and_then(|pin_name| {
+    pin_name
+        .and_then(|pin_name| {
             graph
                 .pin_subgraph_identities
                 .get(&reduced_project_base_pin_key(
@@ -10112,42 +10164,79 @@ fn resolve_reduced_project_subgraph_index_for_symbol_pin(
                 ))
                 .copied()
         })
-    })
-    .or_else(|| {
-        graph
-            .pin_subgraph_identities_by_location
-            .get(&reduced_project_pin_identity_key(
-                sheet_path, symbol, at, pin_number,
-            ))
-            .copied()
-    })
-    .or_else(|| {
-        pin_name.and_then(|pin_name| {
+        .or_else(|| {
             graph
-                .pin_subgraph_identities
+                .pin_subgraph_identities_by_location
+                .get(&reduced_project_pin_identity_key(
+                    sheet_path, symbol, at, pin_number,
+                ))
+                .copied()
+        })
+        .or_else(|| {
+            live_reduced_project_subgraph_index_for_symbol_pin(
+                graph, sheet_path, symbol, at, pin_name, pin_number,
+            )
+        })
+        .or_else(|| {
+            pin_name.and_then(|pin_name| {
+                graph
+                    .pin_subgraph_identities
+                    .iter()
+                    .find_map(|(key, index)| {
+                        (key.sheet_instance_path == sheet_path.instance_path
+                            && key.symbol_uuid == symbol.uuid
+                            && key.name.as_deref() == Some(pin_name)
+                            && key.number.as_deref() == pin_number
+                            && point_key_matches(key.at, at))
+                        .then_some(*index)
+                    })
+            })
+        })
+        .or_else(|| {
+            graph
+                .pin_subgraph_identities_by_location
                 .iter()
                 .find_map(|(key, index)| {
                     (key.sheet_instance_path == sheet_path.instance_path
                         && key.symbol_uuid == symbol.uuid
-                        && key.name.as_deref() == Some(pin_name)
                         && key.number.as_deref() == pin_number
                         && point_key_matches(key.at, at))
                     .then_some(*index)
                 })
         })
-    })
-    .or_else(|| {
-        graph
-            .pin_subgraph_identities_by_location
-            .iter()
-            .find_map(|(key, index)| {
-                (key.sheet_instance_path == sheet_path.instance_path
-                    && key.symbol_uuid == symbol.uuid
-                    && key.number.as_deref() == pin_number
-                    && point_key_matches(key.at, at))
-                .then_some(*index)
+}
+
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() reduced symbol-pin fallback or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: matches reduced base-pin keys instead of querying a live `SCH_PIN*` owner
+// local_only_reason: reduced fallback still exists for callers before full live pin ownership is
+// universal across the project graph
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: symbol-pin queries stop falling back to reduced subgraph/base-pin carriers
+fn reduced_project_base_pin_for_symbol_pin<'a>(
+    subgraph: &'a ReducedProjectSubgraphEntry,
+    sheet_path: &LoadedSheetPath,
+    symbol: &Symbol,
+    at: [f64; 2],
+    pin_name: Option<&str>,
+    pin_number: Option<&str>,
+) -> Option<&'a ReducedProjectBasePin> {
+    pin_name
+        .and_then(|pin_name| {
+            subgraph.base_pins.iter().find(|base_pin| {
+                base_pin.key
+                    == reduced_project_base_pin_key(sheet_path, symbol, at, pin_name, pin_number)
             })
-    })
+        })
+        .or_else(|| {
+            subgraph.base_pins.iter().find(|base_pin| {
+                base_pin.key.sheet_instance_path == sheet_path.instance_path
+                    && base_pin.key.symbol_uuid == symbol.uuid
+                    && point_key_matches(base_pin.key.at, at)
+                    && (pin_number.is_none() || base_pin.key.number.as_deref() == pin_number)
+            })
+        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -10364,7 +10453,17 @@ pub(crate) fn resolve_reduced_project_driver_name_for_symbol_pin(
         resolve_reduced_project_subgraph_for_symbol_pin(
             graph, sheet_path, symbol, at, pin_name, pin_number,
         )
-        .map(|subgraph| subgraph.driver_connection.local_name.clone())
+        .map(|subgraph| {
+            reduced_project_base_pin_for_symbol_pin(
+                subgraph, sheet_path, symbol, at, pin_name, pin_number,
+            )
+            .and_then(|base_pin| {
+                base_pin
+                    .preserve_local_name_on_refresh
+                    .then(|| base_pin.driver_connection.local_name.clone())
+            })
+            .unwrap_or_else(|| subgraph.driver_connection.local_name.clone())
+        })
     })
 }
 
