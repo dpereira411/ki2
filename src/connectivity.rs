@@ -5952,13 +5952,16 @@ fn live_subgraphs_have_matching_hierarchy_driver_names(
 
     parent.hier_sheet_pins.iter().any(|pin| {
         let pin = pin.borrow();
-        let pin_connection = pin.connection.borrow();
+        let pin_name =
+            live_hierarchy_link_shown_text_local_name(&pin.shown_text_local_name, &pin.connection);
 
         child.hier_ports.iter().any(|port| {
             let port = port.borrow();
-            let port_connection = port.connection.borrow();
-
-            pin_connection.local_name == port_connection.local_name
+            pin_name
+                == live_hierarchy_link_shown_text_local_name(
+                    &port.shown_text_local_name,
+                    &port.connection,
+                )
         })
     })
 }
@@ -30237,11 +30240,9 @@ mod tests {
         }];
 
         let handles = build_live_reduced_subgraph_handles(&graph);
-        handles[1].borrow().hier_ports[0]
-            .borrow()
-            .connection
+        handles[1].borrow_mut().hier_ports[0]
             .borrow_mut()
-            .local_name = "OTHER".to_string();
+            .shown_text_local_name = "OTHER".to_string();
 
         let parent_component =
             LiveReducedSubgraph::collect_propagation_component_handles(&handles[0], &handles)
@@ -31111,6 +31112,81 @@ mod tests {
             graph[1].driver_connection.connection_type,
             ReducedProjectConnectionType::Bus
         );
+    }
+
+    #[test]
+    fn live_hierarchy_component_matching_uses_shown_text_names() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("PARENT_NET", "PARENT_NET", "PARENT_NET", ""),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::SheetPin,
+                    priority: super::reduced_sheet_pin_driver_priority(),
+                    connection: test_net_connection("PARENT_NET", "PARENT_NET", "PARENT_NET", ""),
+                    identity: None,
+                }],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection(
+                    "/child/CHILD_NET",
+                    "CHILD_NET",
+                    "/child/CHILD_NET",
+                    "/child",
+                ),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_hierarchical_label_driver_priority(),
+                    connection: test_net_connection(
+                        "/child/CHILD_NET",
+                        "CHILD_NET",
+                        "/child/CHILD_NET",
+                        "/child",
+                    ),
+                    identity: None,
+                }],
+                "/child",
+            ),
+        ];
+        graph[0].hier_child_indexes = vec![1];
+        graph[0].hier_sheet_pins = vec![ReducedHierSheetPinLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(0, 0),
+            child_sheet_uuid: Some("child-sheet".to_string()),
+            connection: test_net_connection("PARENT_NET", "PARENT_NET", "PARENT_NET", ""),
+        }];
+        graph[1].hier_parent_index = Some(0);
+        graph[1].hier_ports = vec![ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(0, 0),
+            connection: test_net_connection(
+                "/child/CHILD_NET",
+                "CHILD_NET",
+                "/child/CHILD_NET",
+                "/child",
+            ),
+        }];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[0].borrow_mut().hier_sheet_pins[0]
+            .borrow_mut()
+            .shown_text_local_name = "MATCH".to_string();
+        live_subgraphs[1].borrow_mut().hier_ports[0]
+            .borrow_mut()
+            .shown_text_local_name = "MATCH".to_string();
+
+        let mut component = LiveReducedSubgraph::collect_propagation_component_handles(
+            &live_subgraphs[0],
+            &live_subgraphs,
+        )
+        .into_iter()
+        .map(|handle| handle.borrow().source_index)
+        .collect::<Vec<_>>();
+        component.sort_unstable();
+
+        assert_eq!(component, vec![0, 1]);
     }
 
     #[test]
