@@ -9037,7 +9037,9 @@ fn projected_reduced_project_subgraph_from_live_handle(
 // upstream: CONNECTION_GRAPH::GetNetFromItem live subgraph-to-connection summary branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still returns a reduced net summary instead of exposing the live `SCH_CONNECTION`
+// divergence: still returns a reduced net summary instead of exposing the live `SCH_CONNECTION`,
+// but the live projection now reads the effective chosen connection instead of stale raw
+// subgraph `driver_connection`
 // local_only_reason: `GetNetFromItem` callers still consume reduced `ReducedProjectNetIdentity` payloads
 // replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` summary access once reduced net identities are retired
 // remove_when: item net queries can consume live connection/subgraph owners directly
@@ -9048,7 +9050,8 @@ fn projected_reduced_project_net_identity_by_index(
     if let Some(handle) = graph.live_subgraphs.get(index) {
         let subgraph = graph.subgraphs.get(index)?;
         let live = handle.borrow();
-        let driver_connection = live.driver_connection.borrow();
+        let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+        let driver_connection = driver_connection.borrow();
         return Some(ReducedProjectNetIdentity {
             code: subgraph.code,
             name: driver_connection.name.clone(),
@@ -9070,7 +9073,9 @@ fn projected_reduced_project_net_identity_by_index(
 // upstream: SCH_CONNECTION::Name(true) through CONNECTION_GRAPH::GetSubgraphForItem or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`
+// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`, but the
+// live projection now reads the effective chosen-driver local name instead of stale raw subgraph
+// `driver_connection`
 // local_only_reason: item driver-name queries still consume `String` snapshots
 // replaced_by: live `SCH_CONNECTION` owner lookups once driver-name queries stop using reduced snapshots
 // remove_when: production callers can read `Name(true)` directly from live connection owners
@@ -9082,9 +9087,8 @@ fn projected_reduced_project_driver_local_name_by_index(
         .live_subgraphs
         .get(index)
         .map(|subgraph| {
-            subgraph
-                .borrow()
-                .driver_connection
+            let subgraph = subgraph.borrow();
+            live_reduced_subgraph_effective_driver_connection(&subgraph)
                 .borrow()
                 .local_name
                 .clone()
@@ -17291,6 +17295,74 @@ mod tests {
         assert_eq!(identity.name, "/LIVE");
         assert_eq!(identity.class, "Default");
         assert!(identity.has_no_connect);
+    }
+
+    #[test]
+    fn projected_net_identity_uses_ranked_primary_when_chosen_missing() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("LIVE", "LIVE", "LIVE", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+        subgraph.class = "Default".to_string();
+        subgraph.chosen_driver_index = Some(1);
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+
+        let identity =
+            super::projected_reduced_project_net_identity_by_index(&graph, 0).expect("identity");
+
+        assert_eq!(identity.code, 1);
+        assert_eq!(identity.name, "LIVE");
+        assert_eq!(identity.class, "Default");
+        assert!(!identity.has_no_connect);
+    }
+
+    #[test]
+    fn projected_driver_local_name_uses_ranked_primary_when_chosen_missing() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("LIVE", "LIVE", "LIVE", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+        subgraph.chosen_driver_index = Some(1);
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+
+        assert_eq!(
+            super::projected_reduced_project_driver_local_name_by_index(&graph, 0).as_deref(),
+            Some("LIVE")
+        );
     }
 
     #[test]
