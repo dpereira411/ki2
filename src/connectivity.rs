@@ -10984,7 +10984,9 @@ pub(crate) fn collect_reduced_project_symbol_pins(
 // upstream: SCH_CONNECTION::Name(true) through symbol-pin `GetSubgraphForItem()` owner lookup or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`
+// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`, but the
+// live fallback path now reads the effective chosen-driver local name instead of stale raw
+// subgraph `driver_connection`
 // local_only_reason: symbol-pin driver-name queries still bridge preserved per-pin local-name state across live and reduced owners
 // replaced_by: live `SCH_PIN` / `SCH_CONNECTION` owner lookups once symbol-pin name queries stop using reduced snapshots
 // remove_when: production callers can read per-pin `Name(true)` directly from live pin/subgraph owners
@@ -11025,7 +11027,14 @@ fn reduced_project_driver_name_for_symbol_pin_by_index(
                     .is_some()
                     .then(|| base_pin.driver_connection.borrow().local_name.clone())
             })
-            .or_else(|| Some(subgraph.driver_connection.borrow().local_name.clone()));
+            .or_else(|| {
+                Some(
+                    live_reduced_subgraph_effective_driver_connection(&subgraph)
+                        .borrow()
+                        .local_name
+                        .clone(),
+                )
+            });
     }
 
     projected_reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
@@ -24309,6 +24318,68 @@ mod tests {
             )
             .as_deref(),
             Some("SIG")
+        );
+    }
+
+    #[test]
+    fn live_symbol_pin_driver_name_uses_ranked_primary_when_chosen_missing() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("73050000-0000-0000-0000-000000000902".to_string());
+
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("LIVE", "LIVE", "LIVE", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+        subgraph.chosen_driver_index = Some(1);
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            symbol.uuid.as_deref().expect("symbol uuid"),
+            PointKey(0, 0),
+            "1",
+            "input",
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
+
+        assert_eq!(
+            super::resolve_reduced_project_driver_name_for_symbol_pin(
+                &graph,
+                &sheet_path,
+                &symbol,
+                [0.0, 0.0],
+                None,
+                Some("1"),
+            )
+            .as_deref(),
+            Some("LIVE")
         );
     }
 
