@@ -4143,16 +4143,18 @@ impl LiveReducedSubgraph {
     // attachment instead of leaving it in a separate builder loop. Remaining divergence is the
     // still-missing fuller live item pointer graph beyond these direct connection handles.
     fn attach_item_connections_from_driver(&mut self) {
+        let driver_connection = live_reduced_subgraph_effective_driver_connection(self);
+        let driver_connection_type = driver_connection.borrow().connection_type;
         for item in &self.bus_items {
             item.borrow_mut().refresh_from_driver_connection(
-                &self.driver_connection,
-                self.driver_connection.borrow().connection_type,
+                &driver_connection,
+                driver_connection_type,
             );
         }
         for item in &self.wire_items {
             item.borrow_mut().refresh_from_driver_connection(
-                &self.driver_connection,
-                self.driver_connection.borrow().connection_type,
+                &driver_connection,
+                driver_connection_type,
             );
         }
     }
@@ -37352,6 +37354,89 @@ mod tests {
         handles[0].borrow_mut().chosen_driver = None;
         super::sync_live_reduced_item_connections_from_driver_handle(&handles[0]);
 
+        let connection = handles[0].borrow().wire_items[0].borrow().connection.clone();
+
+        assert_eq!(
+            connection.borrow().connection_type,
+            ReducedProjectConnectionType::Net
+        );
+        assert_eq!(connection.borrow().name, "/FRESH");
+        assert_eq!(connection.borrow().local_name, "FRESH");
+    }
+
+    #[test]
+    fn build_live_reduced_subgraph_handles_seed_wire_items_from_ranked_primary_when_chosen_missing()
+    {
+        let reduced = vec![ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/STALE".to_string(),
+            resolved_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/STALE".to_string(),
+                local_name: "STALE".to_string(),
+                full_local_name: "/STALE".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            driver_connection: ReducedProjectConnection {
+                net_code: 1,
+                connection_type: ReducedProjectConnectionType::Net,
+                name: "/STALE".to_string(),
+                local_name: "STALE".to_string(),
+                full_local_name: "/STALE".to_string(),
+                sheet_instance_path: String::new(),
+                members: Vec::new(),
+            },
+            chosen_driver_index: None,
+            drivers: vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: ReducedProjectConnection {
+                    net_code: 2,
+                    connection_type: ReducedProjectConnectionType::Net,
+                    name: "/FRESH".to_string(),
+                    local_name: "FRESH".to_string(),
+                    full_local_name: "/FRESH".to_string(),
+                    sheet_instance_path: String::new(),
+                    members: Vec::new(),
+                },
+                identity: Some(super::ReducedProjectDriverIdentity::Label {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(20, 0),
+                    kind: super::reduced_label_kind_sort_key(LabelKind::Local),
+                }),
+            }],
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: PointKey(20, 0),
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: Vec::new(),
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: vec![ReducedSubgraphWireItem {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                start: PointKey(0, 0),
+                end: PointKey(10, 0),
+                is_bus_entry: false,
+                start_is_wire_side: false,
+                connected_bus_subgraph_index: None,
+            }],
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        }];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
         let connection = handles[0].borrow().wire_items[0].borrow().connection.clone();
 
         assert_eq!(
