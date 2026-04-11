@@ -5541,6 +5541,39 @@ fn live_subgraph_strong_driver_count(subgraph: &LiveReducedSubgraph) -> usize {
         .count()
 }
 
+// upstream: CONNECTION_SUBGRAPH::m_multiple_drivers as set by ResolveDrivers()
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: derives the flag from reduced/live strong-driver sets instead of the final
+// `CONNECTION_SUBGRAPH::m_drivers` item set
+// local_only_reason: current graph still stores reduced/live driver owners instead of KiCad item
+// pointers, but this keeps `ercCheckMultipleDrivers()`/secondary-promotion gates on one shared
+// predicate instead of re-deriving them ad hoc
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored `m_multiple_drivers`
+// remove_when: conflict and propagation branches read the final live subgraph flag directly
+fn reduced_project_subgraph_has_multiple_drivers(subgraph: &ReducedProjectSubgraphEntry) -> bool {
+    subgraph
+        .drivers
+        .iter()
+        .filter(|driver| driver.priority >= reduced_hierarchical_label_driver_priority())
+        .nth(1)
+        .is_some()
+}
+
+// upstream: CONNECTION_SUBGRAPH::m_multiple_drivers as set by ResolveDrivers()
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: derives the flag from reduced/live strong-driver owners instead of the final
+// `CONNECTION_SUBGRAPH::m_drivers` item set
+// local_only_reason: current graph still stores reduced/live driver owners instead of KiCad item
+// pointers, but this keeps `ercCheckMultipleDrivers()`/secondary-promotion gates on one shared
+// predicate instead of re-deriving them ad hoc
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner with stored `m_multiple_drivers`
+// remove_when: conflict and propagation branches read the final live subgraph flag directly
+fn live_reduced_subgraph_has_multiple_drivers(subgraph: &LiveReducedSubgraph) -> bool {
+    live_subgraph_strong_driver_count(subgraph) > 1
+}
+
 fn live_subgraph_has_local_driver(subgraph: &LiveReducedSubgraph) -> bool {
     live_reduced_subgraph_highest_driver_priority(subgraph)
         < reduced_global_power_pin_driver_priority()
@@ -12149,6 +12182,10 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
 pub(crate) fn reduced_project_subgraph_driver_conflict(
     subgraph: &ReducedProjectSubgraphEntry,
 ) -> Option<ReducedProjectDriverConflict> {
+    if !reduced_project_subgraph_has_multiple_drivers(subgraph) {
+        return None;
+    }
+
     let primary_driver_index = reduced_project_chosen_driver_index(subgraph)?;
     let primary_driver = subgraph.drivers.get(primary_driver_index)?;
     let secondary_driver = subgraph
@@ -12197,6 +12234,9 @@ fn live_reduced_subgraph_driver_conflict(
     subgraph_handle: &LiveReducedSubgraphHandle,
 ) -> Option<ReducedProjectDriverConflict> {
     let subgraph = subgraph_handle.borrow();
+    if !live_reduced_subgraph_has_multiple_drivers(&subgraph) {
+        return None;
+    }
     let drivers = live_strong_driver_handles_to_snapshots(&subgraph.drivers);
     let primary_driver = subgraph
         .chosen_driver
@@ -19872,6 +19912,60 @@ mod tests {
 
         assert_eq!(conflict.primary_name, "PWR_ALT");
         assert_eq!(conflict.secondary_name, "PWR");
+    }
+
+    #[test]
+    fn reduced_driver_conflict_requires_multiple_strong_drivers() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/PWR", "PWR", "/PWR", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Pin,
+                    priority: super::reduced_pin_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+        subgraph.chosen_driver_index = Some(0);
+
+        assert!(super::reduced_project_subgraph_driver_conflict(&subgraph).is_none());
+    }
+
+    #[test]
+    fn live_driver_conflict_requires_multiple_strong_drivers() {
+        let mut reduced = vec![test_net_subgraph(
+            1,
+            test_net_connection("/PWR", "PWR", "/PWR", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::PowerPin,
+                    priority: super::reduced_global_power_pin_driver_priority(),
+                    connection: test_net_connection("/PWR", "PWR", "/PWR", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Pin,
+                    priority: super::reduced_pin_driver_priority(),
+                    connection: test_net_connection("/ALT", "ALT", "/ALT", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        )];
+        reduced[0].chosen_driver_index = Some(0);
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+
+        assert!(super::live_reduced_subgraph_driver_conflict(&handles[0]).is_none());
     }
 
     #[test]
