@@ -4597,7 +4597,10 @@ impl LiveReducedSubgraph {
         }
 
         let chosen_connection = start.borrow().driver_connection.clone();
-        let chosen_driver = start.borrow().chosen_driver.clone();
+        let chosen_driver = {
+            let start_ref = start.borrow();
+            live_reduced_subgraph_primary_driver(&start_ref)
+        };
         let start_sheet = start.borrow().sheet_instance_path.clone();
         let secondary_drivers = start.borrow().drivers.clone();
         let mut promoted = Vec::new();
@@ -33647,6 +33650,53 @@ mod tests {
         graph[0].chosen_driver_index = Some(0);
 
         let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let global_subgraphs =
+            LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
+        let promoted = LiveReducedSubgraph::refresh_global_secondary_driver_promotions(
+            &live_subgraphs[0],
+            &global_subgraphs,
+        );
+
+        assert!(promoted.is_empty());
+        assert_eq!(
+            live_subgraphs[1].borrow().driver_connection.borrow().name,
+            "ALIAS"
+        );
+    }
+
+    #[test]
+    fn reduced_live_secondary_promotion_skips_ranked_primary_when_chosen_missing() {
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("VCC", "VCC", "VCC", ""),
+                vec![
+                    test_power_driver(test_net_connection("VCC", "VCC", "VCC", "")),
+                    ReducedProjectStrongDriver {
+                        kind: ReducedProjectDriverKind::Label,
+                        priority: super::reduced_global_label_driver_priority(),
+                        connection: test_net_connection("ALIAS", "ALIAS", "ALIAS", ""),
+                        identity: None,
+                    },
+                ],
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("ALIAS", "ALIAS", "ALIAS", "/other"),
+                vec![ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_global_label_driver_priority(),
+                    connection: test_net_connection("ALIAS", "ALIAS", "ALIAS", "/other"),
+                    identity: None,
+                }],
+                "/other",
+            ),
+        ];
+        graph[0].chosen_driver_index = Some(0);
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        live_subgraphs[0].borrow_mut().chosen_driver = None;
         let global_subgraphs =
             LiveReducedSubgraph::collect_global_subgraph_handles(&live_subgraphs);
         let promoted = LiveReducedSubgraph::refresh_global_secondary_driver_promotions(
