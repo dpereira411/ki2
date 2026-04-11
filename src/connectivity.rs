@@ -1836,6 +1836,8 @@ fn match_reduced_bus_member<'a>(
     bus_members: &'a [ReducedBusMember],
     search: &ReducedBusMember,
 ) -> Option<&'a ReducedBusMember> {
+    let search_has_vector_index = search.vector_index.is_some();
+
     for member in bus_members {
         if let Some(search_index) = search.vector_index {
             if member.vector_index == Some(search_index) {
@@ -1847,7 +1849,7 @@ fn match_reduced_bus_member<'a>(
             if let Some(found) = match_reduced_bus_member(&member.members, search) {
                 return Some(found);
             }
-        } else if member.local_name == search.local_name {
+        } else if !search_has_vector_index && member.local_name == search.local_name {
             return Some(member);
         }
     }
@@ -17133,6 +17135,25 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_match_bus_member_vector_bus_does_not_fallback_to_local_name() {
+        let bus = vec![
+            test_bus_member("DATA0", "DATA0", "/DATA0"),
+            test_bus_member("DATA1", "DATA1", "/DATA1"),
+        ];
+        let search = ReducedBusMember {
+            net_code: 0,
+            name: "DATA0".to_string(),
+            local_name: "DATA0".to_string(),
+            full_local_name: "/DATA0".to_string(),
+            vector_index: Some(9),
+            kind: ReducedBusMemberKind::Net,
+            members: Vec::new(),
+        };
+
+        assert!(super::match_reduced_bus_member(&bus, &search).is_none());
     }
 
     #[test]
