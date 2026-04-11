@@ -537,12 +537,54 @@ fn reduced_project_absorbed_driver_cmp(
 
     lhs.priority
         .cmp(&rhs.priority)
+        .then_with(|| reduced_connection_bus_subset_cmp(&lhs.connection, &rhs.connection))
         .then_with(|| rhs_low_quality_name.cmp(&lhs_low_quality_name))
         .then_with(|| rhs_name.cmp(lhs_name))
         .then_with(|| {
             reduced_project_strong_driver_full_name(rhs)
                 .cmp(reduced_project_strong_driver_full_name(lhs))
         })
+}
+
+fn reduced_connection_bus_subset_cmp(
+    lhs: &ReducedProjectConnection,
+    rhs: &ReducedProjectConnection,
+) -> Ordering {
+    if !matches!(
+        lhs.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) || !matches!(
+        rhs.connection_type,
+        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
+    ) {
+        return Ordering::Equal;
+    }
+
+    let lhs_member_names = reduced_bus_member_leaf_objects(&lhs.members)
+        .into_iter()
+        .map(|member| member.full_local_name)
+        .collect::<Vec<_>>();
+    let rhs_member_names = reduced_bus_member_leaf_objects(&rhs.members)
+        .into_iter()
+        .map(|member| member.full_local_name)
+        .collect::<Vec<_>>();
+
+    if lhs_member_names.is_empty() || rhs_member_names.is_empty() {
+        return Ordering::Equal;
+    }
+
+    let lhs_is_subset = lhs_member_names
+        .iter()
+        .all(|member| rhs_member_names.contains(member));
+    let rhs_is_subset = rhs_member_names
+        .iter()
+        .all(|member| lhs_member_names.contains(member));
+
+    match (lhs_is_subset, rhs_is_subset) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        _ => Ordering::Equal,
+    }
 }
 
 // Upstream parity: CONNECTION_GRAPH::processSubGraphs invalidated-subgraph ResolveDrivers tail
@@ -19801,6 +19843,94 @@ mod tests {
 
         assert_eq!(subgraph.driver_connection.local_name, "Z");
         assert_eq!(subgraph.driver_connection.name, "/Z");
+    }
+
+    #[test]
+    fn reduced_absorb_resolve_prefers_alphabetical_name_for_equal_strong_drivers() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/BBB", "BBB", "/BBB", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/BBB", "BBB", "/BBB", ""),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_net_connection("/AAA", "AAA", "/AAA", ""),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        super::reduced_project_resolve_absorbed_driver(&mut subgraph);
+
+        assert_eq!(subgraph.driver_connection.local_name, "AAA");
+        assert_eq!(subgraph.driver_connection.name, "/AAA");
+    }
+
+    #[test]
+    fn reduced_absorb_resolve_prefers_bus_superset_for_equal_strong_drivers() {
+        let mut subgraph = test_net_subgraph(
+            1,
+            test_bus_connection(
+                "/BUS",
+                "BUS",
+                "/BUS",
+                "",
+                vec![
+                    test_bus_member("SIG1", "SIG1", "/SIG1"),
+                    test_bus_member("SIG2", "SIG2", "/SIG2"),
+                ],
+            ),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_bus_connection(
+                        "/BUS",
+                        "BUS",
+                        "/BUS",
+                        "",
+                        vec![
+                            test_bus_member("SIG1", "SIG1", "/SIG1"),
+                            test_bus_member("SIG2", "SIG2", "/SIG2"),
+                        ],
+                    ),
+                    identity: None,
+                },
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_bus_connection(
+                        "/BUS",
+                        "BUS",
+                        "/BUS",
+                        "",
+                        vec![
+                            test_bus_member("SIG1", "SIG1", "/SIG1"),
+                            test_bus_member("SIG2", "SIG2", "/SIG2"),
+                            test_bus_member("SIG3", "SIG3", "/SIG3"),
+                        ],
+                    ),
+                    identity: None,
+                },
+            ],
+            "",
+        );
+
+        super::reduced_project_resolve_absorbed_driver(&mut subgraph);
+
+        assert_eq!(subgraph.driver_connection.members.len(), 3);
+        assert!(
+            super::reduced_bus_member_leaf_objects(&subgraph.driver_connection.members)
+                .iter()
+                .any(|member| member.full_local_name == "/SIG3")
+        );
     }
 
     #[test]
