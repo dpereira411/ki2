@@ -12503,25 +12503,13 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
                 let neighbor_pin_count = neighbor.base_pins.len();
                 let neighbor_has_direct_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
-                let neighbor_index = reduced_project_subgraph_index(graph, &neighbor);
-                let neighbor_inherits_local_hierarchy = neighbor_index.is_some_and(|index| {
-                    neighbor_has_direct_local_hierarchy
-                        && reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
-                            graph, index,
-                        )
-                });
-                let neighbor_has_no_connect = neighbor.has_no_connect
-                    || neighbor_index.is_some_and(|index| {
-                        reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
-                    });
 
                 all_pins += neighbor_pin_count;
-                aggregate_has_no_connect |= neighbor_has_no_connect;
+                aggregate_has_no_connect |= neighbor.has_no_connect;
 
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path {
                     local_pins += neighbor_pin_count;
-                    aggregate_has_local_hierarchy |=
-                        neighbor_has_direct_local_hierarchy || neighbor_inherits_local_hierarchy;
+                    aggregate_has_local_hierarchy |= neighbor_has_direct_local_hierarchy;
                 }
             }
         }
@@ -12679,18 +12667,13 @@ fn live_reduced_project_label_connectivity_subgraphs(
                 let neighbor_pin_count = neighbor.base_pins.len();
                 let neighbor_has_direct_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
-                let neighbor_inherits_local_hierarchy = neighbor_has_direct_local_hierarchy
-                    && live_reduced_subgraph_has_local_hierarchy_via_bus_parents(neighbor_handle);
-                let neighbor_has_no_connect = neighbor.has_no_connect
-                    || live_reduced_subgraph_has_no_connect_via_parent_chain(neighbor_handle);
 
                 all_pins += neighbor_pin_count;
-                aggregate_has_no_connect |= neighbor_has_no_connect;
+                aggregate_has_no_connect |= neighbor.has_no_connect;
 
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path {
                     local_pins += neighbor_pin_count;
-                    aggregate_has_local_hierarchy |=
-                        neighbor_has_direct_local_hierarchy || neighbor_inherits_local_hierarchy;
+                    aggregate_has_local_hierarchy |= neighbor_has_direct_local_hierarchy;
                 }
             }
         }
@@ -16480,7 +16463,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_label_connectivity_subgraphs_aggregate_neighbor_parent_chain_no_connect() {
+    fn reduced_label_connectivity_subgraphs_do_not_aggregate_neighbor_parent_chain_no_connect() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
         label_subgraph.label_links.push(ReducedLabelLink {
@@ -16532,11 +16515,11 @@ mod tests {
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
-        assert!(label_subgraphs[0].has_no_connect);
+        assert!(!label_subgraphs[0].has_no_connect);
     }
 
     #[test]
-    fn live_label_connectivity_subgraphs_aggregate_neighbor_parent_chain_no_connect() {
+    fn live_label_connectivity_subgraphs_do_not_aggregate_neighbor_parent_chain_no_connect() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
         label_subgraph.label_links.push(ReducedLabelLink {
@@ -16568,7 +16551,7 @@ mod tests {
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
-        assert!(label_subgraphs[0].has_no_connect);
+        assert!(!label_subgraphs[0].has_no_connect);
     }
 
     #[test]
