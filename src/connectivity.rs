@@ -1196,18 +1196,6 @@ pub(crate) fn reduced_project_subgraph_non_bus_driver_priority(
             ))
             .then_some(driver.priority)
         })
-        .or_else(|| {
-            subgraph
-                .drivers
-                .iter()
-                .find(|driver| {
-                    !matches!(
-                        driver.connection.connection_type,
-                        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-                    )
-                })
-                .map(|driver| driver.priority)
-        })
 }
 
 fn reduced_strong_drivers_into_live_handles(
@@ -11906,7 +11894,9 @@ fn live_reduced_subgraph_has_non_bus_entry_owner(subgraph: &LiveReducedSubgraph)
 // upstream: CONNECTION_SUBGRAPH::GetDriverPriority / bus-entry conflict suppression branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still reads reduced live driver owners instead of final driver item pointers
+// divergence: still reads reduced live driver owners instead of final driver item pointers, but
+// now keys suppression only from the chosen driver like upstream instead of falling back to other
+// non-bus drivers on the subgraph
 // local_only_reason: keeps bus-entry conflict suppression on the active live subgraph owner while
 // final driver item ownership is still reduced
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` driver owner graph
@@ -11922,18 +11912,6 @@ fn live_reduced_subgraph_non_bus_driver_priority(subgraph: &LiveReducedSubgraph)
                 ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
             ))
             .then(|| driver.priority())
-        })
-        .or_else(|| {
-            subgraph
-                .drivers
-                .iter()
-                .find(|driver| {
-                    !matches!(
-                        driver.borrow().connection_handle().borrow().connection_type,
-                        ReducedProjectConnectionType::Bus | ReducedProjectConnectionType::BusGroup
-                    )
-                })
-                .map(|driver| driver.borrow().priority())
         })
 }
 
@@ -27343,6 +27321,88 @@ mod tests {
     }
 
     #[test]
+    fn reduced_bus_entry_conflict_suppression_ignores_non_chosen_power_driver() {
+        let bus_connection = test_bus_connection(
+            "/BUS",
+            "BUS",
+            "/BUS",
+            "",
+            vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+        );
+        let mut bus_subgraph = test_net_subgraph(1, bus_connection.clone(), Vec::new(), "");
+        bus_subgraph.bus_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0f64.to_bits(), 0f64.to_bits()),
+            end: PointKey(10f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let mut subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_bus_connection(
+                        "/BUS",
+                        "BUS",
+                        "/BUS",
+                        "",
+                        vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+                    ),
+                    identity: None,
+                },
+                test_power_driver(test_net_connection("PWR", "PWR", "PWR", "")),
+            ],
+            "",
+        );
+        subgraph.chosen_driver_index = Some(0);
+        subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(20f64.to_bits(), 10f64.to_bits()),
+            end: PointKey(5f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: true,
+            start_is_wire_side: true,
+            connected_bus_subgraph_index: Some(0),
+        });
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-net",
+            PointKey(20f64.to_bits(), 10f64.to_bits()),
+            "1",
+            "input",
+            test_net_connection("/ENTRY", "ENTRY", "/ENTRY", ""),
+        ));
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![bus_subgraph, subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let candidate = super::reduced_project_subgraph_bus_entry_conflict_candidate(
+            &graph,
+            &graph.subgraphs[1],
+        )
+        .expect("bus-entry conflict candidate");
+
+        assert!(!candidate.suppress_conflict);
+    }
+
+    #[test]
     fn live_bus_entry_conflict_suppression_uses_chosen_driver_priority() {
         let bus_connection = test_bus_connection(
             "/BUS",
@@ -27668,6 +27728,71 @@ mod tests {
         assert!(candidate.test_names.iter().any(|name| name == "/ENTRY"));
         assert!(candidate.test_names.iter().any(|name| name == "/ALT_A"));
         assert!(candidate.test_names.iter().any(|name| name == "PWR"));
+    }
+
+    #[test]
+    fn live_bus_entry_conflict_suppression_ignores_non_chosen_power_driver() {
+        let bus_connection = test_bus_connection(
+            "/BUS",
+            "BUS",
+            "/BUS",
+            "",
+            vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+        );
+        let mut bus_subgraph = test_net_subgraph(1, bus_connection.clone(), Vec::new(), "");
+        bus_subgraph.bus_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0f64.to_bits(), 0f64.to_bits()),
+            end: PointKey(10f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+
+        let mut subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            vec![
+                ReducedProjectStrongDriver {
+                    kind: ReducedProjectDriverKind::Label,
+                    priority: super::reduced_local_label_driver_priority(),
+                    connection: test_bus_connection(
+                        "/BUS",
+                        "BUS",
+                        "/BUS",
+                        "",
+                        vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+                    ),
+                    identity: None,
+                },
+                test_power_driver(test_net_connection("PWR", "PWR", "PWR", "")),
+            ],
+            "",
+        );
+        subgraph.chosen_driver_index = Some(0);
+        subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(20f64.to_bits(), 10f64.to_bits()),
+            end: PointKey(5f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: true,
+            start_is_wire_side: true,
+            connected_bus_subgraph_index: Some(0),
+        });
+        subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-net",
+            PointKey(20f64.to_bits(), 10f64.to_bits()),
+            "1",
+            "input",
+            test_net_connection("/ENTRY", "ENTRY", "/ENTRY", ""),
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![bus_subgraph, subgraph]);
+        let candidate =
+            super::live_reduced_subgraph_bus_entry_conflict_candidate(&graph.live_subgraphs[1])
+                .expect("bus-entry conflict candidate");
+
+        assert!(!candidate.suppress_conflict);
     }
 
     #[test]
