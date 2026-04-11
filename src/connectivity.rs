@@ -31006,6 +31006,49 @@ mod tests {
     }
 
     #[test]
+    fn reduced_live_bus_neighbors_update_same_parent_member_after_bus_member_rename() {
+        let member_b = test_bus_member("SIGB", "SIGB", "/SIGB");
+        let mut graph = vec![
+            test_net_subgraph(
+                1,
+                test_bus_connection("/BUS", "BUS", "/BUS", "", vec![member_b.clone()]),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SIGA", "RENAMED", "/SIGA", ""),
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        graph[0].bus_neighbor_links = vec![ReducedProjectBusNeighborLink {
+            member: member_b.clone(),
+            subgraph_index: 1,
+        }];
+        graph[1].bus_parent_links = vec![ReducedProjectBusNeighborLink {
+            member: member_b,
+            subgraph_index: 0,
+        }];
+        graph[1].bus_parent_indexes = vec![0];
+
+        let live_subgraphs = build_live_reduced_subgraph_handles(&graph);
+        let component = live_subgraphs.iter().cloned().collect::<Vec<_>>();
+        let mut stale_members = Vec::new();
+        let recurse_targets = LiveReducedSubgraph::refresh_bus_neighbor_drivers(
+            &live_subgraphs,
+            &component,
+            &mut stale_members,
+        );
+        apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
+
+        assert_eq!(recurse_targets.len(), 1);
+        assert!(Rc::ptr_eq(&recurse_targets[0].0, &live_subgraphs[1]));
+        assert_eq!(graph[1].driver_connection.full_local_name, "/SIGB");
+        assert_eq!(graph[1].driver_connection.sheet_instance_path, "");
+    }
+
+    #[test]
     fn reduced_live_bus_neighbors_skip_matching_member_name_with_different_full_local_name() {
         let mut member = test_bus_member("SIGA", "SIGA", "/parent/SIGA");
         member.vector_index = Some(1);
