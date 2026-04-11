@@ -3670,6 +3670,7 @@ struct LiveReducedSubgraph {
     chosen_driver: Option<LiveProjectStrongDriverHandle>,
     sheet_instance_path: String,
     has_no_connect: bool,
+    points: Vec<PointKey>,
     bus_neighbor_links: Vec<LiveReducedSubgraphLinkHandle>,
     bus_parent_links: Vec<LiveReducedSubgraphLinkHandle>,
     #[cfg(test)]
@@ -5439,6 +5440,7 @@ impl PartialEq for LiveReducedSubgraph {
                 == live_strong_driver_handles_to_snapshots(&other.drivers)
             && self.sheet_instance_path == other.sheet_instance_path
             && self.has_no_connect == other.has_no_connect
+            && self.points == other.points
             && self.bus_neighbor_links == other.bus_neighbor_links
             && self.bus_parent_links == other.bus_parent_links
             && live_reduced_subgraph_extra_projection_eq(self, other)
@@ -5646,6 +5648,7 @@ fn build_live_reduced_subgraph_handles(
                 chosen_driver: None,
                 sheet_instance_path: subgraph.sheet_instance_path.clone(),
                 has_no_connect: subgraph.has_no_connect,
+                points: subgraph.points.clone(),
                 bus_neighbor_links: subgraph
                     .bus_neighbor_links
                     .iter()
@@ -8847,15 +8850,48 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
         .and_then(|index| graph.subgraphs.get(index))
 }
 
-fn resolve_reduced_project_subgraph_index_at(
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced stored connection points on live subgraph handles instead of
+// final live item pointers / `CONNECTION_SUBGRAPH` point owners
+// local_only_reason: keeps generic point lookups on the active live graph owner before the fuller
+// live item-owner graph exists
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / point-owner graph
+// remove_when: point queries resolve directly from final live item owners
+fn live_reduced_project_subgraph_index_at(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<usize> {
     graph
-        .point_subgraph_identities
-        .get(&reduced_project_point_identity_key(sheet_path, at))
-        .copied()
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            let subgraph = subgraph.borrow();
+            (subgraph.sheet_instance_path == sheet_path.instance_path
+                && subgraph
+                    .points
+                    .iter()
+                    .copied()
+                    .any(|point| point_key_matches(point, at)))
+            .then_some(index)
+        })
+}
+
+fn resolve_reduced_project_subgraph_index_at(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<usize> {
+    live_reduced_project_subgraph_index_at(graph, sheet_path, at)
+        .or_else(|| {
+            graph
+                .point_subgraph_identities
+                .get(&reduced_project_point_identity_key(sheet_path, at))
+                .copied()
+        })
         .or_else(|| {
             graph
                 .point_subgraph_identities
@@ -8885,15 +8921,47 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
         .and_then(|index| graph.subgraphs.get(index))
 }
 
-fn resolve_reduced_project_subgraph_index_for_label(
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live label-owner lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced live label carriers instead of final `SCH_LABEL_BASE*` item
+// pointers on `CONNECTION_SUBGRAPH`
+// local_only_reason: keeps label-item lookup on the active live graph owner before fuller label
+// item ownership lands
+// replaced_by: fuller live `SCH_LABEL_BASE` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: label queries resolve directly from final live label owners
+fn live_reduced_project_subgraph_index_for_label(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<usize> {
     graph
-        .label_subgraph_identities
-        .get(&reduced_project_label_identity_key(sheet_path, label))
-        .copied()
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            let subgraph = subgraph.borrow();
+            (subgraph.sheet_instance_path == sheet_path.instance_path
+                && subgraph.label_links.iter().any(|candidate| {
+                    let candidate = candidate.borrow();
+                    candidate.kind == label.kind && point_key_matches(candidate.at, label.at)
+                }))
+            .then_some(index)
+        })
+}
+
+fn resolve_reduced_project_subgraph_index_for_label(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    label: &Label,
+) -> Option<usize> {
+    live_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
+        .or_else(|| {
+            graph
+                .label_subgraph_identities
+                .get(&reduced_project_label_identity_key(sheet_path, label))
+                .copied()
+        })
         .or_else(|| {
             graph
                 .label_subgraph_identities
@@ -8988,15 +9056,47 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
         .and_then(|index| graph.subgraphs.get(index))
 }
 
-fn resolve_reduced_project_subgraph_index_for_no_connect(
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live no-connect lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced no-connect point carriers instead of final live
+// `SCH_NO_CONNECT*` owners on `CONNECTION_SUBGRAPH`
+// local_only_reason: keeps marker lookup on the active live graph owner before fuller no-connect
+// item ownership lands
+// replaced_by: fuller live `SCH_NO_CONNECT` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: no-connect queries resolve directly from final live marker owners
+fn live_reduced_project_subgraph_index_for_no_connect(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<usize> {
     graph
-        .no_connect_subgraph_identities
-        .get(&reduced_project_no_connect_identity_key(sheet_path, at))
-        .copied()
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            let subgraph = subgraph.borrow();
+            (subgraph.sheet_instance_path == sheet_path.instance_path
+                && subgraph
+                    .no_connect_points
+                    .iter()
+                    .any(|point| point_key_matches(point.at, at)))
+            .then_some(index)
+        })
+}
+
+fn resolve_reduced_project_subgraph_index_for_no_connect(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+) -> Option<usize> {
+    live_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
+        .or_else(|| {
+            graph
+                .no_connect_subgraph_identities
+                .get(&reduced_project_no_connect_identity_key(sheet_path, at))
+                .copied()
+        })
         .or_else(|| {
             graph
                 .no_connect_subgraph_identities
@@ -9121,20 +9221,54 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
         .and_then(|index| graph.subgraphs.get(index))
 }
 
-fn resolve_reduced_project_subgraph_index_for_sheet_pin(
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live sheet-pin lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced live sheet-pin carriers instead of final `SCH_SHEET_PIN*`
+// owners on `CONNECTION_SUBGRAPH`
+// local_only_reason: keeps sheet-pin item lookup on the active live graph owner before fuller
+// sheet-pin ownership lands
+// replaced_by: fuller live `SCH_SHEET_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: sheet-pin queries resolve directly from final live item owners
+fn live_reduced_project_subgraph_index_for_sheet_pin(
     graph: &ReducedProjectNetGraph,
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
 ) -> Option<usize> {
     graph
-        .sheet_pin_subgraph_identities
-        .get(&reduced_project_sheet_pin_identity_key(
-            sheet_path,
-            point_key(at),
-            child_sheet_uuid,
-        ))
-        .copied()
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            let subgraph = subgraph.borrow();
+            (subgraph.sheet_instance_path == sheet_path.instance_path
+                && subgraph.hier_sheet_pins.iter().any(|candidate| {
+                    let candidate = candidate.borrow();
+                    candidate.child_sheet_uuid.as_deref() == child_sheet_uuid
+                        && point_key_matches(candidate.at, at)
+                }))
+            .then_some(index)
+        })
+}
+
+fn resolve_reduced_project_subgraph_index_for_sheet_pin(
+    graph: &ReducedProjectNetGraph,
+    sheet_path: &LoadedSheetPath,
+    at: [f64; 2],
+    child_sheet_uuid: Option<&str>,
+) -> Option<usize> {
+    live_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
+        .or_else(|| {
+            graph
+                .sheet_pin_subgraph_identities
+                .get(&reduced_project_sheet_pin_identity_key(
+                    sheet_path,
+                    point_key(at),
+                    child_sheet_uuid,
+                ))
+                .copied()
+        })
         .or_else(|| {
             graph
                 .sheet_pin_subgraph_identities
@@ -10249,8 +10383,11 @@ fn resolve_reduced_project_subgraph_index_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<usize> {
-    pin_name
-        .and_then(|pin_name| {
+    live_reduced_project_subgraph_index_for_symbol_pin(
+        graph, sheet_path, symbol, at, pin_name, pin_number,
+    )
+    .or_else(|| {
+        pin_name.and_then(|pin_name| {
             graph
                 .pin_subgraph_identities
                 .get(&reduced_project_base_pin_key(
@@ -10258,46 +10395,42 @@ fn resolve_reduced_project_subgraph_index_for_symbol_pin(
                 ))
                 .copied()
         })
-        .or_else(|| {
+    })
+    .or_else(|| {
+        graph
+            .pin_subgraph_identities_by_location
+            .get(&reduced_project_pin_identity_key(
+                sheet_path, symbol, at, pin_number,
+            ))
+            .copied()
+    })
+    .or_else(|| {
+        pin_name.and_then(|pin_name| {
             graph
-                .pin_subgraph_identities_by_location
-                .get(&reduced_project_pin_identity_key(
-                    sheet_path, symbol, at, pin_number,
-                ))
-                .copied()
-        })
-        .or_else(|| {
-            live_reduced_project_subgraph_index_for_symbol_pin(
-                graph, sheet_path, symbol, at, pin_name, pin_number,
-            )
-        })
-        .or_else(|| {
-            pin_name.and_then(|pin_name| {
-                graph
-                    .pin_subgraph_identities
-                    .iter()
-                    .find_map(|(key, index)| {
-                        (key.sheet_instance_path == sheet_path.instance_path
-                            && key.symbol_uuid == symbol.uuid
-                            && key.name.as_deref() == Some(pin_name)
-                            && key.number.as_deref() == pin_number
-                            && point_key_matches(key.at, at))
-                        .then_some(*index)
-                    })
-            })
-        })
-        .or_else(|| {
-            graph
-                .pin_subgraph_identities_by_location
+                .pin_subgraph_identities
                 .iter()
                 .find_map(|(key, index)| {
                     (key.sheet_instance_path == sheet_path.instance_path
                         && key.symbol_uuid == symbol.uuid
+                        && key.name.as_deref() == Some(pin_name)
                         && key.number.as_deref() == pin_number
                         && point_key_matches(key.at, at))
                     .then_some(*index)
                 })
         })
+    })
+    .or_else(|| {
+        graph
+            .pin_subgraph_identities_by_location
+            .iter()
+            .find_map(|(key, index)| {
+                (key.sheet_instance_path == sheet_path.instance_path
+                    && key.symbol_uuid == symbol.uuid
+                    && key.number.as_deref() == pin_number
+                    && point_key_matches(key.at, at))
+                .then_some(*index)
+            })
+    })
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() reduced symbol-pin fallback or none
@@ -14088,13 +14221,9 @@ fn reduced_seeded_symbol_pin_connection(
             connection.local_name = name.clone();
             connection.full_local_name = name;
         }
-    } else if let Some(name) = reduced_symbol_pin_default_net_name(
-        symbol,
-        pin,
-        unit_pins,
-        false,
-        resolved_reference,
-    ) {
+    } else if let Some(name) =
+        reduced_symbol_pin_default_net_name(symbol, pin, unit_pins, false, resolved_reference)
+    {
         connection.name = name.clone();
         connection.local_name = name.clone();
         connection.full_local_name = name;
@@ -14681,7 +14810,8 @@ where
                                     false,
                                     shown_reference.as_deref(),
                                 )
-                                    .map(|text| ReducedDriverNameCandidate {
+                                .map(|text| {
+                                    ReducedDriverNameCandidate {
                                         priority: reduced_pin_driver_priority(),
                                         sheet_pin_rank: 0,
                                         text,
@@ -14691,7 +14821,8 @@ where
                                             at: point_key(pin.at),
                                             pin_number: pin.number.clone(),
                                         }),
-                                    })
+                                    }
+                                })
                             });
 
                     if let Some(candidate) = candidate {
@@ -20723,6 +20854,230 @@ mod tests {
     }
 
     #[test]
+    fn point_query_prefers_live_subgraph_points_over_stale_identity_map() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.point_subgraph_identities.insert(
+            super::ReducedProjectPointIdentityKey {
+                sheet_instance_path: String::new(),
+                at: PointKey(0, 0),
+            },
+            1,
+        );
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .points
+            .push(PointKey(0, 0));
+
+        let subgraph = super::resolve_reduced_project_subgraph_at(&graph, &sheet_path, [0.0, 0.0])
+            .expect("live point owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn label_query_prefers_live_subgraph_labels_over_stale_identity_map() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let label = crate::model::Label {
+            kind: LabelKind::Global,
+            text: "LIVE".to_string(),
+            at: [0.0, 0.0],
+            ..crate::model::Label::new(LabelKind::Global, String::new())
+        };
+        graph.label_subgraph_identities.insert(
+            super::ReducedProjectLabelIdentityKey {
+                sheet_instance_path: String::new(),
+                at: PointKey(0, 0),
+                kind: super::reduced_label_kind_sort_key(LabelKind::Global),
+            },
+            1,
+        );
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .label_links
+            .push(Rc::new(RefCell::new(super::LiveReducedLabelLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                kind: LabelKind::Global,
+                dangling: false,
+                non_endpoint_wire_segment_count: 0,
+                connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver_connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver: None,
+                shown_text_local_name: "LIVE".to_string(),
+            })));
+
+        let subgraph =
+            super::resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, &label)
+                .expect("live label owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn no_connect_query_prefers_live_subgraph_markers_over_stale_identity_map() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.no_connect_subgraph_identities.insert(
+            super::ReducedProjectNoConnectIdentityKey {
+                sheet_instance_path: String::new(),
+                at: PointKey(0, 0),
+            },
+            1,
+        );
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .no_connect_points
+            .push(ReducedNoConnectPoint {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+            });
+
+        let subgraph =
+            super::resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
+                .expect("live no-connect owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn sheet_pin_query_prefers_live_subgraph_pins_over_stale_identity_map() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.sheet_pin_subgraph_identities.insert(
+            super::ReducedProjectSheetPinIdentityKey {
+                sheet_instance_path: String::new(),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("child".to_string()),
+            },
+            1,
+        );
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .hier_sheet_pins
+            .push(Rc::new(RefCell::new(super::LiveReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver_connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver: None,
+                shown_text_local_name: "LIVE".to_string(),
+            })));
+
+        let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
+            &graph,
+            &sheet_path,
+            [0.0, 0.0],
+            Some("child"),
+        )
+        .expect("live sheet-pin owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
     fn symbol_pin_queries_find_live_owner_without_reduced_pin_indexes() {
         let mut symbol = crate::model::Symbol::new();
         symbol.uuid = Some("sym".to_string());
@@ -21738,13 +22093,8 @@ mod tests {
         };
         let unit_pins = vec![pin.clone()];
 
-        let connection = super::reduced_seeded_symbol_pin_connection(
-            &symbol,
-            &pin,
-            &unit_pins,
-            "",
-            None,
-        );
+        let connection =
+            super::reduced_seeded_symbol_pin_connection(&symbol, &pin, &unit_pins, "", None);
 
         assert_eq!(
             connection.connection_type,
@@ -21776,13 +22126,8 @@ mod tests {
         };
         let unit_pins = vec![pin.clone()];
 
-        let connection = super::reduced_seeded_symbol_pin_connection(
-            &symbol,
-            &pin,
-            &unit_pins,
-            "/sheet/",
-            None,
-        );
+        let connection =
+            super::reduced_seeded_symbol_pin_connection(&symbol, &pin, &unit_pins, "/sheet/", None);
 
         assert_eq!(
             connection.connection_type,
@@ -23486,6 +23831,7 @@ mod tests {
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
                 has_no_connect: false,
+                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -23521,6 +23867,7 @@ mod tests {
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
                 has_no_connect: false,
+                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -23591,6 +23938,7 @@ mod tests {
             chosen_driver: None,
             sheet_instance_path: String::new(),
             has_no_connect: false,
+            points: Vec::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -23671,6 +24019,7 @@ mod tests {
             chosen_driver: None,
             sheet_instance_path: String::new(),
             has_no_connect: false,
+            points: Vec::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -23738,6 +24087,7 @@ mod tests {
             chosen_driver: None,
             sheet_instance_path: String::new(),
             has_no_connect: false,
+            points: Vec::new(),
             bus_neighbor_links: Vec::new(),
             bus_parent_links: Vec::new(),
             bus_parent_indexes: Vec::new(),
@@ -26260,6 +26610,7 @@ mod tests {
                 chosen_driver: None,
                 sheet_instance_path: String::new(),
                 has_no_connect: false,
+                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -26303,6 +26654,7 @@ mod tests {
                 chosen_driver: None,
                 sheet_instance_path: "/child".to_string(),
                 has_no_connect: false,
+                points: Vec::new(),
                 bus_neighbor_links: Vec::new(),
                 bus_parent_links: Vec::new(),
                 bus_parent_indexes: Vec::new(),
@@ -32757,7 +33109,6 @@ mod tests {
             "issue12814 drive fixture should only keep the root-sheet hierarchical label warning",
         );
     }
-
 }
 impl PartialEq for LiveReducedLabelLink {
     fn eq(&self, other: &Self) -> bool {
