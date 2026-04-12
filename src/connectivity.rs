@@ -10755,11 +10755,14 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
         resolve_reduced_project_subgraph_for_symbol_pin(
             graph, sheet_path, symbol, at, pin_name, pin_number,
         )
-        .map(|subgraph| ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: subgraph.driver_connection.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: subgraph.has_no_connect,
+        .map(|subgraph| {
+            let driver_connection = reduced_project_effective_driver_connection(&subgraph);
+            ReducedProjectNetIdentity {
+                code: subgraph.code,
+                name: driver_connection.name.clone(),
+                class: subgraph.class.clone(),
+                has_no_connect: subgraph.has_no_connect,
+            }
         })
     })
 }
@@ -11145,7 +11148,11 @@ fn reduced_project_driver_name_for_symbol_pin_by_index(
                 .preserve_local_name_on_refresh
                 .then(|| base_pin.driver_connection.local_name.clone())
         })
-        .unwrap_or_else(|| subgraph.driver_connection.local_name.clone())
+        .unwrap_or_else(|| {
+            reduced_project_effective_driver_connection(&subgraph)
+                .local_name
+                .clone()
+        })
     })
 }
 
