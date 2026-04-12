@@ -8187,6 +8187,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                             pin,
                         )
                     },
+                    |symbol| !for_board || symbol.on_board,
                     |symbol| {
                         resolved_symbol_text_property_value(
                             inputs.schematics,
@@ -15787,16 +15788,17 @@ fn build_pending_reduced_subgraph_driver_connection(
 // Connected symbol pins and sheet pins are now emitted one projected item at a time instead of
 // collapsing each symbol or sheet to one local winner before ranking, which is closer to KiCad's
 // per-item `m_drivers` collection, and symbol-pin driver identity now also carries pin number so
-// stacked same-position pins do not collapse before live owner attachment. Reduced power-pin
-// drivers now also prefer the projected pin shown name before the symbol value so multi-pin power
-// symbols keep per-pin driver text through the shared graph owner. The reduced collection now
-// also mirrors KiCad's strong-driver cleanup by dropping weak sheet-pin/default-pin drivers once a
-// hierarchical-label-or-stronger driver exists. Ordinary symbol pins now participate as weak
-// `SCH_PIN_T` drivers before that cleanup instead of existing only as a priority fallback on the
-// reduced subgraph, and ordinary pins whose library-symbol reference starts with `#` now rank as
-// `NONE` like upstream. Remaining divergence is the still-missing live connection object plus
-// fuller power/bus-parent driver ownership.
-fn collect_reduced_strong_drivers<FLabel, FSheet>(
+// upstream: CONNECTION_SUBGRAPH::ResolveDrivers(bool)
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: reduced collection still lacks KiCad's live SCH_CONNECTION objects and fuller
+// power/bus-parent owner coverage; the board-filtered netlist path now passes an explicit symbol
+// gate so off-board in-netlist pins still participate on general graphs without creating live
+// owners the board graph intentionally omits
+// local_only_reason: none
+// replaced_by: none
+// remove_when: none
+fn collect_reduced_strong_drivers<FLabel, FSheet, FSymbol>(
     schematic: &Schematic,
     schematic_path: &std::path::Path,
     sheet_instance_path: &str,
@@ -15804,11 +15806,13 @@ fn collect_reduced_strong_drivers<FLabel, FSheet>(
     sheet_path_prefix: &str,
     mut shown_label_text: FLabel,
     mut shown_sheet_pin_text: FSheet,
+    mut allow_symbol: FSymbol,
     mut shown_symbol_reference: impl FnMut(&Symbol) -> Option<String>,
 ) -> Vec<ReducedProjectStrongDriver>
 where
     FLabel: FnMut(&Label) -> String,
     FSheet: FnMut(&crate::model::Sheet, &crate::model::SheetPin) -> String,
+    FSymbol: FnMut(&Symbol) -> bool,
 {
     let mut drivers = Vec::<(ReducedProjectStrongDriver, i32)>::new();
 
@@ -15893,6 +15897,10 @@ where
                 }
             }
             SchItem::Symbol(symbol) => {
+                if !allow_symbol(symbol) {
+                    continue;
+                }
+
                 let unit_pins = projected_symbol_pin_info(symbol);
                 let shown_reference = shown_symbol_reference(symbol);
 
@@ -15940,7 +15948,6 @@ where
                             ));
                         }
                     } else if symbol.in_netlist
-                        && symbol.on_board
                         && !reduced_symbol_lib_reference_starts_with_hash(symbol)
                     {
                         if let Some(text) = reduced_symbol_pin_default_net_name(
@@ -16011,36 +16018,14 @@ where
         .collect()
 }
 
-// Upstream parity: reduced local analogue for the connected-driver naming part of
-// `CONNECTION_SUBGRAPH::ResolveDrivers()` plus `driverName()/GetNameForDriver()`. This is not a
-// 1:1 KiCad driver owner because the Rust tree still lacks full subgraphs, fuller power-pin
-// drivers, and cached `SCH_CONNECTION` objects. It exists so loader shown-text and export paths do
-// not each pick the "first connected label" independently. The current reduced driver ranking is
-// limited to the driver kinds the Rust tree can already model on one sheet:
-// - global labels outrank global power pins
-// - global power pins outrank local power pins
-// - local power pins outrank local labels
-// - local labels outrank hierarchical labels
-// - sheet pins now participate through a caller-provided reduced `SCH_SHEET_PIN::GetShownText()`
-//   analogue instead of raw parser pin names, with output pins preferred over non-output pins
-// - ordinary symbol pins participate last through reduced `SCH_PIN::GetDefaultNetName()`-style
-//   fallback names so unlabeled nets still get deterministic export/CLI names
-// - equal-priority bus labels first prefer supersets over subsets to keep the widest connection
-//   before falling back to sheet-pin rank / name quality / alphabetical order
-// - labels whose raw text still depends on the reduced connectivity resolver are skipped so the
-//   current reduced driver path does not recurse back into itself
-// - the winning reduced driver now also carries enough stable local identity for the shared
-//   project graph to mimic `RunERC()` driver-instance de-duplication across reused screens
-// - connected symbol pins and sheet pins now contribute one candidate per projected item before
-//   ranking instead of collapsing each symbol or sheet to one local winner, which is closer to
-//   KiCad's per-item `ResolveDrivers()` candidate ordering, and symbol-pin identity now carries
-//   pin number so stacked same-position pins stay distinct through reduced candidate ranking
-// - reduced power-pin drivers now prefer the projected pin shown name before the symbol value so
-//   multi-pin power symbols keep per-pin driver text through reduced ranking
-// - ordinary pins outside the netlist/board, or whose library-symbol reference starts with `#`,
-//   are skipped like upstream
-// Remaining divergence is the still-missing live connection object plus fuller bus-parent/power
-// driver ownership.
+// upstream: CONNECTION_SUBGRAPH::ResolveDrivers(bool) driverName()/GetNameForDriver()
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: reduced ranking still approximates live KiCad driver ownership because the Rust tree
+// lacks full subgraphs, cached SCH_CONNECTION objects, and fuller power/bus-parent owner state
+// local_only_reason: none
+// replaced_by: none
+// remove_when: none
 fn resolve_reduced_driver_name_candidate_on_component<FLabel, FSheet>(
     schematic: &Schematic,
     connected_component: &ConnectionComponent,
@@ -16138,7 +16123,6 @@ where
                             })
                             .or_else(|| {
                                 if !symbol.in_netlist
-                                    || !symbol.on_board
                                     || reduced_symbol_lib_reference_starts_with_hash(symbol)
                                 {
                                     return None;
@@ -28155,6 +28139,7 @@ mod tests {
             "",
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |_symbol| true,
             |symbol| super::symbol_reference_text(symbol),
         );
 
@@ -28431,6 +28416,7 @@ mod tests {
             "",
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |_symbol| true,
             |symbol| super::symbol_reference_text(symbol),
         );
 
@@ -28564,6 +28550,7 @@ mod tests {
             "",
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |_symbol| true,
             |symbol| super::symbol_reference_text(symbol),
         );
 
@@ -28644,6 +28631,7 @@ mod tests {
             "",
             |label| label.text.clone(),
             |_sheet, pin| pin.name.clone(),
+            |_symbol| true,
             |symbol| super::symbol_reference_text(symbol),
         );
 
@@ -28660,6 +28648,83 @@ mod tests {
             super::reduced_hierarchical_label_driver_priority()
         );
         assert_eq!(drivers[1].connection.local_name, "REF_NODE");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn collect_reduced_strong_drivers_keeps_in_netlist_off_board_pin_driver() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_off_board_pin_driver_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R"
+      (property "Reference" "R" (at 0 0 0)
+        (effects (font (size 1.27 1.27)))
+      )
+      (property "Value" "R" (at 0 0 0)
+        (effects (font (size 1.27 1.27)))
+      )
+      (symbol "R_1_1"
+        (pin passive line (at 0 0 0) (length 0)
+          (name "~" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27))))
+        ))))
+  (symbol
+    (lib_id "Device:R")
+    (uuid "73050000-0000-0000-0000-000000000902")
+    (at 0 0 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board no)
+    (property "Reference" "R1" (at 0 0 0)
+      (effects (font (size 1 1)))
+    )
+    (property "Value" "R" (at 0 0 0)
+      (effects (font (size 1 1)))
+    ))
+  (wire (pts (xy 0 0) (xy 10 0))))"#,
+        )
+        .expect("write schematic");
+
+        let schematic = crate::parser::parse_schematic_file(&path).expect("parse schematic");
+        let component = super::connection_component_at(&schematic, [0.0, 0.0]).expect("component");
+        let drivers = super::collect_reduced_strong_drivers(
+            &schematic,
+            &path,
+            "",
+            &component,
+            "",
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+            |_symbol| true,
+            |symbol| super::symbol_reference_text(symbol),
+        );
+
+        assert_eq!(drivers.len(), 1);
+        assert_eq!(drivers[0].kind, ReducedProjectDriverKind::Pin);
+        assert_eq!(drivers[0].priority, super::reduced_pin_driver_priority());
+        assert_eq!(drivers[0].connection.local_name, "Net-(R1-Pad1)");
+
+        let resolved = super::resolve_reduced_net_name_at(
+            &schematic,
+            [0.0, 0.0],
+            None,
+            |label| label.text.clone(),
+            |_sheet, pin| pin.name.clone(),
+        );
+        assert_eq!(resolved.as_deref(), Some("Net-(R1-Pad1)"));
 
         let _ = fs::remove_file(&path);
     }
