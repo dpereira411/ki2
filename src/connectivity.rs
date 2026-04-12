@@ -3846,7 +3846,6 @@ impl LiveReducedSubgraphLink {
 
 #[derive(Clone, Debug)]
 struct LiveReducedSubgraph {
-    #[cfg(test)]
     source_index: usize,
     driver_connection: LiveProjectConnectionHandle,
     drivers: Vec<LiveProjectStrongDriverHandle>,
@@ -5733,14 +5732,20 @@ fn live_subgraph_handle_id(handle: &LiveReducedSubgraphHandle) -> usize {
     Rc::as_ptr(handle) as usize
 }
 
+// upstream: CONNECTION_SUBGRAPH owner identity / graph-owned projection mapping or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still projects through a carried reduced source index instead of final
+// `CONNECTION_SUBGRAPH*` identity, but no longer depends on incidental live-handle slice order
+// local_only_reason: reduced projection readers still need a stable graph-owned mapping back to
+// reduced subgraph entries while live-owner parity work is in flight
+// replaced_by: direct live `CONNECTION_SUBGRAPH` identity once reduced projection is retired
+// remove_when: downstream readers consume live subgraph owners directly instead of reduced indexes
 fn live_subgraph_projection_index(
-    live_subgraphs: &[LiveReducedSubgraphHandle],
+    _live_subgraphs: &[LiveReducedSubgraphHandle],
     target: &LiveReducedSubgraphHandle,
 ) -> usize {
-    live_subgraphs
-        .iter()
-        .position(|handle| Rc::ptr_eq(handle, target))
-        .expect("live subgraph handle must belong to active graph")
+    target.borrow().source_index
 }
 
 fn live_subgraph_link_handle_cmp(
@@ -5958,7 +5963,6 @@ fn build_live_reduced_subgraph_handles(
                 reduced_subgraph_driver_connection(subgraph).into(),
             ));
             Rc::new(RefCell::new(LiveReducedSubgraph {
-                #[cfg(test)]
                 source_index: _index,
                 driver_connection: live_driver_connection.clone(),
                 drivers: reduced_strong_drivers_into_live_handles(subgraph.drivers.clone()),
@@ -18209,6 +18213,35 @@ mod tests {
             super::projected_reduced_project_driver_local_name_by_index(&graph, 0).as_deref(),
             Some("LIVE")
         );
+    }
+
+    #[test]
+    fn projected_subgraph_from_live_handle_uses_source_index_when_handles_reorder() {
+        let reduced = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/FIRST", "FIRST", "/FIRST", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SECOND", "SECOND", "/SECOND", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(reduced);
+        graph.live_subgraphs.swap(0, 1);
+
+        let subgraph = super::projected_reduced_project_subgraph_from_live_handle(
+            &graph,
+            &graph.live_subgraphs[0],
+        )
+        .expect("projected subgraph");
+
+        assert_eq!(subgraph.subgraph_code, 2);
+        assert_eq!(subgraph.name, "/SECOND");
     }
 
     #[test]
