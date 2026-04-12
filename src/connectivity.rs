@@ -9857,6 +9857,7 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
             && subgraph.no_connect_points.is_empty()
             && subgraph.wire_items.is_empty()
             && subgraph.bus_items.is_empty()
+            && subgraph.hier_ports.is_empty()
             && subgraph
                 .hier_sheet_pins
                 .iter()
@@ -9878,6 +9879,7 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
         && subgraph.no_connect_points.is_empty()
         && subgraph.wire_items.is_empty()
         && subgraph.bus_items.is_empty()
+        && subgraph.hier_ports.is_empty()
         && subgraph
             .hier_sheet_pins
             .iter()
@@ -17221,6 +17223,169 @@ mod tests {
                     kind: LabelKind::Local,
                     dangling: false,
                     non_endpoint_wire_segment_count: 0,
+                    connection: std::rc::Rc::new(std::cell::RefCell::new(
+                        LiveProjectConnection::from(test_net_connection("/SIG", "SIG", "/SIG", "")),
+                    )),
+                    driver_connection: std::rc::Rc::new(std::cell::RefCell::new(
+                        LiveProjectConnection::from(test_net_connection("/SIG", "SIG", "/SIG", "")),
+                    )),
+                    driver: None,
+                    shown_text_local_name: "SIG".to_string(),
+                },
+            )));
+
+        assert!(!super::reduced_project_sheet_pin_is_dangling(
+            &graph,
+            &sheet_path,
+            [0.0, 5.0],
+            Some("sheet"),
+        ));
+    }
+
+    #[test]
+    fn reduced_sheet_pin_dangling_counts_hier_port_owner() {
+        let point = PointKey(0.0f64.to_bits(), 5.0f64.to_bits());
+        let other_point = PointKey(10.0f64.to_bits(), 5.0f64.to_bits());
+        let sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: String::new(),
+            sheet_uuid: Some("sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: point,
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: point,
+                    child_sheet_uuid: Some("sheet".to_string()),
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                }],
+                hier_ports: vec![ReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+                    at: other_point,
+                    connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                }],
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            }],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::from([(
+                super::ReducedProjectSheetPinIdentityKey {
+                    sheet_instance_path: String::new(),
+                    at: point,
+                    child_sheet_uuid: Some("sheet".to_string()),
+                },
+                0,
+            )]),
+        };
+
+        assert!(!super::reduced_project_sheet_pin_is_dangling(
+            &graph,
+            &sheet_path,
+            [0.0, 5.0],
+            Some("sheet"),
+        ));
+    }
+
+    #[test]
+    fn live_sheet_pin_dangling_counts_live_hier_port_owner() {
+        let point = PointKey(0.0f64.to_bits(), 5.0f64.to_bits());
+        let other_point = PointKey(10.0f64.to_bits(), 5.0f64.to_bits());
+        let sheet_path = crate::loader::LoadedSheetPath {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            instance_path: String::new(),
+            symbol_path: String::new(),
+            sheet_uuid: Some("sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let reduced_subgraph = ReducedProjectSubgraphEntry {
+            subgraph_code: 1,
+            code: 1,
+            name: "/SIG".to_string(),
+            resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            chosen_driver_index: None,
+            drivers: Vec::new(),
+            class: String::new(),
+            has_no_connect: false,
+            sheet_instance_path: String::new(),
+            anchor: point,
+            points: Vec::new(),
+            nodes: Vec::new(),
+            base_pins: Vec::new(),
+            label_links: Vec::new(),
+            no_connect_points: Vec::new(),
+            hier_sheet_pins: vec![ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: point,
+                child_sheet_uuid: Some("sheet".to_string()),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            }],
+            hier_ports: Vec::new(),
+            bus_members: Vec::new(),
+            bus_items: Vec::new(),
+            wire_items: Vec::new(),
+            bus_neighbor_links: Vec::new(),
+            bus_parent_links: Vec::new(),
+            bus_parent_indexes: Vec::new(),
+            hier_parent_index: None,
+            hier_child_indexes: Vec::new(),
+        };
+        let mut graph = test_graph_with_live_subgraphs(vec![reduced_subgraph]);
+        graph.sheet_pin_subgraph_identities.insert(
+            super::ReducedProjectSheetPinIdentityKey {
+                sheet_instance_path: String::new(),
+                at: point,
+                child_sheet_uuid: Some("sheet".to_string()),
+            },
+            0,
+        );
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .hier_ports
+            .push(std::rc::Rc::new(std::cell::RefCell::new(
+                super::LiveReducedHierPortLink {
+                    schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+                    at: other_point,
                     connection: std::rc::Rc::new(std::cell::RefCell::new(
                         LiveProjectConnection::from(test_net_connection("/SIG", "SIG", "/SIG", "")),
                     )),
