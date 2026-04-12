@@ -1644,6 +1644,55 @@ fn reduced_short_net_name(net_name: &str) -> String {
         .to_string()
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts / ercCheckBusToBusEntryConflicts
+// effective member-name matching or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still derives reduced effective match names from reduced local/full-local strings
+// instead of final SCH_CONNECTION member objects
+// local_only_reason: keeps exercised bus-member equivalence on the shared reduced/live graph
+// owner until ERC can compare final live connection members directly
+// replaced_by: fuller live SCH_CONNECTION member ownership on the shared graph
+// remove_when: conflict checks compare final live bus members directly
+fn reduced_bus_member_match_names(member: &ReducedBusMember) -> Vec<String> {
+    let mut names = Vec::new();
+
+    if !member.local_name.is_empty() {
+        names.push(member.local_name.clone());
+    }
+
+    if !member.full_local_name.is_empty() {
+        let short_name = reduced_short_net_name(&member.full_local_name);
+        if !short_name.is_empty() && !names.iter().any(|existing| existing == &short_name) {
+            names.push(short_name);
+        }
+    }
+
+    if !member.name.is_empty() && !names.iter().any(|existing| existing == &member.name) {
+        names.push(member.name.clone());
+    }
+
+    names
+}
+
+fn reduced_bus_member_match_names_from_live(member: &LiveProjectBusMemberHandle) -> Vec<String> {
+    reduced_bus_member_match_names(&live_bus_member_handle_snapshot(member))
+}
+
+fn reduced_bus_conflict_name_matches_member(name: &str, member: &str) -> bool {
+    if name == member {
+        return true;
+    }
+
+    let short_name = reduced_short_net_name(name);
+    if short_name == member {
+        return true;
+    }
+
+    let short_member = reduced_short_net_name(member);
+    short_name == short_member || name == short_member
+}
+
 fn reduced_connection_is_bus(connection_type: ReducedProjectConnectionType) -> bool {
     matches!(
         connection_type,
@@ -1699,6 +1748,51 @@ pub(crate) fn reduced_text_is_bus(schematic: &Schematic, text: &str) -> bool {
             .any(|alias| alias.name.eq_ignore_ascii_case(text))
 }
 
+// upstream: SCH_CONNECTION::ConfigureFromLabel item-context alias branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still infers item context from reduced connected-component members instead of final
+// label-owned `SCH_ITEM` connection attachment, but now keeps plain alias names on wire-side label
+// components net-typed instead of upgrading every alias-matching label to a bus
+// local_only_reason: reduced graph build still needs component-local bus/net discrimination before
+// the full live item-owned connection cache exists
+// replaced_by: live `SCH_CONNECTION` label owner with full `ConfigureFromLabel()` semantics
+// remove_when: graph build configures label connections from final live item owners
+fn reduced_text_is_bus_in_connected_component(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+    text: &str,
+) -> bool {
+    if text.contains('[') || text.contains(']') || text.contains('{') || text.contains('}') {
+        return true;
+    }
+
+    schematic
+        .screen
+        .bus_aliases
+        .iter()
+        .any(|alias| alias.name.eq_ignore_ascii_case(text))
+        && connected_component
+            .members
+            .iter()
+            .any(|member| member.kind == ConnectionMemberKind::Bus)
+}
+
+fn reduced_project_connection_type_from_text(
+    text: &str,
+    text_is_bus: bool,
+) -> ReducedProjectConnectionType {
+    if text.is_empty() {
+        ReducedProjectConnectionType::None
+    } else if !text_is_bus {
+        ReducedProjectConnectionType::Net
+    } else if text.contains('{') || text.contains('}') {
+        ReducedProjectConnectionType::BusGroup
+    } else {
+        ReducedProjectConnectionType::Bus
+    }
+}
+
 // Upstream parity: reduced local analogue for the connection-kind portion of
 // `SCH_CONNECTION::Type()` after `ConfigureFromLabel()`. This is not a 1:1 connection-object
 // query because the Rust tree still derives type from reduced text plus alias parsing instead of
@@ -1709,15 +1803,7 @@ fn reduced_project_connection_type(
     schematic: &Schematic,
     text: &str,
 ) -> ReducedProjectConnectionType {
-    if text.is_empty() {
-        ReducedProjectConnectionType::None
-    } else if !reduced_text_is_bus(schematic, text) {
-        ReducedProjectConnectionType::Net
-    } else if text.contains('{') || text.contains('}') {
-        ReducedProjectConnectionType::BusGroup
-    } else {
-        ReducedProjectConnectionType::Bus
-    }
+    reduced_project_connection_type_from_text(text, reduced_text_is_bus(schematic, text))
 }
 
 // Upstream parity: reduced local helper for the `SCH_CONNECTION` name/type/member state the
@@ -1784,6 +1870,41 @@ fn build_reduced_project_driver_connection(
         full_name,
         members,
     )
+}
+
+fn build_reduced_project_driver_connection_in_connected_component(
+    schematic: &Schematic,
+    connected_component: &ConnectionComponent,
+    sheet_instance_path: impl Into<String>,
+    local_name: impl Into<String>,
+    full_name: impl Into<String>,
+    member_sheet_prefix: &str,
+) -> ReducedProjectConnection {
+    let local_name = local_name.into();
+    let full_name = full_name.into();
+    let text_is_bus =
+        reduced_text_is_bus_in_connected_component(schematic, connected_component, &local_name);
+    let members = if text_is_bus {
+        collect_reduced_bus_member_objects_inner(
+            schematic,
+            &local_name,
+            "",
+            member_sheet_prefix,
+            &mut BTreeSet::new(),
+        )
+    } else {
+        Vec::new()
+    };
+
+    ReducedProjectConnection {
+        net_code: 0,
+        connection_type: reduced_project_connection_type_from_text(&local_name, text_is_bus),
+        name: full_name.clone(),
+        local_name,
+        full_local_name: full_name,
+        sheet_instance_path: sheet_instance_path.into(),
+        members,
+    }
 }
 
 fn reduced_bus_members_inner(
@@ -3928,8 +4049,8 @@ impl LiveReducedSubgraph {
     // parity_status: partial
     // local_kind: local-only-transitional
     // divergence: still stores attached-bus connection handles instead of final bus-item pointers,
-    // but now keys that ownership from the effective chosen bus connection instead of stale raw
-    // subgraph `driver_connection` snapshots
+    // but now keys that ownership from the connected bus-item owner instead of final live
+    // `SCH_LINE*` pointers
     // local_only_reason: keeps attached-bus ownership on the active live subgraph graph before the
     // fuller live bus-item owner graph exists
     // replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_BUS_WIRE_ENTRY` owner graph
@@ -5948,6 +6069,19 @@ fn build_live_reduced_subgraph_handles(
         .iter()
         .enumerate()
         .map(|(_index, subgraph)| {
+            let bus_item_seed_connection = subgraph
+                .label_links
+                .iter()
+                .map(|link| &link.connection)
+                .chain(subgraph.hier_sheet_pins.iter().map(|pin| &pin.connection))
+                .chain(subgraph.hier_ports.iter().map(|port| &port.connection))
+                .find(|connection| reduced_connection_is_bus(connection.connection_type))
+                .cloned()
+                .or_else(|| {
+                    reduced_connection_is_bus(subgraph.resolved_connection.connection_type)
+                        .then(|| subgraph.resolved_connection.clone())
+                })
+                .unwrap_or_else(|| subgraph.driver_connection.clone());
             let live_driver_connection = Rc::new(RefCell::new(
                 reduced_subgraph_driver_connection(subgraph).into(),
             ));
@@ -6086,7 +6220,7 @@ fn build_live_reduced_subgraph_handles(
                             is_bus_entry: item.is_bus_entry,
                             start_is_wire_side: item.start_is_wire_side,
                             connection: Rc::new(RefCell::new(
-                                subgraph.driver_connection.clone().into(),
+                                bus_item_seed_connection.clone().into(),
                             )),
                             connected_bus_connection_handle: None,
                         }))
@@ -6936,7 +7070,14 @@ fn expand_reduced_bus_member_entry(
         let alias_key = alias.name.to_ascii_uppercase();
 
         if !active_aliases.insert(alias_key.clone()) {
-            return Vec::new();
+            return vec![make_reduced_bus_member(
+                text,
+                local_prefix,
+                sheet_prefix,
+                None,
+                ReducedBusMemberKind::Net,
+                Vec::new(),
+            )];
         }
 
         let members = alias
@@ -6993,7 +7134,14 @@ fn collect_reduced_bus_member_objects_inner(
         let alias_key = alias.name.to_ascii_uppercase();
 
         if !active_aliases.insert(alias_key.clone()) {
-            return Vec::new();
+            return vec![make_reduced_bus_member(
+                text,
+                local_prefix,
+                sheet_prefix,
+                None,
+                ReducedBusMemberKind::Net,
+                Vec::new(),
+            )];
         }
 
         let members = alias
@@ -8628,6 +8776,7 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                 .label_links
                 .iter()
                 .map(|link| &link.connection)
+                .chain(child.hier_sheet_pins.iter().map(|pin| &pin.connection))
                 .chain(child.hier_ports.iter().map(|port| &port.connection))
                 .filter(|connection| {
                     connection.connection_type == ReducedProjectConnectionType::Net
@@ -10508,7 +10657,12 @@ fn collect_reduced_subgraph_local_membership(
                         LabelKind::Directive => return None,
                     };
                     let full_name = reduced_driver_full_name(&shown, source, &sheet_path_prefix);
-                    let members = if reduced_text_is_bus(schematic, &shown) {
+                    let text_is_bus = reduced_text_is_bus_in_connected_component(
+                        schematic,
+                        connected_component,
+                        &shown,
+                    );
+                    let members = if text_is_bus {
                         let member_sheet_prefix = if label.kind == LabelKind::Global {
                             ""
                         } else {
@@ -10538,14 +10692,18 @@ fn collect_reduced_subgraph_local_membership(
                             &wire_segments,
                             label.at,
                         ),
-                        connection: build_reduced_project_connection(
-                            schematic,
-                            sheet_path.instance_path.clone(),
-                            full_name.clone(),
-                            shown,
-                            full_name,
+                        connection: ReducedProjectConnection {
+                            net_code: 0,
+                            connection_type: reduced_project_connection_type_from_text(
+                                &shown,
+                                text_is_bus,
+                            ),
+                            name: full_name.clone(),
+                            local_name: shown,
+                            full_local_name: full_name,
+                            sheet_instance_path: sheet_path.instance_path.clone(),
                             members,
-                        ),
+                        },
                     })
                 }
                 _ => None,
@@ -11643,6 +11801,42 @@ fn reduced_subgraph_endpoint_has_owner(
             .any(endpoint_matches)
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints same-name sibling wire-owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced wire geometry instead of final `SCH_LINE` / `SCH_BUS_WIRE_ENTRY`
+// item links, but now preserves same-sheet wire-segment owners that upstream reaches through item
+// connectivity instead of treating named sibling subgraphs as label/pin-only
+// local_only_reason: keeps same-name sibling wire-owner detection on the shared graph owner while
+// full live item-owner links are still incomplete
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_LINE` / `SCH_BUS_WIRE_ENTRY` owner graph
+// remove_when: dangling-endpoint checks can resolve same-name sibling wire owners directly from final
+// live item links
+fn reduced_subgraph_endpoint_has_wire_item_owner(
+    subgraph: &ReducedProjectSubgraphEntry,
+    endpoint: PointKey,
+) -> bool {
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+
+    subgraph.wire_items.iter().any(|item| {
+        if item.is_bus_entry {
+            let wire_side = if item.start_is_wire_side {
+                item.start
+            } else {
+                item.end
+            };
+
+            point_key_matches(wire_side, endpoint_at)
+        } else {
+            point_on_wire_segment(
+                endpoint_at,
+                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+            )
+        }
+    })
+}
+
 fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
     graph: &ReducedProjectNetGraph,
     subgraph: &ReducedProjectSubgraphEntry,
@@ -11685,6 +11879,7 @@ fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
                     .iter()
                     .map(|point| point.at)
                     .any(endpoint_matches)
+                || reduced_subgraph_endpoint_has_wire_item_owner(&neighbor, endpoint)
         })
 }
 
@@ -11743,6 +11938,44 @@ fn live_reduced_subgraph_endpoint_has_owner(
             .iter()
             .map(|point| point.at)
             .any(endpoint_matches)
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints same-name sibling wire-owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced live wire geometry instead of final `SCH_LINE` /
+// `SCH_BUS_WIRE_ENTRY` item links, but now preserves same-sheet wire-segment owners that upstream
+// reaches through item connectivity instead of treating named sibling subgraphs as label/pin-only
+// local_only_reason: keeps same-name sibling wire-owner detection on the active live graph while
+// full item-owner links are still incomplete
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_LINE` / `SCH_BUS_WIRE_ENTRY` owner graph
+// remove_when: dangling-endpoint checks can resolve same-name sibling wire owners directly from final
+// live item links
+fn live_reduced_subgraph_endpoint_has_wire_item_owner(
+    subgraph: &LiveReducedSubgraph,
+    endpoint: PointKey,
+) -> bool {
+    let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
+
+    subgraph.wire_items.iter().any(|item| {
+        let item = item.borrow();
+
+        if item.is_bus_entry {
+            let wire_side = if item.start_is_wire_side {
+                item.start
+            } else {
+                item.end
+            };
+
+            point_key_matches(wire_side, endpoint_at)
+        } else {
+            point_on_wire_segment(
+                endpoint_at,
+                [f64::from_bits(item.start.0), f64::from_bits(item.start.1)],
+                [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
+            )
+        }
+    })
 }
 
 // upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints bus-entry connected-bus owner branch or none
@@ -11832,6 +12065,7 @@ fn live_same_sheet_named_neighbor_endpoint_has_owner(
         .any(|neighbor| {
             let neighbor = neighbor.borrow();
             live_reduced_subgraph_endpoint_has_owner(&neighbor, endpoint)
+                || live_reduced_subgraph_endpoint_has_wire_item_owner(&neighbor, endpoint)
         })
 }
 
@@ -11952,6 +12186,7 @@ pub(crate) struct ReducedProjectLabelConnectivitySubgraph {
     pub(crate) local_pins: usize,
     pub(crate) has_no_connect: bool,
     pub(crate) has_local_hierarchy: bool,
+    pub(crate) has_bus_member_hierarchy_route: bool,
     pub(crate) label_links: Vec<ReducedLabelLink>,
 }
 
@@ -12180,7 +12415,7 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
                 .connection
                 .members
                 .iter()
-                .map(|member| member.local_name.clone())
+                .flat_map(reduced_bus_member_match_names)
                 .collect::<Vec<_>>(),
         )
     })?;
@@ -12195,7 +12430,7 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
             connection
                 .members
                 .iter()
-                .map(|member| member.local_name.clone())
+                .flat_map(reduced_bus_member_match_names)
                 .collect::<Vec<_>>()
         })?;
 
@@ -12242,8 +12477,7 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
             connection
                 .members
                 .iter()
-                .map(live_bus_member_handle_snapshot)
-                .map(|member| member.local_name)
+                .flat_map(reduced_bus_member_match_names_from_live)
                 .collect::<Vec<_>>()
         })
     })?;
@@ -12258,8 +12492,7 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
                 connection
                     .members
                     .iter()
-                    .map(live_bus_member_handle_snapshot)
-                    .map(|member| member.local_name)
+                    .flat_map(reduced_bus_member_match_names_from_live)
                     .collect::<Vec<_>>()
             })
         })
@@ -12270,8 +12503,7 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
                 connection
                     .members
                     .iter()
-                    .map(live_bus_member_handle_snapshot)
-                    .map(|member| member.local_name)
+                    .flat_map(reduced_bus_member_match_names_from_live)
                     .collect::<Vec<_>>()
             })
         }))
@@ -12738,6 +12970,24 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
         else {
             continue;
         };
+        if let Some(schematic) = project
+            .schematics
+            .iter()
+            .find(|schematic| schematic.path == sheet_path.schematic_path)
+        {
+            let sheet_prefix = reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
+            candidate.bus_members.extend(reduced_bus_member_full_local_names(
+                &collect_reduced_bus_member_objects_inner(
+                    schematic,
+                    &candidate.bus_name,
+                    "",
+                    &sheet_prefix,
+                    &mut BTreeSet::new(),
+                ),
+            ));
+            candidate.bus_members.sort();
+            candidate.bus_members.dedup();
+        }
 
         candidate
             .test_names
@@ -12752,11 +13002,12 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
         candidate.test_names.sort();
         candidate.test_names.dedup();
 
-        if candidate
-            .test_names
-            .iter()
-            .any(|name| candidate.bus_members.iter().any(|member| member == name))
-        {
+        if candidate.test_names.iter().any(|name| {
+            candidate
+                .bus_members
+                .iter()
+                .any(|member| reduced_bus_conflict_name_matches_member(name, member))
+        }) {
             continue;
         }
 
@@ -13271,6 +13522,9 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             || subgraph_index.is_some_and(|index| {
                 reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
             });
+        let has_bus_member_hierarchy_route = subgraph_index.is_some_and(|index| {
+            reduced_project_subgraph_has_bus_member_hierarchy_route(graph, index)
+        });
         let mut all_pins = pin_count;
         let mut local_pins = pin_count;
         let mut aggregate_has_no_connect = has_no_connect;
@@ -13289,15 +13543,8 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
                 }
 
                 let neighbor_pin_count = neighbor.base_pins.len();
-                let neighbor_has_direct_local_hierarchy =
+                let neighbor_has_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
-                let neighbor_has_local_hierarchy = reduced_project_subgraph_index(graph, &neighbor)
-                    .is_some_and(|index| {
-                        neighbor_has_direct_local_hierarchy
-                            && reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
-                                graph, index,
-                            )
-                    });
 
                 all_pins += neighbor_pin_count;
                 aggregate_has_no_connect |= neighbor.has_no_connect;
@@ -13319,6 +13566,7 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             local_pins,
             has_no_connect: aggregate_has_no_connect,
             has_local_hierarchy: aggregate_has_local_hierarchy,
+            has_bus_member_hierarchy_route,
             label_links: subgraph.label_links.clone(),
         });
     }
@@ -13406,6 +13654,128 @@ fn live_reduced_label_link_snapshot(label: &LiveReducedLabelLink) -> ReducedLabe
     }
 }
 
+// upstream: CONNECTION_GRAPH::GetResolvedSubgraphName bucket walk plus hierarchical bus-member
+// routing side effects in `ercCheckLabels` or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: KiCad discovers this through stale `m_net_name_to_subgraphs_map` membership while
+// we detect the exercised routed-member shape directly from reduced bus-parent and hierarchy links
+// local_only_reason: keeps the routed-member ownership in connectivity so ERC does not infer it
+// from diagnostics or schematic scans
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / cached resolved-name owner parity
+// remove_when: label summaries can query final live resolved-name membership directly
+fn reduced_project_subgraph_has_bus_member_hierarchy_route(
+    graph: &ReducedProjectNetGraph,
+    subgraph_index: usize,
+) -> bool {
+    let subgraph = &graph.subgraphs[subgraph_index];
+
+    for parent_link in &subgraph.bus_parent_links {
+        let mut pending = vec![parent_link.subgraph_index];
+        let mut seen = BTreeSet::new();
+
+        while let Some(bus_index) = pending.pop() {
+            if !seen.insert(bus_index) {
+                continue;
+            }
+
+            let bus = &graph.subgraphs[bus_index];
+
+            if let Some(parent_index) = bus.hier_parent_index {
+                pending.push(parent_index);
+            }
+
+            pending.extend(bus.hier_child_indexes.iter().copied());
+
+            for neighbor in &bus.bus_neighbor_links {
+                if neighbor.member.full_local_name != parent_link.member.full_local_name
+                    || neighbor.subgraph_index == subgraph_index
+                {
+                    continue;
+                }
+
+                let candidate = &graph.subgraphs[neighbor.subgraph_index];
+
+                if candidate.sheet_instance_path != subgraph.sheet_instance_path
+                    && (!candidate.hier_sheet_pins.is_empty() || !candidate.hier_ports.is_empty())
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+// upstream: CONNECTION_GRAPH::GetResolvedSubgraphName bucket walk plus hierarchical bus-member
+// routing side effects in `ercCheckLabels` or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: KiCad discovers this through stale `m_net_name_to_subgraphs_map` membership while
+// we detect the exercised routed-member shape directly from live bus-parent and hierarchy handles
+// local_only_reason: keeps the routed-member ownership in connectivity so ERC does not infer it
+// from diagnostics or schematic scans
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / cached resolved-name owner parity
+// remove_when: label summaries can query final live resolved-name membership directly
+fn live_reduced_subgraph_has_bus_member_hierarchy_route(
+    subgraph_handle: &LiveReducedSubgraphHandle,
+) -> bool {
+    let subgraph = subgraph_handle.borrow();
+
+    for parent_link in &subgraph.bus_parent_links {
+        let member_name = parent_link.borrow().member.borrow().full_local_name.clone();
+        let mut pending = parent_link
+            .borrow()
+            .subgraph_handle
+            .upgrade()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+
+        while let Some(bus_handle) = pending.pop() {
+            let bus_id = live_subgraph_handle_id(&bus_handle);
+            if !seen.insert(bus_id) {
+                continue;
+            }
+
+            let bus = bus_handle.borrow();
+
+            if let Some(parent) = bus.hier_parent_handle.as_ref().and_then(Weak::upgrade) {
+                pending.push(parent);
+            }
+
+            pending.extend(bus.hier_child_handles.iter().filter_map(Weak::upgrade));
+
+            for neighbor in &bus.bus_neighbor_links {
+                let neighbor = neighbor.borrow();
+
+                if neighbor.member.borrow().full_local_name != member_name {
+                    continue;
+                }
+
+                let Some(candidate_handle) = neighbor.subgraph_handle.upgrade() else {
+                    continue;
+                };
+
+                if Rc::ptr_eq(&candidate_handle, subgraph_handle) {
+                    continue;
+                }
+
+                let candidate = candidate_handle.borrow();
+
+                if candidate.sheet_instance_path != subgraph.sheet_instance_path
+                    && (!candidate.hier_sheet_pins.is_empty() || !candidate.hier_ports.is_empty())
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 // upstream: CONNECTION_GRAPH::ercCheckLabels label-subgraph setup branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -13438,6 +13808,8 @@ fn live_reduced_project_label_connectivity_subgraphs(
                 &graph.live_subgraphs,
                 &subgraph_handle,
             );
+        let has_bus_member_hierarchy_route =
+            live_reduced_subgraph_has_bus_member_hierarchy_route(&subgraph_handle);
         let mut all_pins = pin_count;
         let mut local_pins = pin_count;
         let mut aggregate_has_no_connect = has_no_connect;
@@ -13455,10 +13827,8 @@ fn live_reduced_project_label_connectivity_subgraphs(
 
                 let neighbor = neighbor_handle.borrow();
                 let neighbor_pin_count = neighbor.base_pins.len();
-                let neighbor_has_direct_local_hierarchy =
+                let neighbor_has_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
-                let neighbor_has_local_hierarchy = neighbor_has_direct_local_hierarchy
-                    && live_reduced_subgraph_has_local_hierarchy_via_bus_parents(neighbor_handle);
 
                 all_pins += neighbor_pin_count;
                 aggregate_has_no_connect |= neighbor.has_no_connect;
@@ -13480,6 +13850,7 @@ fn live_reduced_project_label_connectivity_subgraphs(
             local_pins,
             has_no_connect: aggregate_has_no_connect,
             has_local_hierarchy: aggregate_has_local_hierarchy,
+            has_bus_member_hierarchy_route,
             label_links: subgraph
                 .label_links
                 .iter()
@@ -15455,8 +15826,9 @@ where
                     ReducedProjectStrongDriver {
                         kind: ReducedProjectDriverKind::Label,
                         priority: reduced_label_driver_priority(label),
-                        connection: build_reduced_project_driver_connection(
+                        connection: build_reduced_project_driver_connection_in_connected_component(
                             schematic,
+                            connected_component,
                             sheet_instance_path,
                             text.clone(),
                             full_name,
@@ -17854,7 +18226,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_label_connectivity_subgraphs_do_not_aggregate_neighbor_direct_local_hierarchy_without_bus_parent()
+    fn reduced_label_connectivity_subgraphs_aggregate_neighbor_direct_local_hierarchy_same_sheet()
      {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
@@ -17900,11 +18272,11 @@ mod tests {
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
-        assert!(!label_subgraphs[0].has_local_hierarchy);
+        assert!(label_subgraphs[0].has_local_hierarchy);
     }
 
     #[test]
-    fn live_label_connectivity_subgraphs_do_not_aggregate_neighbor_direct_local_hierarchy_without_bus_parent()
+    fn live_label_connectivity_subgraphs_aggregate_neighbor_direct_local_hierarchy_same_sheet()
      {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
@@ -17932,7 +18304,175 @@ mod tests {
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
-        assert!(!label_subgraphs[0].has_local_hierarchy);
+        assert!(label_subgraphs[0].has_local_hierarchy);
+    }
+
+    #[test]
+    fn reduced_label_connectivity_subgraphs_flag_bus_member_hierarchy_route() {
+        let connection = test_net_connection("/SIG1", "SIG1", "/SIG1", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection,
+        });
+        label_subgraph.bus_parent_indexes.push(1);
+        label_subgraph
+            .bus_parent_links
+            .push(ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 1,
+            });
+
+        let mut root_bus = test_net_subgraph(
+            2,
+            test_bus_connection(
+                "/BUS",
+                "BUS",
+                "/BUS",
+                "",
+                vec![test_bus_member("SIG1", "SIG1", "/SIG1")],
+            ),
+            Vec::new(),
+            "",
+        );
+        root_bus.hier_child_indexes.push(2);
+        root_bus.bus_neighbor_links.push(ReducedProjectBusNeighborLink {
+            member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+            subgraph_index: 0,
+        });
+
+        let mut child_bus = test_net_subgraph(
+            3,
+            test_bus_connection(
+                "/child/BUS",
+                "BUS",
+                "/child/BUS",
+                "/child",
+                vec![test_bus_member("SIG1", "SIG1", "/SIG1")],
+            ),
+            Vec::new(),
+            "/child",
+        );
+        child_bus.hier_parent_index = Some(1);
+        child_bus.bus_neighbor_links.push(ReducedProjectBusNeighborLink {
+            member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+            subgraph_index: 3,
+        });
+
+        let mut child_member =
+            test_net_subgraph(4, test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"), Vec::new(), "/child");
+        child_member.hier_ports.push(ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(5, 6),
+            connection: test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"),
+        });
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![label_subgraph, root_bus, child_bus, child_member],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG1".to_string(), vec![0])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([(
+                (String::new(), "/SIG1".to_string()),
+                vec![0],
+            )]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(label_subgraphs[0].has_bus_member_hierarchy_route);
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_flag_bus_member_hierarchy_route() {
+        let connection = test_net_connection("/SIG1", "SIG1", "/SIG1", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection,
+        });
+        label_subgraph.bus_parent_indexes.push(1);
+
+        let mut root_bus = test_net_subgraph(
+            2,
+            test_bus_connection(
+                "/BUS",
+                "BUS",
+                "/BUS",
+                "",
+                vec![test_bus_member("SIG1", "SIG1", "/SIG1")],
+            ),
+            Vec::new(),
+            "",
+        );
+        root_bus.hier_child_indexes.push(2);
+
+        let mut child_bus = test_net_subgraph(
+            3,
+            test_bus_connection(
+                "/child/BUS",
+                "BUS",
+                "/child/BUS",
+                "/child",
+                vec![test_bus_member("SIG1", "SIG1", "/SIG1")],
+            ),
+            Vec::new(),
+            "/child",
+        );
+        child_bus.hier_parent_index = Some(1);
+
+        let mut child_member =
+            test_net_subgraph(4, test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"), Vec::new(), "/child");
+        child_member.hier_ports.push(ReducedHierPortLink {
+            schematic_path: std::path::PathBuf::from("child.kicad_sch"),
+            at: PointKey(5, 6),
+            connection: test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"),
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, root_bus, child_bus, child_member]);
+        {
+            let live = &graph.live_subgraphs;
+            live[0].borrow_mut().bus_parent_links.push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
+                member: Rc::new(RefCell::new(test_bus_member("SIG1", "SIG1", "/SIG1").into())),
+                #[cfg(test)]
+                subgraph_index: 1,
+                subgraph_handle: Rc::downgrade(&live[1]),
+            })));
+            live[1].borrow_mut().bus_neighbor_links.push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
+                member: Rc::new(RefCell::new(test_bus_member("SIG1", "SIG1", "/SIG1").into())),
+                #[cfg(test)]
+                subgraph_index: 0,
+                subgraph_handle: Rc::downgrade(&live[0]),
+            })));
+            live[2].borrow_mut().bus_neighbor_links.push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
+                member: Rc::new(RefCell::new(test_bus_member("SIG1", "SIG1", "/SIG1").into())),
+                #[cfg(test)]
+                subgraph_index: 3,
+                subgraph_handle: Rc::downgrade(&live[3]),
+            })));
+        }
+
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(label_subgraphs[0].has_bus_member_hierarchy_route);
     }
 
     #[test]
@@ -18430,6 +18970,42 @@ mod tests {
         assert_eq!(
             super::reduced_bus_members(&schematic, "USB{PAIR{DP DM} AUX}"),
             vec!["USB.PAIR.DP", "USB.PAIR.DM", "USB.AUX"]
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reduced_bus_members_keep_self_named_alias_member() {
+        let path = env::temp_dir().join(format!(
+            "ki2_connectivity_bus_alias_self_member_{}.kicad_sch",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+
+        fs::write(
+            &path,
+            r#"(kicad_sch
+  (version 20260306)
+  (generator "ki2")
+  (uuid "73050000-0000-0000-0000-000000000072")
+  (paper "A4")
+  (bus_alias "A" (members A B C))
+)"#,
+        )
+        .expect("write schematic");
+
+        let schematic = parse_schematic_file(&path).expect("parse schematic");
+
+        assert_eq!(
+            super::reduced_bus_members(&schematic, "{A}"),
+            vec!["A", "B", "C"]
+        );
+        assert_eq!(
+            super::reduced_bus_members(&schematic, "PFX{A}"),
+            vec!["PFX.A", "PFX.B", "PFX.C"]
         );
 
         let _ = fs::remove_file(path);
@@ -23142,6 +23718,187 @@ mod tests {
                 .borrow_mut(),
             &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
         );
+
+        assert!(super::live_same_sheet_named_neighbor_endpoint_has_owner(
+            &graph,
+            &graph.live_subgraphs[0],
+            PointKey(10, 0),
+        ));
+    }
+
+    #[test]
+    fn reduced_wire_endpoint_owner_uses_same_name_neighbor_wire_segment() {
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 1,
+                    code: 1,
+                    name: "/SIG".to_string(),
+                    resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    chosen_driver_index: None,
+                    drivers: Vec::new(),
+                    class: String::new(),
+                    has_no_connect: false,
+                    sheet_instance_path: String::new(),
+                    anchor: PointKey(0, 0),
+                    points: Vec::new(),
+                    nodes: Vec::new(),
+                    base_pins: Vec::new(),
+                    label_links: Vec::new(),
+                    no_connect_points: Vec::new(),
+                    hier_sheet_pins: Vec::new(),
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: vec![ReducedSubgraphWireItem {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        start: PointKey(0, 0),
+                        end: PointKey(10, 0),
+                        is_bus_entry: false,
+                        start_is_wire_side: false,
+                        connected_bus_subgraph_index: None,
+                    }],
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+                ReducedProjectSubgraphEntry {
+                    subgraph_code: 2,
+                    code: 2,
+                    name: "/SIG".to_string(),
+                    resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                    chosen_driver_index: None,
+                    drivers: Vec::new(),
+                    class: String::new(),
+                    has_no_connect: false,
+                    sheet_instance_path: String::new(),
+                    anchor: PointKey(10, 0),
+                    points: Vec::new(),
+                    nodes: Vec::new(),
+                    base_pins: Vec::new(),
+                    label_links: Vec::new(),
+                    no_connect_points: Vec::new(),
+                    hier_sheet_pins: Vec::new(),
+                    hier_ports: Vec::new(),
+                    bus_members: Vec::new(),
+                    bus_items: Vec::new(),
+                    wire_items: vec![ReducedSubgraphWireItem {
+                        schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                        start: PointKey(10, 0),
+                        end: PointKey(20, 0),
+                        is_bus_entry: false,
+                        start_is_wire_side: false,
+                        connected_bus_subgraph_index: None,
+                    }],
+                    bus_neighbor_links: Vec::new(),
+                    bus_parent_links: Vec::new(),
+                    bus_parent_indexes: Vec::new(),
+                    hier_parent_index: None,
+                    hier_child_indexes: Vec::new(),
+                },
+            ],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([(
+                (String::new(), "/SIG".to_string()),
+                vec![0, 1],
+            )]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        assert!(super::reduced_same_sheet_named_neighbor_endpoint_has_owner(
+            &graph,
+            &graph.subgraphs[0],
+            PointKey(10, 0),
+        ));
+    }
+
+    #[test]
+    fn live_wire_endpoint_owner_uses_same_name_neighbor_wire_segment() {
+        let graph = test_graph_with_live_subgraphs(vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    start: PointKey(0, 0),
+                    end: PointKey(10, 0),
+                    is_bus_entry: false,
+                    start_is_wire_side: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/SIG".to_string(),
+                resolved_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(10, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    start: PointKey(10, 0),
+                    end: PointKey(20, 0),
+                    is_bus_entry: false,
+                    start_is_wire_side: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ]);
 
         assert!(super::live_same_sheet_named_neighbor_endpoint_has_owner(
             &graph,

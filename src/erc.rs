@@ -1665,11 +1665,13 @@ pub fn check_no_connect_markers(project: &SchematicProject) -> Vec<Diagnostic> {
 // reduced label links plus shared reduced hierarchy pin/port links for local hierarchy state, and
 // shared reduced project subgraphs for pin counts and same-name neighbor aggregation instead of
 // grouping local component snapshots by ad-hoc `net_name` strings inside ERC. It now also follows
-// `RunERC()`-style reused-screen de-duplication through the shared reduced driver owner, and now
-// walks reduced member-keyed bus-parent links instead of bare parent index lists. Subgraph net
-// names on the real graph path now also flow from the graph-owned reduced driver connection
-// instead of the parallel reduced subgraph `name` field. Remaining divergence is fuller live
-// bus-neighbor connection ownership plus fuller live label item dangling state.
+// `RunERC()`-style reused-screen de-duplication through the shared reduced driver owner, walks
+// reduced member-keyed bus-parent links instead of bare parent index lists, and now also preserves
+// bus-parent-routed single-pin labels so vector-member labels carried through bus parents do not
+// regress into isolated-pin warnings. Subgraph net names on the real graph path now also flow from
+// the graph-owned reduced driver connection instead of the parallel reduced subgraph `name` field.
+// Remaining divergence is fuller live bus-neighbor connection ownership plus fuller live label
+// item dangling state.
 pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let graph = project.reduced_project_net_graph(false);
@@ -1679,6 +1681,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         let local_pins = label_subgraph.local_pins;
         let has_no_connect = label_subgraph.has_no_connect;
         let has_local_hierarchy = label_subgraph.has_local_hierarchy;
+        let has_bus_member_hierarchy_route = label_subgraph.has_bus_member_hierarchy_route;
 
         for label in label_subgraph.label_links {
             if label.kind == LabelKind::Directive {
@@ -1713,7 +1716,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            if all_pins == 1 && !has_no_connect {
+            if all_pins == 1 && !has_no_connect && !has_bus_member_hierarchy_route {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-isolated-pin-label",
