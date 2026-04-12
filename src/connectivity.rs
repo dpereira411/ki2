@@ -11894,6 +11894,7 @@ pub(crate) struct ReducedProjectBusToNetConflict {
     pub(crate) diagnostic_path: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct ReducedProjectBusToBusConflict {
     pub(crate) label_at: [f64; 2],
@@ -12162,8 +12163,8 @@ fn live_reduced_subgraph_bus_to_net_conflict(
 // upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts label/port member comparison branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still compares reduced connection member names instead of live `SCH_CONNECTION`
-// member pointers and `CONNECTION_SUBGRAPH::m_items`
+// divergence: still compares reduced connection member local names instead of live
+// `SCH_CONNECTION` member pointers and `CONNECTION_SUBGRAPH::m_items`
 // local_only_reason: keeps bus label/port owner selection on the shared graph owner instead of
 // duplicating reduced subgraph member scans inside ERC
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` owner graph
@@ -12179,7 +12180,7 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
                 .connection
                 .members
                 .iter()
-                .map(|member| member.name.clone())
+                .map(|member| member.local_name.clone())
                 .collect::<Vec<_>>(),
         )
     })?;
@@ -12194,7 +12195,7 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
             connection
                 .members
                 .iter()
-                .map(|member| member.name.clone())
+                .map(|member| member.local_name.clone())
                 .collect::<Vec<_>>()
         })?;
 
@@ -12221,8 +12222,8 @@ pub(crate) fn reduced_project_subgraph_bus_to_bus_conflict(
 // upstream: CONNECTION_GRAPH::ercCheckBusToBusConflicts label/port member comparison branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still compares reduced live bus-member names instead of final `SCH_CONNECTION`
-// member pointers
+// divergence: still compares reduced live bus-member local names instead of final
+// `SCH_CONNECTION` member pointers
 // local_only_reason: moves exercised bus-to-bus member comparison onto the active live subgraph
 // owner while the final `SCH_CONNECTION` member tree is still reduced
 // replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` owner graph
@@ -12242,7 +12243,7 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
                 .members
                 .iter()
                 .map(live_bus_member_handle_snapshot)
-                .map(|member| member.name)
+                .map(|member| member.local_name)
                 .collect::<Vec<_>>()
         })
     })?;
@@ -12258,7 +12259,7 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
                     .members
                     .iter()
                     .map(live_bus_member_handle_snapshot)
-                    .map(|member| member.name)
+                    .map(|member| member.local_name)
                     .collect::<Vec<_>>()
             })
         })
@@ -12270,7 +12271,7 @@ fn live_reduced_subgraph_bus_to_bus_conflict(
                     .members
                     .iter()
                     .map(live_bus_member_handle_snapshot)
-                    .map(|member| member.name)
+                    .map(|member| member.local_name)
                     .collect::<Vec<_>>()
             })
         }))
@@ -42801,6 +42802,21 @@ mod tests {
         assert!(
             reduced_project_pin_not_connected_candidates(&graph, &caches).is_empty(),
             "issue12814 drive fixture should only keep the root-sheet hierarchical label warning",
+        );
+    }
+
+    #[test]
+    fn issue12814_drive_fixture_has_no_bus_to_bus_conflicts() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../ki/tests/fixtures/erc_upstream_qa/projects/issue12814_1.kicad_sch");
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let graph = project.reduced_project_net_graph(false);
+        let conflicts = super::reduced_project_bus_to_bus_conflicts(&graph);
+
+        assert!(
+            conflicts.is_empty(),
+            "issue12814 drive fixture should not emit bus-to-bus conflicts: {conflicts:#?}"
         );
     }
 
