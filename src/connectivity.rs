@@ -4552,21 +4552,6 @@ impl LiveReducedSubgraph {
                 if live_subgraph_strong_driver_count(&child_handle.borrow()) == 0 {
                     continue;
                 }
-                let child_connection_type = {
-                    let child = child_handle.borrow();
-                    live_reduced_subgraph_effective_driver_connection(&child)
-                        .borrow()
-                        .connection_type
-                };
-                let handle_connection_type = {
-                    let handle_ref = handle.borrow();
-                    live_reduced_subgraph_effective_driver_connection(&handle_ref)
-                        .borrow()
-                        .connection_type
-                };
-                if child_connection_type != handle_connection_type {
-                    continue;
-                }
                 if !live_subgraphs_have_matching_hierarchy_driver_names(&handle, &child_handle) {
                     continue;
                 }
@@ -4695,21 +4680,6 @@ impl LiveReducedSubgraph {
                     continue;
                 }
                 if live_subgraph_strong_driver_count(&child_handle.borrow()) == 0 {
-                    continue;
-                }
-                let child_connection_type = {
-                    let child = child_handle.borrow();
-                    live_reduced_subgraph_effective_driver_connection(&child)
-                        .borrow()
-                        .connection_type
-                };
-                let handle_connection_type = {
-                    let handle_ref = handle.borrow();
-                    live_reduced_subgraph_effective_driver_connection(&handle_ref)
-                        .borrow()
-                        .connection_type
-                };
-                if child_connection_type != handle_connection_type {
                     continue;
                 }
                 if !live_subgraphs_have_matching_hierarchy_driver_names(&handle, &child_handle) {
@@ -36683,7 +36653,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_hierarchy_descent_requires_child_driver_connection_type_match() {
+    fn reduced_hierarchy_descent_keeps_matching_child_even_when_driver_connection_type_differs() {
         let mut graph = vec![
             test_net_subgraph(
                 1,
@@ -36747,7 +36717,7 @@ mod tests {
                 .collect::<Vec<_>>();
         component.sort_unstable();
 
-        assert_eq!(component, vec![0]);
+        assert_eq!(component, vec![0, 1]);
     }
 
     #[test]
@@ -37843,7 +37813,8 @@ mod tests {
     }
 
     #[test]
-    fn reduced_live_hierarchy_chain_skips_child_driver_connection_type_mismatch() {
+    fn reduced_live_hierarchy_chain_propagates_to_matching_child_despite_connection_type_mismatch()
+    {
         let mut graph = vec![
             test_net_subgraph(
                 1,
@@ -37910,10 +37881,11 @@ mod tests {
         apply_live_reduced_driver_connections_from_handles(&mut graph, &live_subgraphs);
 
         assert_eq!(graph[0].name, "/ROOT_SIG");
-        assert_eq!(graph[1].name, "/child/BUS");
+        assert_eq!(graph[1].name, "/ROOT_SIG");
+        assert_eq!(graph[1].driver_connection.name, "/ROOT_SIG");
         assert_eq!(
             graph[1].driver_connection.connection_type,
-            ReducedProjectConnectionType::Bus
+            ReducedProjectConnectionType::Net
         );
     }
 
