@@ -10828,7 +10828,8 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
 // parity_status: partial
 // local_kind: local-only-transitional
 // divergence: still starts from reduced pin-inventory records for unconnected pins instead of live
-// `SCH_PIN*` owners, but connected-pin net names now project from the live base-pin owner
+// `SCH_PIN*` owners, but connected-pin net names now re-resolve through the live base-pin owner
+// before falling back to the stored reduced subgraph index
 // local_only_reason: keeps graph-owned pin-inventory callers from reimplementing subgraph-index
 // dereferencing in ERC
 // replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
@@ -10837,10 +10838,46 @@ pub(crate) fn reduced_project_symbol_pin_net_name(
     graph: &ReducedProjectNetGraph,
     pin: &ReducedProjectSymbolPin,
 ) -> String {
-    pin.subgraph_index
+    live_reduced_project_subgraph_index_for_symbol_pin_snapshot(graph, pin)
+        .or(pin.subgraph_index)
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
         .map(|net| net.name)
         .unwrap_or_default()
+}
+
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live symbol-pin lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still matches reduced live base-pin payload instead of final live `SCH_PIN*`
+// item-owner links
+// local_only_reason: keeps pin-inventory net-name queries on the active live graph owner when the
+// stored reduced subgraph index is stale
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: symbol-pin inventory queries can resolve directly from final live pin owners
+fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
+    graph: &ReducedProjectNetGraph,
+    pin: &ReducedProjectSymbolPin,
+) -> Option<usize> {
+    graph
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            subgraph
+                .borrow()
+                .base_pins
+                .iter()
+                .any(|candidate| {
+                    let candidate = candidate.borrow();
+                    candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                        && candidate.pin.key.at == pin.at
+                        && candidate.pin.key.number == pin.number
+                        && candidate.pin.key.name == pin.name
+                        && candidate.pin.reference == pin.reference
+                        && candidate.pin.electrical_type == pin.electrical_type
+                })
+                .then_some(index)
+        })
 }
 
 fn live_reduced_project_subgraph_index_for_symbol_pin(
@@ -24227,6 +24264,67 @@ mod tests {
             reference: Some("U1".to_string()),
             is_power_symbol: false,
             subgraph_index: Some(0),
+        };
+
+        assert_eq!(
+            super::reduced_project_symbol_pin_net_name(&graph, &pin),
+            "/LIVE"
+        );
+    }
+
+    #[test]
+    fn live_symbol_pin_net_name_ignores_stale_subgraph_index() {
+        let mut first = test_net_subgraph(
+            1,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            Vec::new(),
+            "",
+        );
+        first.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
+                at: PointKey(0, 0),
+                name: Some("PIN".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/OLD", "OLD", "/OLD", ""),
+            driver_connection: test_net_connection("/OLD", "OLD", "/OLD", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let second = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            Vec::new(),
+            "",
+        );
+        let graph = test_graph_with_live_subgraphs(vec![first, second]);
+
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        let pin = ReducedProjectSymbolPin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: String::new(),
+            at: PointKey(0, 0),
+            name: Some("PIN".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            reference: Some("U1".to_string()),
+            is_power_symbol: false,
+            subgraph_index: Some(1),
         };
 
         assert_eq!(
