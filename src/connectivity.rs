@@ -11494,15 +11494,14 @@ fn live_reduced_connected_bus_subgraph_index_for_wire_item(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, candidate)| {
+        .find_map(|candidate| {
             let candidate_connection =
                 live_reduced_subgraph_effective_driver_connection_from_handle(candidate);
             let candidate = candidate.borrow();
             (candidate.sheet_instance_path == owner_subgraph.sheet_instance_path
                 && !candidate.bus_items.is_empty()
                 && Rc::ptr_eq(&candidate_connection, &connected_bus_connection))
-            .then_some(index)
+            .then_some(candidate.source_index)
         })
 }
 
@@ -19353,6 +19352,172 @@ mod tests {
         handles[2].borrow_mut().wire_items[0]
             .borrow_mut()
             .connected_bus_connection_handle = Some(handles[0].borrow().driver_connection.clone());
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: reduced.clone(),
+            live_subgraphs: handles,
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let connected_bus = super::reduced_project_connected_bus_subgraph_for_wire_item(
+            &graph,
+            &reduced[2],
+            &reduced[2].wire_items[0],
+        )
+        .expect("attached bus subgraph");
+
+        assert_eq!(connected_bus.subgraph_code, reduced[0].subgraph_code);
+    }
+
+    #[test]
+    fn reduced_bus_entry_owner_uses_source_index_when_handles_reorder() {
+        let reduced = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/LIVE_BUS".to_string(),
+                resolved_connection: test_bus_connection(
+                    "/LIVE_BUS",
+                    "LIVE_BUS",
+                    "/LIVE_BUS",
+                    "",
+                    Vec::new(),
+                ),
+                driver_connection: test_bus_connection(
+                    "/LIVE_BUS",
+                    "LIVE_BUS",
+                    "/LIVE_BUS",
+                    "",
+                    Vec::new(),
+                ),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0.0f64.to_bits(), 0.0f64.to_bits()),
+                points: vec![PointKey(0.0f64.to_bits(), 0.0f64.to_bits())],
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    start: PointKey(0, 0),
+                    end: PointKey(10, 0),
+                    is_bus_entry: false,
+                    start_is_wire_side: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/STALE_BUS".to_string(),
+                resolved_connection: test_bus_connection(
+                    "/STALE_BUS",
+                    "STALE_BUS",
+                    "/STALE_BUS",
+                    "",
+                    Vec::new(),
+                ),
+                driver_connection: test_bus_connection(
+                    "/STALE_BUS",
+                    "STALE_BUS",
+                    "/STALE_BUS",
+                    "",
+                    Vec::new(),
+                ),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(20.0f64.to_bits(), 0.0f64.to_bits()),
+                points: vec![PointKey(20.0f64.to_bits(), 0.0f64.to_bits())],
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    start: PointKey(20, 0),
+                    end: PointKey(30, 0),
+                    is_bus_entry: false,
+                    start_is_wire_side: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 3,
+                code: 3,
+                name: "/ENTRY".to_string(),
+                resolved_connection: test_net_connection("/ENTRY", "ENTRY", "/ENTRY", ""),
+                driver_connection: test_net_connection("/ENTRY", "ENTRY", "/ENTRY", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(5, 5),
+                points: vec![PointKey(5, 5)],
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    start: PointKey(0, 0),
+                    end: PointKey(5, 5),
+                    is_bus_entry: true,
+                    start_is_wire_side: true,
+                    connected_bus_subgraph_index: Some(1),
+                }],
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ];
+
+        let mut handles = build_live_reduced_subgraph_handles(&reduced);
+        handles[2].borrow_mut().wire_items[0]
+            .borrow_mut()
+            .connected_bus_connection_handle = Some(handles[0].borrow().driver_connection.clone());
+        handles.swap(0, 1);
 
         let graph = ReducedProjectNetGraph {
             subgraphs: reduced.clone(),
