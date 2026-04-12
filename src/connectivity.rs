@@ -11558,6 +11558,16 @@ fn live_reduced_wire_item_endpoint_has_connected_bus_owner(
         })
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints same-name sibling owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: consults the live sheet/name cache and reduced live endpoint payloads instead of
+// final `CONNECTION_SUBGRAPH` item-owner links
+// local_only_reason: keeps dangling-endpoint sibling ownership checks on the active live graph
+// while final endpoint ownership still lives on reduced wire snapshots
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_LINE` owner graph
+// remove_when: dangling-endpoint checks can resolve same-name sibling owners directly from final
+// live item-owner links
 fn live_same_sheet_named_neighbor_endpoint_has_owner(
     graph: &ReducedProjectNetGraph,
     subgraph_handle: &LiveReducedSubgraphHandle,
@@ -11574,12 +11584,10 @@ fn live_same_sheet_named_neighbor_endpoint_has_owner(
     let sheet_instance_path = subgraph.sheet_instance_path.clone();
     drop(subgraph);
 
-    graph
-        .subgraphs_by_sheet_and_name
+    live_reduced_subgraphs_by_sheet_and_name(graph)
         .get(&(sheet_instance_path, name))
         .iter()
-        .flat_map(|indexes| indexes.iter())
-        .filter_map(|index| graph.live_subgraphs.get(*index))
+        .flat_map(|handles| handles.iter())
         .filter(|neighbor| !Rc::ptr_eq(neighbor, subgraph_handle))
         .any(|neighbor| {
             let neighbor = neighbor.borrow();
@@ -22205,6 +22213,104 @@ mod tests {
         );
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn live_wire_endpoint_owner_uses_live_same_sheet_name_cache_over_stale_reduced_map() {
+        let mut graph = test_graph_with_live_subgraphs(vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/OLD_A".to_string(),
+                resolved_connection: test_net_connection("/OLD_A", "OLD_A", "/OLD_A", ""),
+                driver_connection: test_net_connection("/OLD_A", "OLD_A", "/OLD_A", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: vec![ReducedSubgraphWireItem {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    start: PointKey(0, 0),
+                    end: PointKey(10, 0),
+                    is_bus_entry: false,
+                    start_is_wire_side: false,
+                    connected_bus_subgraph_index: None,
+                }],
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/OLD_B".to_string(),
+                resolved_connection: test_net_connection("/OLD_B", "OLD_B", "/OLD_B", ""),
+                driver_connection: test_net_connection("/OLD_B", "OLD_B", "/OLD_B", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(10, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                base_pins: Vec::new(),
+                label_links: vec![ReducedLabelLink {
+                    schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                    at: PointKey(10, 0),
+                    kind: LabelKind::Local,
+                    dangling: false,
+                    non_endpoint_wire_segment_count: 0,
+                    connection: test_net_connection("/OLD_B", "OLD_B", "/OLD_B", ""),
+                }],
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: Vec::new(),
+            },
+        ]);
+
+        graph.subgraphs_by_sheet_and_name.clear();
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[0]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+        clone_reduced_connection_into_live_connection_owner(
+            &mut graph.live_subgraphs[1]
+                .borrow()
+                .driver_connection
+                .borrow_mut(),
+            &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+        );
+
+        assert!(super::live_same_sheet_named_neighbor_endpoint_has_owner(
+            &graph,
+            &graph.live_subgraphs[0],
+            PointKey(10, 0),
+        ));
     }
 
     #[test]
