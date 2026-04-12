@@ -4368,6 +4368,7 @@ impl LiveReducedSubgraph {
     fn project_onto_reduced(
         &self,
         reduced: &mut ReducedProjectSubgraphEntry,
+        subgraph_handle: &LiveReducedSubgraphHandle,
         live_subgraphs: &[LiveReducedSubgraphHandle],
     ) {
         self.project_driver_and_item_state_onto_reduced(reduced);
@@ -4383,7 +4384,7 @@ impl LiveReducedSubgraph {
             .map(|link| link.borrow().project_onto_reduced(live_subgraphs))
             .collect();
         let (hier_parent_index, hier_child_indexes) =
-            reduced_project_hierarchy_indexes_from_live_subgraph(live_subgraphs, self);
+            reduced_project_hierarchy_indexes_from_live_subgraph(live_subgraphs, subgraph_handle);
         reduced.hier_parent_index = hier_parent_index;
         reduced.hier_child_indexes = hier_child_indexes;
         reduced.bus_parent_indexes =
@@ -6157,30 +6158,6 @@ fn live_subgraph_handle_for_link(
     Weak::upgrade(&link.borrow().subgraph_handle)
 }
 
-// Upstream parity: active hierarchy traversal should follow the shared live parent handle. The
-// non-test live payload now keeps that topology only on attached handles; reduced parent indexes
-// are reconstructed only at the projection boundary.
-fn live_subgraph_parent_handle(
-    _live_subgraphs: &[LiveReducedSubgraphHandle],
-    subgraph: &LiveReducedSubgraph,
-) -> Option<LiveReducedSubgraphHandle> {
-    subgraph.hier_parent_handle.as_ref().and_then(Weak::upgrade)
-}
-
-// Upstream parity: active hierarchy traversal now follows shared live child handles. The non-test
-// live payload no longer needs copied reduced child indexes; reduced child indexes are only
-// reconstructed when projecting the live graph back out.
-fn live_subgraph_child_handles(
-    _live_subgraphs: &[LiveReducedSubgraphHandle],
-    subgraph: &LiveReducedSubgraph,
-) -> Vec<LiveReducedSubgraphHandle> {
-    subgraph
-        .hier_child_handles
-        .iter()
-        .filter_map(Weak::upgrade)
-        .collect()
-}
-
 fn live_subgraph_parent_handle_from_handle(
     handle: &LiveReducedSubgraphHandle,
 ) -> Option<LiveReducedSubgraphHandle> {
@@ -6319,11 +6296,13 @@ fn reduced_project_bus_parent_indexes_from_live_subgraph(
 
 fn reduced_project_hierarchy_indexes_from_live_subgraph(
     live_subgraphs: &[LiveReducedSubgraphHandle],
-    subgraph: &LiveReducedSubgraph,
+    subgraph_handle: &LiveReducedSubgraphHandle,
 ) -> (Option<usize>, Vec<usize>) {
-    let parent_index = live_subgraph_parent_handle(live_subgraphs, subgraph)
-        .map(|handle| live_subgraph_projection_index(live_subgraphs, &handle));
-    let mut child_indexes = live_subgraph_child_handles(live_subgraphs, subgraph)
+    let parent_index = live_subgraph_parent_handles_from_handle(live_subgraphs, subgraph_handle)
+        .into_iter()
+        .map(|handle| live_subgraph_projection_index(live_subgraphs, &handle))
+        .min();
+    let mut child_indexes = live_subgraph_child_handles_from_handle(subgraph_handle)
         .into_iter()
         .map(|handle| live_subgraph_projection_index(live_subgraphs, &handle))
         .collect::<Vec<_>>();
@@ -6354,7 +6333,7 @@ fn apply_live_reduced_driver_connections_from_handles(
     for (index, handle) in live_subgraphs.iter().enumerate() {
         let live = handle.borrow();
         let reduced = &mut reduced_subgraphs[index];
-        live.project_onto_reduced(reduced, live_subgraphs);
+        live.project_onto_reduced(reduced, handle, live_subgraphs);
     }
 }
 
@@ -9121,7 +9100,7 @@ fn projected_reduced_project_subgraph_by_index(
 
     if let Some(live) = graph.live_subgraphs.get(index) {
         live.borrow()
-            .project_onto_reduced(&mut subgraph, &graph.live_subgraphs);
+            .project_onto_reduced(&mut subgraph, live, &graph.live_subgraphs);
     } else {
         subgraph.driver_connection = reduced_project_effective_driver_connection(&subgraph).clone();
         subgraph.sync_boundary_state_from_driver_owner();
@@ -9145,7 +9124,7 @@ fn projected_reduced_project_subgraph_from_live_handle(
     let mut subgraph = graph.subgraphs.get(index)?.clone();
     handle
         .borrow()
-        .project_onto_reduced(&mut subgraph, &graph.live_subgraphs);
+        .project_onto_reduced(&mut subgraph, handle, &graph.live_subgraphs);
     Some(subgraph)
 }
 
@@ -18788,6 +18767,44 @@ mod tests {
 
         assert_eq!(reduced[0].hier_child_indexes, vec![1]);
         assert_eq!(reduced[1].hier_parent_index, Some(0));
+    }
+
+    #[test]
+    fn handle_projection_prefers_discovered_additional_parent_index_when_primary_missing() {
+        let mut reduced = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LEFT", "SIG", "/LEFT", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/RIGHT", "SIG", "/RIGHT", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                3,
+                test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child"),
+                Vec::new(),
+                "/child",
+            ),
+        ];
+        reduced[0].hier_child_indexes = vec![2];
+        reduced[1].hier_child_indexes = vec![2];
+        reduced[2].hier_parent_index = Some(1);
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        {
+            let mut child = handles[2].borrow_mut();
+            child.hier_parent_index = None;
+            child.hier_parent_handle = None;
+        }
+
+        apply_live_reduced_driver_connections_from_handles(&mut reduced, &handles);
+
+        assert_eq!(reduced[2].hier_parent_index, Some(0));
     }
 
     #[test]
