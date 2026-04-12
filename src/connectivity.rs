@@ -9555,15 +9555,14 @@ fn live_reduced_project_subgraph_index_for_no_connect(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
             let subgraph = subgraph.borrow();
             (subgraph.sheet_instance_path == sheet_path.instance_path
                 && subgraph
                     .no_connect_points
                     .iter()
                     .any(|point| point_key_matches(point.at, at)))
-            .then_some(index)
+            .then_some(subgraph.source_index)
         })
 }
 
@@ -9716,11 +9715,9 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
 ) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
         .and_then(|index| {
-            graph
-                .live_subgraphs
-                .get(index)
+            live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
                 .and_then(|handle| {
-                    projected_reduced_project_subgraph_from_live_handle(graph, handle)
+                    projected_reduced_project_subgraph_from_live_handle(graph, &handle)
                 })
                 .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
         })
@@ -9744,8 +9741,7 @@ fn live_reduced_project_subgraph_index_for_sheet_pin(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
             let subgraph = subgraph.borrow();
             (subgraph.sheet_instance_path == sheet_path.instance_path
                 && subgraph.hier_sheet_pins.iter().any(|candidate| {
@@ -9753,7 +9749,7 @@ fn live_reduced_project_subgraph_index_for_sheet_pin(
                     candidate.child_sheet_uuid.as_deref() == child_sheet_uuid
                         && point_key_matches(candidate.at, at)
                 }))
-            .then_some(index)
+            .then_some(subgraph.source_index)
         })
 }
 
@@ -10903,8 +10899,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
             let subgraph = subgraph.borrow();
             subgraph
                 .base_pins
@@ -10919,7 +10914,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
                         && candidate.pin.reference == pin.reference
                         && candidate.pin.electrical_type == pin.electrical_type
                 })
-                .then_some(index)
+                .then_some(subgraph.source_index)
                 .or_else(|| {
                     subgraph
                         .base_pins
@@ -10931,7 +10926,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
                                 && candidate.pin.key.at == pin.at
                                 && candidate.pin.key.number == pin.number
                         })
-                        .then_some(index)
+                        .then_some(subgraph.source_index)
                 })
         })
 }
@@ -10947,8 +10942,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
             subgraph
                 .borrow()
                 .base_pins
@@ -10963,7 +10957,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin(
                             candidate.pin.key.name.as_deref() == Some(pin_name)
                         })
                 })
-                .then_some(index)
+                .then_some(subgraph.borrow().source_index)
         })
 }
 
@@ -25166,6 +25160,49 @@ mod tests {
     }
 
     #[test]
+    fn no_connect_query_uses_source_index_when_handles_reorder() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .no_connect_points
+            .push(ReducedNoConnectPoint {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+            });
+        graph.live_subgraphs.swap(0, 1);
+
+        let subgraph =
+            super::resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
+                .expect("live no-connect owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
     fn sheet_pin_query_prefers_live_subgraph_pins_over_stale_identity_map() {
         let graph = vec![
             test_net_subgraph(
@@ -25216,6 +25253,62 @@ mod tests {
                 driver: None,
                 shown_text_local_name: "LIVE".to_string(),
             })));
+
+        let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
+            &graph,
+            &sheet_path,
+            [0.0, 0.0],
+            Some("child"),
+        )
+        .expect("live sheet-pin owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
+    }
+
+    #[test]
+    fn sheet_pin_query_uses_source_index_when_handles_reorder() {
+        let graph = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/STALE", "STALE", "/STALE", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(graph);
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        graph.live_subgraphs[0]
+            .borrow_mut()
+            .hier_sheet_pins
+            .push(Rc::new(RefCell::new(super::LiveReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(0, 0),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver_connection: Rc::new(RefCell::new(
+                    test_net_connection("/LIVE", "LIVE", "/LIVE", "").into(),
+                )),
+                driver: None,
+                shown_text_local_name: "LIVE".to_string(),
+            })));
+        graph.live_subgraphs.swap(0, 1);
 
         let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
             &graph,
@@ -25547,6 +25640,67 @@ mod tests {
 
         assert_eq!(subgraph.name, "/LIVE");
         assert_eq!(subgraph.driver_connection.name, "/LIVE");
+    }
+
+    #[test]
+    fn symbol_pin_query_uses_source_index_when_handles_reorder() {
+        let mut symbol = crate::model::Symbol::new();
+        symbol.uuid = Some("sym".to_string());
+
+        let sheet_path = crate::loader::LoadedSheetPath {
+            instance_path: String::new(),
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            symbol_path: String::new(),
+            sheet_uuid: Some("root-sheet".to_string()),
+            sheet_name: None,
+            page: None,
+            sheet_number: 1,
+            sheet_count: 1,
+        };
+        let mut first = test_net_subgraph(
+            1,
+            test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+            Vec::new(),
+            "",
+        );
+        first.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: symbol.uuid.clone(),
+                at: PointKey(0, 0),
+                name: Some("PIN".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+            driver_connection: test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let second = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            Vec::new(),
+            "",
+        );
+        let mut graph = test_graph_with_live_subgraphs(vec![first, second]);
+        graph.live_subgraphs.swap(0, 1);
+
+        let subgraph = super::resolve_reduced_project_subgraph_for_symbol_pin(
+            &graph,
+            &sheet_path,
+            &symbol,
+            [0.0, 0.0],
+            Some("PIN"),
+            Some("1"),
+        )
+        .expect("live symbol-pin owner");
+
+        assert_eq!(subgraph.subgraph_code, 1);
     }
 
     #[test]
