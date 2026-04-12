@@ -1680,6 +1680,7 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
         let all_pins = label_subgraph.all_pins;
         let local_pins = label_subgraph.local_pins;
         let has_no_connect = label_subgraph.has_no_connect;
+        let has_multiple_drivers = label_subgraph.has_multiple_drivers;
         let has_local_hierarchy = label_subgraph.has_local_hierarchy;
         let has_bus_member_hierarchy_route = label_subgraph.has_bus_member_hierarchy_route;
 
@@ -1716,7 +1717,11 @@ pub fn check_label_connectivity(project: &SchematicProject) -> Vec<Diagnostic> {
                 continue;
             }
 
-            if all_pins == 1 && !has_no_connect && !has_bus_member_hierarchy_route {
+            if all_pins == 1
+                && !has_no_connect
+                && !has_multiple_drivers
+                && !has_bus_member_hierarchy_route
+            {
                 diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
                     code: "erc-isolated-pin-label",
@@ -3131,6 +3136,33 @@ mod tests {
             !diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == "erc-pin-to-pin"),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn label_connectivity_skips_single_pin_warning_when_driver_conflict_exists() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "../ki/tests/fixtures/erc_upstream_qa/projects/erc_test_dynamic_power_symbol_subsheet.kicad_sch",
+        );
+
+        let loaded = load_schematic_tree(&path).expect("load tree");
+        let project = SchematicProject::from_load_result(loaded);
+        let diagnostics = super::run(&project);
+
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "erc-multiple-net-names"
+                    && diagnostic.message.contains(
+                        "Both ${param} and REF_NODE are attached to the same items; ${param} will be used in the netlist"
+                    )
+            }),
+            "{diagnostics:#?}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "erc-isolated-pin-label"),
             "{diagnostics:#?}"
         );
     }

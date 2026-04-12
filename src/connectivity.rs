@@ -12185,6 +12185,7 @@ pub(crate) struct ReducedProjectLabelConnectivitySubgraph {
     pub(crate) all_pins: usize,
     pub(crate) local_pins: usize,
     pub(crate) has_no_connect: bool,
+    pub(crate) has_multiple_drivers: bool,
     pub(crate) has_local_hierarchy: bool,
     pub(crate) has_bus_member_hierarchy_route: bool,
     pub(crate) label_links: Vec<ReducedLabelLink>,
@@ -13522,6 +13523,11 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             || subgraph_index.is_some_and(|index| {
                 reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
             });
+        let has_multiple_drivers = subgraph_index.is_some_and(|index| {
+            graph.subgraphs
+                .get(index)
+                .is_some_and(reduced_project_subgraph_has_multiple_drivers)
+        });
         let has_bus_member_hierarchy_route = subgraph_index.is_some_and(|index| {
             reduced_project_subgraph_has_bus_member_hierarchy_route(graph, index)
         });
@@ -13565,6 +13571,7 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             all_pins,
             local_pins,
             has_no_connect: aggregate_has_no_connect,
+            has_multiple_drivers,
             has_local_hierarchy: aggregate_has_local_hierarchy,
             has_bus_member_hierarchy_route,
             label_links: subgraph.label_links.clone(),
@@ -13808,6 +13815,7 @@ fn live_reduced_project_label_connectivity_subgraphs(
                 &graph.live_subgraphs,
                 &subgraph_handle,
             );
+        let has_multiple_drivers = live_reduced_subgraph_has_multiple_drivers(&subgraph);
         let has_bus_member_hierarchy_route =
             live_reduced_subgraph_has_bus_member_hierarchy_route(&subgraph_handle);
         let mut all_pins = pin_count;
@@ -13849,6 +13857,7 @@ fn live_reduced_project_label_connectivity_subgraphs(
             all_pins,
             local_pins,
             has_no_connect: aggregate_has_no_connect,
+            has_multiple_drivers,
             has_local_hierarchy: aggregate_has_local_hierarchy,
             has_bus_member_hierarchy_route,
             label_links: subgraph
@@ -15972,7 +15981,6 @@ where
 
     drivers.retain(|(driver, _sheet_pin_rank)| {
         !reduced_project_strong_driver_name(driver).is_empty()
-            && !reduced_project_strong_driver_name(driver).contains("${")
             && !reduced_project_strong_driver_name(driver).starts_with('<')
     });
 
@@ -16167,11 +16175,7 @@ where
         }
     }
 
-    candidates.retain(|candidate| {
-        !candidate.text.is_empty()
-            && !candidate.text.contains("${")
-            && !candidate.text.starts_with('<')
-    });
+    candidates.retain(|candidate| !candidate.text.is_empty() && !candidate.text.starts_with('<'));
 
     candidates.sort_by(|lhs, rhs| {
         let lhs_low_quality_name = lhs.text.contains("-Pad");
