@@ -9993,6 +9993,16 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
     false
 }
 
+// upstream: CONNECTION_GRAPH::propagateToNeighbors hierarchy parent discovery or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still projects live hierarchy parent handles back to reduced indexes instead of
+// traversing final `CONNECTION_SUBGRAPH*` parents directly, but now prefers the shared live parent
+// handle graph over stale reduced `hier_parent_index` / `hier_child_indexes`
+// local_only_reason: reduced hierarchy consumers still need parent indexes while the active live
+// graph remains transitional
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` hierarchy parent traversal
+// remove_when: hierarchy queries consume live parent handles directly instead of reduced indexes
 fn reduced_project_parent_indexes_by_child(
     graph: &ReducedProjectNetGraph,
     child_index: usize,
@@ -10000,13 +10010,24 @@ fn reduced_project_parent_indexes_by_child(
     let mut parent_indexes = Vec::new();
     let mut seen = BTreeSet::new();
 
+    if let Some(child_handle) = graph.live_subgraphs.get(child_index) {
+        for parent_handle in live_subgraph_parent_handles_from_handle(&graph.live_subgraphs, child_handle)
+        {
+            let parent_index = live_subgraph_projection_index(&graph.live_subgraphs, &parent_handle);
+            if seen.insert(parent_index) {
+                parent_indexes.push(parent_index);
+            }
+        }
+    }
+
     if let Some(parent_index) = graph
         .subgraphs
         .get(child_index)
         .and_then(|subgraph| subgraph.hier_parent_index)
     {
-        seen.insert(parent_index);
-        parent_indexes.push(parent_index);
+        if seen.insert(parent_index) {
+            parent_indexes.push(parent_index);
+        }
     }
 
     for (candidate_index, candidate) in graph.subgraphs.iter().enumerate() {
@@ -32087,6 +32108,90 @@ mod tests {
             .and_then(Weak::upgrade)
             .expect("live bus parent handle");
         assert!(Rc::ptr_eq(&child_parent, &handles[0]));
+    }
+
+    #[test]
+    fn reduced_parent_indexes_prefer_live_parent_handles_over_stale_reduced_indexes() {
+        let mut reduced = vec![
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 1,
+                code: 1,
+                name: "/PARENT".to_string(),
+                resolved_connection: test_net_connection("/PARENT", "PARENT", "/PARENT", ""),
+                driver_connection: test_net_connection("/PARENT", "PARENT", "/PARENT", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: true,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(0, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: None,
+                hier_child_indexes: vec![1],
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                base_pins: Vec::new(),
+            },
+            ReducedProjectSubgraphEntry {
+                subgraph_code: 2,
+                code: 2,
+                name: "/CHILD".to_string(),
+                resolved_connection: test_net_connection("/CHILD", "CHILD", "/CHILD", ""),
+                driver_connection: test_net_connection("/CHILD", "CHILD", "/CHILD", ""),
+                chosen_driver_index: None,
+                drivers: Vec::new(),
+                class: String::new(),
+                has_no_connect: false,
+                sheet_instance_path: String::new(),
+                anchor: PointKey(1, 0),
+                points: Vec::new(),
+                nodes: Vec::new(),
+                label_links: Vec::new(),
+                no_connect_points: Vec::new(),
+                hier_sheet_pins: Vec::new(),
+                hier_ports: Vec::new(),
+                bus_members: Vec::new(),
+                bus_neighbor_links: Vec::new(),
+                bus_parent_links: Vec::new(),
+                bus_parent_indexes: Vec::new(),
+                hier_parent_index: Some(0),
+                hier_child_indexes: Vec::new(),
+                bus_items: Vec::new(),
+                wire_items: Vec::new(),
+                base_pins: Vec::new(),
+            },
+        ];
+
+        let handles = build_live_reduced_subgraph_handles(&reduced);
+        reduced[0].hier_child_indexes.clear();
+        reduced[1].hier_parent_index = None;
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: reduced,
+            live_subgraphs: handles,
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        assert_eq!(super::reduced_project_parent_indexes_by_child(&graph, 1), vec![0]);
     }
 
     #[test]
