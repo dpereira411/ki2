@@ -9982,27 +9982,53 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
             return true;
         }
 
-        let mut hier_parent_index = parent.hier_parent_index;
-
-        while let Some(index) = hier_parent_index {
+        for index in reduced_project_parent_indexes_by_child(graph, parent_index) {
             if !seen.insert(index) {
-                break;
+                continue;
             }
 
-            let Some(hier_parent) = projected_reduced_project_subgraph_by_index(graph, index)
-            else {
-                break;
+            let Some(hier_parent) = projected_reduced_project_subgraph_by_index(graph, index) else {
+                continue;
             };
 
             if hier_parent.has_no_connect {
                 return true;
             }
-
-            hier_parent_index = hier_parent.hier_parent_index;
+            pending.push(index);
         }
     }
 
     false
+}
+
+fn reduced_project_parent_indexes_by_child(
+    graph: &ReducedProjectNetGraph,
+    child_index: usize,
+) -> Vec<usize> {
+    let mut parent_indexes = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    if let Some(parent_index) = graph
+        .subgraphs
+        .get(child_index)
+        .and_then(|subgraph| subgraph.hier_parent_index)
+    {
+        seen.insert(parent_index);
+        parent_indexes.push(parent_index);
+    }
+
+    for (candidate_index, candidate) in graph.subgraphs.iter().enumerate() {
+        if seen.contains(&candidate_index) {
+            continue;
+        }
+
+        if candidate.hier_child_indexes.contains(&child_index) {
+            seen.insert(candidate_index);
+            parent_indexes.push(candidate_index);
+        }
+    }
+
+    parent_indexes
 }
 
 fn live_reduced_project_sheet_pin_names(
@@ -16630,6 +16656,54 @@ mod tests {
 
         assert_eq!(label_subgraphs.len(), 1);
         assert!(label_subgraphs[0].has_no_connect);
+    }
+
+    #[test]
+    fn reduced_no_connect_parent_chain_includes_additional_hierarchy_parent() {
+        let mut label_subgraph =
+            test_net_subgraph(1, test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child"), Vec::new(), "/child");
+        label_subgraph.bus_parent_links.push(ReducedProjectBusNeighborLink {
+            member: test_bus_member("BUS", "BUS", "/BUS"),
+            subgraph_index: 1,
+        });
+        label_subgraph.bus_parent_indexes.push(1);
+
+        let mut bus_parent = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            Vec::new(),
+            "",
+        );
+        bus_parent.hier_parent_index = Some(2);
+
+        let mut additional_parent = test_net_subgraph(
+            3,
+            test_net_connection("/ALT", "BUS", "/ALT", ""),
+            Vec::new(),
+            "",
+        );
+        additional_parent.has_no_connect = true;
+        additional_parent.hier_child_indexes = vec![1];
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![label_subgraph, bus_parent, additional_parent],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::new(),
+            subgraphs_by_sheet_and_name: BTreeMap::new(),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        assert!(super::reduced_project_subgraph_has_no_connect_via_parent_chain(
+            &graph, 0
+        ));
     }
 
     #[test]
