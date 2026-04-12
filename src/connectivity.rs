@@ -11052,11 +11052,40 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     })
 }
 
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem / CONNECTION_SUBGRAPH::GetItems or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: live owner refresh still rebinds through reduced pin snapshots instead of native
+// live `SCH_PIN*` item ownership, but now matches symbol UUID as well as location and number so
+// shared pin coordinates do not cross-bind symbol inventories
+// local_only_reason: the reduced graph still stores symbol pin inventories as projected snapshots
+// rather than upstream live item pointers
+// replaced_by: live `CONNECTION_SUBGRAPH` / `SCH_CONNECTION` ownership once symbol inventories are
+// queried directly from the live graph
+// remove_when: symbol pin inventory queries stop depending on reduced projected pin snapshots
 fn live_reduced_project_symbol_pin_snapshot(
     graph: &ReducedProjectNetGraph,
+    symbol_key: &ReducedProjectSymbolIdentityKey,
     pin: &ReducedProjectSymbolPin,
 ) -> Option<ReducedProjectSymbolPin> {
-    let subgraph_index = live_reduced_project_subgraph_index_for_symbol_pin_snapshot(graph, pin)
+    let subgraph_index = graph
+        .live_subgraphs
+        .iter()
+        .enumerate()
+        .find_map(|(index, subgraph)| {
+            subgraph
+                .borrow()
+                .base_pins
+                .iter()
+                .any(|candidate| {
+                    let candidate = candidate.borrow();
+                    candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                        && candidate.pin.key.symbol_uuid == symbol_key.symbol_uuid
+                        && candidate.pin.key.at == pin.at
+                        && candidate.pin.key.number == pin.number
+                })
+                .then_some(index)
+        })
         .or(pin.subgraph_index)?;
     let live_pin = graph
         .live_subgraphs
@@ -11065,6 +11094,7 @@ fn live_reduced_project_symbol_pin_snapshot(
             subgraph.borrow().base_pins.iter().find_map(|candidate| {
                 let candidate = candidate.borrow();
                 (candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                    && candidate.pin.key.symbol_uuid == symbol_key.symbol_uuid
                     && candidate.pin.key.at == pin.at
                     && candidate.pin.key.number == pin.number)
                     .then(|| candidate.pin.clone())
@@ -11085,8 +11115,19 @@ fn live_reduced_project_symbol_pin_snapshot(
     })
 }
 
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: inventory projection still starts from reduced cached inventories for immutable pin
+// metadata, but refresh now preserves symbol identity while rebinding connected pins to live
+// owners
+// local_only_reason: the reduced graph keeps a projected symbol-pin inventory cache because the
+// live connection graph is not yet the sole owner for symbol inventory queries
+// replaced_by: direct live `CONNECTION_SUBGRAPH`-owned symbol inventory queries
+// remove_when: reduced symbol pin inventory caches are no longer needed for connectivity queries
 fn project_reduced_project_symbol_pin_inventory(
     graph: &ReducedProjectNetGraph,
+    symbol_key: &ReducedProjectSymbolIdentityKey,
     inventory: &ReducedProjectSymbolPinInventory,
 ) -> ReducedProjectSymbolPinInventory {
     let mut projected = inventory.clone();
@@ -11099,7 +11140,8 @@ fn project_reduced_project_symbol_pin_inventory(
         .pins
         .iter()
         .map(|pin| {
-            live_reduced_project_symbol_pin_snapshot(graph, pin).unwrap_or_else(|| pin.clone())
+            live_reduced_project_symbol_pin_snapshot(graph, symbol_key, pin)
+                .unwrap_or_else(|| pin.clone())
         })
         .collect();
 
@@ -11121,10 +11163,11 @@ pub(crate) fn reduced_project_symbol_pin_inventory(
     sheet_path: &LoadedSheetPath,
     symbol: &Symbol,
 ) -> Option<ReducedProjectSymbolPinInventory> {
+    let symbol_key = reduced_project_symbol_identity_key(sheet_path, symbol);
     graph
         .symbol_pins_by_symbol
-        .get(&reduced_project_symbol_identity_key(sheet_path, symbol))
-        .map(|inventory| project_reduced_project_symbol_pin_inventory(graph, inventory))
+        .get(&symbol_key)
+        .map(|inventory| project_reduced_project_symbol_pin_inventory(graph, &symbol_key, inventory))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -11146,8 +11189,9 @@ pub(crate) fn collect_reduced_project_symbol_pin_inventories_in_sheet(
         .symbol_pins_by_symbol
         .iter()
         .filter_map(|(key, inventory)| {
-            (key.sheet_instance_path == sheet_path.instance_path)
-                .then(|| project_reduced_project_symbol_pin_inventory(graph, inventory))
+            (key.sheet_instance_path == sheet_path.instance_path).then(|| {
+                project_reduced_project_symbol_pin_inventory(graph, key, inventory)
+            })
         })
         .collect()
 }
@@ -11167,8 +11211,8 @@ pub(crate) fn reduced_project_symbol_pin_inventories(
 ) -> Vec<ReducedProjectSymbolPinInventory> {
     graph
         .symbol_pins_by_symbol
-        .values()
-        .map(|inventory| project_reduced_project_symbol_pin_inventory(graph, inventory))
+        .iter()
+        .map(|(key, inventory)| project_reduced_project_symbol_pin_inventory(graph, key, inventory))
         .collect()
 }
 
@@ -25878,6 +25922,128 @@ mod tests {
         assert!(pin.visible);
         assert!(pin.is_power_symbol);
         assert_eq!(pin.subgraph_index, Some(0));
+    }
+
+    #[test]
+    fn live_symbol_pin_inventory_keeps_symbol_identity_when_symbols_share_pin_location() {
+        let first_inventory = super::ReducedProjectSymbolPinInventory {
+            unit: Some(1),
+            unit_count: 1,
+            duplicate_pin_numbers_are_jumpers: false,
+            pins: vec![super::ReducedProjectSymbolPin {
+                schematic_path: std::path::PathBuf::from("stale-a.kicad_sch"),
+                sheet_instance_path: String::new(),
+                at: PointKey(10, 20),
+                name: Some("STALE_A".to_string()),
+                number: Some("1".to_string()),
+                electrical_type: Some("input".to_string()),
+                visible: false,
+                reference: Some("U_STALE_A".to_string()),
+                is_power_symbol: false,
+                subgraph_index: Some(1),
+            }],
+        };
+        let second_inventory = super::ReducedProjectSymbolPinInventory {
+            unit: Some(1),
+            unit_count: 1,
+            duplicate_pin_numbers_are_jumpers: false,
+            pins: vec![super::ReducedProjectSymbolPin {
+                schematic_path: std::path::PathBuf::from("stale-b.kicad_sch"),
+                sheet_instance_path: String::new(),
+                at: PointKey(10, 20),
+                name: Some("STALE_B".to_string()),
+                number: Some("1".to_string()),
+                electrical_type: Some("input".to_string()),
+                visible: false,
+                reference: Some("U_STALE_B".to_string()),
+                is_power_symbol: false,
+                subgraph_index: Some(0),
+            }],
+        };
+        let mut first_subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/A", "A", "/A", ""),
+            Vec::new(),
+            "",
+        );
+        first_subgraph.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("live-a.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-a".to_string()),
+                at: PointKey(10, 20),
+                name: Some("LIVE_A".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("output".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/A", "A", "/A", ""),
+            driver_connection: test_net_connection("/A", "A", "/A", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let mut second_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/B", "B", "/B", ""),
+            Vec::new(),
+            "",
+        );
+        second_subgraph.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("live-b.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-b".to_string()),
+                at: PointKey(10, 20),
+                name: Some("LIVE_B".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U2".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("bidirectional".to_string()),
+            visible: true,
+            is_power_symbol: true,
+            connection: test_net_connection("/B", "B", "/B", ""),
+            driver_connection: test_net_connection("/B", "B", "/B", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let mut graph = test_graph_with_live_subgraphs(vec![first_subgraph, second_subgraph]);
+        graph.symbol_pins_by_symbol.insert(
+            super::ReducedProjectSymbolIdentityKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-a".to_string()),
+            },
+            first_inventory,
+        );
+        graph.symbol_pins_by_symbol.insert(
+            super::ReducedProjectSymbolIdentityKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-b".to_string()),
+            },
+            second_inventory,
+        );
+
+        let projected = super::reduced_project_symbol_pin_inventories(&graph);
+        let mut projected = projected
+            .into_iter()
+            .flat_map(|inventory| inventory.pins)
+            .collect::<Vec<_>>();
+        projected.sort_by(|left, right| left.reference.cmp(&right.reference));
+
+        assert_eq!(projected.len(), 2);
+        assert_eq!(projected[0].reference.as_deref(), Some("U1"));
+        assert_eq!(projected[0].name.as_deref(), Some("LIVE_A"));
+        assert_eq!(
+            projected[0].schematic_path,
+            std::path::PathBuf::from("live-a.kicad_sch")
+        );
+        assert_eq!(projected[1].reference.as_deref(), Some("U2"));
+        assert_eq!(projected[1].name.as_deref(), Some("LIVE_B"));
+        assert_eq!(
+            projected[1].schematic_path,
+            std::path::PathBuf::from("live-b.kicad_sch")
+        );
     }
 
     #[test]
