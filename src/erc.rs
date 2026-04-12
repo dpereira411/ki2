@@ -17,7 +17,8 @@ use crate::loader::{
     resolve_label_text_token_without_connectivity, resolve_sheet_text_var, resolve_text_variables,
     resolved_sheet_text_state, resolved_symbol_text_state,
 };
-use crate::model::{LabelKind, Property, PropertyKind, SchItem};
+use crate::model::{LabelKind, LibSymbol, Property, PropertyKind, SchItem};
+use crate::parser::load_flattened_symbol_library_symbol;
 use std::collections::{BTreeMap, BTreeSet};
 
 // Upstream parity: local entrypoint for the implemented `ERC_TESTER` slice. This is not a 1:1
@@ -54,6 +55,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_single_global_labels(project));
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
+    diagnostics.extend(check_lib_symbol_mismatches(project));
     diagnostics.extend(check_footprint_filters(project));
     diagnostics.extend(check_stacked_pin_notation(project));
     diagnostics.extend(check_ground_pins(project));
@@ -304,6 +306,11 @@ fn configured_pin_conflict(
     }
 }
 
+// Upstream parity: reduced local helper for the `ERC_SETTINGS::GetSeverity()` lookups KiCad runs
+// before marker emission. This is not a 1:1 KiCad settings object because the Rust tree still
+// only carries the exercised typed rule-severity slice from companion project settings, but it
+// keeps severity ownership on the project-loaded ERC settings path instead of hard-coding every
+// rule default at the check site. Remaining divergence is the unported broader ERC settings table.
 fn configured_rule_severity(
     project: &SchematicProject,
     settings_key: &'static str,
@@ -321,6 +328,10 @@ fn configured_rule_severity(
     }
 }
 
+// Upstream parity: reduced local marker severity/default-ignore post-pass for the implemented
+// `ERC_TESTER` rule slice. This is not a 1:1 KiCad marker pipeline because the Rust tree still
+// emits local diagnostics instead of live ERC marker objects, but it keeps exercised rule-default
+// policy on one project-owned pass rather than scattering severity decisions through each check.
 fn apply_configured_rule_severity(
     project: &SchematicProject,
     mut diagnostic: Diagnostic,
@@ -395,6 +406,9 @@ fn apply_configured_rule_severity(
         }
         "erc-same-local-global-label" => {
             configured_rule_severity(project, "same_local_global_label", Some(Severity::Warning))
+        }
+        "erc-lib-symbol-mismatch" => {
+            configured_rule_severity(project, "lib_symbol_mismatch", Some(Severity::Error))
         }
         "erc-ground-pin-not-ground" => {
             configured_rule_severity(project, "ground_pin_not_ground", Some(Severity::Warning))
@@ -731,6 +745,277 @@ fn collect_symbol_occurrences(project: &SchematicProject) -> Vec<SymbolOccurrenc
     }
 
     occurrences
+}
+
+// Upstream parity: reduced local analogue for the duplicate-pin-number pre-check KiCad runs
+// before `LIB_SYMBOL::Compare()` inside `ERC_TESTER::TestLibSymbolIssues()`. This is not a 1:1
+// KiCad message builder because the Rust tree only needs the exercised skip/no-skip branch here,
+// but it preserves the important "don't compare duplicate-pin symbols directly" gate.
+fn lib_symbol_has_nonjumper_duplicate_pins(lib_symbol: &LibSymbol) -> bool {
+    if lib_symbol.duplicate_pin_numbers_are_jumpers {
+        return false;
+    }
+
+    let mut seen = BTreeSet::new();
+
+    for unit in &lib_symbol.units {
+        for draw_item in &unit.draw_items {
+            if draw_item.kind != "pin" {
+                continue;
+            }
+
+            let Some(number) = draw_item.number.as_deref() else {
+                continue;
+            };
+
+            if !seen.insert(number.to_string()) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+// Upstream parity: reduced local analogue for `LIB_SYMBOL::Compare(..., ERC)` normalization on
+// exercised symbol-library ERC compares. This is not a 1:1 KiCad compare because the Rust tree
+// still falls back to structural equality after normalizing the legacy/default fields KiCad does
+// not treat as ERC-visible here, but it keeps current mismatch checks off obviously parser-local
+// noise such as legacy `"~"` pin names and absent-vs-false embedded-font flags.
+fn erc_compare_normalized_lib_symbol(mut lib_symbol: LibSymbol) -> LibSymbol {
+    lib_symbol.embedded_fonts = lib_symbol.embedded_fonts.filter(|embedded| *embedded);
+
+    for property in &mut lib_symbol.properties {
+        if let Some(effects) = property.effects.as_mut() {
+            effects.hidden = false;
+        }
+    }
+
+    for unit in &mut lib_symbol.units {
+        for draw_item in &mut unit.draw_items {
+            if draw_item.kind == "pin" && draw_item.name.as_deref() == Some("~") {
+                draw_item.name = Some(String::new());
+            }
+        }
+    }
+
+    lib_symbol
+}
+
+fn erc_compare_f64_bits(value: f64) -> u64 {
+    if value == 0.0 {
+        0.0f64.to_bits()
+    } else {
+        value.to_bits()
+    }
+}
+
+// Upstream parity: reduced local analogue for `LIB_SYMBOL::Compare(..., ERC)` on exercised
+// symbol-library mismatch checks. This is not a 1:1 KiCad compare yet because the Rust tree still
+// projects onto a reduced structural signature instead of the live C++ compare flags, but it now
+// drops parser-only carrier noise such as property IDs, ordinals, and default text-effect
+// scaffolding while preserving the exercised ERC-visible symbol shape, draw items, and property
+// values.
+fn erc_lib_symbols_match(lhs: &LibSymbol, rhs: &LibSymbol) -> bool {
+    let lhs = erc_compare_normalized_lib_symbol(lhs.clone());
+    let rhs = erc_compare_normalized_lib_symbol(rhs.clone());
+
+    let property_signature = |property: &Property| {
+        format!(
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            property.key,
+            property.value,
+            property.kind,
+            property.is_private,
+            property.at.map(|at| [erc_compare_f64_bits(at[0]), erc_compare_f64_bits(at[1])]),
+            property.angle.map(erc_compare_f64_bits),
+            property.visible,
+        )
+    };
+    let draw_item_signature = |draw_item: &crate::model::LibDrawItem| {
+        format!(
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            draw_item.kind,
+            draw_item.is_private,
+            draw_item.unit_number,
+            draw_item.body_style,
+            draw_item.visible,
+            draw_item.at.map(|at| [erc_compare_f64_bits(at[0]), erc_compare_f64_bits(at[1])]),
+            draw_item.angle.map(erc_compare_f64_bits),
+            draw_item
+                .points
+                .iter()
+                .map(|point| [erc_compare_f64_bits(point[0]), erc_compare_f64_bits(point[1])])
+                .collect::<Vec<_>>(),
+            draw_item.end.map(|end| [erc_compare_f64_bits(end[0]), erc_compare_f64_bits(end[1])]),
+            draw_item.radius.map(erc_compare_f64_bits),
+            draw_item
+                .arc_center
+                .map(|center| [erc_compare_f64_bits(center[0]), erc_compare_f64_bits(center[1])]),
+            draw_item.arc_start_angle.map(erc_compare_f64_bits),
+            draw_item.arc_end_angle.map(erc_compare_f64_bits),
+            draw_item.length.map(erc_compare_f64_bits),
+            draw_item.text,
+            draw_item.name,
+            draw_item.number,
+            draw_item.electrical_type,
+            draw_item.graphic_shape,
+            draw_item.alternates,
+            draw_item.stroke,
+            draw_item.fill,
+        )
+    };
+
+    lhs.lib_id == rhs.lib_id
+        && lhs.name == rhs.name
+        && lhs.extends == rhs.extends
+        && lhs.power == rhs.power
+        && lhs.local_power == rhs.local_power
+        && lhs.body_styles_specified == rhs.body_styles_specified
+        && lhs.body_style_names == rhs.body_style_names
+        && lhs.has_demorgan == rhs.has_demorgan
+        && lhs.pin_name_offset.map(erc_compare_f64_bits) == rhs.pin_name_offset.map(erc_compare_f64_bits)
+        && lhs.show_pin_names == rhs.show_pin_names
+        && lhs.show_pin_numbers == rhs.show_pin_numbers
+        && lhs.excluded_from_sim == rhs.excluded_from_sim
+        && lhs.in_bom == rhs.in_bom
+        && lhs.on_board == rhs.on_board
+        && lhs.in_pos_files == rhs.in_pos_files
+        && lhs.duplicate_pin_numbers_are_jumpers == rhs.duplicate_pin_numbers_are_jumpers
+        && lhs.jumper_pin_groups == rhs.jumper_pin_groups
+        && lhs.keywords == rhs.keywords
+        && lhs.description == rhs.description
+        && lhs.fp_filters_specified == rhs.fp_filters_specified
+        && lhs.fp_filters == rhs.fp_filters
+        && lhs.locked_units == rhs.locked_units
+        && lhs.properties.len() == rhs.properties.len()
+        && lhs
+            .properties
+            .iter()
+            .map(property_signature)
+            .eq(rhs.properties.iter().map(property_signature))
+        && lhs.units.len() == rhs.units.len()
+        && lhs.units.iter().zip(&rhs.units).all(|(lhs_unit, rhs_unit)| {
+            lhs_unit.name == rhs_unit.name
+                && lhs_unit.unit_number == rhs_unit.unit_number
+                && lhs_unit.body_style == rhs_unit.body_style
+                && lhs_unit.unit_name == rhs_unit.unit_name
+                && lhs_unit.draw_item_kinds == rhs_unit.draw_item_kinds
+                && lhs_unit.draw_items.len() == rhs_unit.draw_items.len()
+                && lhs_unit
+                    .draw_items
+                    .iter()
+                    .map(draw_item_signature)
+                    .eq(rhs_unit.draw_items.iter().map(draw_item_signature))
+        })
+}
+
+// upstream: PROJECT_SCH::SymbolLibAdapter / LIBRARY_MANAGER lookup stack or none
+// parity_status: blocked
+// local_kind: local-only-transitional
+// divergence: the Rust tree still lacks KiCad's typed symbol-library table and adapter path, so
+// this helper only probes the exercised filesystem locations needed by current ERC parity tests
+// local_only_reason: keeps ERC on parser-owned library symbol loading instead of adding an ERC
+// parser while the real symbol-library subsystem is still unported
+// replaced_by: typed symbol-library table / project source layer
+// remove_when: project/library-owned symbol lookup exists
+fn resolve_reduced_symbol_library_path(
+    project: &SchematicProject,
+    lib_nickname: &str,
+) -> Option<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+    let file_name = format!("{lib_nickname}.kicad_sym");
+
+    if let Some(parent) = project.root_path.parent() {
+        candidates.push(parent.join(&file_name));
+        candidates.push(parent.join("symbols").join(&file_name));
+    }
+
+    if let Some(symbol_dir) = std::env::var_os("KICAD_SYMBOL_DIR") {
+        candidates.push(std::path::PathBuf::from(symbol_dir).join(&file_name));
+    }
+
+    candidates.push(
+        std::path::PathBuf::from("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols")
+            .join(&file_name),
+    );
+
+    candidates.into_iter().find(|candidate| candidate.is_file())
+}
+
+// Upstream parity: reduced local analogue for the `ERCE_LIB_SYMBOL_MISMATCH` branch inside
+// `ERC_TESTER::TestLibSymbolIssues()`. This is not a 1:1 KiCad library-marker pass because the
+// Rust tree still lacks the full symbol-library subsystem, adapter lookup path, and live marker
+// objects, but it now compares schematic lib-symbol copies against parser-loaded library symbols
+// on the same screen-owned branch shape instead of leaving the exercised mismatch unimplemented.
+// Remaining divergence is the unported library-missing / symbol-missing issue markers plus the
+// still-reduced library path resolver.
+pub fn check_lib_symbol_mismatches(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut library_cache =
+        BTreeMap::<std::path::PathBuf, BTreeMap<String, Option<LibSymbol>>>::new();
+
+    for schematic in &project.schematics {
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let Some(lib_symbol_in_schematic) = symbol.lib_symbol.as_ref() else {
+                continue;
+            };
+
+            let Some((lib_nickname, item_name)) = symbol.lib_id.split_once(':') else {
+                continue;
+            };
+
+            if lib_symbol_has_nonjumper_duplicate_pins(lib_symbol_in_schematic) {
+                continue;
+            }
+
+            let Some(library_path) = resolve_reduced_symbol_library_path(project, lib_nickname)
+            else {
+                continue;
+            };
+
+            let cache_entry = library_cache.entry(library_path.clone()).or_default();
+
+            if !cache_entry.contains_key(item_name) {
+                let loaded =
+                    load_flattened_symbol_library_symbol(&library_path, lib_nickname, item_name)
+                        .ok()
+                        .flatten();
+                cache_entry.insert(item_name.to_string(), loaded);
+            }
+
+            let Some(library_symbol) = cache_entry.get(item_name).cloned().flatten() else {
+                continue;
+            };
+
+            if !erc_lib_symbols_match(&library_symbol, lib_symbol_in_schematic) {
+                let symbol_name = symbol
+                    .lib_id
+                    .rsplit(':')
+                    .next()
+                    .unwrap_or(symbol.lib_id.as_str());
+
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-lib-symbol-mismatch",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Symbol '{symbol_name}' doesn't match copy in library '{lib_nickname}'"
+                    ),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
 }
 
 fn unresolved_variable_diagnostic(path: &std::path::Path, message: String) -> Diagnostic {

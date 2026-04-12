@@ -249,6 +249,145 @@ pub fn parse_schematic_file(path: &Path) -> Result<Schematic, Error> {
     KiCadSchematicParser::new(path.to_path_buf(), raw, tokens).parse_schematic()
 }
 
+// upstream: SCH_IO_KICAD_SEXPR_PARSER::ParseLib and LIB_SYMBOL::Flatten
+// parity_status: partial
+// local_kind: upstream-native
+// divergence: currently supports direct `.kicad_sym` symbol-file loading by path without the full
+// symbol-library table / nickname resolver that KiCad threads through project settings
+// local_only_reason: none
+// replaced_by: none
+// remove_when: none
+pub fn load_flattened_symbol_library_symbol(
+    path: &Path,
+    lib_nickname: &str,
+    item_name: &str,
+) -> Result<Option<LibSymbol>, Error> {
+    let raw = std::fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut extracted = Vec::<String>::new();
+    let mut current_name = Some(item_name.to_string());
+    let mut visited = std::collections::BTreeSet::new();
+
+    while let Some(symbol_name) = current_name.take() {
+        if !visited.insert(symbol_name.clone()) {
+            break;
+        }
+
+        let Some(block) = extract_top_level_symbol_block(&raw, &symbol_name) else {
+            return Ok(None);
+        };
+        extracted.push(block.clone());
+
+        let subset_raw = build_symbol_library_subset_text(&extracted);
+        let tokens = lex(&subset_raw).map_err(|source| Error::SExpr {
+            path: path.to_path_buf(),
+            location: sexpr_error_location(&subset_raw, &source),
+            source,
+        })?;
+        let subset_symbols = KiCadSchematicParser::new(path.to_path_buf(), subset_raw, tokens)
+            .parse_symbol_library()?;
+        current_name = subset_symbols
+            .iter()
+            .find(|symbol| symbol.lib_id == symbol_name)
+            .and_then(|symbol| symbol.extends.clone());
+    }
+
+    let subset_raw = build_symbol_library_subset_text(&extracted);
+    let tokens = lex(&subset_raw).map_err(|source| Error::SExpr {
+        path: path.to_path_buf(),
+        location: sexpr_error_location(&subset_raw, &source),
+        source,
+    })?;
+    KiCadSchematicParser::new(path.to_path_buf(), subset_raw, tokens)
+        .parse_symbol_library()
+        .map(|symbols| {
+            let symbol_index = symbols
+                .iter()
+                .cloned()
+                .map(|symbol| (symbol.lib_id.clone(), symbol))
+                .collect::<std::collections::HashMap<_, _>>();
+            let mut cache = std::collections::HashMap::new();
+            KiCadSchematicParser::flatten_local_lib_symbol(
+                item_name,
+                &symbol_index,
+                &mut cache,
+                &mut std::collections::BTreeSet::new(),
+            )
+            .map(|mut symbol| {
+                symbol.lib_id = format!("{lib_nickname}:{item_name}");
+                symbol
+            })
+        })
+}
+
+// upstream: none
+// parity_status: local-only
+// local_kind: local-only-transitional
+// divergence: KiCad's library adapter parses the whole symbol library through typed caches; this
+// helper extracts only the exercised top-level symbol blocks needed by local ERC compare
+// local_only_reason: avoids whole-library parser stack growth on large installed libraries until a
+// real symbol-library subsystem owns cached library loading
+// replaced_by: typed symbol-library table / project source layer
+// remove_when: project/library-owned symbol loading exists
+fn extract_top_level_symbol_block(raw: &str, symbol_name: &str) -> Option<String> {
+    let needle = format!("(symbol \"{symbol_name}\"");
+    let mut search_from = 0usize;
+
+    while let Some(relative_index) = raw[search_from..].find(&needle) {
+        let start = search_from + relative_index;
+        let prefix = &raw[..start];
+        if prefix.ends_with("(symbol \"") {
+            search_from = start + needle.len();
+            continue;
+        }
+
+        let mut depth = 0i32;
+        let mut end = None;
+
+        for (offset, ch) in raw[start..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(start + offset + ch.len_utf8());
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        return end.map(|end| raw[start..end].to_string());
+    }
+
+    None
+}
+
+// upstream: none
+// parity_status: local-only
+// local_kind: local-only-transitional
+// divergence: builds a synthetic minimal `kicad_symbol_lib` wrapper around extracted symbol blocks
+// instead of using KiCad's real library container object graph
+// local_only_reason: keeps narrowed symbol-library compare on parser-owned lib-symbol construction
+// without parsing the whole library file
+// replaced_by: typed symbol-library table / project source layer
+// remove_when: project/library-owned symbol loading exists
+fn build_symbol_library_subset_text(symbol_blocks: &[String]) -> String {
+    let mut out = String::from("(kicad_symbol_lib\n  (version 20251024)\n");
+
+    for block in symbol_blocks.iter().rev() {
+        out.push_str("  ");
+        out.push_str(block);
+        out.push('\n');
+    }
+
+    out.push(')');
+    out
+}
+
 // Upstream parity: local render helper for lexer parse errors. This is not a 1:1 KiCad routine
 // because the Rust CLI surfaces byte-oriented lexer failures directly, but it stays needed to
 // keep local `Error::SExpr` locations aligned with the parser's line/column diagnostics.
@@ -440,6 +579,80 @@ impl KiCadSchematicParser {
         })
     }
 
+    // upstream: SCH_IO_KICAD_SEXPR_PARSER::ParseLib
+    // parity_status: partial
+    // local_kind: upstream-native
+    // divergence: this currently covers the exercised root-library branches needed by ERC symbol
+    // compare, not the broader symbol-library table / editor state KiCad threads around ParseLib
+    // local_only_reason: none
+    // replaced_by: none
+    // remove_when: none
+    fn parse_symbol_library(mut self) -> Result<Vec<LibSymbol>, Error> {
+        self.need_left()?;
+        if self.need_unquoted_symbol_atom("kicad_symbol_lib")? != "kicad_symbol_lib" {
+            return Err(self.expecting("kicad_symbol_lib"));
+        }
+
+        while !self.at_right() {
+            self.need_left()?;
+            let head = match &self.current().kind {
+                TokKind::Atom(value)
+                    if matches!(self.current().atom_class, Some(AtomClass::Symbol)) =>
+                {
+                    value.clone()
+                }
+                _ => return Err(self.expecting("version, generator, generator_version, or symbol")),
+            };
+
+            match head.as_str() {
+                "version" => {
+                    let _ = self.need_unquoted_symbol_atom("version")?;
+                    self.version = Some(self.parse_i32_atom("version")?);
+                    self.need_right()?;
+                }
+                "generator" => {
+                    let _ = self.need_unquoted_symbol_atom("generator")?;
+                    self.generator = Some(
+                        self.need_symbol_atom("generator")
+                            .map_err(|_| self.error_here("Invalid generator"))?,
+                    );
+                    self.need_right()?;
+                }
+                "generator_version" => {
+                    let _ = self.need_unquoted_symbol_atom("generator_version")?;
+                    self.generator_version = Some(
+                        self.need_symbol_atom("generator version")
+                            .map_err(|_| self.error_here("Invalid generator version"))?,
+                    );
+                    self.need_right()?;
+                }
+                "symbol" => {
+                    let symbol = self.parse_lib_symbol()?;
+                    self.screen.lib_symbols.push(symbol);
+                }
+                _ => {
+                    return Err(
+                        self.expecting("version, generator, generator_version, or symbol")
+                    );
+                }
+            }
+        }
+
+        self.need_right()?;
+        if !matches!(self.current().kind, TokKind::Eof) {
+            return Err(self.expecting("end of file"));
+        }
+
+        Ok(self.screen.lib_symbols)
+    }
+
+    // Upstream parity: local dispatcher analogue for the main body loop inside
+    // `SCH_IO_KICAD_SEXPR_PARSER::ParseSchematic()`. This is not a 1:1 KiCad token switch because
+    // the Rust tree normalizes some section ownership through local helpers and does not carry the
+    // same parser object/screen mutation API, but it preserves the owning section-dispatch
+    // boundary where top-level schematic items are constructed during parse rather than in a later
+    // semantic pass. Remaining divergence is narrower branch-level exactness in specific child
+    // routines, not the broad dispatch ownership.
     fn parse_schematic_body(&mut self) -> Result<(), Error> {
         while !self.at_right() {
             self.need_left()?;
