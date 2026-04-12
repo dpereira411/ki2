@@ -9677,7 +9677,9 @@ pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
         return false;
     }
 
-    let Some(index) = pin.subgraph_index else {
+    let Some(index) = live_reduced_project_subgraph_index_for_symbol_pin_snapshot(graph, pin)
+        .or(pin.subgraph_index)
+    else {
         return false;
     };
 
@@ -24282,6 +24284,67 @@ mod tests {
             reference: Some("U1".to_string()),
             is_power_symbol: false,
             subgraph_index: Some(0),
+        };
+
+        assert!(super::reduced_project_no_connect_pin_has_connected_owner(
+            &graph, &pin,
+        ));
+    }
+
+    #[test]
+    fn live_no_connect_pin_owner_ignores_stale_subgraph_index() {
+        let mut first = test_net_subgraph(
+            1,
+            test_net_connection("/SIG", "SIG", "/SIG", ""),
+            Vec::new(),
+            "",
+        );
+        first.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
+                at: PointKey(0, 0),
+                name: Some("NC".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("no_connect".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        first.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(0, 0),
+            end: PointKey(10, 0),
+            is_bus_entry: false,
+            start_is_wire_side: false,
+            connected_bus_subgraph_index: None,
+        });
+        let second = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            Vec::new(),
+            "",
+        );
+
+        let graph = test_graph_with_live_subgraphs(vec![first, second]);
+
+        let pin = ReducedProjectSymbolPin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: String::new(),
+            at: PointKey(0, 0),
+            name: Some("NC".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("no_connect".to_string()),
+            visible: true,
+            reference: Some("U1".to_string()),
+            is_power_symbol: false,
+            subgraph_index: Some(1),
         };
 
         assert!(super::reduced_project_no_connect_pin_has_connected_owner(
