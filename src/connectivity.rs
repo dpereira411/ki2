@@ -5748,6 +5748,25 @@ fn live_subgraph_projection_index(
     target.borrow().source_index
 }
 
+// upstream: CONNECTION_GRAPH::GetSubgraphs() owner identity lookup or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still resolves a reduced projection index back onto a live reduced handle instead of
+// exposing stable `CONNECTION_SUBGRAPH*` storage directly
+// local_only_reason: reduced-index callers still need one graph-owned bridge back to the active
+// live subgraph owner while downstream consumers are not fully live-handle-native
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner storage once reduced-index lookups are retired
+// remove_when: graph readers stop converting reduced projection indexes back into live handles
+fn live_subgraph_handle_by_projection_index(
+    live_subgraphs: &[LiveReducedSubgraphHandle],
+    index: usize,
+) -> Option<LiveReducedSubgraphHandle> {
+    live_subgraphs
+        .iter()
+        .find(|handle| handle.borrow().source_index == index)
+        .cloned()
+}
+
 fn live_subgraph_link_handle_cmp(
     left: &LiveReducedSubgraphLinkHandle,
     right: &LiveReducedSubgraphLinkHandle,
@@ -9107,9 +9126,9 @@ fn projected_reduced_project_subgraph_by_index(
 ) -> Option<ReducedProjectSubgraphEntry> {
     let mut subgraph = graph.subgraphs.get(index)?.clone();
 
-    if let Some(live) = graph.live_subgraphs.get(index) {
+    if let Some(live) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
         live.borrow()
-            .project_onto_reduced(&mut subgraph, live, &graph.live_subgraphs);
+            .project_onto_reduced(&mut subgraph, &live, &graph.live_subgraphs);
     } else {
         subgraph.driver_connection = reduced_project_effective_driver_connection(&subgraph).clone();
         subgraph.sync_boundary_state_from_driver_owner();
@@ -9150,7 +9169,7 @@ fn projected_reduced_project_net_identity_by_index(
     graph: &ReducedProjectNetGraph,
     index: usize,
 ) -> Option<ReducedProjectNetIdentity> {
-    if let Some(handle) = graph.live_subgraphs.get(index) {
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
         let subgraph = graph.subgraphs.get(index)?;
         let live = handle.borrow();
         let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
@@ -9187,9 +9206,7 @@ fn projected_reduced_project_driver_local_name_by_index(
     graph: &ReducedProjectNetGraph,
     index: usize,
 ) -> Option<String> {
-    graph
-        .live_subgraphs
-        .get(index)
+    live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
         .map(|subgraph| {
             let subgraph = subgraph.borrow();
             live_reduced_subgraph_effective_driver_connection(&subgraph)
@@ -9322,10 +9339,8 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
     at: [f64; 2],
 ) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at).and_then(|index| {
-        graph
-            .live_subgraphs
-            .get(index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
             .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
     })
 }
@@ -9347,8 +9362,7 @@ fn live_reduced_project_subgraph_index_at(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
             let subgraph = subgraph.borrow();
             (subgraph.sheet_instance_path == sheet_path.instance_path
                 && subgraph
@@ -9356,7 +9370,7 @@ fn live_reduced_project_subgraph_index_at(
                     .iter()
                     .copied()
                     .any(|point| point_key_matches(point, at)))
-            .then_some(index)
+            .then_some(subgraph.source_index)
         })
 }
 
@@ -9398,10 +9412,8 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
     label: &Label,
 ) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label).and_then(|index| {
-        graph
-            .live_subgraphs
-            .get(index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
             .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
     })
 }
@@ -9423,15 +9435,14 @@ fn live_reduced_project_subgraph_index_for_label(
     graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
             let subgraph = subgraph.borrow();
             (subgraph.sheet_instance_path == sheet_path.instance_path
                 && subgraph.label_links.iter().any(|candidate| {
                     let candidate = candidate.borrow();
                     candidate.kind == label.kind && point_key_matches(candidate.at, label.at)
                 }))
-            .then_some(index)
+            .then_some(subgraph.source_index)
         })
 }
 
@@ -9521,10 +9532,8 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
     at: [f64; 2],
 ) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at).and_then(|index| {
-        graph
-            .live_subgraphs
-            .get(index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
             .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
     })
 }
@@ -9659,7 +9668,7 @@ fn reduced_project_no_connect_pin_has_connected_owner_by_index(
     index: usize,
     pin: &ReducedProjectSymbolPin,
 ) -> bool {
-    if let Some(subgraph) = graph.live_subgraphs.get(index) {
+    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
         return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
     }
 
@@ -9856,7 +9865,7 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
     };
 
     let pin_point = point_key(at);
-    if let Some(subgraph) = graph.live_subgraphs.get(index) {
+    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
         let subgraph = subgraph.borrow();
 
         return subgraph.base_pins.is_empty()
@@ -9913,8 +9922,10 @@ pub(crate) fn reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
     graph: &ReducedProjectNetGraph,
     subgraph_index: usize,
 ) -> bool {
-    if let Some(subgraph) = graph.live_subgraphs.get(subgraph_index) {
-        return live_reduced_subgraph_has_local_hierarchy_via_bus_parents(subgraph);
+    if let Some(subgraph) =
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, subgraph_index)
+    {
+        return live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph);
     }
 
     let Some(subgraph) = projected_reduced_project_subgraph_by_index(graph, subgraph_index) else {
@@ -9947,11 +9958,10 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
     graph: &ReducedProjectNetGraph,
     subgraph_index: usize,
 ) -> bool {
-    if let Some(subgraph) = graph.live_subgraphs.get(subgraph_index) {
-        return live_reduced_subgraph_has_no_connect_via_parent_chain(
-            &graph.live_subgraphs,
-            subgraph,
-        );
+    if let Some(subgraph) =
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, subgraph_index)
+    {
+        return live_reduced_subgraph_has_no_connect_via_parent_chain(&graph.live_subgraphs, &subgraph);
     }
 
     let Some(subgraph) = projected_reduced_project_subgraph_by_index(graph, subgraph_index) else {
@@ -10014,8 +10024,11 @@ fn reduced_project_parent_indexes_by_child(
     let mut parent_indexes = Vec::new();
     let mut seen = BTreeSet::new();
 
-    if let Some(child_handle) = graph.live_subgraphs.get(child_index) {
-        for parent_handle in live_subgraph_parent_handles_from_handle(&graph.live_subgraphs, child_handle)
+    if let Some(child_handle) =
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, child_index)
+    {
+        for parent_handle in
+            live_subgraph_parent_handles_from_handle(&graph.live_subgraphs, &child_handle)
         {
             let parent_index = live_subgraph_projection_index(&graph.live_subgraphs, &parent_handle);
             if seen.insert(parent_index) {
@@ -11075,10 +11088,8 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
     .and_then(|index| {
-        graph
-            .live_subgraphs
-            .get(index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
             .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
     })
 }
@@ -11102,8 +11113,8 @@ fn live_reduced_project_symbol_pin_snapshot(
     let subgraph_index = graph
         .live_subgraphs
         .iter()
-        .enumerate()
-        .find_map(|(index, subgraph)| {
+        .find_map(|subgraph| {
+            let source_index = subgraph.borrow().source_index;
             subgraph
                 .borrow()
                 .base_pins
@@ -11115,12 +11126,10 @@ fn live_reduced_project_symbol_pin_snapshot(
                         && candidate.pin.key.at == pin.at
                         && candidate.pin.key.number == pin.number
                 })
-                .then_some(index)
+                .then_some(source_index)
         })
         .or(pin.subgraph_index)?;
-    let live_pin = graph
-        .live_subgraphs
-        .get(subgraph_index)
+    let live_pin = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, subgraph_index)
         .and_then(|subgraph| {
             subgraph.borrow().base_pins.iter().find_map(|candidate| {
                 let candidate = candidate.borrow();
@@ -11283,7 +11292,7 @@ fn reduced_project_driver_name_for_symbol_pin_by_index(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<String> {
-    if let Some(subgraph) = graph.live_subgraphs.get(index) {
+    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
         let subgraph = subgraph.borrow();
         return pin_name
             .and_then(|pin_name| {
@@ -18242,6 +18251,79 @@ mod tests {
 
         assert_eq!(subgraph.subgraph_code, 2);
         assert_eq!(subgraph.name, "/SECOND");
+    }
+
+    #[test]
+    fn projected_net_identity_by_index_uses_source_index_when_handles_reorder() {
+        let reduced = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/FIRST", "FIRST", "/FIRST", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SECOND", "SECOND", "/SECOND", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(reduced);
+        graph.live_subgraphs.swap(0, 1);
+
+        let identity =
+            super::projected_reduced_project_net_identity_by_index(&graph, 0).expect("net identity");
+
+        assert_eq!(identity.code, 1);
+        assert_eq!(identity.name, "/FIRST");
+    }
+
+    #[test]
+    fn projected_driver_local_name_by_index_uses_source_index_when_handles_reorder() {
+        let reduced = vec![
+            test_net_subgraph(
+                1,
+                test_net_connection("/FIRST", "FIRST", "/FIRST", ""),
+                Vec::new(),
+                "",
+            ),
+            test_net_subgraph(
+                2,
+                test_net_connection("/SECOND", "SECOND", "/SECOND", ""),
+                Vec::new(),
+                "",
+            ),
+        ];
+        let mut graph = test_graph_with_live_subgraphs(reduced);
+        graph.live_subgraphs.swap(0, 1);
+
+        assert_eq!(
+            super::projected_reduced_project_driver_local_name_by_index(&graph, 0).as_deref(),
+            Some("FIRST")
+        );
+    }
+
+    #[test]
+    fn reduced_no_connect_parent_chain_uses_source_index_when_handles_reorder() {
+        let child_connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut child = test_net_subgraph(1, child_connection, Vec::new(), "");
+        child.bus_parent_indexes.push(1);
+
+        let mut parent = test_net_subgraph(
+            2,
+            test_net_connection("/BUS", "BUS", "/BUS", ""),
+            Vec::new(),
+            "",
+        );
+        parent.has_no_connect = true;
+
+        let mut graph = test_graph_with_live_subgraphs(vec![child, parent]);
+        graph.live_subgraphs.swap(0, 1);
+
+        assert!(super::reduced_project_subgraph_has_no_connect_via_parent_chain(
+            &graph, 0
+        ));
     }
 
     #[test]
