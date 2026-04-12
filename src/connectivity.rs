@@ -10863,8 +10863,8 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
         .iter()
         .enumerate()
         .find_map(|(index, subgraph)| {
+            let subgraph = subgraph.borrow();
             subgraph
-                .borrow()
                 .base_pins
                 .iter()
                 .any(|candidate| {
@@ -10877,6 +10877,18 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
                         && candidate.pin.electrical_type == pin.electrical_type
                 })
                 .then_some(index)
+                .or_else(|| {
+                    subgraph
+                        .base_pins
+                        .iter()
+                        .any(|candidate| {
+                            let candidate = candidate.borrow();
+                            candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                                && candidate.pin.key.at == pin.at
+                                && candidate.pin.key.number == pin.number
+                        })
+                        .then_some(index)
+                })
         })
 }
 
@@ -11044,9 +11056,11 @@ fn live_reduced_project_symbol_pin_snapshot(
     graph: &ReducedProjectNetGraph,
     pin: &ReducedProjectSymbolPin,
 ) -> Option<ReducedProjectSymbolPin> {
+    let subgraph_index = live_reduced_project_subgraph_index_for_symbol_pin_snapshot(graph, pin)
+        .or(pin.subgraph_index)?;
     let live_pin = graph
         .live_subgraphs
-        .get(pin.subgraph_index?)
+        .get(subgraph_index)
         .and_then(|subgraph| {
             subgraph.borrow().base_pins.iter().find_map(|candidate| {
                 let candidate = candidate.borrow();
@@ -11067,7 +11081,7 @@ fn live_reduced_project_symbol_pin_snapshot(
         visible: live_pin.visible,
         reference: live_pin.reference,
         is_power_symbol: live_pin.is_power_symbol,
-        subgraph_index: pin.subgraph_index,
+        subgraph_index: Some(subgraph_index),
     })
 }
 
@@ -25809,7 +25823,7 @@ mod tests {
                 visible: false,
                 reference: Some("U_STALE".to_string()),
                 is_power_symbol: false,
-                subgraph_index: Some(0),
+                subgraph_index: Some(1),
             }],
         };
         let mut subgraph = test_net_subgraph(
@@ -25836,7 +25850,13 @@ mod tests {
             driver_connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
             preserve_local_name_on_refresh: false,
         });
-        let mut graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        let stale_subgraph = test_net_subgraph(
+            2,
+            test_net_connection("/STALE", "STALE", "/STALE", ""),
+            Vec::new(),
+            "",
+        );
+        let mut graph = test_graph_with_live_subgraphs(vec![subgraph, stale_subgraph]);
         graph.symbol_pins_by_symbol.insert(
             super::ReducedProjectSymbolIdentityKey {
                 sheet_instance_path: String::new(),
@@ -25857,6 +25877,7 @@ mod tests {
         assert_eq!(pin.electrical_type.as_deref(), Some("output"));
         assert!(pin.visible);
         assert!(pin.is_power_symbol);
+        assert_eq!(pin.subgraph_index, Some(0));
     }
 
     #[test]
