@@ -55,6 +55,7 @@ pub fn run(project: &SchematicProject) -> Vec<Diagnostic> {
     diagnostics.extend(check_single_global_labels(project));
     diagnostics.extend(check_similar_labels(project));
     diagnostics.extend(check_same_local_global_label(project));
+    diagnostics.extend(check_lib_symbol_issues(project));
     diagnostics.extend(check_lib_symbol_mismatches(project));
     diagnostics.extend(check_footprint_filters(project));
     diagnostics.extend(check_stacked_pin_notation(project));
@@ -409,6 +410,9 @@ fn apply_configured_rule_severity(
         }
         "erc-lib-symbol-mismatch" => {
             configured_rule_severity(project, "lib_symbol_mismatch", Some(Severity::Error))
+        }
+        "erc-lib-symbol-issues" => {
+            configured_rule_severity(project, "lib_symbol_issues", Some(Severity::Error))
         }
         "erc-ground-pin-not-ground" => {
             configured_rule_severity(project, "ground_pin_not_ground", Some(Severity::Warning))
@@ -1005,6 +1009,76 @@ pub fn check_lib_symbol_mismatches(project: &SchematicProject) -> Vec<Diagnostic
                     kind: crate::diagnostic::DiagnosticKind::Validation,
                     message: format!(
                         "Symbol '{symbol_name}' doesn't match copy in library '{lib_nickname}'"
+                    ),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    diagnostics
+}
+
+// upstream: ERC_TESTER::TestLibSymbolIssues
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still uses the reduced symbol-library resolver and does not yet emit the upstream
+// "library was not found at URI/path" branch
+// local_only_reason: the Rust tree still lacks KiCad's full symbol-library table and adapter stack
+// replaced_by: upstream-shaped symbol-library-table ownership feeding ERC library checks
+// remove_when: library resolution and URI-backed symbol loading move onto the upstream-shaped owner
+pub fn check_lib_symbol_issues(project: &SchematicProject) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut library_cache =
+        BTreeMap::<std::path::PathBuf, BTreeMap<String, Option<LibSymbol>>>::new();
+
+    for schematic in &project.schematics {
+        for item in &schematic.screen.items {
+            let SchItem::Symbol(symbol) = item else {
+                continue;
+            };
+
+            let Some((lib_nickname, item_name)) = symbol.lib_id.split_once(':') else {
+                continue;
+            };
+
+            let Some(library_path) = resolve_reduced_symbol_library_path(project, lib_nickname)
+            else {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-lib-symbol-issues",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "The current configuration does not include the symbol library '{lib_nickname}'"
+                    ),
+                    path: Some(schematic.path.clone()),
+                    span: None,
+                    line: None,
+                    column: None,
+                });
+                continue;
+            };
+
+            let cache_entry = library_cache.entry(library_path.clone()).or_default();
+
+            if !cache_entry.contains_key(item_name) {
+                let loaded =
+                    load_flattened_symbol_library_symbol(&library_path, lib_nickname, item_name)
+                        .ok()
+                        .flatten();
+                cache_entry.insert(item_name.to_string(), loaded);
+            }
+
+            if cache_entry.get(item_name).and_then(|symbol| symbol.as_ref()).is_none() {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    code: "erc-lib-symbol-issues",
+                    kind: crate::diagnostic::DiagnosticKind::Validation,
+                    message: format!(
+                        "Symbol '{item_name}' not found in symbol library '{lib_nickname}'"
                     ),
                     path: Some(schematic.path.clone()),
                     span: None,
