@@ -13,20 +13,7 @@ use ki2::parser::parse_schematic_file;
 use serde_json::json;
 
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let Some(command) = args.next() else {
-        print_usage_and_exit();
-    };
-
-    let exit_code = match command.as_str() {
-        "validate" => run_validate_command(args.collect()),
-        "erc" => run_erc_command(args.collect()),
-        "netlist" => run_netlist_command(args.collect()),
-        _ => {
-            eprintln!("unknown command: {command}");
-            print_usage_and_exit();
-        }
-    };
+    let exit_code = run_cli_command_on_worker_stack();
 
     std::process::exit(exit_code);
 }
@@ -150,6 +137,43 @@ fn print_usage_and_exit() -> ! {
         "       ki2 netlist <path> [--output <path>] [--format <kicad|kicadsexpr|xml|kicadxml>] [--variant <name>]"
     );
     std::process::exit(2);
+}
+
+// upstream: none
+// parity_status: local-only
+// local_kind: local-only-transitional
+// divergence: KiCad's CLI does not need an explicit worker thread stack shim, but the local Rust
+// binary currently overflows the main thread stack on deep ERC graph walks that pass under the
+// test harness stack
+// local_only_reason: keeps the exercised CLI path usable while lower-layer recursion remains
+// deeper than the process main-thread stack budget
+// replaced_by: flatter live graph traversal and/or command path that no longer requires an
+// oversized worker stack
+// remove_when: `ki2 erc` runs the large hierarchy fixtures on the process main thread without
+// stack overflow
+fn run_cli_command_on_worker_stack() -> i32 {
+    std::thread::Builder::new()
+        .name("ki2-cli".to_string())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            let mut args = std::env::args().skip(1);
+            let Some(command) = args.next() else {
+                print_usage_and_exit();
+            };
+
+            match command.as_str() {
+                "validate" => run_validate_command(args.collect()),
+                "erc" => run_erc_command(args.collect()),
+                "netlist" => run_netlist_command(args.collect()),
+                _ => {
+                    eprintln!("unknown command: {command}");
+                    print_usage_and_exit();
+                }
+            }
+        })
+        .expect("spawn cli worker thread")
+        .join()
+        .expect("cli worker thread must not panic")
 }
 
 // Upstream parity: reduced local analogue for the schematic-validate CLI entrypoint. This is not
