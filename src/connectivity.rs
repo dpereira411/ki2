@@ -1314,6 +1314,7 @@ struct ReducedProjectSymbolIdentityKey {
 pub(crate) struct ReducedProjectSymbolPin {
     pub(crate) schematic_path: std::path::PathBuf,
     pub(crate) sheet_instance_path: String,
+    pub(crate) symbol_uuid: Option<String>,
     pub(crate) at: PointKey,
     pub(crate) name: Option<String>,
     pub(crate) number: Option<String>,
@@ -10294,6 +10295,7 @@ fn build_reduced_project_symbol_pin_inventory(
                 .map(|pin| ReducedProjectSymbolPin {
                     schematic_path: schematic.path.clone(),
                     sheet_instance_path: sheet_path.instance_path.clone(),
+                    symbol_uuid: symbol.uuid.clone(),
                     at: point_key(pin.at),
                     name: pin.name.clone(),
                     number: pin.number.clone(),
@@ -10872,6 +10874,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
                 .any(|candidate| {
                     let candidate = candidate.borrow();
                     candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                        && candidate.pin.key.symbol_uuid == pin.symbol_uuid
                         && candidate.pin.key.at == pin.at
                         && candidate.pin.key.number == pin.number
                         && candidate.pin.key.name == pin.name
@@ -10886,6 +10889,7 @@ fn live_reduced_project_subgraph_index_for_symbol_pin_snapshot(
                         .any(|candidate| {
                             let candidate = candidate.borrow();
                             candidate.pin.key.sheet_instance_path == pin.sheet_instance_path
+                                && candidate.pin.key.symbol_uuid == pin.symbol_uuid
                                 && candidate.pin.key.at == pin.at
                                 && candidate.pin.key.number == pin.number
                         })
@@ -11106,6 +11110,7 @@ fn live_reduced_project_symbol_pin_snapshot(
     Some(ReducedProjectSymbolPin {
         schematic_path: live_pin.schematic_path,
         sheet_instance_path: live_pin.key.sheet_instance_path,
+        symbol_uuid: live_pin.key.symbol_uuid,
         at: live_pin.key.at,
         name: live_pin.key.name,
         number: live_pin.number,
@@ -24276,6 +24281,7 @@ mod tests {
         let pin = ReducedProjectSymbolPin {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
             sheet_instance_path: String::new(),
+            symbol_uuid: Some("sym".to_string()),
             at: PointKey(0, 0),
             name: Some("NC".to_string()),
             number: Some("1".to_string()),
@@ -24337,6 +24343,7 @@ mod tests {
         let pin = ReducedProjectSymbolPin {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
             sheet_instance_path: String::new(),
+            symbol_uuid: Some("sym".to_string()),
             at: PointKey(0, 0),
             name: Some("NC".to_string()),
             number: Some("1".to_string()),
@@ -24377,6 +24384,7 @@ mod tests {
         let pin = ReducedProjectSymbolPin {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
             sheet_instance_path: String::new(),
+            symbol_uuid: Some("sym".to_string()),
             at: PointKey(0, 0),
             name: Some("1".to_string()),
             number: Some("1".to_string()),
@@ -24438,6 +24446,7 @@ mod tests {
         let pin = ReducedProjectSymbolPin {
             schematic_path: std::path::PathBuf::from("root.kicad_sch"),
             sheet_instance_path: String::new(),
+            symbol_uuid: Some("sym".to_string()),
             at: PointKey(0, 0),
             name: Some("PIN".to_string()),
             number: Some("1".to_string()),
@@ -24451,6 +24460,78 @@ mod tests {
         assert_eq!(
             super::reduced_project_symbol_pin_net_name(&graph, &pin),
             "/LIVE"
+        );
+    }
+
+    #[test]
+    fn live_symbol_pin_net_name_keeps_symbol_identity_without_reference_snapshot() {
+        let mut first = test_net_subgraph(
+            1,
+            test_net_connection("/A", "A", "/A", ""),
+            Vec::new(),
+            "",
+        );
+        first.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-a".to_string()),
+                at: PointKey(0, 0),
+                name: Some("PIN".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U1".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/A", "A", "/A", ""),
+            driver_connection: test_net_connection("/A", "A", "/A", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let mut second = test_net_subgraph(
+            2,
+            test_net_connection("/B", "B", "/B", ""),
+            Vec::new(),
+            "",
+        );
+        second.base_pins.push(ReducedProjectBasePin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            key: ReducedNetBasePinKey {
+                sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-b".to_string()),
+                at: PointKey(0, 0),
+                name: Some("PIN".to_string()),
+                number: Some("1".to_string()),
+            },
+            reference: Some("U2".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            is_power_symbol: false,
+            connection: test_net_connection("/B", "B", "/B", ""),
+            driver_connection: test_net_connection("/B", "B", "/B", ""),
+            preserve_local_name_on_refresh: false,
+        });
+        let graph = test_graph_with_live_subgraphs(vec![first, second]);
+
+        let pin = ReducedProjectSymbolPin {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            sheet_instance_path: String::new(),
+            symbol_uuid: Some("sym-b".to_string()),
+            at: PointKey(0, 0),
+            name: Some("PIN".to_string()),
+            number: Some("1".to_string()),
+            electrical_type: Some("input".to_string()),
+            visible: true,
+            reference: None,
+            is_power_symbol: false,
+            subgraph_index: Some(0),
+        };
+
+        assert_eq!(
+            super::reduced_project_symbol_pin_net_name(&graph, &pin),
+            "/B"
         );
     }
 
@@ -25923,6 +26004,7 @@ mod tests {
             pins: vec![super::ReducedProjectSymbolPin {
                 schematic_path: std::path::PathBuf::from("stale.kicad_sch"),
                 sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym".to_string()),
                 at: PointKey(10, 20),
                 name: Some("STALE".to_string()),
                 number: Some("1".to_string()),
@@ -25996,6 +26078,7 @@ mod tests {
             pins: vec![super::ReducedProjectSymbolPin {
                 schematic_path: std::path::PathBuf::from("stale-a.kicad_sch"),
                 sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-a".to_string()),
                 at: PointKey(10, 20),
                 name: Some("STALE_A".to_string()),
                 number: Some("1".to_string()),
@@ -26013,6 +26096,7 @@ mod tests {
             pins: vec![super::ReducedProjectSymbolPin {
                 schematic_path: std::path::PathBuf::from("stale-b.kicad_sch"),
                 sheet_instance_path: String::new(),
+                symbol_uuid: Some("sym-b".to_string()),
                 at: PointKey(10, 20),
                 name: Some("STALE_B".to_string()),
                 number: Some("1".to_string()),
