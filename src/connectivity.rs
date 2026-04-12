@@ -529,7 +529,9 @@ fn reduced_project_rename_weak_conflict_subgraphs(
             .map(|indexes| indexes.len())
             .unwrap_or_default();
 
-        if conflict_count <= 1 && driver_connection.connection_type == ReducedProjectConnectionType::Bus {
+        if conflict_count <= 1
+            && driver_connection.connection_type == ReducedProjectConnectionType::Bus
+        {
             let prefix_only = format!("{}[]", name.split('[').next().unwrap_or(""));
 
             if let Some(indexes) = subgraphs_by_name.get(&prefix_only) {
@@ -775,10 +777,7 @@ fn reduced_project_absorb_push_secondary_test_names(
                     | ReducedProjectDriverKind::PowerPin
                     | ReducedProjectDriverKind::SheetPin
             )
-            || reduced_project_driver_match_name(
-                &driver.connection,
-                &driver_connection.name,
-            )
+            || reduced_project_driver_match_name(&driver.connection, &driver_connection.name)
         {
             continue;
         }
@@ -4660,7 +4659,8 @@ impl LiveReducedSubgraph {
 
         while let Some(handle) = queue.pop_front() {
             component.push(handle.clone());
-            for parent_handle in live_subgraph_parent_handles_from_handle(_live_subgraphs, &handle) {
+            for parent_handle in live_subgraph_parent_handles_from_handle(_live_subgraphs, &handle)
+            {
                 if parent_handle.borrow().hier_sheet_pins.is_empty() {
                     continue;
                 }
@@ -6192,7 +6192,8 @@ fn live_subgraph_parent_handles_from_handle(
         }
 
         let is_parent = candidate.borrow().hier_child_handles.iter().any(|child| {
-            child.upgrade()
+            child
+                .upgrade()
                 .is_some_and(|child_handle| Rc::ptr_eq(&child_handle, handle))
         });
 
@@ -6750,7 +6751,8 @@ fn rebuild_reduced_project_graph_name_caches(
                 reduced_project_effective_driver_connection_mut(subgraph),
                 &mut net_codes,
             );
-            subgraph.driver_connection = reduced_project_effective_driver_connection(subgraph).clone();
+            subgraph.driver_connection =
+                reduced_project_effective_driver_connection(subgraph).clone();
             subgraph.sync_boundary_state_from_driver_owner();
 
             for link in &mut subgraph.label_links {
@@ -8657,7 +8659,8 @@ pub(crate) fn collect_reduced_project_net_graph_from_inputs(
                     ) {
                         continue;
                     }
-                    if driver.connection.connection_type != child_driver_connection.connection_type {
+                    if driver.connection.connection_type != child_driver_connection.connection_type
+                    {
                         continue;
                     }
                     if driver.connection.full_local_name == child_driver_connection.full_local_name
@@ -9189,12 +9192,11 @@ fn projected_reduced_project_driver_local_name_by_index(
                 .clone()
         })
         .or_else(|| {
-            projected_reduced_project_subgraph_by_index(graph, index)
-                .map(|subgraph| {
-                    reduced_project_effective_driver_connection(&subgraph)
-                        .local_name
-                        .clone()
-                })
+            projected_reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
+                reduced_project_effective_driver_connection(&subgraph)
+                    .local_name
+                    .clone()
+            })
         })
 }
 
@@ -9233,7 +9235,9 @@ pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
             .into_iter()
             .flat_map(|handles| handles.iter())
             .find_map(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
-            .filter(|subgraph| reduced_project_effective_driver_connection(subgraph).name == net_name);
+            .filter(|subgraph| {
+                reduced_project_effective_driver_connection(subgraph).name == net_name
+            });
     }
 
     graph
@@ -9490,12 +9494,11 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
-            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label)
-                .map(|subgraph| {
-                    reduced_project_effective_driver_connection(&subgraph)
-                        .local_name
-                        .clone()
-                })
+            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
+                reduced_project_effective_driver_connection(&subgraph)
+                    .local_name
+                    .clone()
+            })
         })
 }
 
@@ -9935,7 +9938,10 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
     subgraph_index: usize,
 ) -> bool {
     if let Some(subgraph) = graph.live_subgraphs.get(subgraph_index) {
-        return live_reduced_subgraph_has_no_connect_via_parent_chain(&graph.live_subgraphs, subgraph);
+        return live_reduced_subgraph_has_no_connect_via_parent_chain(
+            &graph.live_subgraphs,
+            subgraph,
+        );
     }
 
     let Some(subgraph) = projected_reduced_project_subgraph_by_index(graph, subgraph_index) else {
@@ -9966,7 +9972,8 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
                 continue;
             }
 
-            let Some(hier_parent) = projected_reduced_project_subgraph_by_index(graph, index) else {
+            let Some(hier_parent) = projected_reduced_project_subgraph_by_index(graph, index)
+            else {
                 continue;
             };
 
@@ -10184,12 +10191,11 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
         .or_else(|| {
-            resolve_reduced_project_subgraph_at(graph, sheet_path, at)
-                .map(|subgraph| {
-                    reduced_project_effective_driver_connection(&subgraph)
-                        .local_name
-                        .clone()
-                })
+            resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
+                reduced_project_effective_driver_connection(&subgraph)
+                    .local_name
+                    .clone()
+            })
         })
 }
 
@@ -13035,13 +13041,20 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
                 let neighbor_pin_count = neighbor.base_pins.len();
                 let neighbor_has_direct_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
+                let neighbor_has_local_hierarchy = reduced_project_subgraph_index(graph, &neighbor)
+                    .is_some_and(|index| {
+                        neighbor_has_direct_local_hierarchy
+                            && reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
+                                graph, index,
+                            )
+                    });
 
                 all_pins += neighbor_pin_count;
                 aggregate_has_no_connect |= neighbor.has_no_connect;
 
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path {
                     local_pins += neighbor_pin_count;
-                    aggregate_has_local_hierarchy |= neighbor_has_direct_local_hierarchy;
+                    aggregate_has_local_hierarchy |= neighbor_has_local_hierarchy;
                 }
             }
         }
@@ -13194,13 +13207,15 @@ fn live_reduced_project_label_connectivity_subgraphs(
                 let neighbor_pin_count = neighbor.base_pins.len();
                 let neighbor_has_direct_local_hierarchy =
                     !neighbor.hier_sheet_pins.is_empty() || !neighbor.hier_ports.is_empty();
+                let neighbor_has_local_hierarchy = neighbor_has_direct_local_hierarchy
+                    && live_reduced_subgraph_has_local_hierarchy_via_bus_parents(neighbor_handle);
 
                 all_pins += neighbor_pin_count;
                 aggregate_has_no_connect |= neighbor.has_no_connect;
 
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path {
                     local_pins += neighbor_pin_count;
-                    aggregate_has_local_hierarchy |= neighbor_has_direct_local_hierarchy;
+                    aggregate_has_local_hierarchy |= neighbor_has_local_hierarchy;
                 }
             }
         }
@@ -13677,12 +13692,10 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                         local_unique_labels.len(),
                     )
                 } else {
-                    let neighbors = collect_reduced_project_subgraphs_by_name(
-                        graph,
-                        &driver_connection.name,
-                    )
-                    .into_iter()
-                    .collect::<Vec<_>>();
+                    let neighbors =
+                        collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
+                            .into_iter()
+                            .collect::<Vec<_>>();
                     let unique_pin_count = reduced_unique_stacked_pin_count(
                         neighbors
                             .iter()
@@ -16623,14 +16636,17 @@ mod tests {
         );
         alternate_parent.has_no_connect = true;
         alternate_parent.hier_child_indexes = vec![1];
-        alternate_parent.hier_sheet_pins.push(ReducedHierSheetPinLink {
-            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
-            at: PointKey(9, 9),
-            child_sheet_uuid: Some("child-sheet".to_string()),
-            connection: test_net_connection("/ALT", "BUS", "/ALT", ""),
-        });
+        alternate_parent
+            .hier_sheet_pins
+            .push(ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(9, 9),
+                child_sheet_uuid: Some("child-sheet".to_string()),
+                connection: test_net_connection("/ALT", "BUS", "/ALT", ""),
+            });
 
-        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, bus_parent, alternate_parent]);
+        let graph =
+            test_graph_with_live_subgraphs(vec![label_subgraph, bus_parent, alternate_parent]);
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
 
         assert_eq!(label_subgraphs.len(), 1);
@@ -16639,12 +16655,18 @@ mod tests {
 
     #[test]
     fn reduced_no_connect_parent_chain_includes_additional_hierarchy_parent() {
-        let mut label_subgraph =
-            test_net_subgraph(1, test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child"), Vec::new(), "/child");
-        label_subgraph.bus_parent_links.push(ReducedProjectBusNeighborLink {
-            member: test_bus_member("BUS", "BUS", "/BUS"),
-            subgraph_index: 1,
-        });
+        let mut label_subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/child/SIG", "SIG", "/child/SIG", "/child"),
+            Vec::new(),
+            "/child",
+        );
+        label_subgraph
+            .bus_parent_links
+            .push(ReducedProjectBusNeighborLink {
+                member: test_bus_member("BUS", "BUS", "/BUS"),
+                subgraph_index: 1,
+            });
         label_subgraph.bus_parent_indexes.push(1);
 
         let mut bus_parent = test_net_subgraph(
@@ -16680,9 +16702,7 @@ mod tests {
             sheet_pin_subgraph_identities: BTreeMap::new(),
         };
 
-        assert!(super::reduced_project_subgraph_has_no_connect_via_parent_chain(
-            &graph, 0
-        ));
+        assert!(super::reduced_project_subgraph_has_no_connect_via_parent_chain(&graph, 0));
     }
 
     #[test]
@@ -17416,6 +17436,88 @@ mod tests {
 
         assert_eq!(label_subgraphs.len(), 1);
         assert!(label_subgraphs[0].has_local_hierarchy);
+    }
+
+    #[test]
+    fn reduced_label_connectivity_subgraphs_do_not_aggregate_neighbor_direct_local_hierarchy_without_bus_parent()
+     {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection.clone(),
+        });
+
+        let neighbor_connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut same_name_subgraph = test_net_subgraph(2, neighbor_connection, Vec::new(), "");
+        same_name_subgraph
+            .hier_sheet_pins
+            .push(ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(5, 6),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            });
+
+        let graph = ReducedProjectNetGraph {
+            subgraphs: vec![label_subgraph, same_name_subgraph],
+            live_subgraphs: Vec::new(),
+            dangling_directive_label_links: Vec::new(),
+            four_way_junction_points: Vec::new(),
+            subgraphs_by_name: BTreeMap::from([("/SIG".to_string(), vec![0, 1])]),
+            subgraphs_by_sheet_and_name: BTreeMap::from([(
+                (String::new(), "/SIG".to_string()),
+                vec![0, 1],
+            )]),
+            symbol_pins_by_symbol: BTreeMap::new(),
+            pin_subgraph_identities: BTreeMap::new(),
+            pin_subgraph_identities_by_location: BTreeMap::new(),
+            point_subgraph_identities: BTreeMap::new(),
+            label_subgraph_identities: BTreeMap::new(),
+            no_connect_subgraph_identities: BTreeMap::new(),
+            sheet_pin_subgraph_identities: BTreeMap::new(),
+        };
+
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(!label_subgraphs[0].has_local_hierarchy);
+    }
+
+    #[test]
+    fn live_label_connectivity_subgraphs_do_not_aggregate_neighbor_direct_local_hierarchy_without_bus_parent()
+     {
+        let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
+        label_subgraph.label_links.push(ReducedLabelLink {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            at: PointKey(1, 2),
+            kind: LabelKind::Local,
+            dangling: false,
+            non_endpoint_wire_segment_count: 0,
+            connection: connection.clone(),
+        });
+
+        let neighbor_connection = test_net_connection("/SIG", "SIG", "/SIG", "");
+        let mut same_name_subgraph = test_net_subgraph(2, neighbor_connection, Vec::new(), "");
+        same_name_subgraph
+            .hier_sheet_pins
+            .push(ReducedHierSheetPinLink {
+                schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+                at: PointKey(5, 6),
+                child_sheet_uuid: Some("child".to_string()),
+                connection: test_net_connection("/SIG", "SIG", "/SIG", ""),
+            });
+
+        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, same_name_subgraph]);
+        let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
+
+        assert_eq!(label_subgraphs.len(), 1);
+        assert!(!label_subgraphs[0].has_local_hierarchy);
     }
 
     #[test]
@@ -23392,9 +23494,8 @@ mod tests {
         )];
         subgraphs[0].chosen_driver_index = None;
 
-        let (by_name, by_sheet_and_name) = super::rebuild_reduced_project_graph_name_caches(
-            &mut subgraphs,
-        );
+        let (by_name, by_sheet_and_name) =
+            super::rebuild_reduced_project_graph_name_caches(&mut subgraphs);
 
         assert_eq!(subgraphs[0].code, 1);
         assert_eq!(subgraphs[0].name, "/SIG");
@@ -29271,7 +29372,8 @@ mod tests {
     }
 
     #[test]
-    fn reduced_bus_entry_conflict_candidate_uses_ranked_primary_fallback_name_when_chosen_missing() {
+    fn reduced_bus_entry_conflict_candidate_uses_ranked_primary_fallback_name_when_chosen_missing()
+    {
         let bus_connection = test_bus_connection(
             "/BUS",
             "BUS",
@@ -36083,7 +36185,9 @@ mod tests {
             test_net_subgraph(
                 2,
                 test_net_connection("GND", "GND", "GND", ""),
-                vec![test_power_driver(test_net_connection("GND", "GND", "GND", ""))],
+                vec![test_power_driver(test_net_connection(
+                    "GND", "GND", "GND", "",
+                ))],
                 "",
             ),
             test_net_subgraph(
