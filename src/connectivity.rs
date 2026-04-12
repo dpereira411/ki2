@@ -12296,7 +12296,7 @@ fn live_reduced_subgraph_bus_entry_conflict_candidate(
     let bus_connection_handle = bus_entry
         .connected_bus_connection_handle
         .clone()
-        .unwrap_or_else(|| subgraph.driver_connection.clone());
+        .unwrap_or_else(|| live_reduced_subgraph_effective_driver_connection(&subgraph));
     let bus_connection = bus_connection_handle.borrow();
 
     if !reduced_connection_is_bus(bus_connection.connection_type) {
@@ -29759,6 +29759,68 @@ mod tests {
         let graph = test_graph_with_live_subgraphs(vec![entry_subgraph]);
         {
             let subgraph = graph.live_subgraphs[0].borrow_mut();
+            let bus_entry = subgraph.wire_items[0].borrow().connection.clone();
+            let mut bus_entry_connection = bus_entry.borrow_mut();
+            bus_entry_connection.connection_type = ReducedProjectConnectionType::None;
+            bus_entry_connection.name.clear();
+            bus_entry_connection.local_name.clear();
+            bus_entry_connection.full_local_name.clear();
+        }
+
+        let candidate =
+            super::live_reduced_subgraph_bus_entry_conflict_candidate(&graph.live_subgraphs[0])
+                .expect("bus-entry conflict candidate");
+
+        assert_eq!(candidate.bus_name, "BUS");
+        assert_eq!(candidate.bus_members, vec!["/BUS0".to_string()]);
+        assert_eq!(candidate.fallback_net_name, "/BUS");
+    }
+
+    #[test]
+    fn live_bus_entry_conflict_candidate_uses_effective_bus_when_raw_subgraph_connection_is_stale()
+    {
+        let mut entry_subgraph = test_net_subgraph(
+            1,
+            test_net_connection("/OLD", "OLD", "/OLD", ""),
+            vec![ReducedProjectStrongDriver {
+                kind: ReducedProjectDriverKind::Label,
+                priority: super::reduced_local_label_driver_priority(),
+                connection: test_bus_connection(
+                    "/BUS",
+                    "BUS",
+                    "/BUS",
+                    "",
+                    vec![test_bus_member("BUS0", "BUS0", "/BUS0")],
+                ),
+                identity: None,
+            }],
+            "",
+        );
+        entry_subgraph.chosen_driver_index = Some(0);
+        entry_subgraph.wire_items.push(ReducedSubgraphWireItem {
+            schematic_path: std::path::PathBuf::from("root.kicad_sch"),
+            start: PointKey(20f64.to_bits(), 10f64.to_bits()),
+            end: PointKey(5f64.to_bits(), 0f64.to_bits()),
+            is_bus_entry: true,
+            start_is_wire_side: true,
+            connected_bus_subgraph_index: None,
+        });
+        entry_subgraph.base_pins.push(test_base_pin(
+            "",
+            "sym-net",
+            PointKey(20f64.to_bits(), 10f64.to_bits()),
+            "1",
+            "input",
+            test_net_connection("/NET", "NET", "/NET", ""),
+        ));
+
+        let graph = test_graph_with_live_subgraphs(vec![entry_subgraph]);
+        {
+            let mut subgraph = graph.live_subgraphs[0].borrow_mut();
+            subgraph.chosen_driver = None;
+            subgraph.driver_connection = Rc::new(RefCell::new(
+                test_net_connection("/OLD", "OLD", "/OLD", "").into(),
+            ));
             let bus_entry = subgraph.wire_items[0].borrow().connection.clone();
             let mut bus_entry_connection = bus_entry.borrow_mut();
             bus_entry_connection.connection_type = ReducedProjectConnectionType::None;
