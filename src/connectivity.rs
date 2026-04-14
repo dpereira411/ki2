@@ -9458,11 +9458,8 @@ pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at).and_then(|index| {
-        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
-            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
-    })
+    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
@@ -9545,11 +9542,8 @@ pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label).and_then(|index| {
-        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
-            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
-    })
+    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live label-owner lookup or none
@@ -9679,11 +9673,8 @@ pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at).and_then(|index| {
-        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
-            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
-    })
+    resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live no-connect lookup or none
@@ -9876,13 +9867,7 @@ pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
     child_sheet_uuid: Option<&str>,
 ) -> Option<ReducedProjectSubgraphEntry> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| {
-            live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
-                .and_then(|handle| {
-                    projected_reduced_project_subgraph_from_live_handle(graph, &handle)
-                })
-                .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
-        })
+        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live sheet-pin lookup or none
