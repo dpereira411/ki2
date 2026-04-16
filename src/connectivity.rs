@@ -14266,6 +14266,43 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                     .map(|label| (subgraph.sheet_instance_path.clone(), label.at)),
             )
             .collect::<BTreeSet<_>>();
+        let driver_connection = reduced_project_effective_driver_connection(&subgraph);
+        let (unique_pin_count, unique_label_count) = if driver_connection.name.is_empty() {
+            (
+                reduced_unique_stacked_pin_count(subgraph.base_pins.iter()),
+                local_unique_labels.len(),
+            )
+        } else {
+            let unique_pin_count = reduced_unique_stacked_pin_count(
+                graph.subgraphs_by_name
+                    .get(&driver_connection.name)
+                    .into_iter()
+                    .flat_map(|indexes| indexes.iter())
+                    .filter_map(|index| graph.subgraphs.get(*index))
+                    .flat_map(|neighbor| neighbor.base_pins.iter()),
+            );
+            let unique_label_count = graph
+                .subgraphs_by_name
+                .get(&driver_connection.name)
+                .into_iter()
+                .flat_map(|indexes| indexes.iter())
+                .filter_map(|index| graph.subgraphs.get(*index))
+                .flat_map(|neighbor| {
+                    neighbor
+                        .label_links
+                        .iter()
+                        .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
+                        .chain(
+                            neighbor
+                                .hier_ports
+                                .iter()
+                                .map(|label| (neighbor.sheet_instance_path.clone(), label.at)),
+                        )
+                })
+                .collect::<BTreeSet<_>>()
+                .len();
+            (unique_pin_count, unique_label_count)
+        };
 
         for no_connect_point in &subgraph.no_connect_points {
             let has_sheet_pin = subgraph
@@ -14284,43 +14321,6 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
             if has_sheet_pin || has_hierarchical_label || has_nc_pin {
                 continue;
             }
-
-            let (unique_pin_count, unique_label_count) = {
-                let driver_connection = reduced_project_effective_driver_connection(&subgraph);
-                if driver_connection.name.is_empty() {
-                    (
-                        reduced_unique_stacked_pin_count(subgraph.base_pins.iter()),
-                        local_unique_labels.len(),
-                    )
-                } else {
-                    let unique_pin_count = reduced_unique_stacked_pin_count(
-                        graph.subgraphs_by_name
-                            .get(&driver_connection.name)
-                            .into_iter()
-                            .flat_map(|indexes| indexes.iter())
-                            .filter_map(|index| graph.subgraphs.get(*index))
-                            .flat_map(|neighbor| neighbor.base_pins.iter()),
-                    );
-                    let unique_label_count = graph
-                        .subgraphs_by_name
-                        .get(&driver_connection.name)
-                        .into_iter()
-                        .flat_map(|indexes| indexes.iter())
-                        .filter_map(|index| graph.subgraphs.get(*index))
-                        .flat_map(|neighbor| {
-                            neighbor
-                                .label_links
-                                .iter()
-                                .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
-                                .chain(neighbor.hier_ports.iter().map(|label| {
-                                    (neighbor.sheet_instance_path.clone(), label.at)
-                                }))
-                        })
-                        .collect::<BTreeSet<_>>()
-                        .len();
-                    (unique_pin_count, unique_label_count)
-                }
-            };
 
             if unique_pin_count <= 1 {
                 if unique_pin_count == 0 && unique_label_count == 0 {
