@@ -13468,10 +13468,7 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
             && reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, subgraph_index);
         let has_no_connect = subgraph.has_no_connect
             || reduced_project_subgraph_has_no_connect_via_parent_chain(graph, subgraph_index);
-        let has_multiple_drivers = graph
-            .subgraphs
-            .get(subgraph_index)
-            .is_some_and(reduced_project_subgraph_has_multiple_drivers);
+        let has_multiple_drivers = reduced_project_subgraph_has_multiple_drivers(subgraph);
         let has_bus_member_hierarchy_route =
             reduced_project_subgraph_has_bus_member_hierarchy_route(graph, subgraph_index);
         let mut all_pins = pin_count;
