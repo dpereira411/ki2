@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use crate::diagnostic::Diagnostic;
 use crate::error::Error;
 use crate::model::{
     EmbeddedFile, EmbeddedFileType, ItemVariant, MirrorAxis, Property, PropertyKind, SchItem,
-    Schematic, SheetReference, SimLibrarySource, Symbol,
+    Schematic, SimLibrarySource, Symbol,
 };
 use crate::parser::parse_schematic_file;
 use crate::sim::{
@@ -1032,6 +1032,16 @@ impl SchematicLoader {
         }
     }
 
+    // upstream: SCH_IO_MGR schematic hierarchy load entry or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: KiCad drives hierarchy load through project/screen owners instead of this
+    // loader-owned entrypoint, but the canonical-root timing and child-load walk now stay aligned
+    // with the exercised hierarchy ownership
+    // local_only_reason: Rust still materializes a reduced `LoadResult` directly from the loader
+    // instead of a fuller upstream-owned schematic controller stack
+    // replaced_by: none
+    // remove_when: a fuller upstream-shaped schematic/project owner absorbs load orchestration
     fn load_schematic_file(&mut self, file_name: &Path) -> Result<PathBuf, Error> {
         let canonical_root = file_name
             .canonicalize()
@@ -1048,77 +1058,118 @@ impl SchematicLoader {
         Ok(canonical_root)
     }
 
+    // upstream: KIWAY / project-owned hierarchical schematic load walk or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: KiCad owns hierarchical screen loading across richer project/sheet objects;
+    // this local loader still fills reduced `schematics` and `links` vectors directly, but it now
+    // uses an explicit DFS stack so exercised load order, reuse detection, and canonical child
+    // ownership stop depending on Rust recursion depth
+    // local_only_reason: the current Rust loader has no 1:1 KiCad hierarchy owner yet
+    // replaced_by: none
+    // remove_when: hierarchy load moves onto a fuller upstream-shaped schematic/project owner
     fn load_hierarchy(&mut self, sheet_path: &Path) -> Result<usize, Error> {
-        let canonical = sheet_path
+        enum PendingHierarchyLoad {
+            Enter(PathBuf),
+            Exit,
+        }
+
+        let canonical_root = sheet_path
             .canonicalize()
             .unwrap_or_else(|_| sheet_path.to_path_buf());
 
-        self.reject_direct_ancestor_cycle(&canonical)?;
-
-        if let Some(existing_index) = self.loaded_by_canonical.get(&canonical) {
+        if let Some(existing_index) = self.loaded_by_canonical.get(&canonical_root) {
             return Ok(*existing_index);
         }
 
-        self.current_sheet_path.push(canonical.clone());
+        let mut pending = vec![PendingHierarchyLoad::Enter(canonical_root.clone())];
+        let mut discovered = self
+            .loaded_by_canonical
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>();
+        discovered.insert(canonical_root.clone());
 
-        let current_dir = canonical
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-        self.current_path.push(current_dir);
+        while let Some(task) = pending.pop() {
+            match task {
+                PendingHierarchyLoad::Enter(canonical) => {
+                    self.reject_direct_ancestor_cycle(&canonical)?;
 
-        let schematic = self.load_file(&canonical)?;
-        let references = schematic.sheet_references();
-        let index = self.schematics.len();
-        self.loaded_by_canonical.insert(canonical.clone(), index);
-        self.schematics.push(schematic);
+                    if self.loaded_by_canonical.contains_key(&canonical) {
+                        continue;
+                    }
 
-        for reference in references {
-            self.load_child_sheet(&canonical, reference)?;
+                    self.current_sheet_path.push(canonical.clone());
+                    self.current_path.push(
+                        canonical
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .to_path_buf(),
+                    );
+
+                    let schematic = self.load_file(&canonical)?;
+                    let references = schematic.sheet_references();
+                    let index = self.schematics.len();
+                    self.loaded_by_canonical.insert(canonical.clone(), index);
+                    self.schematics.push(schematic);
+
+                    pending.push(PendingHierarchyLoad::Exit);
+
+                    let mut child_loads = Vec::new();
+
+                    for reference in references {
+                        let resolved = if reference.resolved_path.is_absolute() {
+                            reference.resolved_path.clone()
+                        } else {
+                            self.current_path
+                                .last()
+                                .cloned()
+                                .unwrap_or_else(|| PathBuf::from("."))
+                                .join(&reference.filename)
+                        };
+                        let child_canonical =
+                            resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
+
+                        self.reject_direct_ancestor_cycle(&child_canonical)?;
+
+                        let reused_existing_child = discovered.contains(&child_canonical);
+                        self.links.push(HierarchyLink {
+                            parent_path: canonical.clone(),
+                            child_path: child_canonical.clone(),
+                            sheet_uuid: reference.sheet_uuid,
+                            sheet_name: reference.sheet_name,
+                            filename: reference.filename,
+                            reused_existing_child,
+                        });
+
+                        if !reused_existing_child {
+                            discovered.insert(child_canonical.clone());
+                            child_loads.push(child_canonical);
+                        }
+                    }
+
+                    for child_canonical in child_loads.into_iter().rev() {
+                        pending.push(PendingHierarchyLoad::Enter(child_canonical));
+                    }
+                }
+                PendingHierarchyLoad::Exit => {
+                    self.current_path.pop();
+                    self.current_sheet_path.pop();
+                }
+            }
         }
 
-        self.current_path.pop();
-        self.current_sheet_path.pop();
-        Ok(index)
+        self.loaded_by_canonical
+            .get(&canonical_root)
+            .copied()
+            .ok_or_else(|| Error::Io {
+                path: canonical_root,
+                source: std::io::Error::other("hierarchy root was not loaded"),
+            })
     }
 
     fn load_file(&self, file_name: &Path) -> Result<Schematic, Error> {
         parse_schematic_file(file_name)
-    }
-
-    fn load_child_sheet(
-        &mut self,
-        parent_path: &Path,
-        reference: SheetReference,
-    ) -> Result<(), Error> {
-        let resolved = if reference.resolved_path.is_absolute() {
-            reference.resolved_path.clone()
-        } else {
-            self.current_path
-                .last()
-                .cloned()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(&reference.filename)
-        };
-        let child_canonical = resolved.canonicalize().unwrap_or_else(|_| resolved.clone());
-
-        self.reject_direct_ancestor_cycle(&child_canonical)?;
-
-        let reused_existing_child = self.loaded_by_canonical.contains_key(&child_canonical);
-        self.links.push(HierarchyLink {
-            parent_path: parent_path.to_path_buf(),
-            child_path: child_canonical.clone(),
-            sheet_uuid: reference.sheet_uuid,
-            sheet_name: reference.sheet_name,
-            filename: reference.filename,
-            reused_existing_child,
-        });
-
-        if !reused_existing_child {
-            self.load_hierarchy(&resolved)?;
-        }
-
-        Ok(())
     }
 
     fn reject_direct_ancestor_cycle(&self, canonical: &Path) -> Result<(), Error> {
@@ -1191,37 +1242,55 @@ impl SchematicLoader {
         sheet_paths
     }
 
-    // Local helper for the upstream sheet-list builder. This helper exists because the Rust loader
-    // represents hierarchy expansion recursively before sorting the final list; upstream keeps the
-    // traversal inside a different set of owning C++ routines. Remaining behavior is intentionally
-    // narrow: expand child sheet-path metadata only, leaving page ordering to the owning builder.
+    // upstream: SCH_SHEET_LIST::BuildSheetListSortedByPageNumbers child expansion or none
+    // parity_status: partial
+    // local_kind: local-only-transitional
+    // divergence: KiCad keeps child expansion inside the owning sheet-list objects; this helper
+    // still expands reduced `LoadedSheetPath` entries, but now uses an explicit stack so deep
+    // hierarchies keep the same source-order traversal without recursive load-phase stack growth
+    // local_only_reason: Rust still represents the hierarchy as reduced loaded-path records
+    // replaced_by: none
+    // remove_when: sheet-list ownership moves onto a fuller upstream-shaped hierarchy model
     fn build_child_sheet_paths(
         &self,
         parent_path: &Path,
         parent_symbol_path: &str,
         out: &mut Vec<LoadedSheetPath>,
     ) {
-        for link in self
-            .links
-            .iter()
-            .filter(|link| link.parent_path == parent_path)
-        {
-            let Some(sheet_uuid) = link.sheet_uuid.as_ref() else {
-                continue;
-            };
+        let mut pending = vec![(parent_path.to_path_buf(), parent_symbol_path.to_string())];
 
-            let instance_path = format!("{parent_symbol_path}/{sheet_uuid}");
-            out.push(LoadedSheetPath {
-                schematic_path: link.child_path.clone(),
-                instance_path: instance_path.clone(),
-                symbol_path: instance_path.clone(),
-                sheet_uuid: link.sheet_uuid.clone(),
-                sheet_name: link.sheet_name.clone(),
-                page: None,
-                sheet_number: 0,
-                sheet_count: 0,
-            });
-            self.build_child_sheet_paths(&link.child_path, &instance_path, out);
+        while let Some((parent_path, parent_symbol_path)) = pending.pop() {
+            let mut children = Vec::new();
+
+            for link in self
+                .links
+                .iter()
+                .filter(|link| link.parent_path == parent_path)
+            {
+                let Some(sheet_uuid) = link.sheet_uuid.as_ref() else {
+                    continue;
+                };
+
+                let child_symbol_path = format!("{parent_symbol_path}/{sheet_uuid}");
+                let child_path = link.child_path.clone();
+                let loaded_path = LoadedSheetPath {
+                    schematic_path: child_path.clone(),
+                    instance_path: child_symbol_path.clone(),
+                    symbol_path: child_symbol_path.clone(),
+                    sheet_uuid: link.sheet_uuid.clone(),
+                    sheet_name: link.sheet_name.clone(),
+                    page: None,
+                    sheet_number: 0,
+                    sheet_count: 0,
+                };
+
+                out.push(loaded_path.clone());
+                children.push((child_path, child_symbol_path, loaded_path));
+            }
+
+            for (child_path, child_symbol_path, _) in children.into_iter().rev() {
+                pending.push((child_path, child_symbol_path));
+            }
         }
     }
 
@@ -1333,20 +1402,29 @@ impl SchematicLoader {
         let Some(root_index) = self.loaded_by_canonical.get(root_path).copied() else {
             return;
         };
-        let mut page_by_instance_path: HashMap<String, Option<String>> = self.schematics
-            [root_index]
-            .screen
-            .sheet_instances
+        let root_symbol_path = sheet_paths
             .iter()
-            .map(|instance| {
-                let path = if instance.path == "/" {
-                    String::new()
-                } else {
-                    instance.path.clone()
-                };
-                (path, instance.page.clone())
-            })
-            .collect();
+            .find(|sheet_path| sheet_path.instance_path.is_empty())
+            .map(|sheet_path| sheet_path.symbol_path.clone())
+            .unwrap_or_default();
+        let mut page_by_instance_path = HashMap::new();
+
+        for instance in &self.schematics[root_index].screen.sheet_instances {
+            let path = if instance.path == "/" {
+                String::new()
+            } else {
+                instance.path.clone()
+            };
+            page_by_instance_path.insert(path.clone(), instance.page.clone());
+
+            if !path.is_empty()
+                && !root_symbol_path.is_empty()
+                && !path.starts_with(&format!("{root_symbol_path}/"))
+            {
+                page_by_instance_path
+                    .insert(format!("{root_symbol_path}{path}"), instance.page.clone());
+            }
+        }
 
         for parent_sheet_path in sheet_paths.iter() {
             let Some(parent_index) = self
@@ -1355,6 +1433,16 @@ impl SchematicLoader {
                 .copied()
             else {
                 continue;
+            };
+
+            let legacy_parent_instance_path = if !root_symbol_path.is_empty() {
+                parent_sheet_path
+                    .instance_path
+                    .strip_prefix(&root_symbol_path)
+                    .filter(|suffix| !suffix.is_empty())
+                    .map(str::to_string)
+            } else {
+                None
             };
 
             for item in &self.schematics[parent_index].screen.items {
@@ -1370,6 +1458,9 @@ impl SchematicLoader {
                 let Some(instance) = sheet.instances.iter().find(|instance| {
                     instance.path == parent_sheet_path.symbol_path
                         || instance.path == parent_sheet_path.instance_path
+                        || legacy_parent_instance_path
+                            .as_deref()
+                            .is_some_and(|legacy| instance.path == legacy)
                 }) else {
                     continue;
                 };

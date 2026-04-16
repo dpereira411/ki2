@@ -13598,7 +13598,7 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
     } else {
         for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+            .filter_map(|index| graph.subgraphs.get(index))
         {
             for label in &subgraph.label_links {
                 if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
@@ -13638,7 +13638,7 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
 
     for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
     {
         if subgraph.label_links.is_empty() {
             continue;
@@ -14339,7 +14339,7 @@ pub(crate) fn reduced_project_bus_to_net_conflicts(
 
     reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
         .filter_map(|subgraph| {
             reduced_project_subgraph_bus_to_net_conflict(subgraph).map(|conflict| {
                 ReducedProjectBusToNetConflictEvent {
@@ -14419,7 +14419,7 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
 
     for subgraph in reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
         .filter(|subgraph| !subgraph.no_connect_points.is_empty())
     {
         if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
