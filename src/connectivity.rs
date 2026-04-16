@@ -14781,25 +14781,22 @@ pub(crate) fn reduced_project_no_connect_events(
     let mut events = Vec::new();
     let label_name_caches = reduced_project_label_name_caches(graph);
 
-    events.extend(
-        reduced_project_no_connect_marker_outcomes(graph)
-            .into_iter()
-            .map(|outcome| match outcome {
-                ReducedProjectNoConnectMarkerOutcome::Dangling { diagnostic_path } => {
-                    ReducedProjectNoConnectEvent::MarkerDangling { diagnostic_path }
-                }
-                ReducedProjectNoConnectMarkerOutcome::Connected { diagnostic_path } => {
-                    ReducedProjectNoConnectEvent::MarkerConnected { diagnostic_path }
-                }
-            }),
-    );
-    events.extend(
-        reduced_project_pin_not_connected_candidates(graph, &label_name_caches)
-            .into_iter()
-            .map(|candidate| ReducedProjectNoConnectEvent::PinNotConnected {
-                diagnostic_path: candidate.pin_schematic_path,
-            }),
-    );
+    for outcome in reduced_project_no_connect_marker_outcomes(graph) {
+        events.push(match outcome {
+            ReducedProjectNoConnectMarkerOutcome::Dangling { diagnostic_path } => {
+                ReducedProjectNoConnectEvent::MarkerDangling { diagnostic_path }
+            }
+            ReducedProjectNoConnectMarkerOutcome::Connected { diagnostic_path } => {
+                ReducedProjectNoConnectEvent::MarkerConnected { diagnostic_path }
+            }
+        });
+    }
+
+    for candidate in reduced_project_pin_not_connected_candidates(graph, &label_name_caches) {
+        events.push(ReducedProjectNoConnectEvent::PinNotConnected {
+            diagnostic_path: candidate.pin_schematic_path,
+        });
+    }
 
     events
 }
