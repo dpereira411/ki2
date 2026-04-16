@@ -16403,13 +16403,7 @@ where
 
     let mut assignments = BTreeMap::<String, BTreeSet<String>>::new();
 
-    let net_names = graph.subgraphs_by_name.keys().cloned().collect::<Vec<_>>();
-
-    for net_name in net_names {
-        let Some(subgraph_indexes) = graph.subgraphs_by_name.get(&net_name) else {
-            continue;
-        };
-
+    for (net_name, subgraph_indexes) in &graph.subgraphs_by_name {
         let mut netclasses = BTreeSet::<String>::new();
         for subgraph in subgraph_indexes
             .iter()
