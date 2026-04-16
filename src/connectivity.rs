@@ -9362,31 +9362,6 @@ fn reduced_project_run_erc_subgraph_indexes_without_driver_dedup(
     (0..graph.subgraphs.len()).collect()
 }
 
-#[allow(dead_code)]
-// upstream: CONNECTION_GRAPH::RunERC per-subgraph item-owned traversal branch or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still iterates reduced subgraph snapshots instead of final `CONNECTION_SUBGRAPH*`
-// storage, but intentionally skips reused-screen driver-instance dedup so marker-owned ERC checks
-// can visit each distinct item-owning subgraph
-// local_only_reason: keeps item-owned no-connect traversal on the shared graph owner without
-// weakening the reused-screen dedup policy used by driver-owned ERC rules
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with rule-specific traversal
-// remove_when: no-connect and similar item-owned ERC rules iterate final live graph storage directly
-fn reduced_project_run_erc_subgraphs_without_driver_dedup(
-    graph: &ReducedProjectNetGraph,
-) -> Vec<ReducedProjectSubgraphEntry> {
-    if !graph.live_subgraphs.is_empty() {
-        return projected_reduced_project_subgraphs(graph);
-    }
-
-    reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph)
-        .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
-        .cloned()
-        .collect()
-}
-
 // upstream: CONNECTION_GRAPH::RunERC live subgraph iteration or none
 // parity_status: partial
 // local_kind: local-only-transitional
