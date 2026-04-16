@@ -9392,22 +9392,6 @@ pub(crate) fn reduced_project_subgraph_by_index(
     graph.subgraphs.get(index)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
-// graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
-// reduced `(sheet instance path, subgraph code)` snapshots, but it keeps parent-link consumers on
-// the shared graph owner instead of re-enumerating private storage. Remaining divergence is the
-// still-missing live subgraph object model.
-pub(crate) fn reduced_project_subgraph_index(
-    graph: &ReducedProjectNetGraph,
-    subgraph: &ReducedProjectSubgraphEntry,
-) -> Option<usize> {
-    graph.subgraphs.iter().position(|candidate| {
-        candidate.sheet_instance_path == subgraph.sheet_instance_path
-            && candidate.subgraph_code == subgraph.subgraph_code
-    })
-}
-
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -11539,11 +11523,21 @@ pub(crate) fn resolve_reduced_project_net_at(
     })
 }
 
-fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
-    reduced_subgraphs: &'a [ReducedProjectSubgraphEntry],
+// upstream: CONNECTION_GRAPH::GetSubgraphForItem bus-entry attached-bus scan or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still resolves attached buses from reduced same-sheet geometry when the live handle
+// path is absent, but now returns only the shared reduced index instead of cloning/exposing a
+// whole reduced subgraph entry
+// local_only_reason: preserves the reduced fallback owner query until final live bus-entry item
+// ownership exists
+// replaced_by: fuller live `SCH_BUS_WIRE_ENTRY` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: attached-bus ownership resolves directly from final live item owners
+fn reduced_connected_bus_subgraph_index_for_wire_item_in(
+    reduced_subgraphs: &[ReducedProjectSubgraphEntry],
     owner_subgraph: &ReducedProjectSubgraphEntry,
     wire_item: &ReducedSubgraphWireItem,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<usize> {
     if !wire_item.is_bus_entry {
         return None;
     }
@@ -11553,7 +11547,7 @@ fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
             if candidate.sheet_instance_path == owner_subgraph.sheet_instance_path
                 && !candidate.bus_items.is_empty()
             {
-                return Some(candidate);
+                return Some(index);
             }
         }
     }
@@ -11564,8 +11558,8 @@ fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
         wire_item.start
     };
 
-    reduced_subgraphs.iter().find(|candidate| {
-        candidate.sheet_instance_path == owner_subgraph.sheet_instance_path
+    reduced_subgraphs.iter().enumerate().find_map(|(index, candidate)| {
+        (candidate.sheet_instance_path == owner_subgraph.sheet_instance_path
             && !candidate.bus_items.is_empty()
             && candidate.bus_items.iter().any(|bus_item| {
                 point_on_wire_segment(
@@ -11579,7 +11573,8 @@ fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
                         f64::from_bits(bus_item.end.1),
                     ],
                 )
-            })
+            }))
+            .then_some(index)
     })
 }
 
@@ -11646,11 +11641,11 @@ fn live_reduced_connected_bus_subgraph_index_for_wire_item(
 // attached-bus subgraph index before falling back to the reduced geometric match, so ERC/export
 // callers do not need to know how that owner is recovered. Remaining divergence is the still-
 // missing fuller live bus-item / `SCH_CONNECTION` object graph behind this reduced owner query.
-pub(crate) fn reduced_project_connected_bus_subgraph_for_wire_item<'a>(
-    graph: &'a ReducedProjectNetGraph,
+pub(crate) fn reduced_project_connected_bus_subgraph_index_for_wire_item(
+    graph: &ReducedProjectNetGraph,
     subgraph: &ReducedProjectSubgraphEntry,
     wire_item: &ReducedSubgraphWireItem,
-) -> Option<&'a ReducedProjectSubgraphEntry> {
+) -> Option<usize> {
     if let Some(index) =
         live_reduced_connected_bus_subgraph_index_for_wire_item(graph, subgraph, wire_item)
     {
@@ -11658,12 +11653,12 @@ pub(crate) fn reduced_project_connected_bus_subgraph_for_wire_item<'a>(
             if candidate.sheet_instance_path == subgraph.sheet_instance_path
                 && !candidate.bus_items.is_empty()
             {
-                return Some(candidate);
+                return Some(index);
             }
         }
     }
 
-    reduced_connected_bus_subgraph_for_wire_item_in(&graph.subgraphs, subgraph, wire_item)
+    reduced_connected_bus_subgraph_index_for_wire_item_in(&graph.subgraphs, subgraph, wire_item)
 }
 
 // Upstream parity: reduced local analogue for the bus-entry connected-bus endpoint ownership KiCad
@@ -11694,8 +11689,9 @@ pub(crate) fn reduced_project_wire_item_endpoint_has_connected_bus_owner(
 
     let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
 
-    reduced_project_connected_bus_subgraph_for_wire_item(graph, subgraph, wire_item).is_some_and(
-        |bus_subgraph| {
+    reduced_project_connected_bus_subgraph_index_for_wire_item(graph, subgraph, wire_item)
+        .and_then(|index| graph.subgraphs.get(index))
+        .is_some_and(|bus_subgraph| {
             bus_subgraph.bus_items.iter().any(|item| {
                 point_on_wire_segment(
                     endpoint_at,
@@ -11703,8 +11699,7 @@ pub(crate) fn reduced_project_wire_item_endpoint_has_connected_bus_owner(
                     [f64::from_bits(item.end.0), f64::from_bits(item.end.1)],
                 )
             })
-        },
-    )
+        })
 }
 
 fn reduced_subgraph_endpoint_has_owner(
@@ -12518,10 +12513,12 @@ pub(crate) fn reduced_project_subgraph_bus_entry_conflict_candidate(
         ]
     };
 
-    let bus_connection =
-        reduced_project_connected_bus_subgraph_for_wire_item(graph, subgraph, bus_entry)
-            .map(reduced_project_effective_driver_connection)
-            .unwrap_or_else(|| reduced_project_effective_driver_connection(subgraph));
+    let bus_connection = reduced_project_connected_bus_subgraph_index_for_wire_item(
+        graph, subgraph, bus_entry,
+    )
+    .and_then(|index| graph.subgraphs.get(index))
+    .map(reduced_project_effective_driver_connection)
+    .unwrap_or_else(|| reduced_project_effective_driver_connection(subgraph));
 
     if !reduced_connection_is_bus(bus_connection.connection_type) {
         return None;
@@ -13465,36 +13462,27 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
 
     let mut label_subgraphs = Vec::new();
 
-    for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
+    for (subgraph_index, subgraph) in reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
+        .filter_map(|index| graph.subgraphs.get(index).map(|subgraph| (index, subgraph)))
     {
         if subgraph.label_links.is_empty() {
             continue;
         }
 
-        let subgraph_index = reduced_project_subgraph_index(graph, &subgraph);
-
         let pin_count = subgraph.base_pins.len();
         let has_direct_local_hierarchy =
             !subgraph.hier_sheet_pins.is_empty() || !subgraph.hier_ports.is_empty();
-        let has_local_hierarchy = subgraph_index.is_some_and(|index| {
-            has_direct_local_hierarchy
-                && reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, index)
-        });
+        let has_local_hierarchy = has_direct_local_hierarchy
+            && reduced_project_subgraph_has_local_hierarchy_via_bus_parents(graph, subgraph_index);
         let has_no_connect = subgraph.has_no_connect
-            || subgraph_index.is_some_and(|index| {
-                reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
-            });
-        let has_multiple_drivers = subgraph_index.is_some_and(|index| {
-            graph
-                .subgraphs
-                .get(index)
-                .is_some_and(reduced_project_subgraph_has_multiple_drivers)
-        });
-        let has_bus_member_hierarchy_route = subgraph_index.is_some_and(|index| {
-            reduced_project_subgraph_has_bus_member_hierarchy_route(graph, index)
-        });
+            || reduced_project_subgraph_has_no_connect_via_parent_chain(graph, subgraph_index);
+        let has_multiple_drivers = graph
+            .subgraphs
+            .get(subgraph_index)
+            .is_some_and(reduced_project_subgraph_has_multiple_drivers);
+        let has_bus_member_hierarchy_route =
+            reduced_project_subgraph_has_bus_member_hierarchy_route(graph, subgraph_index);
         let mut all_pins = pin_count;
         let mut local_pins = pin_count;
         let mut aggregate_has_no_connect = has_no_connect;
@@ -19619,12 +19607,15 @@ mod tests {
             Some(0)
         );
 
-        let connected_bus = super::reduced_connected_bus_subgraph_for_wire_item_in(
+        let connected_bus_index = super::reduced_connected_bus_subgraph_index_for_wire_item_in(
             &reduced,
             &reduced[1],
             &reduced[1].wire_items[0],
         )
         .expect("attached bus subgraph");
+        let connected_bus = reduced
+            .get(connected_bus_index)
+            .expect("attached bus index resolves");
         assert_eq!(connected_bus.subgraph_code, reduced[0].subgraph_code);
     }
 
@@ -19976,12 +19967,15 @@ mod tests {
             },
         ];
 
-        let connected_bus = super::reduced_connected_bus_subgraph_for_wire_item_in(
+        let connected_bus_index = super::reduced_connected_bus_subgraph_index_for_wire_item_in(
             &reduced,
             &reduced[2],
             &reduced[2].wire_items[0],
         )
         .expect("attached bus subgraph");
+        let connected_bus = reduced
+            .get(connected_bus_index)
+            .expect("attached bus index resolves");
         assert_eq!(connected_bus.subgraph_code, reduced[1].subgraph_code);
     }
 
@@ -20119,12 +20113,15 @@ mod tests {
             },
         ];
 
-        let connected_bus = super::reduced_connected_bus_subgraph_for_wire_item_in(
+        let connected_bus_index = super::reduced_connected_bus_subgraph_index_for_wire_item_in(
             &reduced,
             &reduced[2],
             &reduced[2].wire_items[0],
         )
         .expect("attached bus subgraph");
+        let connected_bus = reduced
+            .get(connected_bus_index)
+            .expect("attached bus index resolves");
         assert_eq!(connected_bus.subgraph_code, reduced[0].subgraph_code);
     }
 
@@ -20283,12 +20280,16 @@ mod tests {
             sheet_pin_subgraph_identities: BTreeMap::new(),
         };
 
-        let connected_bus = super::reduced_project_connected_bus_subgraph_for_wire_item(
+        let connected_bus_index = super::reduced_project_connected_bus_subgraph_index_for_wire_item(
             &graph,
             &reduced[2],
             &reduced[2].wire_items[0],
         )
         .expect("attached bus subgraph");
+        let connected_bus = graph
+            .subgraphs
+            .get(connected_bus_index)
+            .expect("attached bus subgraph");
 
         assert_eq!(connected_bus.subgraph_code, reduced[0].subgraph_code);
     }
@@ -20449,12 +20450,16 @@ mod tests {
             sheet_pin_subgraph_identities: BTreeMap::new(),
         };
 
-        let connected_bus = super::reduced_project_connected_bus_subgraph_for_wire_item(
+        let connected_bus_index = super::reduced_project_connected_bus_subgraph_index_for_wire_item(
             &graph,
             &reduced[2],
             &reduced[2].wire_items[0],
         )
         .expect("attached bus subgraph");
+        let connected_bus = graph
+            .subgraphs
+            .get(connected_bus_index)
+            .expect("attached bus subgraph");
 
         assert_eq!(connected_bus.subgraph_code, reduced[0].subgraph_code);
     }
@@ -29691,14 +29696,12 @@ mod tests {
         let connected_bus_index = bus_entry
             .connected_bus_subgraph_index
             .expect("connected bus owner index");
-        let connected_bus =
-            super::reduced_project_connected_bus_subgraph_for_wire_item(&graph, &entry, bus_entry)
-                .expect("connected bus subgraph");
-        assert_eq!(
-            super::reduced_project_subgraph_index(&graph, connected_bus)
-                .expect("connected bus graph index"),
-            connected_bus_index
-        );
+        let resolved_connected_bus_index =
+            super::reduced_project_connected_bus_subgraph_index_for_wire_item(
+                &graph, &entry, bus_entry,
+            )
+            .expect("connected bus subgraph");
+        assert_eq!(resolved_connected_bus_index, connected_bus_index);
         assert!(
             super::reduced_project_wire_item_endpoint_has_connected_bus_owner(
                 &graph,
