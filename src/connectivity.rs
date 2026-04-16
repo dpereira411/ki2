@@ -9471,124 +9471,6 @@ pub(crate) fn reduced_project_subgraph_index(
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: CONNECTION_GRAPH::FindSubgraphByName or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still projects a reduced snapshot instead of returning the live `CONNECTION_SUBGRAPH*`
-// local_only_reason: downstream readers still consume reduced subgraph entries
-// replaced_by: live `CONNECTION_SUBGRAPH` sheet-qualified lookup once reduced snapshot readers are retired
-// remove_when: sheet-qualified same-name consumers can use the shared live graph owner directly
-pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
-    graph: &ReducedProjectNetGraph,
-    net_name: &str,
-    sheet_path: &LoadedSheetPath,
-) -> Option<ReducedProjectSubgraphEntry> {
-    if !graph.live_subgraphs.is_empty() {
-        return live_reduced_subgraphs_by_sheet_and_name(graph)
-            .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
-            .into_iter()
-            .flat_map(|handles| handles.iter())
-            .find_map(|handle| {
-                projected_reduced_project_subgraph_by_index(
-                    graph,
-                    live_subgraph_projection_index(&graph.live_subgraphs, handle),
-                )
-            })
-            .filter(|subgraph| {
-                reduced_project_effective_driver_connection(subgraph).name == net_name
-            });
-    }
-
-    graph
-        .subgraphs_by_sheet_and_name
-        .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
-        .and_then(|indexes| indexes.first())
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, *index))
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: CONNECTION_GRAPH::FindFirstSubgraphByName or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still projects a reduced snapshot instead of returning the live `CONNECTION_SUBGRAPH*`
-// local_only_reason: graph/export/ERC readers still consume reduced subgraph entries
-// replaced_by: live `CONNECTION_SUBGRAPH` first-by-name lookup once reduced snapshot readers are retired
-// remove_when: same-name readers can use the shared live graph owner directly
-pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
-    graph: &ReducedProjectNetGraph,
-    net_name: &str,
-) -> Option<ReducedProjectSubgraphEntry> {
-    if !graph.live_subgraphs.is_empty() {
-        return live_reduced_subgraphs_by_name(graph)
-            .get(net_name)
-            .and_then(|handles| handles.first())
-            .and_then(|handle| {
-                projected_reduced_project_subgraph_by_index(
-                    graph,
-                    live_subgraph_projection_index(&graph.live_subgraphs, handle),
-                )
-            });
-    }
-
-    graph
-        .subgraphs_by_name
-        .get(net_name)
-        .and_then(|indexes| indexes.first())
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, *index))
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: CONNECTION_GRAPH::GetAllSubgraphs or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still returns reduced snapshots instead of live `CONNECTION_SUBGRAPH*` owners
-// local_only_reason: downstream ERC/export readers still consume reduced subgraph entries
-// replaced_by: live `CONNECTION_SUBGRAPH` graph-owned enumeration once reduced readers are retired
-// remove_when: same-name subgraph consumers read the shared live graph owners directly
-pub(crate) fn collect_reduced_project_subgraphs_by_name<'a>(
-    graph: &ReducedProjectNetGraph,
-    net_name: &str,
-) -> Vec<ReducedProjectSubgraphEntry> {
-    if !graph.live_subgraphs.is_empty() {
-        return live_reduced_subgraphs_by_name(graph)
-            .get(net_name)
-            .into_iter()
-            .flat_map(|handles| handles.iter())
-            .filter_map(|handle| {
-                projected_reduced_project_subgraph_by_index(
-                    graph,
-                    live_subgraph_projection_index(&graph.live_subgraphs, handle),
-                )
-            })
-            .collect();
-    }
-
-    graph
-        .subgraphs_by_name
-        .get(net_name)
-        .into_iter()
-        .flat_map(|indexes| indexes.iter())
-        .filter_map(|index| projected_reduced_project_subgraph_by_index(graph, *index))
-        .collect()
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for the connection-point half of
-// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
-// item map because the Rust tree still keys lookups by `(sheet instance path, point)` instead of
-// live item pointers, but it preserves shared item-to-subgraph identity instead of flattening
-// directly to whole-net identity. Remaining divergence is fuller item ownership for labels, wires,
-// and markers plus the still-missing live `CONNECTION_SUBGRAPH` object.
-pub(crate) fn resolve_reduced_project_subgraph_at<'a>(
-    graph: &ReducedProjectNetGraph,
-    sheet_path: &LoadedSheetPath,
-    at: [f64; 2],
-) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
-}
-
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9654,23 +9536,6 @@ fn resolve_reduced_project_subgraph_index_at(
                 })
                 .flatten()
         })
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for the label-item half of
-// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
-// item map because the Rust tree still keys labels by `(sheet instance path, point, kind)`
-// instead of live `SCH_LABEL_BASE*`, but it preserves shared label-to-subgraph identity instead
-// of making ERC recover label membership from per-subgraph point lists. Remaining divergence is
-// fuller item identity for overlapping same-kind labels plus the still-missing live
-// `CONNECTION_SUBGRAPH` object.
-pub(crate) fn resolve_reduced_project_subgraph_for_label<'a>(
-    graph: &ReducedProjectNetGraph,
-    sheet_path: &LoadedSheetPath,
-    label: &Label,
-) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live label-owner lookup or none
@@ -9771,21 +9636,6 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for the no-connect marker half of
-// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
-// item map because the Rust tree still keys markers by `(sheet instance path, point)` instead of
-// live `SCH_NO_CONNECT*`, but it preserves shared marker-to-subgraph identity instead of making
-// ERC infer marker ownership from subgraph point sets. Remaining divergence is fuller marker item
-// identity for overlapping markers plus the still-missing live `CONNECTION_SUBGRAPH` object.
-pub(crate) fn resolve_reduced_project_subgraph_for_no_connect<'a>(
-    graph: &ReducedProjectNetGraph,
-    sheet_path: &LoadedSheetPath,
-    at: [f64; 2],
-) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
-}
-
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live no-connect lookup or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9811,6 +9661,7 @@ fn live_reduced_project_subgraph_index_for_no_connect(
     })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() no-connect branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9961,24 +9812,6 @@ pub(crate) fn reduced_project_no_connect_pin_has_connected_owner(
     };
 
     reduced_project_no_connect_pin_has_connected_owner_by_index(graph, index, pin)
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for the sheet-pin item half of
-// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
-// item map because the Rust tree still keys sheet pins by `(sheet instance path, point,
-// child-sheet uuid)` instead of live `SCH_SHEET_PIN*`, but it preserves shared sheet-pin-to-
-// subgraph identity instead of routing sheet-pin ownership through the generic point lookup.
-// Remaining divergence is fuller sheet-pin item identity and the still-missing live
-// `CONNECTION_SUBGRAPH` object.
-pub(crate) fn resolve_reduced_project_subgraph_for_sheet_pin<'a>(
-    graph: &ReducedProjectNetGraph,
-    sheet_path: &LoadedSheetPath,
-    at: [f64; 2],
-    child_sheet_uuid: Option<&str>,
-) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live sheet-pin lookup or none
@@ -10638,6 +10471,7 @@ fn reduced_project_label_identity_key(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn reduced_project_no_connect_identity_key(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
@@ -16656,16 +16490,12 @@ mod tests {
         ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
         clone_reduced_connection_into_live_connection_owner,
-        find_first_reduced_project_subgraph_by_name, find_reduced_project_subgraph_by_name,
         rebuild_reduced_project_graph_name_caches, recache_live_reduced_subgraph_name_from_handles,
         recache_live_reduced_subgraph_name_handle_cache_from_handles, reduced_bus_member_objects,
         reduced_project_label_connectivity_subgraphs, reduced_project_netclass_assignments,
         reduced_project_pin_not_connected_candidates, refresh_reduced_live_graph_propagation,
         resolve_reduced_net_name_at, resolve_reduced_project_driver_name_for_label,
         resolve_reduced_project_net_at, resolve_reduced_project_net_for_label,
-        resolve_reduced_project_subgraph_at, resolve_reduced_project_subgraph_for_label,
-        resolve_reduced_project_subgraph_for_no_connect,
-        resolve_reduced_project_subgraph_for_sheet_pin,
         resolve_reduced_project_subgraph_for_symbol_pin,
     };
     use crate::connectivity::{
@@ -16825,6 +16655,123 @@ mod tests {
             no_connect_subgraph_identities: BTreeMap::new(),
             sheet_pin_subgraph_identities: BTreeMap::new(),
         }
+    }
+
+    fn test_projected_subgraph_at(
+        graph: &ReducedProjectNetGraph,
+        sheet_path: &crate::loader::LoadedSheetPath,
+        at: [f64; 2],
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        super::resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
+            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+    }
+
+    fn test_projected_subgraph_for_label(
+        graph: &ReducedProjectNetGraph,
+        sheet_path: &crate::loader::LoadedSheetPath,
+        label: &crate::model::Label,
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        super::resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
+            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+    }
+
+    fn test_projected_subgraph_for_no_connect(
+        graph: &ReducedProjectNetGraph,
+        sheet_path: &crate::loader::LoadedSheetPath,
+        at: [f64; 2],
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        super::resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
+            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+    }
+
+    fn test_projected_subgraph_for_sheet_pin(
+        graph: &ReducedProjectNetGraph,
+        sheet_path: &crate::loader::LoadedSheetPath,
+        at: [f64; 2],
+        child_sheet_uuid: Option<&str>,
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        super::resolve_reduced_project_subgraph_index_for_sheet_pin(
+            graph,
+            sheet_path,
+            at,
+            child_sheet_uuid,
+        )
+        .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+    }
+
+    fn test_collect_projected_subgraphs_by_name(
+        graph: &ReducedProjectNetGraph,
+        net_name: &str,
+    ) -> Vec<ReducedProjectSubgraphEntry> {
+        if !graph.live_subgraphs.is_empty() {
+            return super::live_reduced_subgraphs_by_name(graph)
+                .get(net_name)
+                .into_iter()
+                .flat_map(|handles| handles.iter())
+                .filter_map(|handle| {
+                    super::projected_reduced_project_subgraph_by_index(
+                        graph,
+                        super::live_subgraph_projection_index(&graph.live_subgraphs, handle),
+                    )
+                })
+                .collect();
+        }
+
+        graph.subgraphs_by_name
+            .get(net_name)
+            .into_iter()
+            .flat_map(|indexes| indexes.iter())
+            .filter_map(|index| super::projected_reduced_project_subgraph_by_index(graph, *index))
+            .collect()
+    }
+
+    fn test_find_first_projected_subgraph_by_name(
+        graph: &ReducedProjectNetGraph,
+        net_name: &str,
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        if !graph.live_subgraphs.is_empty() {
+            return super::live_reduced_subgraphs_by_name(graph)
+                .get(net_name)
+                .and_then(|handles| handles.first())
+                .and_then(|handle| {
+                    super::projected_reduced_project_subgraph_by_index(
+                        graph,
+                        super::live_subgraph_projection_index(&graph.live_subgraphs, handle),
+                    )
+                });
+        }
+
+        graph.subgraphs_by_name
+            .get(net_name)
+            .and_then(|indexes| indexes.first())
+            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, *index))
+    }
+
+    fn test_find_projected_subgraph_by_name(
+        graph: &ReducedProjectNetGraph,
+        net_name: &str,
+        sheet_path: &crate::loader::LoadedSheetPath,
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        if !graph.live_subgraphs.is_empty() {
+            return super::live_reduced_subgraphs_by_sheet_and_name(graph)
+                .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
+                .into_iter()
+                .flat_map(|handles| handles.iter())
+                .find_map(|handle| {
+                    super::projected_reduced_project_subgraph_by_index(
+                        graph,
+                        super::live_subgraph_projection_index(&graph.live_subgraphs, handle),
+                    )
+                })
+                .filter(|subgraph| {
+                    super::reduced_project_effective_driver_connection(subgraph).name == net_name
+                });
+        }
+
+        graph.subgraphs_by_sheet_and_name
+            .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
+            .and_then(|indexes| indexes.first())
+            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, *index))
     }
 
     #[test]
@@ -21282,12 +21229,12 @@ mod tests {
             })
             .expect("no-connect");
 
-        let by_label = resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, label)
+        let by_label = test_projected_subgraph_for_label(&graph, &sheet_path, label)
             .expect("label subgraph");
         let by_no_connect =
-            resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, no_connect.at)
+            test_projected_subgraph_for_no_connect(&graph, &sheet_path, no_connect.at)
                 .expect("no-connect subgraph");
-        let by_point = resolve_reduced_project_subgraph_at(&graph, &sheet_path, [10.0, 0.0])
+        let by_point = test_projected_subgraph_at(&graph, &sheet_path, [10.0, 0.0])
             .expect("point subgraph");
 
         assert_eq!(by_label.subgraph_code, by_point.subgraph_code);
@@ -21564,7 +21511,7 @@ mod tests {
             sheet_count: 1,
         };
 
-        let by_sheet_pin = resolve_reduced_project_subgraph_for_sheet_pin(
+        let by_sheet_pin = test_projected_subgraph_for_sheet_pin(
             &reduced,
             &sheet_path,
             [0.0, 0.0],
@@ -21572,7 +21519,7 @@ mod tests {
         )
         .expect("sheet pin subgraph");
         let by_point =
-            resolve_reduced_project_subgraph_at(&reduced, &sheet_path, [0.0, 0.0]).expect("point");
+            test_projected_subgraph_at(&reduced, &sheet_path, [0.0, 0.0]).expect("point");
 
         assert_eq!(by_sheet_pin.subgraph_code, 1);
         assert_eq!(by_point.subgraph_code, 2);
@@ -21978,7 +21925,7 @@ mod tests {
             sheet_count: 1,
         };
 
-        let subgraph = super::find_reduced_project_subgraph_by_name(&graph, "/LIVE", &sheet_path)
+        let subgraph = test_find_projected_subgraph_by_name(&graph, "/LIVE", &sheet_path)
             .expect("same-name subgraph");
 
         assert_eq!(subgraph.name, "/LIVE");
@@ -22054,7 +22001,7 @@ mod tests {
             .expect("child sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let by_sheet = find_reduced_project_subgraph_by_name(&graph, "/Child/SIG", child_sheet)
+        let by_sheet = test_find_projected_subgraph_by_name(&graph, "/Child/SIG", child_sheet)
             .expect("sheet-local subgraph");
         assert_eq!(by_sheet.subgraph_code, 1);
         assert_eq!(by_sheet.code, 1);
@@ -22063,7 +22010,7 @@ mod tests {
         assert_eq!(by_sheet.resolved_connection.local_name, "SIG");
         assert_eq!(by_sheet.driver_connection.local_name, "SIG");
 
-        let by_point = resolve_reduced_project_subgraph_at(&graph, child_sheet, [10.0, 0.0])
+        let by_point = test_projected_subgraph_at(&graph, child_sheet, [10.0, 0.0])
             .expect("point subgraph");
         assert_eq!(by_point.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_point.name, "/Child/SIG");
@@ -22092,7 +22039,7 @@ mod tests {
         assert_eq!(by_pin.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_pin.name, "/Child/SIG");
 
-        let by_full_name = find_first_reduced_project_subgraph_by_name(&graph, "/Child/SIG")
+        let by_full_name = test_find_first_projected_subgraph_by_name(&graph, "/Child/SIG")
             .expect("full-name subgraph");
         assert_eq!(by_full_name.subgraph_code, by_sheet.subgraph_code);
         assert_eq!(by_full_name.sheet_instance_path, child_sheet.instance_path);
@@ -22136,9 +22083,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let first_by_point = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("first point subgraph");
-        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+        let second_by_point = test_projected_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("second point subgraph");
         assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
         assert!(
@@ -22153,14 +22100,14 @@ mod tests {
         );
 
         let by_name =
-            find_reduced_project_subgraph_by_name(&graph, &first_by_point.name, root_sheet)
+            test_find_projected_subgraph_by_name(&graph, &first_by_point.name, root_sheet)
                 .expect("same-sheet lookup");
-        let by_first = find_first_reduced_project_subgraph_by_name(&graph, &first_by_point.name)
+        let by_first = test_find_first_projected_subgraph_by_name(&graph, &first_by_point.name)
             .expect("global same-name lookup");
         assert_eq!(by_name.subgraph_code, first_by_point.subgraph_code);
         assert_eq!(by_first.subgraph_code, first_by_point.subgraph_code);
         assert_eq!(
-            super::collect_reduced_project_subgraphs_by_name(&graph, &first_by_point.name).len(),
+            test_collect_projected_subgraphs_by_name(&graph, &first_by_point.name).len(),
             1
         );
 
@@ -22241,9 +22188,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let first_by_point = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("first bus subgraph");
-        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+        let second_by_point = test_projected_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("second bus subgraph");
 
         assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
@@ -22252,7 +22199,7 @@ mod tests {
             ReducedProjectConnectionType::Bus
         );
         assert_eq!(
-            super::collect_reduced_project_subgraphs_by_name(&graph, &first_by_point.name).len(),
+            test_collect_projected_subgraphs_by_name(&graph, &first_by_point.name).len(),
             1
         );
 
@@ -22385,18 +22332,18 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let first_by_point = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("first net subgraph");
-        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [20.0, 20.0])
+        let second_by_point = test_projected_subgraph_at(&graph, root_sheet, [20.0, 20.0])
             .expect("second net subgraph");
 
         assert_eq!(first_by_point.subgraph_code, second_by_point.subgraph_code);
         assert_eq!(first_by_point.driver_connection.name, "AAA");
         assert_eq!(
-            super::collect_reduced_project_subgraphs_by_name(&graph, "AAA").len(),
+            test_collect_projected_subgraphs_by_name(&graph, "AAA").len(),
             1
         );
-        assert!(super::collect_reduced_project_subgraphs_by_name(&graph, "PWR").is_empty());
+        assert!(test_collect_projected_subgraphs_by_name(&graph, "PWR").is_empty());
 
         let _ = fs::remove_file(path);
     }
@@ -22958,20 +22905,20 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let first_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let first_by_point = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("first net subgraph");
-        let second_by_point = resolve_reduced_project_subgraph_at(&graph, root_sheet, [40.0, 0.0])
+        let second_by_point = test_projected_subgraph_at(&graph, root_sheet, [40.0, 0.0])
             .expect("second net subgraph");
 
         assert_ne!(first_by_point.subgraph_code, second_by_point.subgraph_code);
         assert_eq!(first_by_point.driver_connection.name, "AAA");
         assert_eq!(second_by_point.driver_connection.name, "Net-(U1-A)");
         assert_eq!(
-            super::collect_reduced_project_subgraphs_by_name(&graph, "AAA").len(),
+            test_collect_projected_subgraphs_by_name(&graph, "AAA").len(),
             1
         );
         assert_eq!(
-            super::collect_reduced_project_subgraphs_by_name(&graph, "Net-(U1-A)").len(),
+            test_collect_projected_subgraphs_by_name(&graph, "Net-(U1-A)").len(),
             1
         );
 
@@ -25089,9 +25036,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let parent_bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let parent_bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("parent bus subgraph");
-        let candidate_bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [20.0, 20.0])
+        let candidate_bus = test_projected_subgraph_at(&graph, root_sheet, [20.0, 20.0])
             .expect("candidate bus subgraph");
 
         assert_eq!(parent_bus.subgraph_code, candidate_bus.subgraph_code);
@@ -25161,7 +25108,7 @@ mod tests {
         let graph = project.reduced_project_net_graph(false);
 
         let by_point =
-            resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
+            test_projected_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(by_point.resolved_connection.local_name, "SIG");
         assert!(by_point.drivers.iter().any(|driver| {
             super::reduced_project_strong_driver_name(driver) == "SIG"
@@ -25243,7 +25190,7 @@ mod tests {
         let graph = project.reduced_project_net_graph(false);
 
         let by_point =
-            resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
+            test_projected_subgraph_at(&graph, root_sheet, [0.0, 5.0]).expect("subgraph");
         assert_eq!(
             by_point.resolved_connection.local_name,
             child_sheet.instance_path
@@ -25321,9 +25268,9 @@ mod tests {
             .expect("child sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let root_subgraph = resolve_reduced_project_subgraph_at(&graph, root_sheet, [0.0, 5.0])
+        let root_subgraph = test_projected_subgraph_at(&graph, root_sheet, [0.0, 5.0])
             .expect("root subgraph");
-        let child_subgraph = resolve_reduced_project_subgraph_at(&graph, child_sheet, [0.0, 5.0])
+        let child_subgraph = test_projected_subgraph_at(&graph, child_sheet, [0.0, 5.0])
             .expect("child subgraph");
         let root_index = graph
             .subgraphs
@@ -25388,10 +25335,10 @@ mod tests {
         let project = SchematicProject::from_load_result(loaded);
         let graph = project.reduced_project_net_graph(false);
 
-        let by_full_name = find_first_reduced_project_subgraph_by_name(&graph, "DATA[0..7]")
+        let by_full_name = test_find_first_projected_subgraph_by_name(&graph, "DATA[0..7]")
             .expect("full-name bus subgraph");
         let by_prefix =
-            find_first_reduced_project_subgraph_by_name(&graph, "DATA[]").expect("prefix bus");
+            test_find_first_projected_subgraph_by_name(&graph, "DATA[]").expect("prefix bus");
 
         assert_eq!(by_prefix.subgraph_code, by_full_name.subgraph_code);
         assert_eq!(by_prefix.name, by_full_name.name);
@@ -26107,7 +26054,7 @@ mod tests {
             .points
             .push(PointKey(0, 0));
 
-        let subgraph = super::resolve_reduced_project_subgraph_at(&graph, &sheet_path, [0.0, 0.0])
+        let subgraph = test_projected_subgraph_at(&graph, &sheet_path, [0.0, 0.0])
             .expect("live point owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
@@ -26144,7 +26091,7 @@ mod tests {
             &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
         );
 
-        let subgraph = super::resolve_reduced_project_subgraph_at(&graph, &sheet_path, [0.0, 0.0])
+        let subgraph = test_projected_subgraph_at(&graph, &sheet_path, [0.0, 0.0])
             .expect("live projected point owner");
 
         assert_eq!(subgraph.name, "/LIVE");
@@ -26178,7 +26125,7 @@ mod tests {
         );
 
         assert!(
-            super::resolve_reduced_project_subgraph_at(&graph, &sheet_path, [0.0, 0.0]).is_none()
+            test_projected_subgraph_at(&graph, &sheet_path, [0.0, 0.0]).is_none()
         );
     }
 
@@ -26243,7 +26190,7 @@ mod tests {
             })));
 
         let subgraph =
-            super::resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, &label)
+            test_projected_subgraph_for_label(&graph, &sheet_path, &label)
                 .expect("live label owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
@@ -26283,7 +26230,7 @@ mod tests {
         );
 
         assert!(
-            super::resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, &label)
+            test_projected_subgraph_for_label(&graph, &sheet_path, &label)
                 .is_none()
         );
     }
@@ -26340,7 +26287,7 @@ mod tests {
         );
 
         let subgraph =
-            super::resolve_reduced_project_subgraph_for_label(&graph, &sheet_path, &label)
+            test_projected_subgraph_for_label(&graph, &sheet_path, &label)
                 .expect("live projected label owner");
 
         assert_eq!(subgraph.name, "/LIVE");
@@ -26390,7 +26337,7 @@ mod tests {
             });
 
         let subgraph =
-            super::resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
+            test_projected_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
                 .expect("live no-connect owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
@@ -26433,7 +26380,7 @@ mod tests {
         graph.live_subgraphs.swap(0, 1);
 
         let subgraph =
-            super::resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
+            test_projected_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
                 .expect("live no-connect owner");
 
         assert_eq!(subgraph.subgraph_code, 1);
@@ -26466,7 +26413,7 @@ mod tests {
         );
 
         assert!(
-            super::resolve_reduced_project_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
+            test_projected_subgraph_for_no_connect(&graph, &sheet_path, [0.0, 0.0])
                 .is_none()
         );
     }
@@ -26523,7 +26470,7 @@ mod tests {
                 shown_text_local_name: "LIVE".to_string(),
             })));
 
-        let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
+        let subgraph = test_projected_subgraph_for_sheet_pin(
             &graph,
             &sheet_path,
             [0.0, 0.0],
@@ -26562,7 +26509,7 @@ mod tests {
         );
 
         assert!(
-            super::resolve_reduced_project_subgraph_for_sheet_pin(
+            test_projected_subgraph_for_sheet_pin(
                 &graph,
                 &sheet_path,
                 [0.0, 0.0],
@@ -26617,7 +26564,7 @@ mod tests {
             })));
         graph.live_subgraphs.swap(0, 1);
 
-        let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
+        let subgraph = test_projected_subgraph_for_sheet_pin(
             &graph,
             &sheet_path,
             [0.0, 0.0],
@@ -26671,7 +26618,7 @@ mod tests {
             &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
         );
 
-        let subgraph = super::resolve_reduced_project_subgraph_for_sheet_pin(
+        let subgraph = test_projected_subgraph_for_sheet_pin(
             &graph,
             &sheet_path,
             [0.0, 0.0],
@@ -26714,7 +26661,7 @@ mod tests {
             ("/LIVE".to_string(), vec![1]),
         ]);
 
-        let subgraphs = super::collect_reduced_project_subgraphs_by_name(&graph, "/LIVE");
+        let subgraphs = test_collect_projected_subgraphs_by_name(&graph, "/LIVE");
 
         assert_eq!(subgraphs.len(), 1);
         assert_eq!(subgraphs[0].subgraph_code, 1);
@@ -26753,7 +26700,7 @@ mod tests {
         ]);
 
         let subgraph =
-            super::find_first_reduced_project_subgraph_by_name(&graph, "/LIVE").expect("live name");
+            test_find_first_projected_subgraph_by_name(&graph, "/LIVE").expect("live name");
 
         assert_eq!(subgraph.subgraph_code, 1);
         assert_eq!(subgraph.name, "/LIVE");
@@ -26798,7 +26745,7 @@ mod tests {
         graph.subgraphs_by_sheet_and_name =
             BTreeMap::from([(("/child".to_string(), "/LIVE".to_string()), vec![1])]);
 
-        let subgraph = super::find_reduced_project_subgraph_by_name(&graph, "/LIVE", &sheet_path)
+        let subgraph = test_find_projected_subgraph_by_name(&graph, "/LIVE", &sheet_path)
             .expect("live sheet-local name");
 
         assert_eq!(subgraph.subgraph_code, 1);
@@ -29538,9 +29485,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("bus subgraph");
-        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+        let net = test_projected_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("net subgraph");
 
         assert!(bus.bus_neighbor_links.iter().any(|link| {
@@ -29587,7 +29534,7 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let entry = resolve_reduced_project_subgraph_at(&graph, root_sheet, [-5.0, 5.0])
+        let entry = test_projected_subgraph_at(&graph, root_sheet, [-5.0, 5.0])
             .expect("entry subgraph");
 
         let bus_entry = entry
@@ -29660,9 +29607,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("bus subgraph");
-        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+        let net = test_projected_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("net subgraph");
 
         assert_eq!(net.driver_connection.full_local_name, "AAA");
@@ -29727,9 +29674,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("bus subgraph");
-        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+        let net = test_projected_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("net subgraph");
 
         assert_eq!(net.driver_connection.full_local_name, "AAA");
@@ -29804,9 +29751,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("bus subgraph");
-        let net = resolve_reduced_project_subgraph_at(&graph, root_sheet, [20.0, 20.0])
+        let net = test_projected_subgraph_at(&graph, root_sheet, [20.0, 20.0])
             .expect("sheet-pin net subgraph");
 
         assert_eq!(net.driver_connection.local_name, "A");
@@ -29852,9 +29799,9 @@ mod tests {
             .expect("root sheet path");
         let graph = project.reduced_project_net_graph(false);
 
-        let bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 0.0])
+        let bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 0.0])
             .expect("bus subgraph");
-        let candidate_bus = resolve_reduced_project_subgraph_at(&graph, root_sheet, [10.0, 20.0])
+        let candidate_bus = test_projected_subgraph_at(&graph, root_sheet, [10.0, 20.0])
             .expect("candidate bus subgraph");
 
         assert_eq!(
