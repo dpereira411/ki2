@@ -12958,13 +12958,14 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
-            if let Some(candidate) =
-                reduced_project_subgraph_bus_entry_conflict_candidate(graph, subgraph)
-            {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
+            if let Some(candidate) = reduced_project_subgraph_bus_entry_conflict_candidate(
+                graph, subgraph,
+            ) {
                 process_candidate(candidate);
             }
         }
@@ -13212,10 +13213,11 @@ pub(crate) fn reduced_project_driver_conflicts(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
             if let Some(conflict) = reduced_project_subgraph_driver_conflict(subgraph) {
                 conflicts.push(conflict);
             }
@@ -14164,10 +14166,11 @@ pub(crate) fn reduced_project_bus_to_net_conflicts(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
             if let Some(conflict) = reduced_project_subgraph_bus_to_net_conflict(subgraph) {
                 events.push(ReducedProjectBusToNetConflictEvent {
                     diagnostic_path: conflict.diagnostic_path,
@@ -14849,10 +14852,11 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
             for endpoint in reduced_project_subgraph_dangling_wire_endpoints(graph, subgraph) {
                 endpoints.push(endpoint);
             }
@@ -14884,10 +14888,11 @@ pub(crate) fn reduced_project_floating_wire_events(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
             if let Some(event) = reduced_project_subgraph_floating_wire(subgraph) {
                 events.push(event);
             }
@@ -14919,10 +14924,11 @@ pub(crate) fn reduced_project_bus_to_bus_conflicts(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
             if let Some(conflict) = reduced_project_subgraph_bus_to_bus_conflict(subgraph) {
                 conflicts.push(conflict);
             }
