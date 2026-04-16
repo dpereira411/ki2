@@ -9341,7 +9341,7 @@ pub(crate) fn reduced_project_run_erc_subgraphs(
 
     reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
         .cloned()
         .collect()
 }
@@ -9485,7 +9485,7 @@ fn projected_reduced_project_net_identity_by_index(
         });
     }
 
-    reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
+    graph.subgraphs.get(index).map(|subgraph| {
         let driver_connection = reduced_project_effective_driver_connection(subgraph);
         ReducedProjectNetIdentity {
             code: subgraph.code,
@@ -9518,7 +9518,7 @@ fn projected_reduced_project_driver_local_name_by_index(
                 .clone()
         })
         .or_else(|| {
-            reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
+            graph.subgraphs.get(index).map(|subgraph| {
                 reduced_project_effective_driver_connection(subgraph)
                     .local_name
                     .clone()
@@ -10004,7 +10004,9 @@ fn reduced_project_no_connect_pin_has_connected_owner_by_index(
         return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
     }
 
-    reduced_project_subgraph_by_index(graph, index)
+    graph
+        .subgraphs
+        .get(index)
         .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(subgraph, pin))
 }
 
@@ -10203,7 +10205,7 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
                 .any(|pin| pin.borrow().at != pin_point);
     }
 
-    let Some(subgraph) = reduced_project_subgraph_by_index(graph, index) else {
+    let Some(subgraph) = graph.subgraphs.get(index) else {
         return true;
     };
 
@@ -10245,13 +10247,12 @@ pub(crate) fn reduced_project_subgraph_has_local_hierarchy_via_bus_parents(
         return live_reduced_subgraph_has_local_hierarchy_via_bus_parents(&subgraph);
     }
 
-    let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+    let Some(subgraph) = graph.subgraphs.get(subgraph_index) else {
         return false;
     };
 
     subgraph.bus_parent_links.iter().any(|parent_link| {
-        let Some(parent) = reduced_project_subgraph_by_index(graph, parent_link.subgraph_index)
-        else {
+        let Some(parent) = graph.subgraphs.get(parent_link.subgraph_index) else {
             return false;
         };
 
@@ -10283,7 +10284,7 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
         );
     }
 
-    let Some(subgraph) = reduced_project_subgraph_by_index(graph, subgraph_index) else {
+    let Some(subgraph) = graph.subgraphs.get(subgraph_index) else {
         return false;
     };
     let mut pending = subgraph
@@ -10298,7 +10299,7 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
             continue;
         }
 
-        let Some(parent) = reduced_project_subgraph_by_index(graph, parent_index) else {
+        let Some(parent) = graph.subgraphs.get(parent_index) else {
             continue;
         };
 
@@ -10311,7 +10312,7 @@ pub(crate) fn reduced_project_subgraph_has_no_connect_via_parent_chain(
                 continue;
             }
 
-            let Some(hier_parent) = reduced_project_subgraph_by_index(graph, index) else {
+            let Some(hier_parent) = graph.subgraphs.get(index) else {
                 continue;
             };
 
@@ -11641,7 +11642,7 @@ fn reduced_project_driver_name_for_symbol_pin_by_index(
             });
     }
 
-    reduced_project_subgraph_by_index(graph, index).map(|subgraph| {
+    graph.subgraphs.get(index).map(|subgraph| {
         reduced_project_base_pin_for_symbol_pin(
             subgraph, sheet_path, symbol, at, pin_name, pin_number,
         )
