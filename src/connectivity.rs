@@ -9282,6 +9282,33 @@ pub(crate) fn reduced_project_subgraphs(
     projected_reduced_project_subgraphs(graph)
 }
 
+// upstream: CONNECTION_GRAPH::RunERC top-level subgraph iteration or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns reduced subgraph indexes instead of live `CONNECTION_SUBGRAPH*`
+// storage and absorbed-subgraph state
+// local_only_reason: centralizes the exercised `seenDriverInstances`/reused-screen traversal policy
+// on the shared reduced graph owner so production ERC fallbacks can stop cloning whole subgraphs
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: reduced fallback ERC traversal is removed in favor of live graph-owned iteration
+fn reduced_project_run_erc_subgraph_indexes(graph: &ReducedProjectNetGraph) -> Vec<usize> {
+    let mut seen_driver_identities = std::collections::BTreeSet::new();
+    let mut indexes = graph
+        .subgraphs
+        .iter()
+        .enumerate()
+        .rev()
+        .filter_map(|(index, subgraph)| {
+            reduced_project_subgraph_driver_identity(subgraph)
+                .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+
+    indexes.reverse();
+    indexes
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 // upstream: CONNECTION_GRAPH::RunERC top-level subgraph iteration or none
 // parity_status: partial
@@ -9295,22 +9322,47 @@ pub(crate) fn reduced_project_subgraphs(
 pub(crate) fn reduced_project_run_erc_subgraphs(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectSubgraphEntry> {
-    let projected = projected_reduced_project_subgraphs(graph);
-    let mut seen_driver_identities = std::collections::BTreeSet::new();
-    let mut subgraphs = projected
-        .iter()
-        .rev()
-        .filter(|subgraph| {
-            reduced_project_subgraph_driver_identity(subgraph)
-                .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+    if !graph.live_subgraphs.is_empty() {
+        let projected = projected_reduced_project_subgraphs(graph);
+        let mut seen_driver_identities = std::collections::BTreeSet::new();
+        let mut subgraphs = projected
+            .iter()
+            .rev()
+            .filter(|subgraph| {
+                reduced_project_subgraph_driver_identity(subgraph)
+                    .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
 
-    subgraphs.reverse();
-    subgraphs
+        subgraphs.reverse();
+        return subgraphs;
+    }
+
+    reduced_project_run_erc_subgraph_indexes(graph)
+        .into_iter()
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .cloned()
+        .collect()
 }
 
+// upstream: CONNECTION_GRAPH::RunERC per-subgraph item-owned traversal branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still iterates reduced subgraph snapshots instead of final `CONNECTION_SUBGRAPH*`
+// storage, but intentionally skips reused-screen driver-instance dedup so marker-owned ERC checks
+// can visit each distinct item-owning subgraph
+// local_only_reason: keeps item-owned no-connect traversal on the shared graph owner without
+// weakening the reused-screen dedup policy used by driver-owned ERC rules
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with rule-specific traversal
+// remove_when: no-connect and similar item-owned ERC rules iterate final live graph storage directly
+fn reduced_project_run_erc_subgraph_indexes_without_driver_dedup(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<usize> {
+    (0..graph.subgraphs.len()).collect()
+}
+
+#[allow(dead_code)]
 // upstream: CONNECTION_GRAPH::RunERC per-subgraph item-owned traversal branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9324,7 +9376,15 @@ pub(crate) fn reduced_project_run_erc_subgraphs(
 fn reduced_project_run_erc_subgraphs_without_driver_dedup(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectSubgraphEntry> {
-    projected_reduced_project_subgraphs(graph)
+    if !graph.live_subgraphs.is_empty() {
+        return projected_reduced_project_subgraphs(graph);
+    }
+
+    reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph)
+        .into_iter()
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .cloned()
+        .collect()
 }
 
 // upstream: CONNECTION_GRAPH::RunERC live subgraph iteration or none
@@ -13111,10 +13171,11 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
             .filter_map(|subgraph| live_reduced_subgraph_bus_entry_conflict_candidate(&subgraph))
             .collect::<Vec<_>>()
     } else {
-        reduced_project_run_erc_subgraphs(graph)
+        reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
+            .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
             .filter_map(|subgraph| {
-                reduced_project_subgraph_bus_entry_conflict_candidate(graph, &subgraph)
+                reduced_project_subgraph_bus_entry_conflict_candidate(graph, subgraph)
             })
             .collect::<Vec<_>>()
     };
@@ -13137,15 +13198,17 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
             .find(|schematic| schematic.path == sheet_path.schematic_path)
         {
             let sheet_prefix = reduced_net_name_sheet_path_prefix(&project.sheet_paths, sheet_path);
-            candidate.bus_members.extend(reduced_bus_member_full_local_names(
-                &collect_reduced_bus_member_objects_inner(
-                    schematic,
-                    &candidate.bus_name,
-                    "",
-                    &sheet_prefix,
-                    &mut BTreeSet::new(),
-                ),
-            ));
+            candidate
+                .bus_members
+                .extend(reduced_bus_member_full_local_names(
+                    &collect_reduced_bus_member_objects_inner(
+                        schematic,
+                        &candidate.bus_name,
+                        "",
+                        &sheet_prefix,
+                        &mut BTreeSet::new(),
+                    ),
+                ));
             candidate.bus_members.sort();
             candidate.bus_members.dedup();
         }
@@ -13426,9 +13489,10 @@ pub(crate) fn reduced_project_driver_conflicts(
             .collect();
     }
 
-    reduced_project_run_erc_subgraphs(graph)
+    reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|subgraph| reduced_project_subgraph_driver_conflict(&subgraph))
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(reduced_project_subgraph_driver_conflict)
         .collect()
 }
 
@@ -13628,7 +13692,10 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraphs(graph) {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
+            .into_iter()
+            .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        {
             for label in &subgraph.label_links {
                 if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
                     continue;
@@ -13665,7 +13732,10 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
 
     let mut label_subgraphs = Vec::new();
 
-    for subgraph in reduced_project_run_erc_subgraphs(graph) {
+    for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
+        .into_iter()
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+    {
         if subgraph.label_links.is_empty() {
             continue;
         }
@@ -13684,7 +13754,8 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
                 reduced_project_subgraph_has_no_connect_via_parent_chain(graph, index)
             });
         let has_multiple_drivers = subgraph_index.is_some_and(|index| {
-            graph.subgraphs
+            graph
+                .subgraphs
                 .get(index)
                 .is_some_and(reduced_project_subgraph_has_multiple_drivers)
         });
@@ -14362,10 +14433,11 @@ pub(crate) fn reduced_project_bus_to_net_conflicts(
             .collect();
     }
 
-    reduced_project_run_erc_subgraphs(graph)
+    reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
         .filter_map(|subgraph| {
-            reduced_project_subgraph_bus_to_net_conflict(&subgraph).map(|conflict| {
+            reduced_project_subgraph_bus_to_net_conflict(subgraph).map(|conflict| {
                 ReducedProjectBusToNetConflictEvent {
                     diagnostic_path: conflict.diagnostic_path,
                 }
@@ -14441,8 +14513,9 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
 
-    for subgraph in reduced_project_run_erc_subgraphs_without_driver_dedup(graph)
+    for subgraph in reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph)
         .into_iter()
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
         .filter(|subgraph| !subgraph.no_connect_points.is_empty())
     {
         if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
@@ -14760,7 +14833,7 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
 
     let mut candidates = Vec::new();
 
-    for subgraph in reduced_project_subgraphs(graph) {
+    for subgraph in &graph.subgraphs {
         if subgraph.has_no_connect
             || !subgraph.no_connect_points.is_empty()
             || subgraph.base_pins.is_empty()
@@ -15045,9 +15118,12 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
             ));
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraphs(graph) {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
+            .into_iter()
+            .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        {
             endpoints.extend(reduced_project_subgraph_dangling_wire_endpoints(
-                graph, &subgraph,
+                graph, subgraph,
             ));
         }
     }
@@ -15075,9 +15151,10 @@ pub(crate) fn reduced_project_floating_wire_events(
             .collect();
     }
 
-    reduced_project_run_erc_subgraphs(graph)
+    reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|subgraph| reduced_project_subgraph_floating_wire(&subgraph))
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(reduced_project_subgraph_floating_wire)
         .collect()
 }
 
@@ -15101,9 +15178,10 @@ pub(crate) fn reduced_project_bus_to_bus_conflicts(
             .collect();
     }
 
-    reduced_project_run_erc_subgraphs(graph)
+    reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|subgraph| reduced_project_subgraph_bus_to_bus_conflict(&subgraph))
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(reduced_project_subgraph_bus_to_bus_conflict)
         .collect()
 }
 
@@ -18453,8 +18531,7 @@ mod tests {
     }
 
     #[test]
-    fn reduced_label_connectivity_subgraphs_aggregate_neighbor_direct_local_hierarchy_same_sheet()
-     {
+    fn reduced_label_connectivity_subgraphs_aggregate_neighbor_direct_local_hierarchy_same_sheet() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
         label_subgraph.label_links.push(ReducedLabelLink {
@@ -18503,8 +18580,7 @@ mod tests {
     }
 
     #[test]
-    fn live_label_connectivity_subgraphs_aggregate_neighbor_direct_local_hierarchy_same_sheet()
-     {
+    fn live_label_connectivity_subgraphs_aggregate_neighbor_direct_local_hierarchy_same_sheet() {
         let connection = test_net_connection("/SIG", "SIG", "/SIG", "");
         let mut label_subgraph = test_net_subgraph(1, connection.clone(), Vec::new(), "");
         label_subgraph.label_links.push(ReducedLabelLink {
@@ -18567,10 +18643,12 @@ mod tests {
             "",
         );
         root_bus.hier_child_indexes.push(2);
-        root_bus.bus_neighbor_links.push(ReducedProjectBusNeighborLink {
-            member: test_bus_member("SIG1", "SIG1", "/SIG1"),
-            subgraph_index: 0,
-        });
+        root_bus
+            .bus_neighbor_links
+            .push(ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 0,
+            });
 
         let mut child_bus = test_net_subgraph(
             3,
@@ -18585,13 +18663,19 @@ mod tests {
             "/child",
         );
         child_bus.hier_parent_index = Some(1);
-        child_bus.bus_neighbor_links.push(ReducedProjectBusNeighborLink {
-            member: test_bus_member("SIG1", "SIG1", "/SIG1"),
-            subgraph_index: 3,
-        });
+        child_bus
+            .bus_neighbor_links
+            .push(ReducedProjectBusNeighborLink {
+                member: test_bus_member("SIG1", "SIG1", "/SIG1"),
+                subgraph_index: 3,
+            });
 
-        let mut child_member =
-            test_net_subgraph(4, test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"), Vec::new(), "/child");
+        let mut child_member = test_net_subgraph(
+            4,
+            test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"),
+            Vec::new(),
+            "/child",
+        );
         child_member.hier_ports.push(ReducedHierPortLink {
             schematic_path: std::path::PathBuf::from("child.kicad_sch"),
             at: PointKey(5, 6),
@@ -18665,35 +18749,55 @@ mod tests {
         );
         child_bus.hier_parent_index = Some(1);
 
-        let mut child_member =
-            test_net_subgraph(4, test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"), Vec::new(), "/child");
+        let mut child_member = test_net_subgraph(
+            4,
+            test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"),
+            Vec::new(),
+            "/child",
+        );
         child_member.hier_ports.push(ReducedHierPortLink {
             schematic_path: std::path::PathBuf::from("child.kicad_sch"),
             at: PointKey(5, 6),
             connection: test_net_connection("/child/SIG1", "SIG1", "/child/SIG1", "/child"),
         });
 
-        let graph = test_graph_with_live_subgraphs(vec![label_subgraph, root_bus, child_bus, child_member]);
+        let graph =
+            test_graph_with_live_subgraphs(vec![label_subgraph, root_bus, child_bus, child_member]);
         {
             let live = &graph.live_subgraphs;
-            live[0].borrow_mut().bus_parent_links.push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
-                member: Rc::new(RefCell::new(test_bus_member("SIG1", "SIG1", "/SIG1").into())),
-                #[cfg(test)]
-                subgraph_index: 1,
-                subgraph_handle: Rc::downgrade(&live[1]),
-            })));
-            live[1].borrow_mut().bus_neighbor_links.push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
-                member: Rc::new(RefCell::new(test_bus_member("SIG1", "SIG1", "/SIG1").into())),
-                #[cfg(test)]
-                subgraph_index: 0,
-                subgraph_handle: Rc::downgrade(&live[0]),
-            })));
-            live[2].borrow_mut().bus_neighbor_links.push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
-                member: Rc::new(RefCell::new(test_bus_member("SIG1", "SIG1", "/SIG1").into())),
-                #[cfg(test)]
-                subgraph_index: 3,
-                subgraph_handle: Rc::downgrade(&live[3]),
-            })));
+            live[0]
+                .borrow_mut()
+                .bus_parent_links
+                .push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
+                    member: Rc::new(RefCell::new(
+                        test_bus_member("SIG1", "SIG1", "/SIG1").into(),
+                    )),
+                    #[cfg(test)]
+                    subgraph_index: 1,
+                    subgraph_handle: Rc::downgrade(&live[1]),
+                })));
+            live[1]
+                .borrow_mut()
+                .bus_neighbor_links
+                .push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
+                    member: Rc::new(RefCell::new(
+                        test_bus_member("SIG1", "SIG1", "/SIG1").into(),
+                    )),
+                    #[cfg(test)]
+                    subgraph_index: 0,
+                    subgraph_handle: Rc::downgrade(&live[0]),
+                })));
+            live[2]
+                .borrow_mut()
+                .bus_neighbor_links
+                .push(Rc::new(RefCell::new(super::LiveReducedSubgraphLink {
+                    member: Rc::new(RefCell::new(
+                        test_bus_member("SIG1", "SIG1", "/SIG1").into(),
+                    )),
+                    #[cfg(test)]
+                    subgraph_index: 3,
+                    subgraph_handle: Rc::downgrade(&live[3]),
+                })));
         }
 
         let label_subgraphs = reduced_project_label_connectivity_subgraphs(&graph);
@@ -43758,7 +43862,7 @@ mod tests {
 
     #[test]
     fn live_reduced_project_netclass_assignments_use_ranked_primary_bus_members_when_chosen_missing()
-    {
+     {
         let mut subgraphs = vec![test_net_subgraph(
             1,
             test_bus_connection(
