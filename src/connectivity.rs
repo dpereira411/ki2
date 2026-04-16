@@ -9117,7 +9117,28 @@ fn live_reduced_project_net_map_entries(
     >::new();
 
     for (index, subgraph) in graph.subgraphs.iter().enumerate() {
-        let Some(net_identity) = projected_reduced_project_net_identity_by_index(graph, index)
+        let Some(net_identity) =
+            live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+                .map(|handle| {
+                    let live = handle.borrow();
+                    let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+                    let driver_connection = driver_connection.borrow();
+                    ReducedProjectNetIdentity {
+                        code: subgraph.code,
+                        name: driver_connection.name.clone(),
+                        class: subgraph.class.clone(),
+                        has_no_connect: live.has_no_connect,
+                    }
+                })
+                .or_else(|| {
+                    let driver_connection = reduced_project_effective_driver_connection(subgraph);
+                    Some(ReducedProjectNetIdentity {
+                        code: subgraph.code,
+                        name: driver_connection.name.clone(),
+                        class: subgraph.class.clone(),
+                        has_no_connect: subgraph.has_no_connect,
+                    })
+                })
         else {
             continue;
         };
@@ -9371,73 +9392,6 @@ pub(crate) fn reduced_project_subgraph_by_index(
     graph.subgraphs.get(index)
 }
 
-// upstream: CONNECTION_GRAPH::GetNetFromItem live subgraph-to-connection summary branch or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still returns a reduced net summary instead of exposing the live `SCH_CONNECTION`,
-// but the live projection now reads the effective chosen connection instead of stale raw
-// subgraph `driver_connection`
-// local_only_reason: `GetNetFromItem` callers still consume reduced `ReducedProjectNetIdentity` payloads
-// replaced_by: live `SCH_CONNECTION` / `CONNECTION_SUBGRAPH` summary access once reduced net identities are retired
-// remove_when: item net queries can consume live connection/subgraph owners directly
-fn projected_reduced_project_net_identity_by_index(
-    graph: &ReducedProjectNetGraph,
-    index: usize,
-) -> Option<ReducedProjectNetIdentity> {
-    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
-        let subgraph = graph.subgraphs.get(index)?;
-        let live = handle.borrow();
-        let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
-        let driver_connection = driver_connection.borrow();
-        return Some(ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: driver_connection.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: live.has_no_connect,
-        });
-    }
-
-    graph.subgraphs.get(index).map(|subgraph| {
-        let driver_connection = reduced_project_effective_driver_connection(subgraph);
-        ReducedProjectNetIdentity {
-            code: subgraph.code,
-            name: driver_connection.name.clone(),
-            class: subgraph.class.clone(),
-            has_no_connect: subgraph.has_no_connect,
-        }
-    })
-}
-
-// upstream: SCH_CONNECTION::Name(true) through CONNECTION_GRAPH::GetSubgraphForItem or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still returns a `String` snapshot instead of exposing live `SCH_CONNECTION`, but the
-// live projection now reads the effective chosen-driver local name instead of stale raw subgraph
-// `driver_connection`
-// local_only_reason: item driver-name queries still consume `String` snapshots
-// replaced_by: live `SCH_CONNECTION` owner lookups once driver-name queries stop using reduced snapshots
-// remove_when: production callers can read `Name(true)` directly from live connection owners
-fn projected_reduced_project_driver_local_name_by_index(
-    graph: &ReducedProjectNetGraph,
-    index: usize,
-) -> Option<String> {
-    live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
-        .map(|subgraph| {
-            let subgraph = subgraph.borrow();
-            live_reduced_subgraph_effective_driver_connection(&subgraph)
-                .borrow()
-                .local_name
-                .clone()
-        })
-        .or_else(|| {
-            graph.subgraphs.get(index).map(|subgraph| {
-                reduced_project_effective_driver_connection(subgraph)
-                    .local_name
-                    .clone()
-            })
-        })
-}
-
 #[cfg_attr(not(test), allow(dead_code))]
 // Upstream parity: reduced local analogue for locating a concrete `CONNECTION_SUBGRAPH*` inside
 // graph-owned caches. This is not a 1:1 pointer lookup because the Rust tree still keys by
@@ -9600,8 +9554,29 @@ pub(crate) fn resolve_reduced_project_net_for_label(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
+    let index = resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let subgraph = graph.subgraphs.get(index)?;
+        let live = handle.borrow();
+        let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+        let driver_connection = driver_connection.borrow();
+        return Some(ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: live.has_no_connect,
+        });
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        let driver_connection = reduced_project_effective_driver_connection(subgraph);
+        ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        }
+    })
 }
 
 // Upstream parity: reduced local analogue for the label `Name(true)` path via
@@ -9614,8 +9589,22 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
     sheet_path: &LoadedSheetPath,
     label: &Label,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-        .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
+    let index = resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let live = handle.borrow();
+        return Some(
+            live_reduced_subgraph_effective_driver_connection(&live)
+                .borrow()
+                .local_name
+                .clone(),
+        );
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        reduced_project_effective_driver_connection(subgraph)
+            .local_name
+            .clone()
+    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -9884,8 +9873,30 @@ pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
+    let index =
+        resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let subgraph = graph.subgraphs.get(index)?;
+        let live = handle.borrow();
+        let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+        let driver_connection = driver_connection.borrow();
+        return Some(ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: live.has_no_connect,
+        });
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        let driver_connection = reduced_project_effective_driver_connection(subgraph);
+        ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        }
+    })
 }
 
 // Upstream parity: reduced local analogue for the sheet-pin `Name(true)` path via
@@ -9899,8 +9910,23 @@ pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
     at: [f64; 2],
     child_sheet_uuid: Option<&str>,
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-        .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
+    let index =
+        resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let live = handle.borrow();
+        return Some(
+            live_reduced_subgraph_effective_driver_connection(&live)
+                .borrow()
+                .local_name
+                .clone(),
+        );
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        reduced_project_effective_driver_connection(subgraph)
+            .local_name
+            .clone()
+    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -10299,8 +10325,22 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<String> {
-    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
+    let index = resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let live = handle.borrow();
+        return Some(
+            live_reduced_subgraph_effective_driver_connection(&live)
+                .borrow()
+                .local_name
+                .clone(),
+        );
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        reduced_project_effective_driver_connection(subgraph)
+            .local_name
+            .clone()
+    })
 }
 
 fn reduced_project_pin_identity_key(
@@ -10914,10 +10954,31 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
     pin_name: Option<&str>,
     pin_number: Option<&str>,
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_index_for_symbol_pin(
+    let index = resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
-    )
-    .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
+    )?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let subgraph = graph.subgraphs.get(index)?;
+        let live = handle.borrow();
+        let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+        let driver_connection = driver_connection.borrow();
+        return Some(ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: live.has_no_connect,
+        });
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        let driver_connection = reduced_project_effective_driver_connection(subgraph);
+        ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        }
+    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -10938,7 +10999,30 @@ pub(crate) fn reduced_project_symbol_pin_net_name(
 ) -> String {
     live_reduced_project_subgraph_index_for_symbol_pin_snapshot(graph, pin)
         .or(pin.subgraph_index)
-        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
+        .and_then(|index| {
+            if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+                let subgraph = graph.subgraphs.get(index)?;
+                let live = handle.borrow();
+                let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+                let driver_connection = driver_connection.borrow();
+                return Some(ReducedProjectNetIdentity {
+                    code: subgraph.code,
+                    name: driver_connection.name.clone(),
+                    class: subgraph.class.clone(),
+                    has_no_connect: live.has_no_connect,
+                });
+            }
+
+            graph.subgraphs.get(index).map(|subgraph| {
+                let driver_connection = reduced_project_effective_driver_connection(subgraph);
+                ReducedProjectNetIdentity {
+                    code: subgraph.code,
+                    name: driver_connection.name.clone(),
+                    class: subgraph.class.clone(),
+                    has_no_connect: subgraph.has_no_connect,
+                }
+            })
+        })
         .map(|net| net.name)
         .unwrap_or_default()
 }
@@ -11430,8 +11514,29 @@ pub(crate) fn resolve_reduced_project_net_at(
     sheet_path: &LoadedSheetPath,
     at: [f64; 2],
 ) -> Option<ReducedProjectNetIdentity> {
-    resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-        .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
+    let index = resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)?;
+    if let Some(handle) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let subgraph = graph.subgraphs.get(index)?;
+        let live = handle.borrow();
+        let driver_connection = live_reduced_subgraph_effective_driver_connection(&live);
+        let driver_connection = driver_connection.borrow();
+        return Some(ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: live.has_no_connect,
+        });
+    }
+
+    graph.subgraphs.get(index).map(|subgraph| {
+        let driver_connection = reduced_project_effective_driver_connection(subgraph);
+        ReducedProjectNetIdentity {
+            code: subgraph.code,
+            name: driver_connection.name.clone(),
+            class: subgraph.class.clone(),
+            has_no_connect: subgraph.has_no_connect,
+        }
+    })
 }
 
 fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
@@ -16447,6 +16552,7 @@ mod tests {
         ReducedNoConnectPoint, ReducedProjectBasePin, ReducedProjectBusNeighborLink,
         ReducedProjectConnection, ReducedProjectConnectionType, ReducedProjectDriverKind,
         ReducedProjectGraphInputs, ReducedProjectLabelNameCaches, ReducedProjectNetGraph,
+        ReducedProjectNetIdentity,
         ReducedProjectStrongDriver, ReducedProjectSubgraphEntry, ReducedProjectSymbolPin,
         ReducedSubgraphWireItem, apply_live_reduced_driver_connections_from_handles,
         build_live_reduced_name_caches_from_handles, build_live_reduced_subgraph_handles,
@@ -16642,6 +16748,57 @@ mod tests {
         }
 
         Some(subgraph)
+    }
+
+    fn test_projected_net_identity_by_index(
+        graph: &ReducedProjectNetGraph,
+        index: usize,
+    ) -> Option<ReducedProjectNetIdentity> {
+        if let Some(handle) = super::live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+        {
+            let subgraph = graph.subgraphs.get(index)?;
+            let live = handle.borrow();
+            let driver_connection = super::live_reduced_subgraph_effective_driver_connection(&live);
+            let driver_connection = driver_connection.borrow();
+            return Some(ReducedProjectNetIdentity {
+                code: subgraph.code,
+                name: driver_connection.name.clone(),
+                class: subgraph.class.clone(),
+                has_no_connect: live.has_no_connect,
+            });
+        }
+
+        graph.subgraphs.get(index).map(|subgraph| {
+            let driver_connection = super::reduced_project_effective_driver_connection(subgraph);
+            ReducedProjectNetIdentity {
+                code: subgraph.code,
+                name: driver_connection.name.clone(),
+                class: subgraph.class.clone(),
+                has_no_connect: subgraph.has_no_connect,
+            }
+        })
+    }
+
+    fn test_projected_driver_local_name_by_index(
+        graph: &ReducedProjectNetGraph,
+        index: usize,
+    ) -> Option<String> {
+        if let Some(handle) = super::live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+        {
+            let live = handle.borrow();
+            return Some(
+                super::live_reduced_subgraph_effective_driver_connection(&live)
+                    .borrow()
+                    .local_name
+                    .clone(),
+            );
+        }
+
+        graph.subgraphs.get(index).map(|subgraph| {
+            super::reduced_project_effective_driver_connection(subgraph)
+                .local_name
+                .clone()
+        })
     }
 
     fn test_projected_subgraph_for_label(
@@ -18869,8 +19026,7 @@ mod tests {
         }
         graph.live_subgraphs[0].borrow_mut().has_no_connect = true;
 
-        let identity =
-            super::projected_reduced_project_net_identity_by_index(&graph, 0).expect("identity");
+        let identity = test_projected_net_identity_by_index(&graph, 0).expect("identity");
 
         assert_eq!(identity.code, 1);
         assert_eq!(identity.name, "/LIVE");
@@ -18905,8 +19061,7 @@ mod tests {
         let graph = test_graph_with_live_subgraphs(vec![subgraph]);
         graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
 
-        let identity =
-            super::projected_reduced_project_net_identity_by_index(&graph, 0).expect("identity");
+        let identity = test_projected_net_identity_by_index(&graph, 0).expect("identity");
 
         assert_eq!(identity.code, 1);
         assert_eq!(identity.name, "LIVE");
@@ -18941,7 +19096,7 @@ mod tests {
         graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
 
         assert_eq!(
-            super::projected_reduced_project_driver_local_name_by_index(&graph, 0).as_deref(),
+            test_projected_driver_local_name_by_index(&graph, 0).as_deref(),
             Some("LIVE")
         );
     }
@@ -18991,8 +19146,7 @@ mod tests {
         let mut graph = test_graph_with_live_subgraphs(reduced);
         graph.live_subgraphs.swap(0, 1);
 
-        let identity = super::projected_reduced_project_net_identity_by_index(&graph, 0)
-            .expect("net identity");
+        let identity = test_projected_net_identity_by_index(&graph, 0).expect("net identity");
 
         assert_eq!(identity.code, 1);
         assert_eq!(identity.name, "/FIRST");
@@ -19018,7 +19172,7 @@ mod tests {
         graph.live_subgraphs.swap(0, 1);
 
         assert_eq!(
-            super::projected_reduced_project_driver_local_name_by_index(&graph, 0).as_deref(),
+            test_projected_driver_local_name_by_index(&graph, 0).as_deref(),
             Some("FIRST")
         );
     }
