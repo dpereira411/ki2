@@ -13076,7 +13076,7 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
     } else {
         reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+            .filter_map(|index| graph.subgraphs.get(index))
             .filter_map(|subgraph| {
                 reduced_project_subgraph_bus_entry_conflict_candidate(graph, subgraph)
             })
@@ -13394,7 +13394,7 @@ pub(crate) fn reduced_project_driver_conflicts(
 
     reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
         .filter_map(reduced_project_subgraph_driver_conflict)
         .collect()
 }
@@ -15023,7 +15023,7 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
     } else {
         for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+            .filter_map(|index| graph.subgraphs.get(index))
         {
             endpoints.extend(reduced_project_subgraph_dangling_wire_endpoints(
                 graph, subgraph,
@@ -15056,7 +15056,7 @@ pub(crate) fn reduced_project_floating_wire_events(
 
     reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
         .filter_map(reduced_project_subgraph_floating_wire)
         .collect()
 }
@@ -15083,7 +15083,7 @@ pub(crate) fn reduced_project_bus_to_bus_conflicts(
 
     reduced_project_run_erc_subgraph_indexes(graph)
         .into_iter()
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, index))
+        .filter_map(|index| graph.subgraphs.get(index))
         .filter_map(reduced_project_subgraph_bus_to_bus_conflict)
         .collect()
 }
