@@ -14000,17 +14000,33 @@ pub(crate) fn reduced_project_same_local_global_label_conflicts(
     let mut globals = BTreeMap::<String, std::path::PathBuf>::new();
     let mut locals = BTreeSet::<String>::new();
 
-    for label in reduced_project_named_label_entries(graph) {
-        match label.kind {
-            LabelKind::Global => {
-                globals
-                    .entry(label.local_name)
-                    .or_insert(label.schematic_path);
+    if !graph.live_subgraphs.is_empty() {
+        for label in live_reduced_project_named_label_entries(graph) {
+            match label.kind {
+                LabelKind::Global => {
+                    globals
+                        .entry(label.local_name)
+                        .or_insert(label.schematic_path);
+                }
+                LabelKind::Local => {
+                    locals.insert(label.local_name);
+                }
+                _ => {}
             }
-            LabelKind::Local => {
-                locals.insert(label.local_name);
+        }
+    } else {
+        for label in reduced_project_named_label_entries_in_reduced_graph(graph) {
+            match label.kind {
+                LabelKind::Global => {
+                    globals
+                        .entry(label.local_name)
+                        .or_insert(label.schematic_path);
+                }
+                LabelKind::Local => {
+                    locals.insert(label.local_name);
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
