@@ -14410,21 +14410,22 @@ fn live_reduced_project_no_connect_marker_outcomes(
                     local_unique_labels.len(),
                 )
             } else {
-                let neighbors = subgraphs_by_name
+                let unique_pin_count = reduced_unique_stacked_pin_count(
+                    subgraphs_by_name
+                        .get(&driver_name)
+                        .into_iter()
+                        .flat_map(|neighbors| neighbors.iter())
+                        .flat_map(|neighbor| {
+                            let borrowed = neighbor.borrow();
+                            live_base_pin_handles_to_snapshots(&borrowed.base_pins)
+                        })
+                        .collect::<Vec<_>>()
+                        .iter(),
+                );
+                let unique_label_count = subgraphs_by_name
                     .get(&driver_name)
                     .into_iter()
                     .flat_map(|neighbors| neighbors.iter())
-                    .collect::<Vec<_>>();
-                let neighbor_pins = neighbors
-                    .iter()
-                    .flat_map(|neighbor| {
-                        let borrowed = neighbor.borrow();
-                        live_base_pin_handles_to_snapshots(&borrowed.base_pins)
-                    })
-                    .collect::<Vec<_>>();
-                let unique_pin_count = reduced_unique_stacked_pin_count(neighbor_pins.iter());
-                let unique_label_count = neighbors
-                    .iter()
                     .flat_map(|neighbor| {
                         let neighbor = neighbor.borrow();
                         neighbor
