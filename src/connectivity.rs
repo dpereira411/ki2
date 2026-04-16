@@ -14255,18 +14255,19 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
             continue;
         }
 
+        let local_unique_labels = subgraph
+            .label_links
+            .iter()
+            .map(|label| (subgraph.sheet_instance_path.clone(), label.at))
+            .chain(
+                subgraph
+                    .hier_ports
+                    .iter()
+                    .map(|label| (subgraph.sheet_instance_path.clone(), label.at)),
+            )
+            .collect::<BTreeSet<_>>();
+
         for no_connect_point in &subgraph.no_connect_points {
-            let local_unique_labels = subgraph
-                .label_links
-                .iter()
-                .map(|label| (subgraph.sheet_instance_path.clone(), label.at))
-                .chain(
-                    subgraph
-                        .hier_ports
-                        .iter()
-                        .map(|label| (subgraph.sheet_instance_path.clone(), label.at)),
-                )
-                .collect::<BTreeSet<_>>();
             let has_sheet_pin = subgraph
                 .hier_sheet_pins
                 .iter()
