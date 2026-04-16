@@ -9848,48 +9848,7 @@ pub(crate) fn reduced_project_sheet_pin_is_dangling(
         return true;
     };
 
-    let pin_point = point_key(at);
-    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
-        let subgraph = subgraph.borrow();
-
-        return subgraph.base_pins.is_empty()
-            && subgraph.label_links.is_empty()
-            && subgraph.no_connect_points.is_empty()
-            && subgraph.wire_items.is_empty()
-            && subgraph.bus_items.is_empty()
-            && subgraph.hier_ports.is_empty()
-            && subgraph
-                .hier_sheet_pins
-                .iter()
-                .filter(|pin| pin.borrow().at == pin_point)
-                .count()
-                <= 1
-            && !subgraph
-                .hier_sheet_pins
-                .iter()
-                .any(|pin| pin.borrow().at != pin_point);
-    }
-
-    let Some(subgraph) = graph.subgraphs.get(index) else {
-        return true;
-    };
-
-    subgraph.base_pins.is_empty()
-        && subgraph.label_links.is_empty()
-        && subgraph.no_connect_points.is_empty()
-        && subgraph.wire_items.is_empty()
-        && subgraph.bus_items.is_empty()
-        && subgraph.hier_ports.is_empty()
-        && subgraph
-            .hier_sheet_pins
-            .iter()
-            .filter(|pin| pin.at == pin_point)
-            .count()
-            <= 1
-        && !subgraph
-            .hier_sheet_pins
-            .iter()
-            .any(|pin| pin.at != pin_point)
+    reduced_project_sheet_pin_dangling_by_index(graph, index, point_key(at))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -11445,6 +11404,63 @@ fn reduced_project_no_connect_point_owner_by_index(
         .subgraphs
         .get(index)
         .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(subgraph, pin))
+}
+
+// upstream: CONNECTION_GRAPH::ercCheckHierSheets parent-sheet-pin connectivity branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still answers from reduced/live projected subgraph membership instead of final live
+// `CONNECTION_SUBGRAPH` / `SCH_SHEET_PIN*` ownership
+// local_only_reason: keeps the exercised sheet-pin dangling boolean on one shared graph-owned
+// live-or-reduced owner boundary instead of rebuilding the same emptiness test per query path
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
+// remove_when: sheet-pin dangling checks can query final live sheet-pin/subgraph owners directly
+fn reduced_project_sheet_pin_dangling_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+    pin_point: PointKey,
+) -> bool {
+    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        let subgraph = subgraph.borrow();
+
+        return subgraph.base_pins.is_empty()
+            && subgraph.label_links.is_empty()
+            && subgraph.no_connect_points.is_empty()
+            && subgraph.wire_items.is_empty()
+            && subgraph.bus_items.is_empty()
+            && subgraph.hier_ports.is_empty()
+            && subgraph
+                .hier_sheet_pins
+                .iter()
+                .filter(|pin| pin.borrow().at == pin_point)
+                .count()
+                <= 1
+            && !subgraph
+                .hier_sheet_pins
+                .iter()
+                .any(|pin| pin.borrow().at != pin_point);
+    }
+
+    let Some(subgraph) = graph.subgraphs.get(index) else {
+        return true;
+    };
+
+    subgraph.base_pins.is_empty()
+        && subgraph.label_links.is_empty()
+        && subgraph.no_connect_points.is_empty()
+        && subgraph.wire_items.is_empty()
+        && subgraph.bus_items.is_empty()
+        && subgraph.hier_ports.is_empty()
+        && subgraph
+            .hier_sheet_pins
+            .iter()
+            .filter(|pin| pin.at == pin_point)
+            .count()
+            <= 1
+        && !subgraph
+            .hier_sheet_pins
+            .iter()
+            .any(|pin| pin.at != pin_point)
 }
 
 // Upstream parity: reduced local analogue for the connection-point half of
