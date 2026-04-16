@@ -9379,19 +9379,6 @@ pub(crate) fn reduced_project_four_way_junction_points(
     &graph.four_way_junction_points
 }
 
-#[allow(dead_code)]
-// Upstream parity: reduced local analogue for indexing into `CONNECTION_GRAPH` subgraph storage.
-// This is not a 1:1 pointer owner because the Rust tree still stores cloned reduced subgraphs
-// instead of live `CONNECTION_SUBGRAPH*`, but it keeps parent/child relation consumers on the
-// shared graph owner instead of exposing the private storage directly. Remaining divergence is the
-// still-missing live subgraph object model.
-pub(crate) fn reduced_project_subgraph_by_index(
-    graph: &ReducedProjectNetGraph,
-    index: usize,
-) -> Option<&ReducedProjectSubgraphEntry> {
-    graph.subgraphs.get(index)
-}
-
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem() exercised live point-owner lookup or none
 // parity_status: partial
 // local_kind: local-only-transitional
