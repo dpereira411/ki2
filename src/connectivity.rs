@@ -9569,48 +9569,6 @@ fn live_reduced_project_subgraph_index_for_no_connect(
     })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: CONNECTION_GRAPH::GetSubgraphForItem() no-connect branch or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still keys markers by reduced `(sheet path, point)` identity instead of final live
-// `SCH_NO_CONNECT*` owners, but live-backed graphs now stop after exact reduced-key fallback
-// instead of broad approximate rescans
-// local_only_reason: keeps marker ownership on the shared graph while the Rust port still stores
-// reduced no-connect identity tables for non-live callers
-// replaced_by: fuller live `SCH_NO_CONNECT` / `CONNECTION_SUBGRAPH` owner graph
-// remove_when: no-connect queries resolve directly from final live item owners without reduced-key
-// fallback
-fn resolve_reduced_project_subgraph_index_for_no_connect(
-    graph: &ReducedProjectNetGraph,
-    sheet_path: &LoadedSheetPath,
-    at: [f64; 2],
-) -> Option<usize> {
-    live_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
-        .or_else(|| {
-            graph
-                .no_connect_subgraph_identities
-                .get(&reduced_project_no_connect_identity_key(sheet_path, at))
-                .copied()
-        })
-        .or_else(|| {
-            graph
-                .live_subgraphs
-                .is_empty()
-                .then(|| {
-                    graph
-                        .no_connect_subgraph_identities
-                        .iter()
-                        .find_map(|(key, index)| {
-                            (key.sheet_instance_path == sheet_path.instance_path
-                                && point_key_matches(key.at, at))
-                            .then_some(*index)
-                        })
-                })
-                .flatten()
-        })
-}
-
 // Upstream parity: reduced local analogue for the no-connect pin connectivity branch in
 // `ERC_TESTER::TestNoConnectPins()`. This is not a 1:1 connectable-item query because the Rust
 // graph still projects symbol pins and wire/label owners into reduced subgraph snapshots, but it
@@ -16796,7 +16754,29 @@ mod tests {
         sheet_path: &crate::loader::LoadedSheetPath,
         at: [f64; 2],
     ) -> Option<ReducedProjectSubgraphEntry> {
-        super::resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
+        super::live_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
+            .or_else(|| {
+                graph
+                    .no_connect_subgraph_identities
+                    .get(&super::reduced_project_no_connect_identity_key(sheet_path, at))
+                    .copied()
+            })
+            .or_else(|| {
+                graph
+                    .live_subgraphs
+                    .is_empty()
+                    .then(|| {
+                        graph
+                            .no_connect_subgraph_identities
+                            .iter()
+                            .find_map(|(key, index)| {
+                                (key.sheet_instance_path == sheet_path.instance_path
+                                    && super::point_key_matches(key.at, at))
+                                .then_some(*index)
+                            })
+                    })
+                    .flatten()
+            })
             .and_then(|index| test_projected_subgraph_by_index(graph, index))
     }
 
