@@ -228,7 +228,7 @@ fn raise_process_stack_limit_best_effort() {
 // replaced_by: none
 // remove_when: ERC no longer needs dedicated oversized worker threads on large hierarchy fixtures
 fn erc_worker_stack_size() -> usize {
-    const TARGET_BYTES: usize = 64 * 1024 * 1024;
+    const TARGET_BYTES: usize = 48 * 1024 * 1024;
     const CONSTRAINED_HOST_THRESHOLD_BYTES: usize = 96 * 1024 * 1024;
 
     #[cfg(unix)]
