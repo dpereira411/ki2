@@ -9371,6 +9371,7 @@ pub(crate) fn reduced_project_subgraph_by_index(
     graph.subgraphs.get(index)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn projected_reduced_project_subgraph_by_index(
     graph: &ReducedProjectNetGraph,
     index: usize,
@@ -11144,28 +11145,6 @@ fn reduced_project_base_pin_for_symbol_pin<'a>(
                     && (pin_number.is_none() || base_pin.key.number.as_deref() == pin_number)
             })
         })
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// Upstream parity: reduced local analogue for the symbol-pin half of
-// `CONNECTION_GRAPH::GetSubgraphForItem()` on the project graph path. This is not a 1:1 KiCad
-// item map because the Rust tree still uses reduced projected pin identity instead of a live
-// `SCH_PIN*`, but it preserves shared pin-to-subgraph identity, and both the named and by-location
-// lookup edges now include projected pin number so stacked pins do not collapse before the shared
-// graph owner sees them. Remaining divergence is fuller item ownership for non-pin items and the
-// still-missing live `CONNECTION_SUBGRAPH` object.
-pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
-    graph: &ReducedProjectNetGraph,
-    sheet_path: &LoadedSheetPath,
-    symbol: &Symbol,
-    at: [f64; 2],
-    pin_name: Option<&str>,
-    pin_number: Option<&str>,
-) -> Option<ReducedProjectSubgraphEntry> {
-    resolve_reduced_project_subgraph_index_for_symbol_pin(
-        graph, sheet_path, symbol, at, pin_name, pin_number,
-    )
-    .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem / CONNECTION_SUBGRAPH::GetItems or none
@@ -16496,7 +16475,6 @@ mod tests {
         reduced_project_pin_not_connected_candidates, refresh_reduced_live_graph_propagation,
         resolve_reduced_net_name_at, resolve_reduced_project_driver_name_for_label,
         resolve_reduced_project_net_at, resolve_reduced_project_net_for_label,
-        resolve_reduced_project_subgraph_for_symbol_pin,
     };
     use crate::connectivity::{
         ReducedProjectDriverIdentity, reduced_global_label_driver_priority,
@@ -16695,6 +16673,20 @@ mod tests {
             sheet_path,
             at,
             child_sheet_uuid,
+        )
+        .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+    }
+
+    fn test_projected_subgraph_for_symbol_pin(
+        graph: &ReducedProjectNetGraph,
+        sheet_path: &crate::loader::LoadedSheetPath,
+        symbol: &crate::model::Symbol,
+        at: [f64; 2],
+        pin_name: Option<&str>,
+        pin_number: Option<&str>,
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        super::resolve_reduced_project_subgraph_index_for_symbol_pin(
+            graph, sheet_path, symbol, at, pin_name, pin_number,
         )
         .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
     }
@@ -22027,7 +22019,7 @@ mod tests {
                 _ => None,
             })
             .expect("child symbol");
-        let by_pin = resolve_reduced_project_subgraph_for_symbol_pin(
+        let by_pin = test_projected_subgraph_for_symbol_pin(
             &graph,
             child_sheet,
             child_symbol,
@@ -26882,7 +26874,7 @@ mod tests {
             &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
         );
 
-        let subgraph = super::resolve_reduced_project_subgraph_for_symbol_pin(
+        let subgraph = test_projected_subgraph_for_symbol_pin(
             &graph,
             &sheet_path,
             &symbol,
@@ -26944,7 +26936,7 @@ mod tests {
         let mut graph = test_graph_with_live_subgraphs(vec![first, second]);
         graph.live_subgraphs.swap(0, 1);
 
-        let subgraph = super::resolve_reduced_project_subgraph_for_symbol_pin(
+        let subgraph = test_projected_subgraph_for_symbol_pin(
             &graph,
             &sheet_path,
             &symbol,
@@ -26989,7 +26981,7 @@ mod tests {
         );
 
         assert!(
-            super::resolve_reduced_project_subgraph_for_symbol_pin(
+            test_projected_subgraph_for_symbol_pin(
                 &graph,
                 &sheet_path,
                 &symbol,
