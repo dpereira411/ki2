@@ -10450,7 +10450,8 @@ fn reduced_project_sheet_pin_names_in_reduced_graph(
     sheet_instance_path: &str,
     child_sheet_uuid: Option<&str>,
 ) -> std::collections::BTreeSet<String> {
-    reduced_project_subgraphs(graph)
+    graph
+        .subgraphs
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
         .flat_map(|subgraph| subgraph.hier_sheet_pins.iter())
@@ -10533,7 +10534,8 @@ fn reduced_project_hier_port_entries_in_reduced_graph(
     graph: &ReducedProjectNetGraph,
     sheet_instance_path: &str,
 ) -> Vec<(String, std::path::PathBuf)> {
-    reduced_project_subgraphs(graph)
+    graph
+        .subgraphs
         .iter()
         .filter(|subgraph| subgraph.sheet_instance_path == sheet_instance_path)
         .flat_map(|subgraph| subgraph.hier_ports.iter())
@@ -13697,8 +13699,12 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
         let driver_connection = reduced_project_effective_driver_connection(&subgraph);
 
         if !driver_connection.name.is_empty() {
-            for neighbor in
-                collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
+            for neighbor in graph
+                .subgraphs_by_name
+                .get(&driver_connection.name)
+                .into_iter()
+                .flat_map(|indexes| indexes.iter())
+                .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
             {
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path
                     && neighbor.subgraph_code == subgraph.subgraph_code
@@ -14113,7 +14119,7 @@ fn reduced_project_named_label_entries_in_reduced_graph(
 ) -> Vec<ReducedProjectNamedLabelEntry> {
     let mut labels = Vec::new();
 
-    for subgraph in reduced_project_subgraphs(graph) {
+    for subgraph in &graph.subgraphs {
         for label in &subgraph.label_links {
             if label.kind == LabelKind::Directive {
                 continue;
