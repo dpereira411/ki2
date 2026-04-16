@@ -216,6 +216,39 @@ fn raise_process_stack_limit_best_effort() {
     }
 }
 
+// upstream: none
+// parity_status: local-only
+// local_kind: local-only-transitional
+// divergence: KiCad does not size worker stacks explicitly; this picks a bounded worker-stack
+// request that fits within real host stack caps instead of requesting an oversized budget that can
+// become unstable on hosts whose hard stack limit is much lower than the requested value
+// local_only_reason: keeps compatibility-lane ERC worker threads reliable on exercised hierarchy
+// fixtures while lower-layer recursion still needs an oversized stack relative to the normal CLI
+// thread
+// replaced_by: none
+// remove_when: ERC no longer needs dedicated oversized worker threads on large hierarchy fixtures
+fn erc_worker_stack_size() -> usize {
+    const TARGET_BYTES: usize = 64 * 1024 * 1024;
+
+    #[cfg(unix)]
+    unsafe {
+        let mut limit = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+
+        if libc::getrlimit(libc::RLIMIT_STACK, &mut limit) == 0 {
+            let hard_limit = limit.rlim_max;
+
+            if hard_limit != libc::RLIM_INFINITY {
+                return TARGET_BYTES.min(hard_limit as usize);
+            }
+        }
+    }
+
+    TARGET_BYTES
+}
+
 // Upstream parity: reduced local analogue for the schematic-validate CLI entrypoint. This is not
 // 1:1 with KiCad's jobs handler because the local binary still lacks the full `sch` command tree
 // and report/output options, but it preserves the current parser-vs-loader split through `--tree`.
@@ -432,10 +465,11 @@ fn execute_erc_command(config: ErcCommandConfig) -> i32 {
 // fixtures
 fn load_schematic_tree_on_worker_stack(path: &str) -> Result<LoadResult, String> {
     let path = path.to_string();
+    let stack_size = erc_worker_stack_size();
 
     std::thread::Builder::new()
         .name("ki2-erc-load".to_string())
-        .stack_size(2048 * 1024 * 1024)
+        .stack_size(stack_size)
         .spawn(move || load_schematic_tree(Path::new(&path)).map_err(|err| err.to_string()))
         .expect("spawn erc load worker")
         .join()
@@ -454,9 +488,11 @@ fn load_schematic_tree_on_worker_stack(path: &str) -> Result<LoadResult, String>
 // dedicated oversized ERC worker thread
 // remove_when: `erc::run()` is stable on the normal CLI thread for the large hierarchy fixtures
 fn run_erc_on_worker_stack(loaded: LoadResult) -> Result<Vec<Diagnostic>, String> {
+    let stack_size = erc_worker_stack_size();
+
     std::thread::Builder::new()
         .name("ki2-erc-run".to_string())
-        .stack_size(2048 * 1024 * 1024)
+        .stack_size(stack_size)
         .spawn(move || {
             let project = SchematicProject::from_load_result(loaded);
             Ok(erc::run(&project))
