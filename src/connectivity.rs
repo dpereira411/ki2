@@ -12882,24 +12882,9 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectBusEntryConflict> {
     let mut conflicts = Vec::new();
-    let candidates = if !graph.live_subgraphs.is_empty() {
-        live_reduced_project_run_erc_subgraph_handles(graph)
-            .into_iter()
-            .filter_map(|subgraph| live_reduced_subgraph_bus_entry_conflict_candidate(&subgraph))
-            .collect::<Vec<_>>()
-    } else {
-        reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-            .filter_map(|subgraph| {
-                reduced_project_subgraph_bus_entry_conflict_candidate(graph, subgraph)
-            })
-            .collect::<Vec<_>>()
-    };
-
-    for mut candidate in candidates {
+    let mut process_candidate = |mut candidate: ReducedProjectBusEntryConflictCandidate| {
         if candidate.suppress_conflict {
-            continue;
+            return;
         }
 
         let Some(sheet_path) = project
@@ -12907,7 +12892,7 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
             .iter()
             .find(|sheet_path| sheet_path.instance_path == candidate.sheet_instance_path)
         else {
-            continue;
+            return;
         };
         if let Some(schematic) = project
             .schematics
@@ -12949,7 +12934,7 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
                 .iter()
                 .any(|member| reduced_bus_conflict_name_matches_member(name, member))
         }) {
-            continue;
+            return;
         }
 
         let net_name = candidate
@@ -12964,6 +12949,25 @@ pub(crate) fn reduced_project_bus_entry_conflicts(
             bus_name: candidate.bus_name,
             net_name,
         });
+    };
+
+    if !graph.live_subgraphs.is_empty() {
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            if let Some(candidate) = live_reduced_subgraph_bus_entry_conflict_candidate(&subgraph) {
+                process_candidate(candidate);
+            }
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
+            .into_iter()
+            .filter_map(|index| graph.subgraphs.get(index))
+        {
+            if let Some(candidate) =
+                reduced_project_subgraph_bus_entry_conflict_candidate(graph, subgraph)
+            {
+                process_candidate(candidate);
+            }
+        }
     }
 
     conflicts
