@@ -154,7 +154,7 @@ fn print_usage_and_exit() -> ! {
 fn run_cli_command_on_worker_stack() -> i32 {
     std::thread::Builder::new()
         .name("ki2-cli".to_string())
-        .stack_size(512 * 1024 * 1024)
+        .stack_size(1024 * 1024 * 1024)
         .spawn(|| {
             let mut args = std::env::args().skip(1);
             let Some(command) = args.next() else {

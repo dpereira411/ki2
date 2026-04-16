@@ -9257,25 +9257,6 @@ fn projected_reduced_project_subgraph_by_index(
     Some(subgraph)
 }
 
-// upstream: CONNECTION_GRAPH::GetSubgraphForItem() live `CONNECTION_SUBGRAPH*` projection branch or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still projects through reduced snapshots instead of returning the live subgraph owner directly
-// local_only_reason: callers still consume reduced subgraph entries while live-owner parity work is in flight
-// replaced_by: live `CONNECTION_SUBGRAPH` ownership once downstream readers stop requiring reduced snapshots
-// remove_when: connection-graph readers can consume live subgraph owners without reduced reprojection
-fn projected_reduced_project_subgraph_from_live_handle(
-    graph: &ReducedProjectNetGraph,
-    handle: &LiveReducedSubgraphHandle,
-) -> Option<ReducedProjectSubgraphEntry> {
-    let index = live_subgraph_projection_index(&graph.live_subgraphs, handle);
-    let mut subgraph = graph.subgraphs.get(index)?.clone();
-    handle
-        .borrow()
-        .project_onto_reduced(&mut subgraph, handle, &graph.live_subgraphs);
-    Some(subgraph)
-}
-
 // upstream: CONNECTION_GRAPH::GetNetFromItem live subgraph-to-connection summary branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9377,7 +9358,12 @@ pub(crate) fn find_reduced_project_subgraph_by_name<'a>(
             .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
             .into_iter()
             .flat_map(|handles| handles.iter())
-            .find_map(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .find_map(|handle| {
+                projected_reduced_project_subgraph_by_index(
+                    graph,
+                    live_subgraph_projection_index(&graph.live_subgraphs, handle),
+                )
+            })
             .filter(|subgraph| {
                 reduced_project_effective_driver_connection(subgraph).name == net_name
             });
@@ -9406,7 +9392,12 @@ pub(crate) fn find_first_reduced_project_subgraph_by_name<'a>(
         return live_reduced_subgraphs_by_name(graph)
             .get(net_name)
             .and_then(|handles| handles.first())
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle));
+            .and_then(|handle| {
+                projected_reduced_project_subgraph_by_index(
+                    graph,
+                    live_subgraph_projection_index(&graph.live_subgraphs, handle),
+                )
+            });
     }
 
     graph
@@ -9433,7 +9424,12 @@ pub(crate) fn collect_reduced_project_subgraphs_by_name<'a>(
             .get(net_name)
             .into_iter()
             .flat_map(|handles| handles.iter())
-            .filter_map(|handle| projected_reduced_project_subgraph_from_live_handle(graph, handle))
+            .filter_map(|handle| {
+                projected_reduced_project_subgraph_by_index(
+                    graph,
+                    live_subgraph_projection_index(&graph.live_subgraphs, handle),
+                )
+            })
             .collect();
     }
 
@@ -11262,11 +11258,7 @@ pub(crate) fn resolve_reduced_project_subgraph_for_symbol_pin<'a>(
     resolve_reduced_project_subgraph_index_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
-    .and_then(|index| {
-        live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
-            .and_then(|handle| projected_reduced_project_subgraph_from_live_handle(graph, &handle))
-            .or_else(|| projected_reduced_project_subgraph_by_index(graph, index))
-    })
+    .and_then(|index| projected_reduced_project_subgraph_by_index(graph, index))
 }
 
 // upstream: CONNECTION_GRAPH::GetSubgraphForItem / CONNECTION_SUBGRAPH::GetItems or none
@@ -18852,11 +18844,8 @@ mod tests {
         let mut graph = test_graph_with_live_subgraphs(reduced);
         graph.live_subgraphs.swap(0, 1);
 
-        let subgraph = super::projected_reduced_project_subgraph_from_live_handle(
-            &graph,
-            &graph.live_subgraphs[0],
-        )
-        .expect("projected subgraph");
+        let subgraph = super::projected_reduced_project_subgraph_by_index(&graph, 1)
+            .expect("projected subgraph");
 
         assert_eq!(subgraph.subgraph_code, 2);
         assert_eq!(subgraph.name, "/SECOND");
