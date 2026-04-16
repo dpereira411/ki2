@@ -14884,18 +14884,26 @@ pub(crate) fn reduced_project_floating_wire_events(
 pub(crate) fn reduced_project_bus_to_bus_conflicts(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectBusToBusConflict> {
+    let mut conflicts = Vec::new();
+
     if !graph.live_subgraphs.is_empty() {
-        return live_reduced_project_run_erc_subgraph_handles(graph)
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            if let Some(conflict) = live_reduced_subgraph_bus_to_bus_conflict(&subgraph) {
+                conflicts.push(conflict);
+            }
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|subgraph| live_reduced_subgraph_bus_to_bus_conflict(&subgraph))
-            .collect();
+            .filter_map(|index| graph.subgraphs.get(index))
+        {
+            if let Some(conflict) = reduced_project_subgraph_bus_to_bus_conflict(subgraph) {
+                conflicts.push(conflict);
+            }
+        }
     }
 
-    reduced_project_run_erc_subgraph_indexes(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
-        .filter_map(reduced_project_subgraph_bus_to_bus_conflict)
-        .collect()
+    conflicts
 }
 
 fn assign_reduced_connected_bus_subgraph_indexes(
