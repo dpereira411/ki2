@@ -13203,18 +13203,26 @@ fn live_reduced_subgraph_conflict_secondary_driver(
 pub(crate) fn reduced_project_driver_conflicts(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectDriverConflict> {
+    let mut conflicts = Vec::new();
+
     if !graph.live_subgraphs.is_empty() {
-        return live_reduced_project_run_erc_subgraph_handles(graph)
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            if let Some(conflict) = live_reduced_subgraph_driver_conflict(&subgraph) {
+                conflicts.push(conflict);
+            }
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|subgraph| live_reduced_subgraph_driver_conflict(&subgraph))
-            .collect();
+            .filter_map(|index| graph.subgraphs.get(index))
+        {
+            if let Some(conflict) = reduced_project_subgraph_driver_conflict(subgraph) {
+                conflicts.push(conflict);
+            }
+        }
     }
 
-    reduced_project_run_erc_subgraph_indexes(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
-        .filter_map(reduced_project_subgraph_driver_conflict)
-        .collect()
+    conflicts
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
