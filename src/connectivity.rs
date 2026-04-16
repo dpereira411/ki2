@@ -8926,11 +8926,11 @@ pub(crate) fn collect_reduced_project_net_map(
     for_board: bool,
 ) -> Vec<ReducedProjectNetEntry> {
     let graph = project.reduced_project_net_graph(for_board);
-    let subgraphs = if graph.live_subgraphs.is_empty() {
-        graph.subgraphs
-    } else {
-        projected_reduced_project_subgraphs(&graph)
-    };
+
+    if !graph.live_subgraphs.is_empty() {
+        return live_reduced_project_net_map_entries(&graph);
+    }
+
     let mut grouped = BTreeMap::<
         (usize, String),
         (
@@ -8952,7 +8952,7 @@ pub(crate) fn collect_reduced_project_net_map(
         ),
     >::new();
 
-    for subgraph in subgraphs {
+    for subgraph in graph.subgraphs {
         let owner_name = reduced_project_effective_driver_connection(&subgraph)
             .name
             .clone();
@@ -9018,6 +9018,173 @@ pub(crate) fn collect_reduced_project_net_map(
         }
 
         for base_pin in subgraph.base_pins {
+            if !entry
+                .3
+                .iter()
+                .any(|candidate| candidate.key == base_pin.key)
+            {
+                entry.3.push(base_pin);
+            }
+        }
+    }
+
+    for ((_reference, _pin), (code, name, class, has_no_connect, node, base_pin_key)) in candidates
+    {
+        let entry = grouped
+            .entry((code, name))
+            .or_insert_with(|| (class.clone(), has_no_connect, BTreeMap::new(), Vec::new()));
+
+        if entry.0.is_empty() && !class.is_empty() {
+            entry.0 = class;
+        }
+
+        entry.1 |= has_no_connect;
+        entry
+            .2
+            .insert((node.reference.clone(), node.pin.clone()), node);
+        if let Some(base_pin) = base_pin_key {
+            if !entry
+                .3
+                .iter()
+                .any(|candidate| candidate.key == base_pin.key)
+            {
+                entry.3.push(base_pin);
+            }
+        }
+    }
+
+    grouped
+        .into_iter()
+        .filter_map(
+            |((code, name), (class, has_no_connect, nodes, base_pins))| {
+                let nodes = nodes.into_values().collect::<Vec<_>>();
+                ((!nodes.is_empty()) || !base_pins.is_empty()).then_some((
+                    code,
+                    name,
+                    class,
+                    has_no_connect,
+                    nodes,
+                    base_pins,
+                ))
+            },
+        )
+        .map(
+            |(code, name, class, has_no_connect, nodes, base_pins)| ReducedProjectNetEntry {
+                code,
+                name,
+                class,
+                has_no_connect,
+                nodes,
+                base_pins,
+            },
+        )
+        .collect()
+}
+
+// upstream: CONNECTION_GRAPH::GetNetMap or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still returns reduced whole-net entries instead of live `CONNECTION_SUBGRAPH*`, but
+// the live path now reads net identity and base-pin ownership from the shared live owner instead
+// of first projecting every subgraph back into a cloned reduced vector
+// local_only_reason: keeps exporter/ERC whole-net consumers on one shared graph owner while the
+// fuller live net-map container is still being ported
+// replaced_by: fuller live `CONNECTION_GRAPH::GetNetMap()` analogue with live `CONNECTION_SUBGRAPH`
+// storage behind the exported whole-net view
+// remove_when: production whole-net consumers can iterate final live net-map storage directly
+fn live_reduced_project_net_map_entries(
+    graph: &ReducedProjectNetGraph,
+) -> Vec<ReducedProjectNetEntry> {
+    let mut grouped = BTreeMap::<
+        (usize, String),
+        (
+            String,
+            bool,
+            BTreeMap<(String, String), ReducedNetNode>,
+            Vec<ReducedProjectBasePin>,
+        ),
+    >::new();
+    let mut candidates = BTreeMap::<
+        (String, String),
+        (
+            usize,
+            String,
+            String,
+            bool,
+            ReducedNetNode,
+            Option<ReducedProjectBasePin>,
+        ),
+    >::new();
+
+    for (index, subgraph) in graph.subgraphs.iter().enumerate() {
+        let Some(net_identity) = projected_reduced_project_net_identity_by_index(graph, index)
+        else {
+            continue;
+        };
+        let base_pins = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+            .map(|handle| live_base_pin_handles_to_snapshots(&handle.borrow().base_pins))
+            .unwrap_or_else(|| subgraph.base_pins.clone());
+        let entry = grouped
+            .entry((net_identity.code, net_identity.name.clone()))
+            .or_insert_with(|| {
+                (
+                    net_identity.class.clone(),
+                    false,
+                    BTreeMap::new(),
+                    Vec::<ReducedProjectBasePin>::new(),
+                )
+            });
+
+        if entry.0.is_empty() && !net_identity.class.is_empty() {
+            entry.0 = net_identity.class.clone();
+        }
+
+        entry.1 |= net_identity.has_no_connect;
+
+        for node in &subgraph.nodes {
+            let base_pin_key = base_pins
+                .iter()
+                .find(|base_pin| {
+                    base_pin.key.symbol_uuid.is_some()
+                        && node
+                            .pinfunction
+                            .as_ref()
+                            .map(|pinfunction| {
+                                base_pin
+                                    .key
+                                    .name
+                                    .as_ref()
+                                    .is_some_and(|name| pinfunction.starts_with(name))
+                            })
+                            .unwrap_or(base_pin.key.name.is_none())
+                })
+                .cloned()
+                .or_else(|| base_pins.first().cloned());
+            let key = (node.reference.clone(), node.pin.clone());
+            let candidate = (
+                net_identity.code,
+                net_identity.name.clone(),
+                net_identity.class.clone(),
+                net_identity.has_no_connect,
+                node.clone(),
+                base_pin_key,
+            );
+
+            match candidates.get(&key) {
+                Some(existing)
+                    if is_auto_generated_net_name(&existing.1)
+                        && !is_auto_generated_net_name(&candidate.1) =>
+                {
+                    candidates.insert(key, candidate);
+                }
+                None => {
+                    candidates.insert(key, candidate);
+                }
+                _ => {}
+            }
+        }
+
+        for base_pin in base_pins {
             if !entry
                 .3
                 .iter()
@@ -18729,6 +18896,48 @@ mod tests {
 
         assert_eq!(projected[0].driver_connection.name, "/LIVE");
         assert_eq!(projected[0].base_pins[0].connection.name, "/LIVE");
+    }
+
+    #[test]
+    fn live_net_map_entries_read_live_driver_and_base_pin_owner() {
+        let reduced_connection = test_net_connection("/OLD", "OLD", "/OLD", "");
+        let live_connection = test_net_connection("/LIVE", "LIVE", "/LIVE", "");
+        let mut subgraph = test_net_subgraph(1, reduced_connection.clone(), Vec::new(), "");
+        subgraph.base_pins.push(test_base_pin(
+            "U1",
+            "PIN",
+            PointKey(10, 20),
+            "1",
+            "input",
+            reduced_connection,
+        ));
+        subgraph.nodes.push(super::ReducedNetNode {
+            reference: "U1".to_string(),
+            pin: "1".to_string(),
+            pinfunction: Some("PIN".to_string()),
+            pintype: "input".to_string(),
+        });
+
+        let graph = test_graph_with_live_subgraphs(vec![subgraph]);
+        {
+            let subgraph = graph.live_subgraphs[0].borrow();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut subgraph.driver_connection.borrow_mut(),
+                &live_connection,
+            );
+            let base_pin_connection = subgraph.base_pins[0].borrow().connection.clone();
+            clone_reduced_connection_into_live_connection_owner(
+                &mut base_pin_connection.borrow_mut(),
+                &live_connection,
+            );
+        }
+
+        let entries = super::live_reduced_project_net_map_entries(&graph);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "/LIVE");
+        assert_eq!(entries[0].base_pins[0].connection.name, "/LIVE");
+        assert_eq!(entries[0].nodes[0].reference, "U1");
     }
 
     #[test]
