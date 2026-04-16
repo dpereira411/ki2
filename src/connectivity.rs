@@ -11975,7 +11975,7 @@ fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
         .get(&driver_connection.name)
         .into_iter()
         .flat_map(|indexes| indexes.iter())
-        .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+        .filter_map(|index| graph.subgraphs.get(*index))
         .filter(|neighbor| {
             neighbor.sheet_instance_path == subgraph.sheet_instance_path
                 && neighbor.subgraph_code != subgraph.subgraph_code
@@ -13678,7 +13678,7 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
                 .get(&driver_connection.name)
                 .into_iter()
                 .flat_map(|indexes| indexes.iter())
-                .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+                .filter_map(|index| graph.subgraphs.get(*index))
             {
                 if neighbor.sheet_instance_path == subgraph.sheet_instance_path
                     && neighbor.subgraph_code == subgraph.subgraph_code
@@ -14467,7 +14467,7 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                         .get(&driver_connection.name)
                         .into_iter()
                         .flat_map(|indexes| indexes.iter())
-                        .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+                        .filter_map(|index| graph.subgraphs.get(*index))
                         .collect::<Vec<_>>();
                     let unique_pin_count = reduced_unique_stacked_pin_count(
                         neighbors
@@ -14800,7 +14800,7 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
                 .get(&driver_connection.name)
                 .into_iter()
                 .flat_map(|indexes| indexes.iter())
-                .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+                .filter_map(|index| graph.subgraphs.get(*index))
                 .any(|neighbor| {
                     neighbor.subgraph_code != subgraph.subgraph_code
                         && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
@@ -16609,7 +16609,7 @@ where
         let mut netclasses = BTreeSet::<String>::new();
         for subgraph in subgraph_indexes
             .iter()
-            .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+            .filter_map(|index| graph.subgraphs.get(*index))
         {
             for driver in &subgraph.drivers {
                 netclasses.extend(
@@ -16628,7 +16628,7 @@ where
 
         for subgraph in subgraph_indexes
             .iter()
-            .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+            .filter_map(|index| graph.subgraphs.get(*index))
         {
             let driver_connection = reduced_project_effective_driver_connection(subgraph);
             if !reduced_connection_is_bus(driver_connection.connection_type) {
