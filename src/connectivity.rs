@@ -9248,40 +9248,6 @@ fn live_reduced_project_net_map_entries(
         .collect()
 }
 
-// upstream: CONNECTION_GRAPH::GetNetMap export/net-map subgraph iteration or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still returns reduced cloned subgraph snapshots instead of live `CONNECTION_SUBGRAPH*`
-// local_only_reason: centralizes whole-graph live-to-reduced projection on one shared graph-owned helper
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with exporter-visible code/class/node storage
-// remove_when: export/ERC/query code can iterate final live subgraph storage directly
-fn projected_reduced_project_subgraphs(
-    graph: &ReducedProjectNetGraph,
-) -> Vec<ReducedProjectSubgraphEntry> {
-    graph
-        .subgraphs
-        .iter()
-        .enumerate()
-        .filter_map(|(index, _)| projected_reduced_project_subgraph_by_index(graph, index))
-        .collect()
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: CONNECTION_GRAPH::GetNetMap or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still returns reduced cloned subgraph snapshots by shared graph borrow instead of
-// live `CONNECTION_SUBGRAPH*` owners
-// local_only_reason: keeps production ERC/export callers on the shared reduced graph owner
-// instead of cloning subgraph storage into local helper vectors
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
-// remove_when: production callers can iterate live `CONNECTION_SUBGRAPH` owners directly
-pub(crate) fn reduced_project_subgraphs(
-    graph: &ReducedProjectNetGraph,
-) -> Vec<ReducedProjectSubgraphEntry> {
-    projected_reduced_project_subgraphs(graph)
-}
-
 // upstream: CONNECTION_GRAPH::RunERC top-level subgraph iteration or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9307,43 +9273,6 @@ fn reduced_project_run_erc_subgraph_indexes(graph: &ReducedProjectNetGraph) -> V
 
     indexes.reverse();
     indexes
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-// upstream: CONNECTION_GRAPH::RunERC top-level subgraph iteration or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still iterates reduced subgraph snapshots instead of live `CONNECTION_SUBGRAPH*`
-// storage and absorbed-subgraph state
-// local_only_reason: centralizes the exercised `seenDriverInstances`/reused-screen traversal policy
-// on the shared graph owner instead of duplicating it in each ERC rule
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph
-// remove_when: ERC runs directly over live graph-owned ERC subgraph traversal
-pub(crate) fn reduced_project_run_erc_subgraphs(
-    graph: &ReducedProjectNetGraph,
-) -> Vec<ReducedProjectSubgraphEntry> {
-    if !graph.live_subgraphs.is_empty() {
-        let projected = projected_reduced_project_subgraphs(graph);
-        let mut seen_driver_identities = std::collections::BTreeSet::new();
-        let mut subgraphs = projected
-            .iter()
-            .rev()
-            .filter(|subgraph| {
-                reduced_project_subgraph_driver_identity(subgraph)
-                    .is_none_or(|identity| seen_driver_identities.insert(identity.clone()))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        subgraphs.reverse();
-        return subgraphs;
-    }
-
-    reduced_project_run_erc_subgraph_indexes(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
-        .cloned()
-        .collect()
 }
 
 // upstream: CONNECTION_GRAPH::RunERC per-subgraph item-owned traversal branch or none
@@ -18931,7 +18860,12 @@ mod tests {
             );
         }
 
-        let projected = super::projected_reduced_project_subgraphs(&graph);
+        let projected = graph
+            .subgraphs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, _)| super::projected_reduced_project_subgraph_by_index(&graph, index))
+            .collect::<Vec<_>>();
 
         assert_eq!(projected[0].driver_connection.name, "/LIVE");
         assert_eq!(projected[0].base_pins[0].connection.name, "/LIVE");
@@ -23622,7 +23556,10 @@ mod tests {
         );
         graph.live_subgraphs[0].borrow_mut().chosen_driver = None;
 
-        let subgraphs = super::reduced_project_run_erc_subgraphs(&graph);
+        let subgraphs = super::reduced_project_run_erc_subgraph_indexes(&graph)
+            .into_iter()
+            .filter_map(|index| super::projected_reduced_project_subgraph_by_index(&graph, index))
+            .collect::<Vec<_>>();
 
         assert_eq!(subgraphs.len(), 1);
         assert_eq!(subgraphs[0].name, "/LIVE");
@@ -23731,7 +23668,12 @@ mod tests {
             &test_net_connection("/LIVE", "LIVE", "/LIVE", ""),
         );
 
-        let subgraphs = super::reduced_project_subgraphs(&graph);
+        let subgraphs = graph
+            .subgraphs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, _)| super::projected_reduced_project_subgraph_by_index(&graph, index))
+            .collect::<Vec<_>>();
 
         assert_eq!(subgraphs.len(), 1);
         assert_eq!(subgraphs[0].name, "/LIVE");
