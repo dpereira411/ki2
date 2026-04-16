@@ -229,6 +229,7 @@ fn raise_process_stack_limit_best_effort() {
 // remove_when: ERC no longer needs dedicated oversized worker threads on large hierarchy fixtures
 fn erc_worker_stack_size() -> usize {
     const TARGET_BYTES: usize = 64 * 1024 * 1024;
+    const CONSTRAINED_HOST_THRESHOLD_BYTES: usize = 96 * 1024 * 1024;
 
     #[cfg(unix)]
     unsafe {
@@ -241,7 +242,13 @@ fn erc_worker_stack_size() -> usize {
             let hard_limit = limit.rlim_max;
 
             if hard_limit != libc::RLIM_INFINITY {
-                return TARGET_BYTES.min(hard_limit as usize);
+                let hard_limit = hard_limit as usize;
+
+                if hard_limit <= CONSTRAINED_HOST_THRESHOLD_BYTES {
+                    return hard_limit;
+                }
+
+                return TARGET_BYTES;
             }
         }
     }
