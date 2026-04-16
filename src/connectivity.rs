@@ -9688,14 +9688,7 @@ fn reduced_project_no_connect_pin_has_connected_owner_by_index(
     index: usize,
     pin: &ReducedProjectSymbolPin,
 ) -> bool {
-    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
-        return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
-    }
-
-    graph
-        .subgraphs
-        .get(index)
-        .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(subgraph, pin))
+    reduced_project_no_connect_point_owner_by_index(graph, index, pin)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -11428,6 +11421,30 @@ fn reduced_project_driver_local_name_by_index(
             .local_name
             .clone()
     })
+}
+
+// upstream: ERC_TESTER::TestNoConnectPins point-owner query or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still answers from reduced/live projected subgraph payload instead of final live
+// item ownership
+// local_only_reason: keeps the exercised no-connect point-owner boolean on one shared
+// graph-owned live-or-reduced owner boundary instead of rebuilding the same branch per query path
+// replaced_by: fuller live `SCH_PIN` / `CONNECTION_SUBGRAPH` owner graph
+// remove_when: no-connect point-owner checks can query final live connected-item state directly
+fn reduced_project_no_connect_point_owner_by_index(
+    graph: &ReducedProjectNetGraph,
+    index: usize,
+    pin: &ReducedProjectSymbolPin,
+) -> bool {
+    if let Some(subgraph) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
+        return live_reduced_no_connect_pin_has_point_owner(&subgraph.borrow(), pin);
+    }
+
+    graph
+        .subgraphs
+        .get(index)
+        .is_some_and(|subgraph| reduced_project_no_connect_pin_has_point_owner(subgraph, pin))
 }
 
 // Upstream parity: reduced local analogue for the connection-point half of
