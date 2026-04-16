@@ -14205,7 +14205,7 @@ fn reduced_unique_stacked_pin_count<'a>(
 // upstream: CONNECTION_GRAPH::ercCheckNoConnects explicit no-connect branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
-// divergence: still evaluates reduced no-connect points and reduced same-name subgraph snapshots
+// divergence: still evaluates reduced no-connect points and reduced same-name subgraph indexes
 // instead of live `m_no_connect` plus `m_net_name_to_subgraphs_map` item owners
 // local_only_reason: keeps explicit no-connect marker classification on the shared graph owner
 // instead of duplicating reduced subgraph and same-name aggregation scans inside ERC
@@ -14267,32 +14267,31 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                         local_unique_labels.len(),
                     )
                 } else {
-                    let neighbors = graph
+                    let unique_pin_count = reduced_unique_stacked_pin_count(
+                        graph.subgraphs_by_name
+                            .get(&driver_connection.name)
+                            .into_iter()
+                            .flat_map(|indexes| indexes.iter())
+                            .filter_map(|index| graph.subgraphs.get(*index))
+                            .flat_map(|neighbor| neighbor.base_pins.iter()),
+                    );
+                    let unique_label_count = graph
                         .subgraphs_by_name
                         .get(&driver_connection.name)
                         .into_iter()
                         .flat_map(|indexes| indexes.iter())
                         .filter_map(|index| graph.subgraphs.get(*index))
-                        .collect::<Vec<_>>();
-                    let unique_pin_count = reduced_unique_stacked_pin_count(
-                        neighbors
-                            .iter()
-                            .flat_map(|neighbor| neighbor.base_pins.iter()),
-                    );
-                    let unique_label_count =
-                        neighbors
-                            .iter()
-                            .flat_map(|neighbor| {
-                                neighbor
-                                    .label_links
-                                    .iter()
-                                    .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
-                                    .chain(neighbor.hier_ports.iter().map(|label| {
-                                        (neighbor.sheet_instance_path.clone(), label.at)
-                                    }))
-                            })
-                            .collect::<BTreeSet<_>>()
-                            .len();
+                        .flat_map(|neighbor| {
+                            neighbor
+                                .label_links
+                                .iter()
+                                .map(|label| (neighbor.sheet_instance_path.clone(), label.at))
+                                .chain(neighbor.hier_ports.iter().map(|label| {
+                                    (neighbor.sheet_instance_path.clone(), label.at)
+                                }))
+                        })
+                        .collect::<BTreeSet<_>>()
+                        .len();
                     (unique_pin_count, unique_label_count)
                 }
             };
