@@ -14129,30 +14129,30 @@ pub(crate) fn reduced_project_hierarchical_sheet_events(
 pub(crate) fn reduced_project_bus_to_net_conflicts(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectBusToNetConflictEvent> {
+    let mut events = Vec::new();
+
     if !graph.live_subgraphs.is_empty() {
-        return live_reduced_project_run_erc_subgraph_handles(graph)
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            if let Some(conflict) = live_reduced_subgraph_bus_to_net_conflict(&subgraph) {
+                events.push(ReducedProjectBusToNetConflictEvent {
+                    diagnostic_path: conflict.diagnostic_path,
+                });
+            }
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|subgraph| {
-                live_reduced_subgraph_bus_to_net_conflict(&subgraph).map(|conflict| {
-                    ReducedProjectBusToNetConflictEvent {
-                        diagnostic_path: conflict.diagnostic_path,
-                    }
-                })
-            })
-            .collect();
+            .filter_map(|index| graph.subgraphs.get(index))
+        {
+            if let Some(conflict) = reduced_project_subgraph_bus_to_net_conflict(subgraph) {
+                events.push(ReducedProjectBusToNetConflictEvent {
+                    diagnostic_path: conflict.diagnostic_path,
+                });
+            }
+        }
     }
 
-    reduced_project_run_erc_subgraph_indexes(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
-        .filter_map(|subgraph| {
-            reduced_project_subgraph_bus_to_net_conflict(subgraph).map(|conflict| {
-                ReducedProjectBusToNetConflictEvent {
-                    diagnostic_path: conflict.diagnostic_path,
-                }
-            })
-        })
-        .collect()
+    events
 }
 
 // upstream: CONNECTION_GRAPH::ercCheckNoConnects unique-pins `SCH_PIN::IsStacked()` branch or
