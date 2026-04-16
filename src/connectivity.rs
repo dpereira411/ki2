@@ -14855,18 +14855,26 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
 pub(crate) fn reduced_project_floating_wire_events(
     graph: &ReducedProjectNetGraph,
 ) -> Vec<ReducedProjectFloatingWire> {
+    let mut events = Vec::new();
+
     if !graph.live_subgraphs.is_empty() {
-        return live_reduced_project_run_erc_subgraph_handles(graph)
+        for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
+            if let Some(event) = live_reduced_subgraph_floating_wire(&subgraph) {
+                events.push(event);
+            }
+        }
+    } else {
+        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
-            .filter_map(|subgraph| live_reduced_subgraph_floating_wire(&subgraph))
-            .collect();
+            .filter_map(|index| graph.subgraphs.get(index))
+        {
+            if let Some(event) = reduced_project_subgraph_floating_wire(subgraph) {
+                events.push(event);
+            }
+        }
     }
 
-    reduced_project_run_erc_subgraph_indexes(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
-        .filter_map(reduced_project_subgraph_floating_wire)
-        .collect()
+    events
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
