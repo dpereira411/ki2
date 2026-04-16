@@ -14818,18 +14818,18 @@ pub(crate) fn reduced_project_dangling_wire_endpoint_events(
 
     if !graph.live_subgraphs.is_empty() {
         for subgraph in live_reduced_project_run_erc_subgraph_handles(graph) {
-            endpoints.extend(live_reduced_subgraph_dangling_wire_endpoints(
-                graph, &subgraph,
-            ));
+            for endpoint in live_reduced_subgraph_dangling_wire_endpoints(graph, &subgraph) {
+                endpoints.push(endpoint);
+            }
         }
     } else {
         for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
             .into_iter()
             .filter_map(|index| graph.subgraphs.get(index))
         {
-            endpoints.extend(reduced_project_subgraph_dangling_wire_endpoints(
-                graph, subgraph,
-            ));
+            for endpoint in reduced_project_subgraph_dangling_wire_endpoints(graph, subgraph) {
+                endpoints.push(endpoint);
+            }
         }
     }
 
