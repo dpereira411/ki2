@@ -16615,13 +16615,15 @@ where
     let net_names = graph.subgraphs_by_name.keys().cloned().collect::<Vec<_>>();
 
     for net_name in net_names {
-        let subgraphs = collect_reduced_project_subgraphs_by_name(graph, &net_name);
-        if subgraphs.is_empty() {
+        let Some(subgraph_indexes) = graph.subgraphs_by_name.get(&net_name) else {
             continue;
-        }
+        };
 
         let mut netclasses = BTreeSet::<String>::new();
-        for subgraph in &subgraphs {
+        for subgraph in subgraph_indexes
+            .iter()
+            .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+        {
             for driver in &subgraph.drivers {
                 netclasses.extend(
                     driver_netclasses(driver)
@@ -16637,7 +16639,10 @@ where
 
         assignments.insert(net_name.clone(), netclasses.clone());
 
-        for subgraph in &subgraphs {
+        for subgraph in subgraph_indexes
+            .iter()
+            .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+        {
             let driver_connection = reduced_project_effective_driver_connection(subgraph);
             if !reduced_connection_is_bus(driver_connection.connection_type) {
                 continue;

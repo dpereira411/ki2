@@ -14,7 +14,7 @@ use serde_json::json;
 
 fn main() {
     raise_process_stack_limit_best_effort();
-    let exit_code = run_cli_command_on_worker_stack();
+    let exit_code = run_cli_command();
 
     std::process::exit(exit_code);
 }
@@ -154,37 +154,31 @@ fn print_usage_and_exit() -> ! {
 // parity_status: local-only
 // local_kind: local-only-transitional
 // divergence: KiCad's CLI does not need an explicit worker thread stack shim, but the local Rust
-// binary currently overflows the main thread stack on deep ERC graph walks that pass under the
-// test harness stack
-// local_only_reason: keeps the exercised CLI path usable while lower-layer recursion remains
-// deeper than the process main-thread stack budget
-// replaced_by: flatter live graph traversal and/or command path that no longer requires an
-// oversized worker stack
-// remove_when: `ki2 erc` runs the large hierarchy fixtures on the process main thread without
-// stack overflow
-fn run_cli_command_on_worker_stack() -> i32 {
-    std::thread::Builder::new()
-        .name("ki2-cli".to_string())
-        .stack_size(2048 * 1024 * 1024)
-        .spawn(|| {
-            let mut args = std::env::args().skip(1);
-            let Some(command) = args.next() else {
-                print_usage_and_exit();
-            };
+// upstream: none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: KiCad's job entrypoints run directly on the command thread; the local CLI now does
+// the same again and relies only on narrower inner workers where exercised recursion still needs
+// them
+// local_only_reason: keeps the outer command path shallow and avoids an additional oversized
+// worker boundary while deeper graph-owned work is still being flattened
+// replaced_by: none
+// remove_when: none
+fn run_cli_command() -> i32 {
+    let mut args = std::env::args().skip(1);
+    let Some(command) = args.next() else {
+        print_usage_and_exit();
+    };
 
-            match command.as_str() {
-                "validate" => run_validate_command(args.collect()),
-                "erc" => run_erc_command(args.collect()),
-                "netlist" => run_netlist_command(args.collect()),
-                _ => {
-                    eprintln!("unknown command: {command}");
-                    print_usage_and_exit();
-                }
-            }
-        })
-        .expect("spawn cli worker thread")
-        .join()
-        .expect("cli worker thread must not panic")
+    match command.as_str() {
+        "validate" => run_validate_command(args.collect()),
+        "erc" => run_erc_command(args.collect()),
+        "netlist" => run_netlist_command(args.collect()),
+        _ => {
+            eprintln!("unknown command: {command}");
+            print_usage_and_exit();
+        }
+    }
 }
 
 // upstream: none
@@ -332,7 +326,7 @@ fn run_erc_command(args: Vec<String>) -> i32 {
         print_usage_and_exit();
     };
 
-    run_erc_command_on_worker_stack(ErcCommandConfig {
+    execute_erc_command(ErcCommandConfig {
         path,
         output,
         format,
@@ -345,28 +339,6 @@ fn run_erc_command(args: Vec<String>) -> i32 {
         ),
         exit_code_violations,
     })
-}
-
-// upstream: SCH_ERC_COMMAND::doPerform() command-owned ERC execution or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: KiCad runs the full ERC command on one command thread; this shim moves the heavy
-// compatibility-lane ERC command body onto its own dedicated worker stack before the deeper
-// `erc::run()` worker boundary
-// local_only_reason: keeps the outer CLI dispatcher shallow while large hierarchy fixtures still
-// need extra stack both for the command body and for the deepest graph walk
-// replaced_by: flatter upstream-shaped CLI/load/ERC ownership that no longer needs dedicated ERC
-// worker stacks
-// remove_when: `execute_erc_command()` and `erc::run()` are stable on the normal CLI worker
-// thread for the large hierarchy fixtures
-fn run_erc_command_on_worker_stack(config: ErcCommandConfig) -> i32 {
-    std::thread::Builder::new()
-        .name("ki2-erc-cli".to_string())
-        .stack_size(4096 * 1024 * 1024)
-        .spawn(move || execute_erc_command(config))
-        .expect("spawn erc command worker")
-        .join()
-        .expect("erc command worker")
 }
 
 // upstream: SCH_ERC_COMMAND::doPerform or none
