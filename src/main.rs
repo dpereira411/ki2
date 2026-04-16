@@ -6,7 +6,7 @@ use ki2::core::SchematicProject;
 use ki2::diagnostic::Diagnostic;
 use ki2::diagnostic::Severity;
 use ki2::erc;
-use ki2::loader::{LoadResult, load_schematic_tree};
+use ki2::loader::load_schematic_tree;
 use ki2::model::SchItem;
 use ki2::netlist::{render_reduced_kicad_netlist, render_reduced_xml_netlist};
 use ki2::parser::parse_schematic_file;
@@ -393,7 +393,46 @@ fn run_erc_command(args: Vec<String>) -> i32 {
 // remove_when: the command can return to a flatter single-frame flow without reintroducing stack
 // instability on large hierarchy fixtures
 fn execute_erc_command(config: ErcCommandConfig) -> i32 {
-    let loaded = match load_schematic_tree_on_worker_stack(&config.path) {
+    execute_erc_command_on_worker_stack(config)
+}
+
+// upstream: SCH_ERC_COMMAND::doPerform or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: KiCad executes the command on the caller thread; this shim runs the full local
+// load/project/ERC/report flow on one bounded worker stack because the current Rust path still
+// needs an oversized CLI stack on exercised hierarchy fixtures
+// local_only_reason: keeps the compatibility-lane `erc` command executable on constrained hosts
+// without splitting the same deep flow across separate near-ceiling load/run workers
+// replaced_by: flatter upstream-shaped parser/loader/connectivity/ERC ownership that no longer
+// needs a dedicated oversized command worker
+// remove_when: the ERC command is stable on the normal CLI thread for the large hierarchy
+// fixtures
+fn execute_erc_command_on_worker_stack(config: ErcCommandConfig) -> i32 {
+    let stack_size = erc_worker_stack_size(64 * 1024 * 1024);
+
+    std::thread::Builder::new()
+        .name("ki2-erc-command".to_string())
+        .stack_size(stack_size)
+        .spawn(move || execute_erc_command_inner(config))
+        .expect("spawn erc command worker")
+        .join()
+        .expect("erc command worker")
+}
+
+// upstream: SCH_ERC_COMMAND::doPerform or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still routes through the reduced local CLI/report stack instead of KiCad's job and
+// marker pipeline, but this helper narrows the heavy execution frame under one worker-owned ERC
+// command body while lower-layer recursion is still being flattened
+// local_only_reason: keeps the compatibility-lane `erc` command executable without adding another
+// owner boundary; it only splits the command frame around the existing load/project/ERC/report flow
+// replaced_by: none
+// remove_when: the command can return to a flatter single-frame flow without reintroducing stack
+// instability on large hierarchy fixtures
+fn execute_erc_command_inner(config: ErcCommandConfig) -> i32 {
+    let loaded = match load_schematic_tree(Path::new(&config.path)) {
         Ok(loaded) => loaded,
         Err(err) => {
             eprintln!("{err}");
@@ -401,13 +440,8 @@ fn execute_erc_command(config: ErcCommandConfig) -> i32 {
         }
     };
 
-    let diagnostics = match run_erc_on_worker_stack(loaded) {
-        Ok(diagnostics) => diagnostics,
-        Err(err) => {
-            eprintln!("{err}");
-            return 1;
-        }
-    };
+    let project = SchematicProject::from_load_result(loaded);
+    let diagnostics = erc::run(&project);
     let filtered_diagnostics: Vec<Diagnostic> = diagnostics
         .into_iter()
         .filter(|diagnostic| config.severity_mask.includes(diagnostic.severity))
@@ -456,57 +490,6 @@ fn execute_erc_command(config: ErcCommandConfig) -> i32 {
     } else {
         0
     }
-}
-
-// upstream: SCH_ERC_COMMAND::doPerform() worker-owned schematic load shim or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: KiCad loads on the command thread; this shim loads on a dedicated worker stack
-// because the current Rust parser/loader recursion can still exhaust the exercised CLI stack
-// budget on large hierarchy fixtures
-// local_only_reason: keeps compatibility-lane `ki2 erc` usable while lower-layer recursion is
-// still deeper than a stable single-thread command path budget
-// replaced_by: flatter upstream-shaped connectivity/ERC ownership that no longer requires a
-// dedicated oversized ERC worker thread
-// remove_when: `load_schematic_tree()` is stable on the normal CLI thread for the large hierarchy
-// fixtures
-fn load_schematic_tree_on_worker_stack(path: &str) -> Result<LoadResult, String> {
-    let path = path.to_string();
-    let stack_size = erc_worker_stack_size((63 * 1024 * 1024) + (512 * 1024));
-
-    std::thread::Builder::new()
-        .name("ki2-erc-load".to_string())
-        .stack_size(stack_size)
-        .spawn(move || load_schematic_tree(Path::new(&path)).map_err(|err| err.to_string()))
-        .expect("spawn erc load worker")
-        .join()
-        .expect("erc load worker")
-}
-
-// upstream: SCH_ERC_COMMAND::doPerform() worker-owned ERC execution or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: KiCad runs ERC on the command thread; this shim runs the heavy ERC pass on a fresh
-// dedicated worker stack because the current Rust connectivity/ERC recursion can still exhaust the
-// exercised CLI stack budget on large hierarchy fixtures
-// local_only_reason: keeps compatibility-lane `ki2 erc` usable while lower-layer recursion is
-// still deeper than a stable single-thread command path budget
-// replaced_by: flatter upstream-shaped connectivity/ERC ownership that no longer requires a
-// dedicated oversized ERC worker thread
-// remove_when: `erc::run()` is stable on the normal CLI thread for the large hierarchy fixtures
-fn run_erc_on_worker_stack(loaded: LoadResult) -> Result<Vec<Diagnostic>, String> {
-    let stack_size = erc_worker_stack_size(60 * 1024 * 1024);
-
-    std::thread::Builder::new()
-        .name("ki2-erc-run".to_string())
-        .stack_size(stack_size)
-        .spawn(move || {
-            let project = SchematicProject::from_load_result(loaded);
-            Ok(erc::run(&project))
-        })
-        .expect("spawn erc run worker")
-        .join()
-        .expect("erc run worker")
 }
 
 // Upstream parity: reduced local analogue for `EESCHEMA_JOBS_HANDLER::JobExportNetlist()`. This
