@@ -9825,17 +9825,6 @@ pub(crate) fn resolve_reduced_project_net_for_label(
 ) -> Option<ReducedProjectNetIdentity> {
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
-        .or_else(|| {
-            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
-                let driver_connection = reduced_project_effective_driver_connection(&subgraph);
-                ReducedProjectNetIdentity {
-                    code: subgraph.code,
-                    name: driver_connection.name.clone(),
-                    class: subgraph.class.clone(),
-                    has_no_connect: subgraph.has_no_connect,
-                }
-            })
-        })
 }
 
 // Upstream parity: reduced local analogue for the label `Name(true)` path via
@@ -9850,13 +9839,6 @@ pub(crate) fn resolve_reduced_project_driver_name_for_label(
 ) -> Option<String> {
     resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
-        .or_else(|| {
-            resolve_reduced_project_subgraph_for_label(graph, sheet_path, label).map(|subgraph| {
-                reduced_project_effective_driver_connection(&subgraph)
-                    .local_name
-                    .clone()
-            })
-        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -10157,18 +10139,6 @@ pub(crate) fn resolve_reduced_project_net_for_sheet_pin(
 ) -> Option<ReducedProjectNetIdentity> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
-        .or_else(|| {
-            resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-                .map(|subgraph| {
-                    let driver_connection = reduced_project_effective_driver_connection(&subgraph);
-                    ReducedProjectNetIdentity {
-                        code: subgraph.code,
-                        name: driver_connection.name.clone(),
-                        class: subgraph.class.clone(),
-                        has_no_connect: subgraph.has_no_connect,
-                    }
-                })
-        })
 }
 
 // Upstream parity: reduced local analogue for the sheet-pin `Name(true)` path via
@@ -10184,14 +10154,6 @@ pub(crate) fn resolve_reduced_project_driver_name_for_sheet_pin(
 ) -> Option<String> {
     resolve_reduced_project_subgraph_index_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
-        .or_else(|| {
-            resolve_reduced_project_subgraph_for_sheet_pin(graph, sheet_path, at, child_sheet_uuid)
-                .map(|subgraph| {
-                    reduced_project_effective_driver_connection(&subgraph)
-                        .local_name
-                        .clone()
-                })
-        })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -10593,13 +10555,6 @@ pub(crate) fn resolve_reduced_project_driver_name_at(
 ) -> Option<String> {
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
         .and_then(|index| projected_reduced_project_driver_local_name_by_index(graph, index))
-        .or_else(|| {
-            resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
-                reduced_project_effective_driver_connection(&subgraph)
-                    .local_name
-                    .clone()
-            })
-        })
 }
 
 fn reduced_project_pin_identity_key(
@@ -11216,20 +11171,6 @@ pub(crate) fn resolve_reduced_project_net_for_symbol_pin(
         graph, sheet_path, symbol, at, pin_name, pin_number,
     )
     .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
-    .or_else(|| {
-        resolve_reduced_project_subgraph_for_symbol_pin(
-            graph, sheet_path, symbol, at, pin_name, pin_number,
-        )
-        .map(|subgraph| {
-            let driver_connection = reduced_project_effective_driver_connection(&subgraph);
-            ReducedProjectNetIdentity {
-                code: subgraph.code,
-                name: driver_connection.name.clone(),
-                class: subgraph.class.clone(),
-                has_no_connect: subgraph.has_no_connect,
-            }
-        })
-    })
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -11766,17 +11707,6 @@ pub(crate) fn resolve_reduced_project_net_at(
 ) -> Option<ReducedProjectNetIdentity> {
     resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
         .and_then(|index| projected_reduced_project_net_identity_by_index(graph, index))
-        .or_else(|| {
-            resolve_reduced_project_subgraph_at(graph, sheet_path, at).map(|subgraph| {
-                let driver_connection = reduced_project_effective_driver_connection(&subgraph);
-                ReducedProjectNetIdentity {
-                    code: subgraph.code,
-                    name: driver_connection.name.clone(),
-                    class: subgraph.class.clone(),
-                    has_no_connect: subgraph.has_no_connect,
-                }
-            })
-        })
 }
 
 fn reduced_connected_bus_subgraph_for_wire_item_in<'a>(
