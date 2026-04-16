@@ -13423,10 +13423,11 @@ pub(crate) fn reduced_project_label_multiple_wire_events(
             }
         }
     } else {
-        for subgraph in reduced_project_run_erc_subgraph_indexes(graph)
-            .into_iter()
-            .filter_map(|index| graph.subgraphs.get(index))
-        {
+        for index in reduced_project_run_erc_subgraph_indexes(graph) {
+            let Some(subgraph) = graph.subgraphs.get(index) else {
+                continue;
+            };
+
             for label in &subgraph.label_links {
                 if label.kind != LabelKind::Local || label.non_endpoint_wire_segment_count <= 1 {
                     continue;
@@ -13463,10 +13464,11 @@ pub(crate) fn reduced_project_label_connectivity_subgraphs(
 
     let mut label_subgraphs = Vec::new();
 
-    for (subgraph_index, subgraph) in reduced_project_run_erc_subgraph_indexes(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index).map(|subgraph| (index, subgraph)))
-    {
+    for subgraph_index in reduced_project_run_erc_subgraph_indexes(graph) {
+        let Some(subgraph) = graph.subgraphs.get(subgraph_index) else {
+            continue;
+        };
+
         if subgraph.label_links.is_empty() {
             continue;
         }
@@ -14249,11 +14251,15 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
 
-    for subgraph in reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph)
-        .into_iter()
-        .filter_map(|index| graph.subgraphs.get(index))
-        .filter(|subgraph| !subgraph.no_connect_points.is_empty())
-    {
+    for index in reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph) {
+        let Some(subgraph) = graph.subgraphs.get(index) else {
+            continue;
+        };
+
+        if subgraph.no_connect_points.is_empty() {
+            continue;
+        }
+
         if !seen.insert((subgraph.sheet_instance_path.clone(), subgraph.subgraph_code)) {
             continue;
         }

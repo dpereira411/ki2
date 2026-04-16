@@ -471,7 +471,7 @@ fn execute_erc_command(config: ErcCommandConfig) -> i32 {
 // fixtures
 fn load_schematic_tree_on_worker_stack(path: &str) -> Result<LoadResult, String> {
     let path = path.to_string();
-    let stack_size = erc_worker_stack_size(52 * 1024 * 1024);
+    let stack_size = erc_worker_stack_size(60 * 1024 * 1024);
 
     std::thread::Builder::new()
         .name("ki2-erc-load".to_string())
