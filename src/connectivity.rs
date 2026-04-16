@@ -9371,24 +9371,6 @@ pub(crate) fn reduced_project_subgraph_by_index(
     graph.subgraphs.get(index)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-fn projected_reduced_project_subgraph_by_index(
-    graph: &ReducedProjectNetGraph,
-    index: usize,
-) -> Option<ReducedProjectSubgraphEntry> {
-    let mut subgraph = graph.subgraphs.get(index)?.clone();
-
-    if let Some(live) = live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index) {
-        live.borrow()
-            .project_onto_reduced(&mut subgraph, &live, &graph.live_subgraphs);
-    } else {
-        subgraph.driver_connection = reduced_project_effective_driver_connection(&subgraph).clone();
-        subgraph.sync_boundary_state_from_driver_owner();
-    }
-
-    Some(subgraph)
-}
-
 // upstream: CONNECTION_GRAPH::GetNetFromItem live subgraph-to-connection summary branch or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -16641,7 +16623,25 @@ mod tests {
         at: [f64; 2],
     ) -> Option<ReducedProjectSubgraphEntry> {
         super::resolve_reduced_project_subgraph_index_at(graph, sheet_path, at)
-            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+            .and_then(|index| test_projected_subgraph_by_index(graph, index))
+    }
+
+    fn test_projected_subgraph_by_index(
+        graph: &ReducedProjectNetGraph,
+        index: usize,
+    ) -> Option<ReducedProjectSubgraphEntry> {
+        let mut subgraph = graph.subgraphs.get(index)?.clone();
+
+        if let Some(live) = super::live_subgraph_handle_by_projection_index(&graph.live_subgraphs, index)
+        {
+            live.borrow()
+                .project_onto_reduced(&mut subgraph, &live, &graph.live_subgraphs);
+        } else {
+            subgraph.driver_connection = super::reduced_project_effective_driver_connection(&subgraph).clone();
+            subgraph.sync_boundary_state_from_driver_owner();
+        }
+
+        Some(subgraph)
     }
 
     fn test_projected_subgraph_for_label(
@@ -16650,7 +16650,7 @@ mod tests {
         label: &crate::model::Label,
     ) -> Option<ReducedProjectSubgraphEntry> {
         super::resolve_reduced_project_subgraph_index_for_label(graph, sheet_path, label)
-            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+            .and_then(|index| test_projected_subgraph_by_index(graph, index))
     }
 
     fn test_projected_subgraph_for_no_connect(
@@ -16659,7 +16659,7 @@ mod tests {
         at: [f64; 2],
     ) -> Option<ReducedProjectSubgraphEntry> {
         super::resolve_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
-            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+            .and_then(|index| test_projected_subgraph_by_index(graph, index))
     }
 
     fn test_projected_subgraph_for_sheet_pin(
@@ -16674,7 +16674,7 @@ mod tests {
             at,
             child_sheet_uuid,
         )
-        .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+        .and_then(|index| test_projected_subgraph_by_index(graph, index))
     }
 
     fn test_projected_subgraph_for_symbol_pin(
@@ -16688,7 +16688,7 @@ mod tests {
         super::resolve_reduced_project_subgraph_index_for_symbol_pin(
             graph, sheet_path, symbol, at, pin_name, pin_number,
         )
-        .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, index))
+        .and_then(|index| test_projected_subgraph_by_index(graph, index))
     }
 
     fn test_collect_projected_subgraphs_by_name(
@@ -16701,7 +16701,7 @@ mod tests {
                 .into_iter()
                 .flat_map(|handles| handles.iter())
                 .filter_map(|handle| {
-                    super::projected_reduced_project_subgraph_by_index(
+                    test_projected_subgraph_by_index(
                         graph,
                         super::live_subgraph_projection_index(&graph.live_subgraphs, handle),
                     )
@@ -16713,7 +16713,7 @@ mod tests {
             .get(net_name)
             .into_iter()
             .flat_map(|indexes| indexes.iter())
-            .filter_map(|index| super::projected_reduced_project_subgraph_by_index(graph, *index))
+            .filter_map(|index| test_projected_subgraph_by_index(graph, *index))
             .collect()
     }
 
@@ -16726,7 +16726,7 @@ mod tests {
                 .get(net_name)
                 .and_then(|handles| handles.first())
                 .and_then(|handle| {
-                    super::projected_reduced_project_subgraph_by_index(
+                    test_projected_subgraph_by_index(
                         graph,
                         super::live_subgraph_projection_index(&graph.live_subgraphs, handle),
                     )
@@ -16736,7 +16736,7 @@ mod tests {
         graph.subgraphs_by_name
             .get(net_name)
             .and_then(|indexes| indexes.first())
-            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, *index))
+            .and_then(|index| test_projected_subgraph_by_index(graph, *index))
     }
 
     fn test_find_projected_subgraph_by_name(
@@ -16750,7 +16750,7 @@ mod tests {
                 .into_iter()
                 .flat_map(|handles| handles.iter())
                 .find_map(|handle| {
-                    super::projected_reduced_project_subgraph_by_index(
+                    test_projected_subgraph_by_index(
                         graph,
                         super::live_subgraph_projection_index(&graph.live_subgraphs, handle),
                     )
@@ -16763,7 +16763,7 @@ mod tests {
         graph.subgraphs_by_sheet_and_name
             .get(&(sheet_path.instance_path.clone(), net_name.to_string()))
             .and_then(|indexes| indexes.first())
-            .and_then(|index| super::projected_reduced_project_subgraph_by_index(graph, *index))
+            .and_then(|index| test_projected_subgraph_by_index(graph, *index))
     }
 
     #[test]
@@ -18803,7 +18803,7 @@ mod tests {
             .subgraphs
             .iter()
             .enumerate()
-            .filter_map(|(index, _)| super::projected_reduced_project_subgraph_by_index(&graph, index))
+            .filter_map(|(index, _)| test_projected_subgraph_by_index(&graph, index))
             .collect::<Vec<_>>();
 
         assert_eq!(projected[0].driver_connection.name, "/LIVE");
@@ -18965,7 +18965,7 @@ mod tests {
         let mut graph = test_graph_with_live_subgraphs(reduced);
         graph.live_subgraphs.swap(0, 1);
 
-        let subgraph = super::projected_reduced_project_subgraph_by_index(&graph, 1)
+        let subgraph = test_projected_subgraph_by_index(&graph, 1)
             .expect("projected subgraph");
 
         assert_eq!(subgraph.subgraph_code, 2);
@@ -23497,7 +23497,7 @@ mod tests {
 
         let subgraphs = super::reduced_project_run_erc_subgraph_indexes(&graph)
             .into_iter()
-            .filter_map(|index| super::projected_reduced_project_subgraph_by_index(&graph, index))
+            .filter_map(|index| test_projected_subgraph_by_index(&graph, index))
             .collect::<Vec<_>>();
 
         assert_eq!(subgraphs.len(), 1);
@@ -23611,7 +23611,7 @@ mod tests {
             .subgraphs
             .iter()
             .enumerate()
-            .filter_map(|(index, _)| super::projected_reduced_project_subgraph_by_index(&graph, index))
+            .filter_map(|(index, _)| test_projected_subgraph_by_index(&graph, index))
             .collect::<Vec<_>>();
 
         assert_eq!(subgraphs.len(), 1);
