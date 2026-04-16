@@ -11982,6 +11982,15 @@ fn reduced_subgraph_endpoint_has_wire_item_owner(
     })
 }
 
+// upstream: CONNECTION_GRAPH::ercCheckDanglingWireEndpoints same-name neighbor-owner branch or none
+// parity_status: partial
+// local_kind: local-only-transitional
+// divergence: still walks reduced same-name index buckets instead of final live
+// `m_net_name_to_subgraphs_map` item owners
+// local_only_reason: keeps same-name endpoint-owner checks on the shared reduced graph owner for
+// hand-built fallback graphs without projecting a second reduced snapshot vector
+// replaced_by: fuller live `CONNECTION_SUBGRAPH` / `SCH_LINE` owner graph
+// remove_when: reduced fallback endpoint-owner checks are retired in favor of live graph item links
 fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
     graph: &ReducedProjectNetGraph,
     subgraph: &ReducedProjectSubgraphEntry,
@@ -11996,8 +12005,12 @@ fn reduced_same_sheet_named_neighbor_endpoint_has_owner(
     let endpoint_at = [f64::from_bits(endpoint.0), f64::from_bits(endpoint.1)];
     let endpoint_matches = |point: PointKey| point_key_matches(point, endpoint_at);
 
-    collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
+    graph
+        .subgraphs_by_name
+        .get(&driver_connection.name)
         .into_iter()
+        .flat_map(|indexes| indexes.iter())
+        .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
         .filter(|neighbor| {
             neighbor.sheet_instance_path == subgraph.sheet_instance_path
                 && neighbor.subgraph_code != subgraph.subgraph_code
@@ -14467,10 +14480,13 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
                         local_unique_labels.len(),
                     )
                 } else {
-                    let neighbors =
-                        collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
-                            .into_iter()
-                            .collect::<Vec<_>>();
+                    let neighbors = graph
+                        .subgraphs_by_name
+                        .get(&driver_connection.name)
+                        .into_iter()
+                        .flat_map(|indexes| indexes.iter())
+                        .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
+                        .collect::<Vec<_>>();
                     let unique_pin_count = reduced_unique_stacked_pin_count(
                         neighbors
                             .iter()
@@ -14797,8 +14813,12 @@ pub(crate) fn reduced_project_pin_not_connected_candidates(
         let driver_connection = reduced_project_effective_driver_connection(&subgraph);
         let same_name_has_no_connect_sibling = (driver_connection.name.starts_with("Net-(")
             || driver_connection.name.starts_with("unconnected-("))
-            && collect_reduced_project_subgraphs_by_name(graph, &driver_connection.name)
-                .iter()
+            && graph
+                .subgraphs_by_name
+                .get(&driver_connection.name)
+                .into_iter()
+                .flat_map(|indexes| indexes.iter())
+                .filter_map(|index| reduced_project_subgraph_by_index(graph, *index))
                 .any(|neighbor| {
                     neighbor.subgraph_code != subgraph.subgraph_code
                         && (neighbor.has_no_connect || !neighbor.no_connect_points.is_empty())
