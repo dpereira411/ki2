@@ -227,8 +227,7 @@ fn raise_process_stack_limit_best_effort() {
 // thread
 // replaced_by: none
 // remove_when: ERC no longer needs dedicated oversized worker threads on large hierarchy fixtures
-fn erc_worker_stack_size() -> usize {
-    const TARGET_BYTES: usize = 48 * 1024 * 1024;
+fn erc_worker_stack_size(target_bytes: usize) -> usize {
     const CONSTRAINED_HOST_THRESHOLD_BYTES: usize = 96 * 1024 * 1024;
 
     #[cfg(unix)]
@@ -248,12 +247,12 @@ fn erc_worker_stack_size() -> usize {
                     return hard_limit;
                 }
 
-                return TARGET_BYTES;
+                return target_bytes;
             }
         }
     }
 
-    TARGET_BYTES
+    target_bytes
 }
 
 // Upstream parity: reduced local analogue for the schematic-validate CLI entrypoint. This is not
@@ -472,7 +471,7 @@ fn execute_erc_command(config: ErcCommandConfig) -> i32 {
 // fixtures
 fn load_schematic_tree_on_worker_stack(path: &str) -> Result<LoadResult, String> {
     let path = path.to_string();
-    let stack_size = erc_worker_stack_size();
+    let stack_size = erc_worker_stack_size(48 * 1024 * 1024);
 
     std::thread::Builder::new()
         .name("ki2-erc-load".to_string())
@@ -495,7 +494,7 @@ fn load_schematic_tree_on_worker_stack(path: &str) -> Result<LoadResult, String>
 // dedicated oversized ERC worker thread
 // remove_when: `erc::run()` is stable on the normal CLI thread for the large hierarchy fixtures
 fn run_erc_on_worker_stack(loaded: LoadResult) -> Result<Vec<Diagnostic>, String> {
-    let stack_size = erc_worker_stack_size();
+    let stack_size = erc_worker_stack_size(56 * 1024 * 1024);
 
     std::thread::Builder::new()
         .name("ki2-erc-run".to_string())
