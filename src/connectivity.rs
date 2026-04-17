@@ -10244,17 +10244,6 @@ fn reduced_project_label_identity_key(
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-fn reduced_project_no_connect_identity_key(
-    sheet_path: &LoadedSheetPath,
-    at: [f64; 2],
-) -> ReducedProjectNoConnectIdentityKey {
-    ReducedProjectNoConnectIdentityKey {
-        sheet_instance_path: sheet_path.instance_path.clone(),
-        at: point_key(at),
-    }
-}
-
 fn reduced_project_sheet_pin_identity_key(
     sheet_path: &LoadedSheetPath,
     at: PointKey,
@@ -16723,11 +16712,16 @@ mod tests {
         sheet_path: &crate::loader::LoadedSheetPath,
         at: [f64; 2],
     ) -> Option<ReducedProjectSubgraphEntry> {
+        let identity_key = super::ReducedProjectNoConnectIdentityKey {
+            sheet_instance_path: sheet_path.instance_path.clone(),
+            at: super::point_key(at),
+        };
+
         super::live_reduced_project_subgraph_index_for_no_connect(graph, sheet_path, at)
             .or_else(|| {
                 graph
                     .no_connect_subgraph_identities
-                    .get(&super::reduced_project_no_connect_identity_key(sheet_path, at))
+                    .get(&identity_key)
                     .copied()
             })
             .or_else(|| {
