@@ -229,6 +229,7 @@ fn raise_process_stack_limit_best_effort() {
 // remove_when: ERC no longer needs dedicated oversized worker threads on large hierarchy fixtures
 fn erc_worker_stack_size(target_bytes: usize) -> usize {
     const CONSTRAINED_HOST_THRESHOLD_BYTES: usize = 96 * 1024 * 1024;
+    const CONSTRAINED_HOST_HEADROOM_BYTES: usize = 512 * 1024;
 
     #[cfg(unix)]
     unsafe {
@@ -244,7 +245,7 @@ fn erc_worker_stack_size(target_bytes: usize) -> usize {
                 let hard_limit = hard_limit as usize;
 
                 if hard_limit <= CONSTRAINED_HOST_THRESHOLD_BYTES {
-                    return target_bytes.min(hard_limit);
+                    return target_bytes.min(hard_limit.saturating_sub(CONSTRAINED_HOST_HEADROOM_BYTES));
                 }
 
                 return target_bytes;
@@ -408,7 +409,7 @@ fn execute_erc_command(config: ErcCommandConfig) -> i32 {
 // remove_when: the ERC command is stable on the normal CLI thread for the large hierarchy
 // fixtures
 fn execute_erc_command_on_worker_stack(config: ErcCommandConfig) -> i32 {
-    let stack_size = erc_worker_stack_size(64 * 1024 * 1024);
+    let stack_size = erc_worker_stack_size(60 * 1024 * 1024);
 
     std::thread::Builder::new()
         .name("ki2-erc-command".to_string())
