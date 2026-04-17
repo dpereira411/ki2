@@ -9296,22 +9296,6 @@ fn reduced_project_run_erc_subgraph_indexes(graph: &ReducedProjectNetGraph) -> V
     indexes
 }
 
-// upstream: CONNECTION_GRAPH::RunERC per-subgraph item-owned traversal branch or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still iterates reduced subgraph snapshots instead of final `CONNECTION_SUBGRAPH*`
-// storage, but intentionally skips reused-screen driver-instance dedup so marker-owned ERC checks
-// can visit each distinct item-owning subgraph
-// local_only_reason: keeps item-owned no-connect traversal on the shared graph owner without
-// weakening the reused-screen dedup policy used by driver-owned ERC rules
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with rule-specific traversal
-// remove_when: no-connect and similar item-owned ERC rules iterate final live graph storage directly
-fn reduced_project_run_erc_subgraph_indexes_without_driver_dedup(
-    graph: &ReducedProjectNetGraph,
-) -> Vec<usize> {
-    (0..graph.subgraphs.len()).collect()
-}
-
 // upstream: CONNECTION_GRAPH::RunERC live subgraph iteration or none
 // parity_status: partial
 // local_kind: local-only-transitional
@@ -9338,22 +9322,6 @@ fn live_reduced_project_run_erc_subgraph_handles(
 
     subgraphs.reverse();
     subgraphs
-}
-
-// upstream: CONNECTION_GRAPH::RunERC per-subgraph item-owned traversal branch or none
-// parity_status: partial
-// local_kind: local-only-transitional
-// divergence: still iterates reduced live handles instead of final `CONNECTION_SUBGRAPH*`
-// storage, but intentionally skips reused-screen driver-instance dedup so marker-owned ERC checks
-// can visit each distinct live item-owning subgraph
-// local_only_reason: keeps item-owned no-connect traversal on the active live graph owner without
-// weakening the reused-screen dedup policy used by driver-owned ERC rules
-// replaced_by: fuller live `CONNECTION_SUBGRAPH` owner graph with rule-specific traversal
-// remove_when: no-connect and similar item-owned ERC rules iterate final live graph storage directly
-fn live_reduced_project_run_erc_subgraph_handles_without_driver_dedup(
-    graph: &ReducedProjectNetGraph,
-) -> Vec<LiveReducedSubgraphHandle> {
-    graph.live_subgraphs.clone()
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -14170,7 +14138,7 @@ pub(crate) fn reduced_project_no_connect_marker_outcomes(
     let mut outcomes = Vec::new();
     let mut seen = BTreeSet::new();
 
-    for index in reduced_project_run_erc_subgraph_indexes_without_driver_dedup(graph) {
+    for index in 0..graph.subgraphs.len() {
         let Some(subgraph) = graph.subgraphs.get(index) else {
             continue;
         };
@@ -14285,8 +14253,9 @@ fn live_reduced_project_no_connect_marker_outcomes(
     let mut seen = BTreeSet::new();
     let subgraphs_by_name = live_reduced_subgraphs_by_name(graph);
 
-    for subgraph_handle in live_reduced_project_run_erc_subgraph_handles_without_driver_dedup(graph)
-        .into_iter()
+    for subgraph_handle in graph
+        .live_subgraphs
+        .iter()
         .filter(|subgraph| !subgraph.borrow().no_connect_points.is_empty())
     {
         let subgraph_id = live_subgraph_handle_id(&subgraph_handle);
